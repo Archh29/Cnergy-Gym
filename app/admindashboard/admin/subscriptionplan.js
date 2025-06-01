@@ -13,7 +13,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,11 +23,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Crown, Plus, Trash2, Edit, ChevronUp, ChevronDown, Loader2, Calendar } from "lucide-react"
+import { Plus, Trash2, Edit, Loader2 } from "lucide-react"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 
-const API_URL = "http://localhost/cynergy/membership.php"
+const API_URL = "/api/subscription-plans"
 
 const SubscriptionPlans = () => {
   const [plans, setPlans] = useState([])
@@ -36,16 +34,8 @@ const SubscriptionPlans = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [currentPlan, setCurrentPlan] = useState({
     id: null,
-    name: "",
-    duration: "",
-    popular: false,
-    singlePrice: true,
+    plan_name: "",
     price: "",
-    prices: [
-      { age_group: "Student", price: "" },
-      { age_group: "Adult", price: "" },
-      { age_group: "55+", price: "" },
-    ],
   })
   const [selectedPlanId, setSelectedPlanId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -82,16 +72,8 @@ const SubscriptionPlans = () => {
   const handleAdd = () => {
     setCurrentPlan({
       id: null,
-      name: "",
-      duration: "",
-      popular: false,
-      singlePrice: true,
+      plan_name: "",
       price: "",
-      prices: [
-        { age_group: "Student", price: "" },
-        { age_group: "Adult", price: "" },
-        { age_group: "55+", price: "" },
-      ],
     })
     setIsDialogOpen(true)
   }
@@ -120,32 +102,23 @@ const SubscriptionPlans = () => {
   }
 
   const handleSave = async () => {
-    if (
-      !currentPlan.name ||
-      !currentPlan.duration ||
-      (currentPlan.singlePrice && !currentPlan.price) ||
-      (!currentPlan.singlePrice && !currentPlan.prices.some((p) => p.price))
-    )
-      return
+    if (!currentPlan.plan_name || !currentPlan.price) return
 
     setIsLoading(true)
     try {
       const planData = {
         id: currentPlan.id,
-        name: currentPlan.name,
-        duration: currentPlan.duration,
-        popular: currentPlan.popular ? 1 : 0,
-        prices: currentPlan.singlePrice
-          ? [{ age_group: "All", price: currentPlan.price }]
-          : currentPlan.prices.filter((p) => p.price),
+        plan_name: currentPlan.plan_name,
+        price: currentPlan.price,
       }
 
       if (currentPlan.id) {
         await axios.put(API_URL, planData)
       } else {
-        await axios.post(API_URL, planData)
+        const response = await axios.post(API_URL, planData)
+        setCurrentPlan({ ...currentPlan, id: response.data.id })
+        setPlans([...plans, currentPlan])
       }
-      await fetchPlans()
       setIsDialogOpen(false)
     } catch (error) {
       console.error("Error saving plan:", error)
@@ -154,54 +127,12 @@ const SubscriptionPlans = () => {
     }
   }
 
-  const movePlanUp = (index) => {
-    if (index === 0) return
-    const newPlans = [...plans]
-    ;[newPlans[index], newPlans[index - 1]] = [newPlans[index - 1], newPlans[index]]
-    setPlans(newPlans)
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+    }).format(amount)
   }
-
-  const movePlanDown = (index) => {
-    if (index === plans.length - 1) return
-    const newPlans = [...plans]
-    ;[newPlans[index], newPlans[index + 1]] = [newPlans[index + 1], newPlans[index]]
-    setPlans(newPlans)
-  }
-
-
-  const togglePopular = async (id) => {
-    setIsLoading(true);
-    try {
-        const updatedPlans = plans.map((plan) =>
-            plan.id === id
-                ? { ...plan, popular: !plan.popular }
-                : plan.popular && plan.id !== id
-                ? { ...plan, popular: false }
-                : plan
-        );
-
-        const toggledPlan = updatedPlans.find((plan) => plan.id === id);
-
-        const response = await axios.put(API_URL, {
-            id: toggledPlan.id,
-            popular: toggledPlan.popular, // Only updating popular field
-        });
-
-        console.log("API Response:", response.data); // Log API response
-
-        if (response.data.success) {
-            setPlans(updatedPlans);
-        } else {
-            console.error("Failed to update popular status in DB", response.data);
-        }
-    } catch (error) {
-        console.error("Error toggling popular status:", error);
-    } finally {
-        setIsLoading(false);
-    }
-};
-
-
 
   return (
     <div className="space-y-6">
@@ -218,95 +149,32 @@ const SubscriptionPlans = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {plans.map((plan, index) => (
-            <Card
-              key={plan.id}
-              className={`relative overflow-hidden transition-all duration-300 hover:shadow-xl ${
-                plan.popular ? "border-2 border-primary bg-primary/5" : ""
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute top-0 right-0">
-                  <Badge className="rounded-none rounded-bl-lg px-3 py-1.5 text-sm font-semibold">Most Popular</Badge>
-                </div>
-              )}
-              <CardHeader className="pb-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-2xl font-bold flex items-center gap-2">
-                      {plan.name}
-                      {plan.popular && <Crown className="h-5 w-5 text-yellow-500" />}
-                    </CardTitle>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => movePlanUp(index)}
-                      disabled={index === 0 || isLoading}
-                      className="h-8 w-8"
-                    >
-                      <ChevronUp className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => movePlanDown(index)}
-                      disabled={index === plans.length - 1 || isLoading}
-                      className="h-8 w-8"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+          {plans.map((plan) => (
+            <Card key={plan.id} className="overflow-hidden transition-all duration-300 hover:shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-2xl font-bold">{plan.plan_name}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  {plan.singlePrice ? (
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Price:</span>
-                      <div className="flex items-center gap-1 font-bold text-primary">
-                        <span>₱{plan.price}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    plan.prices.map((priceItem, idx) => (
-                      <div key={idx} className="flex items-center justify-between">
-                        <span className="text-muted-foreground">{priceItem.age_group}:</span>
-                        <div className="flex items-center gap-1 font-bold text-primary">
-                          <span>₱{priceItem.price}</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Calendar className="h-5 w-5" />
-                  <span>{plan.duration} months</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Price:</span>
+                  <div className="text-2xl font-bold text-primary">{formatCurrency(plan.price)}</div>
                 </div>
               </CardContent>
               <CardFooter className="flex flex-col space-y-4">
-                <Button className="w-full text-lg py-6" variant={plan.popular ? "default" : "outline"}>
-                  Select Plan
-                </Button>
-                <div className="flex justify-between w-full">
-                  <Button variant="ghost" size="sm" onClick={() => togglePopular(plan.id)} disabled={isLoading}>
-                    {plan.popular ? "Unmark Popular" : "Mark Popular"}
+                <Button className="w-full text-lg py-6">Select Plan</Button>
+                <div className="flex justify-end w-full gap-2">
+                  <Button variant="ghost" size="icon" onClick={() => handleEdit(plan)} disabled={isLoading}>
+                    <Edit className="h-4 w-4" />
                   </Button>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(plan)} disabled={isLoading}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive"
-                      onClick={() => handleDeleteConfirm(plan.id)}
-                      disabled={isLoading}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive"
+                    onClick={() => handleDeleteConfirm(plan.id)}
+                    disabled={isLoading}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </CardFooter>
             </Card>
@@ -319,102 +187,38 @@ const SubscriptionPlans = () => {
           <DialogHeader>
             <DialogTitle>{currentPlan.id ? "Edit Plan" : "Add Plan"}</DialogTitle>
             <DialogDescription>
-              {currentPlan.id
-                ? "Update the details of your membership plan."
-                : "Add a new membership plan with pricing options."}
+              {currentPlan.id ? "Update the details of your membership plan." : "Add a new membership plan."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">Plan Name</Label>
+              <Label htmlFor="plan_name">Plan Name</Label>
               <Input
-                id="name"
-                value={currentPlan.name}
-                onChange={(e) => setCurrentPlan({ ...currentPlan, name: e.target.value })}
+                id="plan_name"
+                value={currentPlan.plan_name}
+                onChange={(e) => setCurrentPlan({ ...currentPlan, plan_name: e.target.value })}
                 placeholder="e.g. Basic Plan"
               />
             </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="single-price">Single Price for All</Label>
-              <Switch
-                id="single-price"
-                checked={currentPlan.singlePrice}
-                onCheckedChange={(checked) => setCurrentPlan({ ...currentPlan, singlePrice: checked })}
-              />
-            </div>
-            {currentPlan.singlePrice ? (
-              <div className="grid gap-2">
-                <Label htmlFor="price">Price</Label>
-                <div className="flex items-center">
-                  <span className="mr-2">₱</span>
-                  <Input
-                    id="price"
-                    type="number"
-                    value={currentPlan.price}
-                    onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
-                    placeholder="Enter price"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-2">
-                <Label>Prices</Label>
-                {currentPlan.prices.map((priceItem, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Label className="w-24">{priceItem.age_group}</Label>
-                    <div className="flex items-center">
-                      <span className="mr-2">₱</span>
-                      <Input
-                        type="number"
-                        value={priceItem.price}
-                        onChange={(e) => {
-                          const newPrices = [...currentPlan.prices]
-                          newPrices[idx].price = e.target.value
-                          setCurrentPlan({ ...currentPlan, prices: newPrices })
-                        }}
-                        placeholder={`Price for ${priceItem.age_group}`}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
             <div className="grid gap-2">
-              <Label htmlFor="duration">Duration (Months)</Label>
-              <Input
-                id="duration"
-                type="number"
-                value={currentPlan.duration}
-                onChange={(e) => setCurrentPlan({ ...currentPlan, duration: e.target.value })}
-                placeholder="e.g. 12"
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="popular"
-                checked={currentPlan.popular}
-                onChange={(e) => setCurrentPlan({ ...currentPlan, popular: e.target.checked })}
-                className="rounded border-gray-300 text-primary focus:ring-primary"
-                disabled={isLoading}
-              />
-              <Label htmlFor="popular">Mark as popular plan</Label>
+              <Label htmlFor="price">Price</Label>
+              <div className="flex items-center">
+                <span className="mr-2">₱</span>
+                <Input
+                  id="price"
+                  type="number"
+                  value={currentPlan.price}
+                  onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
+                  placeholder="Enter price"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isLoading}>
               Cancel
             </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                !currentPlan.name ||
-                !currentPlan.duration ||
-                (currentPlan.singlePrice && !currentPlan.price) ||
-                (!currentPlan.singlePrice && !currentPlan.prices.some((p) => p.price)) ||
-                isLoading
-              }
-            >
+            <Button onClick={handleSave} disabled={!currentPlan.plan_name || !currentPlan.price || isLoading}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -462,4 +266,3 @@ const SubscriptionPlans = () => {
 }
 
 export default SubscriptionPlans
-

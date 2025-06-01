@@ -18,39 +18,158 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Plus, ShoppingCart, Package, DollarSign, TrendingUp } from "lucide-react"
-
-// Sample data - replace with actual API calls
-const recentSales = [
-  { id: 1, member: "John Doe", item: "Protein Shake", type: "Product", amount: 1200, date: "2023-07-28" },
-  { id: 2, member: "Jane Smith", item: "Monthly Plan", type: "Subscription", amount: 3500, date: "2023-07-27" },
-  { id: 3, member: "Mike Johnson", item: "Gym Gloves", type: "Product", amount: 850, date: "2023-07-26" },
-  { id: 4, member: "Sarah Williams", item: "Annual Plan", type: "Subscription", amount: 15000, date: "2023-07-25" },
-  { id: 5, member: "Robert Brown", item: "Shaker Bottle", type: "Product", amount: 350, date: "2023-07-24" },
-]
-
-const products = [
-  { id: 1, name: "Protein Shake", price: 1200, stock: 45 },
-  { id: 2, name: "Gym Gloves", price: 850, stock: 23 },
-  { id: 3, name: "Shaker Bottle", price: 350, stock: 12 },
-  { id: 4, name: "Gym Towel", price: 450, stock: 34 },
-  { id: 5, name: "Pre-Workout", price: 1500, stock: 5 },
-]
-
-const members = [
-  { id: 1, name: "John Doe" },
-  { id: 2, name: "Jane Smith" },
-  { id: 3, name: "Mike Johnson" },
-  { id: 4, name: "Sarah Williams" },
-  { id: 5, name: "Robert Brown" },
-]
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Plus, ShoppingCart, Package, DollarSign, TrendingUp, Search } from "lucide-react"
 
 const Sales = () => {
   const [selectedMember, setSelectedMember] = useState("")
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
-  const [paymentMethod, setPaymentMethod] = useState("cash")
   const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "" })
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Data structure matching your database schema
+  const [sales, setSales] = useState([
+    {
+      id: 1,
+      user: {
+        id: 1,
+        fname: "John",
+        mname: "Michael",
+        lname: "Doe",
+        email: "john.doe@email.com",
+      },
+      total_amount: 1200.0,
+      sale_date: "2024-12-28T10:30:00Z",
+      sale_type: "Product",
+      sales_details: [
+        {
+          id: 1,
+          product: {
+            id: 1,
+            name: "Protein Shake",
+            price: 1200.0,
+          },
+          quantity: 1,
+          price: 1200.0,
+        },
+      ],
+    },
+    {
+      id: 2,
+      user: {
+        id: 2,
+        fname: "Jane",
+        mname: "Marie",
+        lname: "Smith",
+        email: "jane.smith@email.com",
+      },
+      total_amount: 3500.0,
+      sale_date: "2024-12-27T14:20:00Z",
+      sale_type: "Subscription",
+      sales_details: [
+        {
+          id: 2,
+          subscription_id: 1,
+          quantity: null,
+          price: 3500.0,
+        },
+      ],
+    },
+    {
+      id: 3,
+      user: {
+        id: 3,
+        fname: "Mike",
+        mname: "Robert",
+        lname: "Johnson",
+        email: "mike.johnson@email.com",
+      },
+      total_amount: 1700.0,
+      sale_date: "2024-12-26T16:45:00Z",
+      sale_type: "Product",
+      sales_details: [
+        {
+          id: 3,
+          product: {
+            id: 2,
+            name: "Gym Gloves",
+            price: 850.0,
+          },
+          quantity: 2,
+          price: 1700.0,
+        },
+      ],
+    },
+  ])
+
+  // Products from Product table
+  const [products, setProducts] = useState([
+    { id: 1, name: "Protein Shake", price: 1200.0, stock: 45 },
+    { id: 2, name: "Gym Gloves", price: 850.0, stock: 23 },
+    { id: 3, name: "Shaker Bottle", price: 350.0, stock: 12 },
+    { id: 4, name: "Gym Towel", price: 450.0, stock: 34 },
+    { id: 5, name: "Pre-Workout", price: 1500.0, stock: 5 },
+  ])
+
+  // Members from User table
+  const [members] = useState([
+    {
+      id: 1,
+      fname: "John",
+      mname: "Michael",
+      lname: "Doe",
+      email: "john.doe@email.com",
+    },
+    {
+      id: 2,
+      fname: "Jane",
+      mname: "Marie",
+      lname: "Smith",
+      email: "jane.smith@email.com",
+    },
+    {
+      id: 3,
+      fname: "Mike",
+      mname: "Robert",
+      lname: "Johnson",
+      email: "mike.johnson@email.com",
+    },
+    {
+      id: 4,
+      fname: "Sarah",
+      mname: "Ann",
+      lname: "Williams",
+      email: "sarah.williams@email.com",
+    },
+  ])
+
+  // Calculate analytics from actual data
+  const analytics = {
+    todaysSales: sales
+      .filter((sale) => {
+        const today = new Date().toDateString()
+        const saleDate = new Date(sale.sale_date).toDateString()
+        return today === saleDate
+      })
+      .reduce((sum, sale) => sum + sale.total_amount, 0),
+    productsSoldToday: sales
+      .filter((sale) => {
+        const today = new Date().toDateString()
+        const saleDate = new Date(sale.sale_date).toDateString()
+        return today === saleDate && sale.sale_type === "Product"
+      })
+      .reduce((sum, sale) => {
+        return (
+          sum +
+          sale.sales_details.reduce((detailSum, detail) => {
+            return detailSum + (detail.quantity || 0)
+          }, 0)
+        )
+      }, 0),
+    lowStockItems: products.filter((product) => product.stock <= 10).length,
+    monthlyRevenue: sales.reduce((sum, sale) => sum + sale.total_amount, 0),
+  }
 
   const handleProductSale = () => {
     if (!selectedMember || !selectedProduct) {
@@ -61,14 +180,32 @@ const Sales = () => {
     const product = products.find((p) => p.id === Number.parseInt(selectedProduct))
     const member = members.find((m) => m.id === Number.parseInt(selectedMember))
 
-    // This would be an API call in real implementation
-    console.log("Processing sale:", {
-      member: member.name,
-      product: product.name,
-      quantity,
-      total: product.price * quantity,
-      paymentMethod,
-    })
+    if (product.stock < quantity) {
+      alert("Insufficient stock!")
+      return
+    }
+
+    // Create new sale record matching database structure
+    const newSale = {
+      id: Date.now(),
+      user: member,
+      total_amount: product.price * quantity,
+      sale_date: new Date().toISOString(),
+      sale_type: "Product",
+      sales_details: [
+        {
+          id: Date.now(),
+          product: product,
+          quantity: quantity,
+          price: product.price * quantity,
+        },
+      ],
+    }
+
+    setSales((prev) => [newSale, ...prev])
+
+    // Update product stock
+    setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, stock: p.stock - quantity } : p)))
 
     alert("Sale completed successfully!")
 
@@ -76,7 +213,6 @@ const Sales = () => {
     setSelectedMember("")
     setSelectedProduct("")
     setQuantity(1)
-    setPaymentMethod("cash")
   }
 
   const handleAddProduct = () => {
@@ -85,13 +221,56 @@ const Sales = () => {
       return
     }
 
-    // This would be an API call in real implementation
-    console.log("Adding product:", newProduct)
+    const product = {
+      id: Date.now(),
+      name: newProduct.name,
+      price: Number.parseFloat(newProduct.price),
+      stock: Number.parseInt(newProduct.stock),
+    }
+
+    setProducts((prev) => [...prev, product])
     alert("Product added successfully!")
 
     // Reset form
     setNewProduct({ name: "", price: "", stock: "" })
   }
+
+  const getFullName = (user) => {
+    return `${user.fname} ${user.mname} ${user.lname}`.trim()
+  }
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("en-PH", {
+      style: "currency",
+      currency: "PHP",
+    }).format(amount)
+  }
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  const getProductName = (salesDetail) => {
+    if (salesDetail.product) {
+      return salesDetail.product.name
+    }
+    return salesDetail.subscription_id ? "Subscription Plan" : "Unknown Item"
+  }
+
+  const filteredSales = sales.filter((sale) => {
+    const fullName = getFullName(sale.user)
+    return (
+      fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  })
 
   return (
     <div className="space-y-4">
@@ -112,18 +291,18 @@ const Sales = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₱8,450</div>
-            <p className="text-xs text-muted-foreground">+12% from yesterday</p>
+            <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
+            <p className="text-xs text-muted-foreground">Product & subscription sales</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Products Sold</CardTitle>
+            <CardTitle className="text-sm font-medium">Products Sold Today</CardTitle>
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
-            <p className="text-xs text-muted-foreground">+8 from yesterday</p>
+            <div className="text-2xl font-bold">{analytics.productsSoldToday}</div>
+            <p className="text-xs text-muted-foreground">Items sold today</p>
           </CardContent>
         </Card>
         <Card>
@@ -132,18 +311,18 @@ const Sales = () => {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
+            <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
             <p className="text-xs text-muted-foreground">Need restocking</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₱128,430</div>
-            <p className="text-xs text-muted-foreground">+15% from last month</p>
+            <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
+            <p className="text-xs text-muted-foreground">All-time revenue</p>
           </CardContent>
         </Card>
       </div>
@@ -158,7 +337,7 @@ const Sales = () => {
         <TabsContent value="sales">
           <Card>
             <CardHeader>
-              <CardTitle>Create New Sale</CardTitle>
+              <CardTitle>Create New Product Sale</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -171,7 +350,7 @@ const Sales = () => {
                     <SelectContent>
                       {members.map((member) => (
                         <SelectItem key={member.id} value={member.id.toString()}>
-                          {member.name}
+                          {getFullName(member)} - {member.email}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -187,7 +366,7 @@ const Sales = () => {
                     <SelectContent>
                       {products.map((product) => (
                         <SelectItem key={product.id} value={product.id.toString()} disabled={product.stock === 0}>
-                          {product.name} - ₱{product.price} ({product.stock} in stock)
+                          {product.name} - {formatCurrency(product.price)} ({product.stock} in stock)
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -199,24 +378,13 @@ const Sales = () => {
                   <Input
                     type="number"
                     min="1"
+                    max={
+                      selectedProduct ? products.find((p) => p.id === Number.parseInt(selectedProduct))?.stock || 1 : 1
+                    }
                     value={quantity}
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
                     disabled={!selectedProduct}
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Payment Method</Label>
-                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Credit/Debit Card</SelectItem>
-                      <SelectItem value="transfer">Bank Transfer</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
 
@@ -230,7 +398,9 @@ const Sales = () => {
                     </div>
                     <div className="flex justify-between">
                       <span>Unit Price:</span>
-                      <span>₱{products.find((p) => p.id === Number.parseInt(selectedProduct))?.price}</span>
+                      <span>
+                        {formatCurrency(products.find((p) => p.id === Number.parseInt(selectedProduct))?.price || 0)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Quantity:</span>
@@ -239,7 +409,9 @@ const Sales = () => {
                     <div className="flex justify-between font-bold">
                       <span>Total:</span>
                       <span>
-                        ₱{(products.find((p) => p.id === Number.parseInt(selectedProduct))?.price || 0) * quantity}
+                        {formatCurrency(
+                          (products.find((p) => p.id === Number.parseInt(selectedProduct))?.price || 0) * quantity,
+                        )}
                       </span>
                     </div>
                   </div>
@@ -256,31 +428,75 @@ const Sales = () => {
         <TabsContent value="history">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Sales</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Sales History</CardTitle>
+                <div className="relative w-full max-w-md">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search sales..."
+                    className="pl-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Member</TableHead>
-                    <TableHead>Item</TableHead>
+                    <TableHead>Items</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Total Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recentSales.map((sale) => (
-                    <TableRow key={sale.id}>
-                      <TableCell className="font-medium">{sale.member}</TableCell>
-                      <TableCell>{sale.item}</TableCell>
-                      <TableCell>
-                        <Badge variant={sale.type === "Product" ? "outline" : "secondary"}>{sale.type}</Badge>
+                  {filteredSales.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        No sales found matching your search
                       </TableCell>
-                      <TableCell>{new Date(sale.date).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-right">₱{sale.amount.toLocaleString()}</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredSales.map((sale) => (
+                      <TableRow key={sale.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback>
+                                {sale.user.fname[0]}
+                                {sale.user.lname[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <div className="font-medium">{getFullName(sale.user)}</div>
+                              <div className="text-sm text-muted-foreground">{sale.user.email}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {sale.sales_details.map((detail, index) => (
+                              <div key={index} className="text-sm">
+                                {getProductName(detail)}
+                                {detail.quantity && ` (${detail.quantity}x)`}
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={sale.sale_type === "Product" ? "outline" : "secondary"}>
+                            {sale.sale_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDate(sale.sale_date)}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCurrency(sale.total_amount)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -316,6 +532,7 @@ const Sales = () => {
                       <Label>Price (₱)</Label>
                       <Input
                         type="number"
+                        step="0.01"
                         value={newProduct.price}
                         onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
                         placeholder="Enter price"
@@ -353,7 +570,7 @@ const Sales = () => {
                     {products.map((product) => (
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>₱{product.price.toLocaleString()}</TableCell>
+                        <TableCell>{formatCurrency(product.price)}</TableCell>
                         <TableCell>{product.stock}</TableCell>
                         <TableCell>
                           <Badge
