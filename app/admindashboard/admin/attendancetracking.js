@@ -1,11 +1,18 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useEffect, useState } from "react"
+import axios from "axios"
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription
+} from "@/components/ui/card"
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
+} from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter
+} from "@/components/ui/dialog"
 import { Search, Plus, QrCode } from 'lucide-react'
 
 const AttendanceTracking = () => {
@@ -13,21 +20,82 @@ const AttendanceTracking = () => {
   const [manualOpen, setManualOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [attendance, setAttendance] = useState([])
-  const [manualName, setManualName] = useState("")
+  const [members, setMembers] = useState([])
 
-  const handleManualEntry = () => {
-    if (manualName.trim() === "") return;
+  // Load members (coaches + users)
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const res = await axios.get("http://localhost/cynergy/attendance.php?members=1")
+        setMembers(res.data)
+      } catch (err) {
+        console.error("Failed to load members", err)
+      }
+    }
+
+    const fetchAttendance = async () => {
+      try {
+        const res = await axios.get("http://localhost/cynergy/attendance.php?view=attendance")
+        setAttendance(res.data)
+      } catch (err) {
+        console.error("Failed to load attendance", err)
+      }
+    }
+
+    fetchMembers()
+    fetchAttendance()
+  }, [])
+
+  const handleManualEntry = async (member) => {
     const today = new Date().toLocaleDateString()
-    setAttendance((prev) => [...prev, { name: manualName, date: today }])
-    setManualName("")
+    setAttendance((prev) => [...prev, {
+      name: `${member.fname} ${member.lname}`, date: today
+    }])
     setManualOpen(false)
+
+    try {
+      await axios.post("http://localhost/cynergy/attendance.php", {
+        id: member.id
+      })
+    } catch (err) {
+      console.error("Failed to record attendance", err)
+    }
   }
 
-  const handleQrScan = (scannedData) => {
+  const handleQrScan = async (scannedData) => {
     const today = new Date().toLocaleDateString()
     const member = { id: scannedData.id, name: scannedData.name, date: today }
     setAttendance((prev) => [...prev, member])
+
+    try {
+      await axios.post("http://localhost/cynergy/attendance.php", {
+        id: scannedData.id
+      })
+    } catch (err) {
+      console.error("Failed to record attendance", err)
+    }
   }
+
+  useEffect(() => {
+    let scannedData = ""
+    const handleKeyPress = (e) => {
+      if (e.key === "Enter") {
+        try {
+          const parsed = JSON.parse(scannedData)
+          handleQrScan(parsed)
+        } catch {
+          const [id, name] = scannedData.split("|")
+          if (id && name) handleQrScan({ id, name })
+        }
+        scannedData = ""
+      } else {
+        scannedData += e.key
+      }
+    }
+
+    window.addEventListener("keypress", handleKeyPress)
+    return () => window.removeEventListener("keypress", handleKeyPress)
+  }, [])
 
   return (
     <Card>
@@ -54,25 +122,38 @@ const AttendanceTracking = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
             <Dialog open={manualOpen} onOpenChange={setManualOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" /> Manual Entry
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[400px]">
+              <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
                   <DialogTitle>Manual Attendance Entry</DialogTitle>
                 </DialogHeader>
                 <Input
                   type="text"
-                  placeholder="Enter member name"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
+                  placeholder="Search member..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                 />
+                <div className="max-h-60 overflow-y-auto mt-2 space-y-1">
+                  {members.filter(m =>
+                    (`${m.fname} ${m.lname}`).toLowerCase().includes(searchQuery.toLowerCase())
+                  ).map(member => (
+                    <Button
+                      key={member.id}
+                      className="w-full justify-start"
+                      onClick={() => handleManualEntry(member)}
+                    >
+                      {member.fname} {member.lname}
+                    </Button>
+                  ))}
+                </div>
                 <DialogFooter className="pt-4">
                   <Button variant="outline" onClick={() => setManualOpen(false)}>Cancel</Button>
-                  <Button onClick={handleManualEntry}>Submit</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -84,7 +165,7 @@ const AttendanceTracking = () => {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search member..."
+            placeholder="Search attendance..."
             className="pl-8"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -98,12 +179,14 @@ const AttendanceTracking = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {attendance.map((entry, index) => (
-              <TableRow key={index}>
-                <TableCell>{entry.name}</TableCell>
-                <TableCell>{entry.date}</TableCell>
-              </TableRow>
-            ))}
+            {attendance
+              .filter(a => a.name.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map((entry, index) => (
+                <TableRow key={index}>
+                  <TableCell>{entry.name}</TableCell>
+                  <TableCell>{entry.date}</TableCell>
+                </TableRow>
+              ))}
           </TableBody>
         </Table>
       </CardContent>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -23,11 +23,51 @@ const AttendanceTracking = () => {
     setManualOpen(false)
   }
 
-  const handleQrScan = (scannedData) => {
+  const handleQrScan = async (scannedData) => {
     const today = new Date().toLocaleDateString()
     const member = { id: scannedData.id, name: scannedData.name, date: today }
+
+    // Add to UI
     setAttendance((prev) => [...prev, member])
+
+    // Send to backend
+    try {
+      await fetch("http://localhost/cynergy/attendance.php", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(member)
+      })
+    } catch (err) {
+      console.error("Failed to record attendance", err)
+    }
   }
+
+  // Real QR scanner input listener
+  useEffect(() => {
+    let scannedData = ""
+
+    const handleKeyPress = (e) => {
+      if (e.key === "Enter") {
+        try {
+          const parsed = JSON.parse(scannedData)
+          handleQrScan(parsed)
+        } catch {
+          const [id, name] = scannedData.split("|")
+          if (id && name) {
+            handleQrScan({ id, name })
+          }
+        }
+        scannedData = ""
+      } else {
+        scannedData += e.key
+      }
+    }
+
+    window.addEventListener("keypress", handleKeyPress)
+    return () => window.removeEventListener("keypress", handleKeyPress)
+  }, [])
 
   return (
     <Card>

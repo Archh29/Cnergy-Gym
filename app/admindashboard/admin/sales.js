@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,7 +20,25 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Plus, ShoppingCart, Package, DollarSign, TrendingUp, Search } from "lucide-react"
+import {
+  Plus,
+  ShoppingCart,
+  Package,
+  DollarSign,
+  TrendingUp,
+  Search,
+  Edit,
+  Trash2,
+  Minus,
+  Check,
+  ChevronsUpDown,
+} from "lucide-react"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
+
+// API Configuration
+const API_BASE_URL = "http://localhost/cynergy/sales.php"
 
 const Sales = () => {
   const [selectedMember, setSelectedMember] = useState("")
@@ -27,212 +46,256 @@ const Sales = () => {
   const [quantity, setQuantity] = useState(1)
   const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "" })
   const [searchQuery, setSearchQuery] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  // Data structure matching your database schema
-  const [sales, setSales] = useState([
-    {
-      id: 1,
-      user: {
-        id: 1,
-        fname: "John",
-        mname: "Michael",
-        lname: "Doe",
-        email: "john.doe@email.com",
-      },
-      total_amount: 1200.0,
-      sale_date: "2024-12-28T10:30:00Z",
-      sale_type: "Product",
-      sales_details: [
-        {
-          id: 1,
-          product: {
-            id: 1,
-            name: "Protein Shake",
-            price: 1200.0,
-          },
-          quantity: 1,
-          price: 1200.0,
-        },
-      ],
-    },
-    {
-      id: 2,
-      user: {
-        id: 2,
-        fname: "Jane",
-        mname: "Marie",
-        lname: "Smith",
-        email: "jane.smith@email.com",
-      },
-      total_amount: 3500.0,
-      sale_date: "2024-12-27T14:20:00Z",
-      sale_type: "Subscription",
-      sales_details: [
-        {
-          id: 2,
-          subscription_id: 1,
-          quantity: null,
-          price: 3500.0,
-        },
-      ],
-    },
-    {
-      id: 3,
-      user: {
-        id: 3,
-        fname: "Mike",
-        mname: "Robert",
-        lname: "Johnson",
-        email: "mike.johnson@email.com",
-      },
-      total_amount: 1700.0,
-      sale_date: "2024-12-26T16:45:00Z",
-      sale_type: "Product",
-      sales_details: [
-        {
-          id: 3,
-          product: {
-            id: 2,
-            name: "Gym Gloves",
-            price: 850.0,
-          },
-          quantity: 2,
-          price: 1700.0,
-        },
-      ],
-    },
-  ])
+  // Member/Coach search states
+  const [memberSearchOpen, setMemberSearchOpen] = useState(false)
+  const [memberSearchValue, setMemberSearchValue] = useState("")
 
-  // Products from Product table
-  const [products, setProducts] = useState([
-    { id: 1, name: "Protein Shake", price: 1200.0, stock: 45 },
-    { id: 2, name: "Gym Gloves", price: 850.0, stock: 23 },
-    { id: 3, name: "Shaker Bottle", price: 350.0, stock: 12 },
-    { id: 4, name: "Gym Towel", price: 450.0, stock: 34 },
-    { id: 5, name: "Pre-Workout", price: 1500.0, stock: 5 },
-  ])
+  // Cart for multiple products
+  const [cart, setCart] = useState([])
 
-  // Members from User table
-  const [members] = useState([
-    {
-      id: 1,
-      fname: "John",
-      mname: "Michael",
-      lname: "Doe",
-      email: "john.doe@email.com",
-    },
-    {
-      id: 2,
-      fname: "Jane",
-      mname: "Marie",
-      lname: "Smith",
-      email: "jane.smith@email.com",
-    },
-    {
-      id: 3,
-      fname: "Mike",
-      mname: "Robert",
-      lname: "Johnson",
-      email: "mike.johnson@email.com",
-    },
-    {
-      id: 4,
-      fname: "Sarah",
-      mname: "Ann",
-      lname: "Williams",
-      email: "sarah.williams@email.com",
-    },
-  ])
+  // Stock management state
+  const [stockUpdateProduct, setStockUpdateProduct] = useState(null)
+  const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
+  const [stockUpdateType, setStockUpdateType] = useState("add")
 
-  // Calculate analytics from actual data
-  const analytics = {
-    todaysSales: sales
-      .filter((sale) => {
-        const today = new Date().toDateString()
-        const saleDate = new Date(sale.sale_date).toDateString()
-        return today === saleDate
-      })
-      .reduce((sum, sale) => sum + sale.total_amount, 0),
-    productsSoldToday: sales
-      .filter((sale) => {
-        const today = new Date().toDateString()
-        const saleDate = new Date(sale.sale_date).toDateString()
-        return today === saleDate && sale.sale_type === "Product"
-      })
-      .reduce((sum, sale) => {
-        return (
-          sum +
-          sale.sales_details.reduce((detailSum, detail) => {
-            return detailSum + (detail.quantity || 0)
-          }, 0)
-        )
-      }, 0),
-    lowStockItems: products.filter((product) => product.stock <= 10).length,
-    monthlyRevenue: sales.reduce((sum, sale) => sum + sale.total_amount, 0),
+  // Data from API
+  const [sales, setSales] = useState([])
+  const [products, setProducts] = useState([])
+  const [members, setMembers] = useState([])
+  const [analytics, setAnalytics] = useState({
+    todaysSales: 0,
+    productsSoldToday: 0,
+    lowStockItems: 0,
+    monthlyRevenue: 0,
+  })
+
+  // Load initial data
+  useEffect(() => {
+    loadInitialData()
+  }, [])
+
+  const loadInitialData = async () => {
+    setLoading(true)
+    try {
+      await Promise.all([loadMembers(), loadProducts(), loadSales(), loadAnalytics()])
+    } catch (error) {
+      console.error("Error loading initial data:", error)
+      alert("Error loading data. Please refresh the page.")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleProductSale = () => {
-    if (!selectedMember || !selectedProduct) {
-      alert("Please select both member and product")
+  const loadMembers = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=members`)
+      console.log("Members API Response:", response.data) // Add this line for debugging
+      setMembers(response.data.members || [])
+    } catch (error) {
+      console.error("Error loading members:", error)
+    }
+  }
+
+  const loadProducts = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=products`)
+      setProducts(response.data.products || [])
+    } catch (error) {
+      console.error("Error loading products:", error)
+    }
+  }
+
+  const loadSales = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=sales`)
+      setSales(response.data.sales || [])
+    } catch (error) {
+      console.error("Error loading sales:", error)
+    }
+  }
+
+  const loadAnalytics = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=analytics`)
+      setAnalytics(
+        response.data.analytics || {
+          todaysSales: 0,
+          productsSoldToday: 0,
+          lowStockItems: 0,
+          monthlyRevenue: 0,
+        },
+      )
+    } catch (error) {
+      console.error("Error loading analytics:", error)
+    }
+  }
+
+  const addToCart = () => {
+    if (!selectedProduct) {
+      alert("Please select a product")
       return
     }
 
     const product = products.find((p) => p.id === Number.parseInt(selectedProduct))
-    const member = members.find((m) => m.id === Number.parseInt(selectedMember))
-
     if (product.stock < quantity) {
       alert("Insufficient stock!")
       return
     }
 
-    // Create new sale record matching database structure
-    const newSale = {
-      id: Date.now(),
-      user: member,
-      total_amount: product.price * quantity,
-      sale_date: new Date().toISOString(),
-      sale_type: "Product",
-      sales_details: [
-        {
-          id: Date.now(),
-          product: product,
-          quantity: quantity,
-          price: product.price * quantity,
-        },
-      ],
+    // Check if product already in cart
+    const existingItemIndex = cart.findIndex((item) => item.product.id === product.id)
+    if (existingItemIndex >= 0) {
+      // Update quantity if product already in cart
+      const updatedCart = [...cart]
+      const newQuantity = updatedCart[existingItemIndex].quantity + quantity
+      if (newQuantity > product.stock) {
+        alert("Total quantity exceeds available stock!")
+        return
+      }
+      updatedCart[existingItemIndex].quantity = newQuantity
+      updatedCart[existingItemIndex].price = product.price * newQuantity
+      setCart(updatedCart)
+    } else {
+      // Add new item to cart
+      const cartItem = {
+        product: product,
+        quantity: quantity,
+        price: product.price * quantity,
+      }
+      setCart([...cart, cartItem])
     }
 
-    setSales((prev) => [newSale, ...prev])
-
-    // Update product stock
-    setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, stock: p.stock - quantity } : p)))
-
-    alert("Sale completed successfully!")
-
     // Reset form
-    setSelectedMember("")
     setSelectedProduct("")
     setQuantity(1)
   }
 
-  const handleAddProduct = () => {
+  const removeFromCart = (productId) => {
+    setCart(cart.filter((item) => item.product.id !== productId))
+  }
+
+  const updateCartQuantity = (productId, newQuantity) => {
+    if (newQuantity <= 0) {
+      removeFromCart(productId)
+      return
+    }
+
+    const product = products.find((p) => p.id === productId)
+    if (newQuantity > product.stock) {
+      alert("Quantity exceeds available stock!")
+      return
+    }
+
+    setCart(
+      cart.map((item) =>
+        item.product.id === productId ? { ...item, quantity: newQuantity, price: product.price * newQuantity } : item,
+      ),
+    )
+  }
+
+  const getTotalAmount = () => {
+    return cart.reduce((sum, item) => sum + item.price, 0)
+  }
+
+  const handleProductSale = async () => {
+    if (!selectedMember || cart.length === 0) {
+      alert("Please select a member and add products to cart")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const saleData = {
+        user_id: Number.parseInt(selectedMember),
+        total_amount: getTotalAmount(),
+        sale_type: "Product",
+        sales_details: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+      }
+
+      const response = await axios.post(`${API_BASE_URL}?action=sale`, saleData)
+      if (response.data.success) {
+        alert("Sale completed successfully!")
+        // Reset form and cart
+        setSelectedMember("")
+        setMemberSearchValue("")
+        setCart([])
+        // Reload data
+        await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+      }
+    } catch (error) {
+      console.error("Error creating sale:", error)
+      alert(error.response?.data?.error || "Error creating sale")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.price || !newProduct.stock) {
       alert("Please fill all product fields")
       return
     }
 
-    const product = {
-      id: Date.now(),
-      name: newProduct.name,
-      price: Number.parseFloat(newProduct.price),
-      stock: Number.parseInt(newProduct.stock),
+    setLoading(true)
+    try {
+      const response = await axios.post(`${API_BASE_URL}?action=product`, {
+        name: newProduct.name,
+        price: Number.parseFloat(newProduct.price),
+        stock: Number.parseInt(newProduct.stock),
+      })
+
+      if (response.data.success) {
+        alert("Product added successfully!")
+        setNewProduct({ name: "", price: "", stock: "" })
+        await loadProducts()
+      }
+    } catch (error) {
+      console.error("Error adding product:", error)
+      alert(error.response?.data?.error || "Error adding product")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleStockUpdate = async () => {
+    if (!stockUpdateProduct || !stockUpdateQuantity) {
+      alert("Please fill all fields")
+      return
     }
 
-    setProducts((prev) => [...prev, product])
-    alert("Product added successfully!")
+    const updateQuantity = Number.parseInt(stockUpdateQuantity)
+    if (updateQuantity <= 0) {
+      alert("Quantity must be greater than 0")
+      return
+    }
 
-    // Reset form
-    setNewProduct({ name: "", price: "", stock: "" })
+    setLoading(true)
+    try {
+      const response = await axios.put(`${API_BASE_URL}?action=stock`, {
+        product_id: stockUpdateProduct.id,
+        quantity: updateQuantity,
+        type: stockUpdateType,
+      })
+
+      if (response.data.success) {
+        alert(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setStockUpdateProduct(null)
+        setStockUpdateQuantity("")
+        setStockUpdateType("add")
+        await Promise.all([loadProducts(), loadAnalytics()])
+      }
+    } catch (error) {
+      console.error("Error updating stock:", error)
+      alert(error.response?.data?.error || "Error updating stock")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const getFullName = (user) => {
@@ -272,6 +335,25 @@ const Sales = () => {
     )
   })
 
+  // Get selected member details for display
+  const getSelectedMemberDisplay = () => {
+    if (!selectedMember) return "Choose a member or coach"
+    const member = members.find((m) => m.id.toString() === selectedMember)
+    if (!member) return "Choose a member or coach"
+    return `${getFullName(member)} (${member.type_name || "Member"}) - ${member.email}`
+  }
+
+  if (loading && sales.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4 text-lg">Loading sales data...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -295,6 +377,7 @@ const Sales = () => {
             <p className="text-xs text-muted-foreground">Product & subscription sales</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Products Sold Today</CardTitle>
@@ -305,6 +388,7 @@ const Sales = () => {
             <p className="text-xs text-muted-foreground">Items sold today</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
@@ -315,6 +399,7 @@ const Sales = () => {
             <p className="text-xs text-muted-foreground">Need restocking</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
@@ -335,26 +420,73 @@ const Sales = () => {
         </TabsList>
 
         <TabsContent value="sales">
-          <Card>
-            <CardHeader>
-              <CardTitle>Create New Product Sale</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Product Selection */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Add Products to Cart</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Select Member</Label>
-                  <Select value={selectedMember} onValueChange={setSelectedMember}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {members.map((member) => (
-                        <SelectItem key={member.id} value={member.id.toString()}>
-                          {getFullName(member)} - {member.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Select Member or Coach</Label>
+                  <Popover open={memberSearchOpen} onOpenChange={setMemberSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={memberSearchOpen}
+                        className="w-full justify-between bg-transparent"
+                      >
+                        {getSelectedMemberDisplay()}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput
+                          placeholder="Search members and coaches..."
+                          value={memberSearchValue}
+                          onValueChange={setMemberSearchValue}
+                        />
+                        <CommandList>
+                          <CommandEmpty>No member or coach found.</CommandEmpty>
+                          <CommandGroup>
+                            {members
+                              .filter((member) => {
+                                const fullName = getFullName(member).toLowerCase()
+                                const email = member.email.toLowerCase()
+                                const searchTerm = memberSearchValue.toLowerCase()
+                                return fullName.includes(searchTerm) || email.includes(searchTerm)
+                              })
+                              .map((member) => (
+                                <CommandItem
+                                  key={member.id}
+                                  value={member.id.toString()}
+                                  onSelect={(currentValue) => {
+                                    setSelectedMember(currentValue === selectedMember ? "" : currentValue)
+                                    setMemberSearchOpen(false)
+                                    setMemberSearchValue("")
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      selectedMember === member.id.toString() ? "opacity-100" : "opacity-0",
+                                    )}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">
+                                      {getFullName(member)} ({member.type_name || "Member"})
+                                    </span>
+                                    <span className="text-sm text-muted-foreground">{member.email}</span>
+                                  </div>
+                                </CommandItem>
+                              ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="space-y-2">
@@ -386,43 +518,79 @@ const Sales = () => {
                     disabled={!selectedProduct}
                   />
                 </div>
-              </div>
 
-              {selectedProduct && (
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <h4 className="font-medium mb-2">Sale Summary</h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>Product:</span>
-                      <span>{products.find((p) => p.id === Number.parseInt(selectedProduct))?.name}</span>
+                <Button onClick={addToCart} className="w-full" disabled={!selectedProduct || loading}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add to Cart
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Shopping Cart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Shopping Cart ({cart.length} items)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cart.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">No items in cart</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                      {cart.map((item, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex-1">
+                            <h4 className="font-medium">{item.product.name}</h4>
+                            <p className="text-sm text-muted-foreground">{formatCurrency(item.product.price)} each</p>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                            >
+                              <Minus className="h-3 w-3" />
+                            </Button>
+                            <span className="w-8 text-center">{item.quantity}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
+                            >
+                              <Plus className="h-3 w-3" />
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => removeFromCart(item.product.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+
+                          <div className="text-right ml-4">
+                            <p className="font-medium">{formatCurrency(item.price)}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex justify-between">
-                      <span>Unit Price:</span>
-                      <span>
-                        {formatCurrency(products.find((p) => p.id === Number.parseInt(selectedProduct))?.price || 0)}
-                      </span>
+
+                    <div className="border-t pt-4">
+                      <div className="flex justify-between items-center text-lg font-bold">
+                        <span>Total:</span>
+                        <span>{formatCurrency(getTotalAmount())}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Quantity:</span>
-                      <span>{quantity}</span>
-                    </div>
-                    <div className="flex justify-between font-bold">
-                      <span>Total:</span>
-                      <span>
-                        {formatCurrency(
-                          (products.find((p) => p.id === Number.parseInt(selectedProduct))?.price || 0) * quantity,
-                        )}
-                      </span>
-                    </div>
+
+                    <Button
+                      onClick={handleProductSale}
+                      className="w-full"
+                      disabled={!selectedMember || cart.length === 0 || loading}
+                    >
+                      {loading ? "Processing..." : "Complete Sale"}
+                    </Button>
                   </div>
-                </div>
-              )}
-
-              <Button onClick={handleProductSale} className="w-full" disabled={!selectedMember || !selectedProduct}>
-                Complete Sale
-              </Button>
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="history">
@@ -549,7 +717,9 @@ const Sales = () => {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button onClick={handleAddProduct}>Add Product</Button>
+                    <Button onClick={handleAddProduct} disabled={loading}>
+                      {loading ? "Adding..." : "Add Product"}
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -564,6 +734,7 @@ const Sales = () => {
                       <TableHead>Price</TableHead>
                       <TableHead>Stock</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -579,6 +750,17 @@ const Sales = () => {
                             {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setStockUpdateProduct(product)}
+                            disabled={loading}
+                          >
+                            <Edit className="mr-2 h-4 w-4" />
+                            Update Stock
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -588,6 +770,59 @@ const Sales = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Stock Update Dialog */}
+      <Dialog open={!!stockUpdateProduct} onOpenChange={() => setStockUpdateProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update Stock - {stockUpdateProduct?.name}</DialogTitle>
+            <DialogDescription>Current stock: {stockUpdateProduct?.stock} units</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Action</Label>
+              <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="add">Add Stock</SelectItem>
+                  <SelectItem value="remove">Remove Stock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                min="1"
+                value={stockUpdateQuantity}
+                onChange={(e) => setStockUpdateQuantity(e.target.value)}
+                placeholder="Enter quantity"
+              />
+            </div>
+            {stockUpdateQuantity && stockUpdateProduct && (
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <p className="text-sm">
+                  <strong>Preview:</strong> {stockUpdateProduct.stock} →{" "}
+                  {stockUpdateType === "add"
+                    ? stockUpdateProduct.stock + Number.parseInt(stockUpdateQuantity || "0")
+                    : Math.max(0, stockUpdateProduct.stock - Number.parseInt(stockUpdateQuantity || "0"))}{" "}
+                  units
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStockUpdateProduct(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleStockUpdate} disabled={loading}>
+              {loading ? "Updating..." : stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
