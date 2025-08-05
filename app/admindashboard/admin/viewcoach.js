@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -16,16 +18,34 @@ import {
 } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/use-toast"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
-import { Search, Plus, Edit, Trash2, Activity, ChevronLeft, ChevronRight, Loader2, Award } from "lucide-react"
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Activity,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Award,
+  User,
+  Star,
+  DollarSign,
+  Users,
+  CheckCircle,
+  XCircle,
+} from "lucide-react"
 
 const API_URL = "http://localhost/cynergy/addcoach.php"
 
-// Simplified form schema matching the User table structure
+// Enhanced form schema including all coach-specific fields
 const coachFormSchema = z.object({
+  // User table fields
   fname: z.string().min(2, { message: "First name must be at least 2 characters." }),
   mname: z.string().min(1, { message: "Middle name is required." }),
   lname: z.string().min(2, { message: "Last name must be at least 2 characters." }),
@@ -33,7 +53,16 @@ const coachFormSchema = z.object({
   password: z.string().min(8, { message: "Password must be at least 8 characters." }),
   gender_id: z.string().min(1, { message: "Please select a gender." }),
   bday: z.string().min(1, { message: "Date of birth is required." }),
-  user_type_id: z.number().default(3), 
+  user_type_id: z.number().default(3),
+
+  // Coaches table fields
+  bio: z.string().optional(),
+  specialty: z.string().min(1, { message: "Please specify a specialty." }),
+  experience: z.string().min(1, { message: "Please specify experience level." }),
+  hourly_rate: z.string().min(1, { message: "Please set an hourly rate." }),
+  certifications: z.string().optional(),
+  is_available: z.boolean().default(true),
+  image_url: z.string().optional(),
 })
 
 const ViewCoach = () => {
@@ -47,6 +76,8 @@ const ViewCoach = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [activities, setActivities] = useState([])
+  const [activityLogs, setActivityLogs] = useState([])
+
   const coachesPerPage = 5
   const indexOfLastCoach = currentPage * coachesPerPage
   const indexOfFirstCoach = indexOfLastCoach - coachesPerPage
@@ -55,7 +86,7 @@ const ViewCoach = () => {
 
   const { toast } = useToast()
 
-  // Form with simplified default values matching database schema
+  // Enhanced form with all coach fields
   const form = useForm({
     resolver: zodResolver(coachFormSchema),
     defaultValues: {
@@ -66,16 +97,56 @@ const ViewCoach = () => {
       password: "",
       gender_id: "",
       bday: "",
-      user_type_id: 3, // Default to coach type
+      user_type_id: 3,
+      bio: "",
+      specialty: "",
+      experience: "",
+      hourly_rate: "",
+      certifications: "",
+      is_available: true,
+      image_url: "",
     },
   })
 
-  // Gender mapping (you'll need to adjust these IDs based on your Gender table)
   const genderOptions = [
     { id: "1", name: "Male" },
     { id: "2", name: "Female" },
     { id: "3", name: "Other" },
   ]
+
+  const specialtyOptions = [
+    "Personal Training",
+    "Weight Loss",
+    "Muscle Building",
+    "Cardio Training",
+    "Strength Training",
+    "Yoga",
+    "Pilates",
+    "CrossFit",
+    "Sports Training",
+    "Rehabilitation",
+    "Nutrition Coaching",
+    "Group Fitness",
+  ]
+
+  const experienceOptions = [
+    "Beginner (0-1 years)",
+    "Intermediate (2-5 years)",
+    "Advanced (6-10 years)",
+    "Expert (10+ years)",
+  ]
+
+  // Fetch activity logs from backend
+  const fetchActivityLogs = async () => {
+    try {
+      const response = await axios.get(`${API_URL}?log=true`)
+      if (response.data.logs) {
+        setActivityLogs(response.data.logs.slice(0, 5))
+      }
+    } catch (error) {
+      console.error("Error fetching activity logs:", error)
+    }
+  }
 
   useEffect(() => {
     const fetchCoaches = async () => {
@@ -83,8 +154,26 @@ const ViewCoach = () => {
         setIsLoading(true)
         const response = await axios.get(API_URL)
         const coachesData = response.data.coaches || []
-        setCoaches(coachesData)
-        setFilteredCoaches(coachesData)
+
+        // Enhanced coach data with coach-specific information
+        const enhancedCoaches = coachesData.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          // Default values for coach-specific fields if not provided by backend
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          hourly_rate: coach.hourly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+        }))
+
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
+        await fetchActivityLogs()
       } catch (error) {
         console.error("Error fetching coaches:", error)
         toast({
@@ -107,8 +196,10 @@ const ViewCoach = () => {
       const lowercaseQuery = searchQuery.toLowerCase()
       const filtered = coaches.filter(
         (coach) =>
-          `${coach.fname} ${coach.lname}`.toLowerCase().includes(lowercaseQuery) ||
-          coach.email?.toLowerCase().includes(lowercaseQuery),
+          coach.fullName.toLowerCase().includes(lowercaseQuery) ||
+          coach.email?.toLowerCase().includes(lowercaseQuery) ||
+          coach.specialty?.toLowerCase().includes(lowercaseQuery) ||
+          coach.experience?.toLowerCase().includes(lowercaseQuery),
       )
       setFilteredCoaches(filtered)
     }
@@ -119,8 +210,9 @@ const ViewCoach = () => {
     try {
       setIsLoading(true)
 
-      // Format data to match database schema
+      // Prepare data for both User and Coaches tables
       const formattedData = {
+        // User table data
         fname: data.fname,
         mname: data.mname,
         lname: data.lname,
@@ -129,19 +221,48 @@ const ViewCoach = () => {
         gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
-        failed_attempt: 0, // Default value
+        failed_attempt: 0,
+
+        // Coaches table data
+        bio: data.bio || "",
+        specialty: data.specialty,
+        experience: data.experience,
+        hourly_rate: Number.parseFloat(data.hourly_rate) || 0.0,
+        certifications: data.certifications || "",
+        is_available: data.is_available,
+        image_url: data.image_url || "",
       }
 
       const response = await axios.post(API_URL, formattedData)
-
       if (response.data.success) {
+        // Refresh coaches list
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
-        setCoaches(updatedCoaches)
-        setFilteredCoaches(updatedCoaches)
+        const enhancedCoaches = updatedCoaches.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          hourly_rate: coach.hourly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+        }))
 
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
         setIsAddDialogOpen(false)
-        setActivities([{ text: `New coach ${data.fname} ${data.lname} registered`, time: "Just now" }, ...activities])
+
+        const newActivity = {
+          text: `New coach ${data.fname} ${data.lname} (${data.specialty}) registered`,
+          time: "Just now",
+        }
+        setActivities([newActivity, ...activities])
+        await fetchActivityLogs()
+
         toast({ title: "Success", description: "Coach added successfully!" })
         form.reset()
       } else {
@@ -168,9 +289,9 @@ const ViewCoach = () => {
 
     try {
       setIsLoading(true)
-
       const updateData = {
-        id: selectedCoach.id, // User ID
+        id: selectedCoach.id,
+        // User table data
         fname: data.fname,
         mname: data.mname,
         lname: data.lname,
@@ -178,9 +299,17 @@ const ViewCoach = () => {
         gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
+
+        // Coaches table data
+        bio: data.bio || "",
+        specialty: data.specialty,
+        experience: data.experience,
+        hourly_rate: Number.parseFloat(data.hourly_rate) || 0.0,
+        certifications: data.certifications || "",
+        is_available: data.is_available,
+        image_url: data.image_url || "",
       }
 
-      // Only include password if it's provided
       if (data.password && data.password.trim() !== "") {
         updateData.password = data.password
       }
@@ -192,13 +321,33 @@ const ViewCoach = () => {
       })
 
       if (response.data.success) {
+        // Refresh coaches list
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
-        setCoaches([...updatedCoaches])
-        setFilteredCoaches([...updatedCoaches])
+        const enhancedCoaches = updatedCoaches.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          hourly_rate: coach.hourly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+        }))
 
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
         setIsEditDialogOpen(false)
-        setActivities([{ text: `${data.fname} ${data.lname}'s information updated`, time: "Just now" }, ...activities])
+
+        const updateActivity = {
+          text: `${data.fname} ${data.lname}'s profile updated`,
+          time: "Just now",
+        }
+        setActivities([updateActivity, ...activities])
+        await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach updated successfully!" })
       } else {
@@ -218,26 +367,43 @@ const ViewCoach = () => {
 
   const handleConfirmDelete = async () => {
     if (!selectedCoach) return
+
     try {
       setIsLoading(true)
-
       const deleteData = {
         id: selectedCoach.id,
       }
 
       const response = await axios.delete(API_URL, { data: deleteData })
-
       if (response.data.success) {
+        // Refresh coaches list
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
-        setCoaches(updatedCoaches)
-        setFilteredCoaches(updatedCoaches)
+        const enhancedCoaches = updatedCoaches.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          hourly_rate: coach.hourly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+        }))
 
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
         setIsDeleteDialogOpen(false)
-        setActivities([
-          { text: `Coach ${selectedCoach.fname} ${selectedCoach.lname} removed`, time: "Just now" },
-          ...activities,
-        ])
+
+        const deleteActivity = {
+          text: `Coach ${selectedCoach.fname} ${selectedCoach.lname} removed`,
+          time: "Just now",
+        }
+        setActivities([deleteActivity, ...activities])
+        await fetchActivityLogs()
+
         toast({ title: "Success", description: "Coach deleted successfully!" })
       } else {
         toast({
@@ -268,22 +434,35 @@ const ViewCoach = () => {
       gender_id: "",
       bday: "",
       user_type_id: 3,
+      bio: "",
+      specialty: "",
+      experience: "",
+      hourly_rate: "",
+      certifications: "",
+      is_available: true,
+      image_url: "",
     })
     setIsAddDialogOpen(true)
   }
 
   const handleEditCoach = (coach) => {
     setSelectedCoach(coach)
-
     form.reset({
       fname: coach.fname || "",
       mname: coach.mname || "",
       lname: coach.lname || "",
       email: coach.email || "",
-      password: "", // Don't populate password for security
+      password: "",
       gender_id: coach.gender_id?.toString() || "",
       bday: coach.bday ? new Date(coach.bday).toISOString().split("T")[0] : "",
       user_type_id: coach.user_type_id || 3,
+      bio: coach.bio || "",
+      specialty: coach.specialty || "",
+      experience: coach.experience || "",
+      hourly_rate: coach.hourly_rate?.toString() || "",
+      certifications: coach.certifications || "",
+      is_available: coach.is_available !== undefined ? coach.is_available : true,
+      image_url: coach.image_url || "",
     })
     setIsEditDialogOpen(true)
   }
@@ -298,14 +477,49 @@ const ViewCoach = () => {
     return gender ? gender.name : "Unknown"
   }
 
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A"
+    try {
+      return new Date(dateString).toLocaleDateString()
+    } catch {
+      return "N/A"
+    }
+  }
+
+  const renderStars = (rating) => {
+    const stars = []
+    const fullStars = Math.floor(rating)
+    const hasHalfStar = rating % 1 !== 0
+
+    for (let i = 0; i < fullStars; i++) {
+      stars.push(<Star key={i} className="h-4 w-4 fill-yellow-400 text-yellow-400" />)
+    }
+
+    if (hasHalfStar) {
+      stars.push(<Star key="half" className="h-4 w-4 fill-yellow-200 text-yellow-400" />)
+    }
+
+    const emptyStars = 5 - Math.ceil(rating)
+    for (let i = 0; i < emptyStars; i++) {
+      stars.push(<Star key={`empty-${i}`} className="h-4 w-4 text-gray-300" />)
+    }
+
+    return stars
+  }
+
   return (
     <div className="space-y-8">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Gym Coaches</CardTitle>
-              <CardDescription>Manage your gym's coaching staff</CardDescription>
+              <CardTitle className="flex items-center">
+                <User className="mr-2 h-5 w-5" />
+                Gym Coaches Management
+              </CardTitle>
+              <CardDescription>
+                Manage your gym's coaching staff with detailed profiles and specializations
+              </CardDescription>
             </div>
             <Button onClick={handleOpenAddDialog}>
               <Plus className="mr-2 h-4 w-4" /> Add Coach
@@ -317,7 +531,7 @@ const ViewCoach = () => {
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search coaches by name or email..."
+              placeholder="Search coaches by name, email, or specialty..."
               className="pl-8"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -333,44 +547,102 @@ const ViewCoach = () => {
               No coaches found. Try a different search or add a new coach.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Gender</TableHead>
-                  <TableHead>Date of Birth</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {currentCoaches.map((coach) => (
-                  <TableRow key={coach.id}>
-                    <TableCell>{`${coach.fname} ${coach.mname} ${coach.lname}`}</TableCell>
-                    <TableCell>{coach.email}</TableCell>
-                    <TableCell>{getGenderName(coach.gender_id)}</TableCell>
-                    <TableCell>{coach.bday ? new Date(coach.bday).toLocaleDateString() : "N/A"}</TableCell>
-                    <TableCell>
-                      <Button variant="outline" size="sm" className="mr-2" onClick={() => handleEditCoach(coach)}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Coach</TableHead>
+                    <TableHead>Specialty</TableHead>
+                    <TableHead>Experience</TableHead>
+                    <TableHead>Rating</TableHead>
+                    <TableHead>Clients</TableHead>
+                    <TableHead>Rate/Hour</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {currentCoaches.map((coach) => (
+                    <TableRow key={coach.id}>
+                      <TableCell>
+                        <div className="flex items-center space-x-3">
+                          <div className="flex-shrink-0">
+                            {coach.image_url ? (
+                              <img
+                                className="h-10 w-10 rounded-full object-cover"
+                                src={coach.image_url || "/placeholder.svg"}
+                                alt={coach.fullName}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+                                <User className="h-6 w-6 text-gray-600" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-medium">{coach.fullName}</div>
+                            <div className="text-sm text-muted-foreground">{coach.email}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{coach.specialty}</Badge>
+                      </TableCell>
+                      <TableCell>{coach.experience}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-1">
+                          {renderStars(coach.rating)}
+                          <span className="text-sm text-muted-foreground ml-2">({coach.rating.toFixed(1)})</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <Users className="h-4 w-4 mr-1 text-muted-foreground" />
+                          {coach.total_clients}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <DollarSign className="h-4 w-4 mr-1 text-muted-foreground" />
+                          {coach.hourly_rate.toFixed(2)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center">
+                          {coach.is_available ? (
+                            <CheckCircle className="h-4 w-4 text-green-500 mr-1" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 mr-1" />
+                          )}
+                          <span className={coach.is_available ? "text-green-700" : "text-red-700"}>
+                            {coach.is_available ? "Available" : "Unavailable"}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)}>
+                            <Edit className="mr-1 h-3 w-3" />
+                            Edit
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)}>
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
 
           {!isLoading && filteredCoaches.length > coachesPerPage && (
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">
                 Showing {indexOfFirstCoach + 1}-{Math.min(indexOfLastCoach, filteredCoaches.length)} of{" "}
-                {filteredCoaches.length}
+                {filteredCoaches.length} coaches
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -381,6 +653,9 @@ const ViewCoach = () => {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {currentPage} of {totalPages}
+                </span>
                 <Button
                   variant="outline"
                   size="icon"
@@ -404,15 +679,23 @@ const ViewCoach = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {activities.length === 0 ? (
+            {activityLogs.length === 0 && activities.length === 0 ? (
               <div className="text-center py-4 text-muted-foreground">No recent activities</div>
             ) : (
-              activities.map((activity, index) => (
-                <div key={index} className="mb-4 last:mb-0">
-                  <p>{activity.text}</p>
-                  <p className="text-sm text-muted-foreground">{activity.time}</p>
-                </div>
-              ))
+              <div className="space-y-3">
+                {activities.slice(0, 3).map((activity, index) => (
+                  <div key={`local-${index}`} className="border-l-2 border-blue-500 pl-3">
+                    <p className="text-sm">{activity.text}</p>
+                    <p className="text-xs text-muted-foreground">{activity.time}</p>
+                  </div>
+                ))}
+                {activityLogs.slice(0, 2).map((log, index) => (
+                  <div key={`db-${index}`} className="border-l-2 border-gray-300 pl-3">
+                    <p className="text-sm">{log.activity}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -428,15 +711,27 @@ const ViewCoach = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span>Total Coaches:</span>
-                <span className="font-semibold">{coaches.length}</span>
+                <span className="font-semibold text-lg">{coaches.length}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Male Coaches:</span>
-                <span className="font-semibold">{coaches.filter((coach) => coach.gender_id === 1).length}</span>
+                <span>Available Coaches:</span>
+                <span className="font-semibold text-green-600">
+                  {coaches.filter((coach) => coach.is_available).length}
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Female Coaches:</span>
-                <span className="font-semibold">{coaches.filter((coach) => coach.gender_id === 2).length}</span>
+                <span>Average Rating:</span>
+                <span className="font-semibold text-yellow-600">
+                  {coaches.length > 0
+                    ? (coaches.reduce((sum, coach) => sum + coach.rating, 0) / coaches.length).toFixed(1)
+                    : "0.0"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Total Clients:</span>
+                <span className="font-semibold text-blue-600">
+                  {coaches.reduce((sum, coach) => sum + coach.total_clients, 0)}
+                </span>
               </div>
             </div>
           </CardContent>
@@ -445,119 +740,253 @@ const ViewCoach = () => {
 
       {/* Add Coach Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Coach</DialogTitle>
-            <DialogDescription>Enter the basic details for the new coach.</DialogDescription>
+            <DialogDescription>
+              Enter the complete details for the new coach. This will create entries in both User and Coaches tables.
+            </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleAddCoach)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(handleAddCoach)} className="space-y-6">
+              {/* Personal Information Section */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="fname"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name*</FormLabel>
+                        <FormControl>
+                          <Input placeholder="John" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="mname"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Middle Name*</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Michael" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
-                  name="fname"
+                  name="lname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name*</FormLabel>
+                      <FormLabel>Last Name*</FormLabel>
                       <FormControl>
-                        <Input placeholder="John" {...field} />
+                        <Input placeholder="Doe" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="mname"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Middle Name*</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Michael" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email*</FormLabel>
+                        <FormControl>
+                          <Input type="email" placeholder="john@example.com" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password*</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="********" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="gender_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {genderOptions.map((gender) => (
+                              <SelectItem key={gender.id} value={gender.id}>
+                                {gender.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="bday"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of Birth*</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
-              <FormField
-                control={form.control}
-                name="lname"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Last Name*</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Doe" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email*</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password*</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
+              {/* Professional Information Section */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Professional Information</h3>
                 <FormField
                   control={form.control}
-                  name="gender_id"
+                  name="bio"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gender*</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormLabel>Bio</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tell us about the coach's background and approach..."
+                          className="min-h-[100px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="specialty"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Specialty*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select specialty" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {specialtyOptions.map((specialty) => (
+                              <SelectItem key={specialty} value={specialty}>
+                                {specialty}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="experience"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Experience Level*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select experience" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {experienceOptions.map((exp) => (
+                              <SelectItem key={exp} value={exp}>
+                                {exp}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="hourly_rate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hourly Rate ($)*</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
+                          <Input type="number" step="0.01" placeholder="50.00" {...field} />
                         </FormControl>
-                        <SelectContent>
-                          {genderOptions.map((gender) => (
-                            <SelectItem key={gender.id} value={gender.id}>
-                              {gender.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="image_url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Profile Image URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://example.com/image.jpg" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="certifications"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Certifications</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="List certifications (e.g., NASM-CPT, ACE, ACSM...)" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
                   control={form.control}
-                  name="bday"
+                  name="is_available"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth*</FormLabel>
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Available for Training</FormLabel>
+                        <div className="text-sm text-muted-foreground">
+                          Set whether this coach is currently available for new clients
+                        </div>
+                      </div>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -579,119 +1008,251 @@ const ViewCoach = () => {
 
       {/* Edit Coach Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Coach</DialogTitle>
-            <DialogDescription>Update the coach's basic information.</DialogDescription>
+            <DialogDescription>Update the coach's information in both User and Coaches tables.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleUpdateCoach)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(handleUpdateCoach)} className="space-y-6">
+              {/* Personal Information Section */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="fname"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name*</FormLabel>
+                        <FormControl>
+                          <Input placeholder="John" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="mname"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Middle Name*</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Michael" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
-                  name="fname"
+                  name="lname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name*</FormLabel>
+                      <FormLabel>Last Name*</FormLabel>
                       <FormControl>
-                        <Input placeholder="John" {...field} />
+                        <Input placeholder="Doe" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="mname"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Middle Name*</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Michael" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email*</FormLabel>
+                        <FormControl>
+                          <Input type="email" placeholder="john@example.com" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Password (leave blank to keep current)</FormLabel>
+                        <FormControl>
+                          <Input type="password" placeholder="********" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="gender_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {genderOptions.map((gender) => (
+                              <SelectItem key={gender.id} value={gender.id}>
+                                {gender.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="bday"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of Birth*</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
-              <FormField
-                control={form.control}
-                name="lname"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Last Name*</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Doe" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email*</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>New Password (leave blank to keep current)</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
+              {/* Professional Information Section */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Professional Information</h3>
                 <FormField
                   control={form.control}
-                  name="gender_id"
+                  name="bio"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Gender*</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormLabel>Bio</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tell us about the coach's background and approach..."
+                          className="min-h-[100px]"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="specialty"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Specialty*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select specialty" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {specialtyOptions.map((specialty) => (
+                              <SelectItem key={specialty} value={specialty}>
+                                {specialty}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="experience"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Experience Level*</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select experience" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {experienceOptions.map((exp) => (
+                              <SelectItem key={exp} value={exp}>
+                                {exp}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="hourly_rate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hourly Rate ($)*</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
+                          <Input type="number" step="0.01" placeholder="50.00" {...field} />
                         </FormControl>
-                        <SelectContent>
-                          {genderOptions.map((gender) => (
-                            <SelectItem key={gender.id} value={gender.id}>
-                              {gender.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="image_url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Profile Image URL</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://example.com/image.jpg" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="certifications"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Certifications</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="List certifications (e.g., NASM-CPT, ACE, ACSM...)" {...field} />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <FormField
                   control={form.control}
-                  name="bday"
+                  name="is_available"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth*</FormLabel>
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Available for Training</FormLabel>
+                        <div className="text-sm text-muted-foreground">
+                          Set whether this coach is currently available for new clients
+                        </div>
+                      </div>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -717,13 +1278,35 @@ const ViewCoach = () => {
           <DialogHeader>
             <DialogTitle>Delete Coach</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this coach? This action cannot be undone.
+              Are you sure you want to delete this coach? This will remove entries from both User and Coaches tables.
+              This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           {selectedCoach && (
             <div className="border rounded-md p-4 mb-4">
-              <p className="font-medium">{`${selectedCoach.fname} ${selectedCoach.mname} ${selectedCoach.lname}`}</p>
-              <p className="text-sm text-muted-foreground">{selectedCoach.email}</p>
+              <div className="flex items-center space-x-3 mb-2">
+                {selectedCoach.image_url ? (
+                  <img
+                    className="h-12 w-12 rounded-full object-cover"
+                    src={selectedCoach.image_url || "/placeholder.svg"}
+                    alt={selectedCoach.fullName}
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-full bg-gray-300 flex items-center justify-center">
+                    <User className="h-6 w-6 text-gray-600" />
+                  </div>
+                )}
+                <div>
+                  <p className="font-medium">{selectedCoach.fullName}</p>
+                  <p className="text-sm text-muted-foreground">{selectedCoach.email}</p>
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>Specialty: {selectedCoach.specialty}</p>
+                <p>Experience: {selectedCoach.experience}</p>
+                <p>Clients: {selectedCoach.total_clients}</p>
+                <p>Rating: {selectedCoach.rating.toFixed(1)}/5.0</p>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -732,7 +1315,7 @@ const ViewCoach = () => {
             </Button>
             <Button variant="destructive" onClick={handleConfirmDelete} disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete
+              Delete Coach
             </Button>
           </DialogFooter>
         </DialogContent>

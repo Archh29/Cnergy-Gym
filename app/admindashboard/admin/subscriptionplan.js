@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -27,7 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Trash2, Edit, Loader2, Users, DollarSign, TrendingUp, CreditCard, Search } from "lucide-react"
+import { Plus, Trash2, Edit, Loader2, Users, DollarSign, TrendingUp, CreditCard, Search, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
 const API_URL = "http://localhost/cynergy/membership.php"
@@ -41,6 +43,8 @@ const SubscriptionPlans = () => {
     id: null,
     plan_name: "",
     price: "",
+    is_member_only: false,
+    features: [],
   })
   const [selectedPlanId, setSelectedPlanId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -98,8 +102,9 @@ const SubscriptionPlans = () => {
       // Calculate analytics from plans data
       const totalPlans = plans.length
       const averagePlanPrice =
-        plans.length > 0 ? plans.reduce((sum, plan) => sum + Number.parseFloat(plan.price || 0), 0) / plans.length : 0
-
+        plans.length > 0
+          ? plans.reduce((sum, plan) => sum + Number.parseFloat(plan.price.toString() || "0"), 0) / plans.length
+          : 0
       setAnalytics({
         totalPlans,
         activeSubscriptions: 0, // This would come from actual subscription data
@@ -116,6 +121,8 @@ const SubscriptionPlans = () => {
       id: null,
       plan_name: "",
       price: "",
+      is_member_only: false,
+      features: [],
     })
     setIsDialogOpen(true)
   }
@@ -123,8 +130,10 @@ const SubscriptionPlans = () => {
   const handleEdit = (plan) => {
     setCurrentPlan({
       id: plan.id,
-      plan_name: plan.name || plan.plan_name,
+      plan_name: plan.name,
       price: plan.price.toString(),
+      is_member_only: plan.is_member_only,
+      features: plan.features || [],
     })
     setIsDialogOpen(true)
   }
@@ -157,20 +166,17 @@ const SubscriptionPlans = () => {
         id: currentPlan.id,
         name: currentPlan.plan_name,
         price: Number.parseFloat(currentPlan.price),
+        is_member_only: currentPlan.is_member_only,
+        features: currentPlan.features.filter((f) => f.feature_name.trim() !== ""),
       }
 
       if (currentPlan.id) {
         await axios.put(API_URL, planData)
-        setPlans(
-          plans.map((plan) =>
-            plan.id === currentPlan.id ? { ...plan, name: planData.name, price: planData.price } : plan,
-          ),
-        )
       } else {
-        const response = await axios.post(API_URL, planData)
-        setPlans([...plans, { ...planData, id: response.data.id }])
+        await axios.post(API_URL, planData)
       }
 
+      await fetchPlans()
       setIsDialogOpen(false)
       await fetchAnalytics()
     } catch (error) {
@@ -178,6 +184,26 @@ const SubscriptionPlans = () => {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const addFeature = () => {
+    setCurrentPlan({
+      ...currentPlan,
+      features: [...currentPlan.features, { feature_name: "", description: "" }],
+    })
+  }
+
+  const removeFeature = (index) => {
+    setCurrentPlan({
+      ...currentPlan,
+      features: currentPlan.features.filter((_, i) => i !== index),
+    })
+  }
+
+  const updateFeature = (index, field, value) => {
+    const updatedFeatures = [...currentPlan.features]
+    updatedFeatures[index] = { ...updatedFeatures[index], [field]: value }
+    setCurrentPlan({ ...currentPlan, features: updatedFeatures })
   }
 
   const formatCurrency = (amount) => {
@@ -188,7 +214,7 @@ const SubscriptionPlans = () => {
   }
 
   const filteredPlans = plans.filter((plan) => {
-    const planName = (plan.name || plan.plan_name || "").toLowerCase()
+    const planName = (plan.name || "").toLowerCase()
     return planName.includes(searchQuery.toLowerCase())
   })
 
@@ -226,7 +252,6 @@ const SubscriptionPlans = () => {
             <p className="text-xs text-muted-foreground">Available membership plans</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
@@ -237,7 +262,6 @@ const SubscriptionPlans = () => {
             <p className="text-xs text-muted-foreground">Current active members</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
@@ -248,7 +272,6 @@ const SubscriptionPlans = () => {
             <p className="text-xs text-muted-foreground">From subscriptions</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Average Plan Price</CardTitle>
@@ -300,6 +323,8 @@ const SubscriptionPlans = () => {
                   <TableRow>
                     <TableHead>Plan Name</TableHead>
                     <TableHead>Price</TableHead>
+                    <TableHead>Member Only</TableHead>
+                    <TableHead>Features</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -307,15 +332,34 @@ const SubscriptionPlans = () => {
                 <TableBody>
                   {filteredPlans.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         {searchQuery ? "No plans found matching your search" : "No membership plans found"}
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredPlans.map((plan) => (
                       <TableRow key={plan.id}>
-                        <TableCell className="font-medium">{plan.name || plan.plan_name}</TableCell>
+                        <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
+                        <TableCell>
+                          {plan.is_member_only ? (
+                            <Badge variant="secondary">Members Only</Badge>
+                          ) : (
+                            <Badge variant="outline">Public</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            {plan.features?.slice(0, 2).map((feature, index) => (
+                              <div key={index} className="text-sm text-muted-foreground">
+                                • {feature.feature_name}
+                              </div>
+                            ))}
+                            {plan.features?.length > 2 && (
+                              <div className="text-sm text-muted-foreground">+{plan.features.length - 2} more</div>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">Active</Badge>
                         </TableCell>
@@ -378,33 +422,92 @@ const SubscriptionPlans = () => {
 
       {/* Add/Edit Plan Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{currentPlan.id ? "Edit Plan" : "Add Plan"}</DialogTitle>
             <DialogDescription>
               {currentPlan.id ? "Update the details of your membership plan." : "Add a new membership plan."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="plan_name">Plan Name</Label>
-              <Input
-                id="plan_name"
-                value={currentPlan.plan_name}
-                onChange={(e) => setCurrentPlan({ ...currentPlan, plan_name: e.target.value })}
-                placeholder="e.g. Basic Plan"
-              />
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="plan_name">Plan Name</Label>
+                <Input
+                  id="plan_name"
+                  value={currentPlan.plan_name}
+                  onChange={(e) => setCurrentPlan({ ...currentPlan, plan_name: e.target.value })}
+                  placeholder="e.g. Basic Plan"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="price">Price (₱)</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  step="0.01"
+                  value={currentPlan.price}
+                  onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
+                  placeholder="Enter price"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="price">Price (₱)</Label>
-              <Input
-                id="price"
-                type="number"
-                step="0.01"
-                value={currentPlan.price}
-                onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
-                placeholder="Enter price"
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is_member_only"
+                checked={currentPlan.is_member_only}
+                onCheckedChange={(checked) => setCurrentPlan({ ...currentPlan, is_member_only: checked })}
               />
+              <Label htmlFor="is_member_only">Members Only Plan</Label>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Plan Features</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addFeature}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Feature
+                </Button>
+              </div>
+
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {currentPlan.features.map((feature, index) => (
+                  <div key={index} className="border rounded-lg p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">Feature {index + 1}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFeature(index)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Feature name"
+                        value={feature.feature_name}
+                        onChange={(e) => updateFeature(index, "feature_name", e.target.value)}
+                      />
+                      <Textarea
+                        placeholder="Feature description (optional)"
+                        value={feature.description}
+                        onChange={(e) => updateFeature(index, "description", e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                {currentPlan.features.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No features added yet. Click "Add Feature" to get started.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -433,7 +536,8 @@ const SubscriptionPlans = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the selected membership plan.
+              This action cannot be undone. This will permanently delete the selected membership plan and all its
+              features.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

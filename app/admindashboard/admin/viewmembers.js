@@ -16,53 +16,27 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
-import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { z } from "zod"
-import {
-  Search,
-  Plus,
-  Edit,
-  Trash2,
-  User,
-  Mail,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Users,
-} from "lucide-react"
-
-// Updated schema to match User table structure
-const memberFormSchema = z.object({
-  fname: z.string().min(2, { message: "First name must be at least 2 characters." }),
-  mname: z.string().min(1, { message: "Middle name is required." }),
-  lname: z.string().min(2, { message: "Last name must be at least 2 characters." }),
-  email: z.string().email({ message: "Please enter a valid email address." }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters." }),
-  gender_id: z.string().min(1, { message: "Please select a gender." }),
-  bday: z.string().min(1, { message: "Date of birth is required." }),
-  user_type_id: z.number().default(3), // Assuming 3 is for members
-})
+import { Search, Plus, Edit, Trash2, User, Mail, Calendar, ChevronLeft, ChevronRight, Loader2, Users, CheckCircle, XCircle, Clock, Shield } from 'lucide-react'
 
 const ViewMembers = () => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
+  const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
-
   const { toast } = useToast()
 
-  // Form with database-aligned default values
+  // Form for adding/editing members
   const form = useForm({
-    resolver: zodResolver(memberFormSchema),
     defaultValues: {
       fname: "",
       mname: "",
@@ -71,15 +45,22 @@ const ViewMembers = () => {
       password: "",
       gender_id: "",
       bday: "",
-      user_type_id: 4, // Default to member type
+      user_type_id: 4,
+      account_status: "pending",
     },
   })
 
-  // Gender mapping (adjust IDs based on your Gender table)
+  // Gender mapping
   const genderOptions = [
     { id: "1", name: "Male" },
     { id: "2", name: "Female" },
-    { id: "3", name: "Other" },
+  ]
+
+  // Account status options
+  const statusOptions = [
+    { value: "pending", label: "Pending", color: "bg-yellow-100 text-yellow-800" },
+    { value: "approved", label: "Approved", color: "bg-green-100 text-green-800" },
+    { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-800" },
   ]
 
   useEffect(() => {
@@ -101,24 +82,30 @@ const ViewMembers = () => {
         setIsLoading(false)
       }
     }
-
     fetchMembers()
   }, [toast])
 
   useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredMembers(members)
-    } else {
+    let filtered = members
+
+    // Filter by search query
+    if (searchQuery.trim() !== "") {
       const lowercaseQuery = searchQuery.toLowerCase()
-      const filtered = members.filter(
+      filtered = filtered.filter(
         (member) =>
           `${member.fname} ${member.lname}`.toLowerCase().includes(lowercaseQuery) ||
           member.email?.toLowerCase().includes(lowercaseQuery),
       )
-      setFilteredMembers(filtered)
     }
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((member) => member.account_status === statusFilter)
+    }
+
+    setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, members])
+  }, [searchQuery, statusFilter, members])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -128,6 +115,20 @@ const ViewMembers = () => {
   const getGenderName = (genderId) => {
     const gender = genderOptions.find((g) => g.id === genderId?.toString())
     return gender ? gender.name : "Unknown"
+  }
+
+  const getStatusBadge = (status) => {
+    const statusOption = statusOptions.find((s) => s.value === status)
+    if (!statusOption) return <Badge variant="outline">Unknown</Badge>
+
+    return (
+      <Badge className={statusOption.color} variant="outline">
+        {status === "pending" && <Clock className="w-3 h-3 mr-1" />}
+        {status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
+        {status === "rejected" && <XCircle className="w-3 h-3 mr-1" />}
+        {statusOption.label}
+      </Badge>
+    )
   }
 
   const handleViewMember = (member) => {
@@ -142,10 +143,11 @@ const ViewMembers = () => {
       mname: member.mname || "",
       lname: member.lname || "",
       email: member.email || "",
-      password: "", // Don't populate password for security
+      password: "",
       gender_id: member.gender_id?.toString() || "",
       bday: member.bday ? new Date(member.bday).toISOString().split("T")[0] : "",
-      user_type_id: member.user_type_id || 3,
+      user_type_id: member.user_type_id || 4,
+      account_status: member.account_status || "pending",
     })
     setIsEditDialogOpen(true)
   }
@@ -155,20 +157,68 @@ const ViewMembers = () => {
     setIsDeleteDialogOpen(true)
   }
 
+  const handleVerifyMember = (member) => {
+    setSelectedMember(member)
+    setIsVerificationDialogOpen(true)
+  }
+
+  const handleUpdateAccountStatus = async (status) => {
+    if (!selectedMember) return
+    setIsLoading(true)
+
+    try {
+      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: selectedMember.id,
+          account_status: status,
+        }),
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        // Refresh the members list
+        const getResponse = await fetch("http://localhost/cynergy/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(updatedMembers)
+        setFilteredMembers(updatedMembers)
+        setIsVerificationDialogOpen(false)
+        setSelectedMember(null)
+        toast({
+          title: "Success",
+          description: `Account ${status} successfully!`,
+        })
+      } else {
+        throw new Error(result.message || "Failed to update account status")
+      }
+    } catch (error) {
+      console.error("Error updating account status:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update account status. Please try again.",
+        variant: "destructive",
+      })
+    }
+    setIsLoading(false)
+  }
+
   const handleAddMember = async (data) => {
     setIsLoading(true)
     try {
-      // Format data to match database schema
       const formattedData = {
         fname: data.fname,
         mname: data.mname,
         lname: data.lname,
         email: data.email,
         password: data.password,
-        gender_id: Number.parseInt(data.gender_id),
+        gender_id: parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
-        failed_attempt: 0, // Default value
+        account_status: data.account_status,
+        failed_attempt: 0,
       }
 
       const response = await fetch("http://localhost/cynergy/member_management.php", {
@@ -180,14 +230,11 @@ const ViewMembers = () => {
       })
 
       const result = await response.json()
-
       if (response.ok) {
-        // Refresh the members list
         const getResponse = await fetch("http://localhost/cynergy/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
-
         setIsAddDialogOpen(false)
         form.reset()
         toast({
@@ -210,21 +257,20 @@ const ViewMembers = () => {
 
   const handleUpdateMember = async (data) => {
     if (!selectedMember) return
-
     setIsLoading(true)
     try {
       const updateData = {
-        id: selectedMember.id, // User ID
+        id: selectedMember.id,
         fname: data.fname,
         mname: data.mname,
         lname: data.lname,
         email: data.email,
-        gender_id: Number.parseInt(data.gender_id),
+        gender_id: parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
+        account_status: data.account_status,
       }
 
-      // Only include password if it's provided
       if (data.password && data.password.trim() !== "") {
         updateData.password = data.password
       }
@@ -238,14 +284,11 @@ const ViewMembers = () => {
       })
 
       const result = await response.json()
-
       if (response.ok) {
-        // Refresh the members list
         const getResponse = await fetch("http://localhost/cynergy/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
-
         setIsEditDialogOpen(false)
         setSelectedMember(null)
         toast({
@@ -268,7 +311,6 @@ const ViewMembers = () => {
 
   const handleConfirmDelete = async () => {
     if (!selectedMember) return
-
     setIsLoading(true)
     try {
       const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id}`, {
@@ -280,14 +322,11 @@ const ViewMembers = () => {
       })
 
       const result = await response.json()
-
       if (response.ok) {
-        // Refresh the members list
         const getResponse = await fetch("http://localhost/cynergy/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
-
         setIsDeleteDialogOpen(false)
         setSelectedMember(null)
         toast({
@@ -317,7 +356,8 @@ const ViewMembers = () => {
       password: "",
       gender_id: "",
       bday: "",
-      user_type_id: 3,
+      user_type_id: 4,
+      account_status: "pending",
     })
     setIsAddDialogOpen(true)
   }
@@ -328,8 +368,11 @@ const ViewMembers = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Member List</CardTitle>
-              <CardDescription>Manage your gym members</CardDescription>
+              <CardTitle className="flex items-center">
+                <Shield className="mr-2 h-5 w-5" />
+                Member Account Management
+              </CardTitle>
+              <CardDescription>Manage and verify member accounts</CardDescription>
             </div>
             <Button onClick={handleOpenAddDialog}>
               <Plus className="mr-2 h-4 w-4" /> Add Member
@@ -337,15 +380,28 @@ const ViewMembers = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search members by name or email..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search members by name or email..."
+                className="pl-8"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {isLoading ? (
@@ -379,7 +435,18 @@ const ViewMembers = () => {
                     </div>
                   </Button>
                   <div className="flex items-center gap-2">
+                    {getStatusBadge(member.account_status)}
                     <Badge variant="outline">{getGenderName(member.gender_id)}</Badge>
+                    {member.account_status === "pending" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleVerifyMember(member)}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        <Shield className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" onClick={() => handleEditMember(member)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -430,36 +497,103 @@ const ViewMembers = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-primary">{members.length}</div>
               <div className="text-sm text-muted-foreground">Total Members</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{members.filter((m) => m.gender_id === 1).length}</div>
-              <div className="text-sm text-muted-foreground">Male</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-pink-600">{members.filter((m) => m.gender_id === 2).length}</div>
-              <div className="text-sm text-muted-foreground">Female</div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {members.filter((m) => m.account_status === "pending").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Pending</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
-                {
-                  members.filter((m) => {
-                    if (!m.bday) return false
-                    const today = new Date()
-                    const birthDate = new Date(m.bday)
-                    const age = today.getFullYear() - birthDate.getFullYear()
-                    return age >= 18 && age <= 30
-                  }).length
-                }
+                {members.filter((m) => m.account_status === "approved").length}
               </div>
-              <div className="text-sm text-muted-foreground">18-30 Years</div>
+              <div className="text-sm text-muted-foreground">Approved</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {members.filter((m) => m.account_status === "rejected").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Rejected</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">{members.filter((m) => m.gender_id === 1).length}</div>
+              <div className="text-sm text-muted-foreground">Male</div>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Account Verification Dialog */}
+      <Dialog open={isVerificationDialogOpen} onOpenChange={setIsVerificationDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Shield className="mr-2 h-5 w-5" />
+              Account Verification
+            </DialogTitle>
+            <DialogDescription>
+              Review and verify this member's account to allow mobile app access.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedMember && (
+            <div className="space-y-4">
+              <div className="border rounded-md p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <User className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">
+                      {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Gender:</span> {getGenderName(selectedMember.gender_id)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Birthday:</span>{" "}
+                    {selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="font-medium">Current Status:</span> {getStatusBadge(selectedMember.account_status)}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> Approving this account will allow the user to access the mobile application.
+                  Rejecting will prevent access until manually approved.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsVerificationDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleUpdateAccountStatus("rejected")}
+              disabled={isLoading}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <XCircle className="mr-2 h-4 w-4" />
+              Reject
+            </Button>
+            <Button onClick={() => handleUpdateAccountStatus("approved")} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View Member Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
@@ -497,6 +631,13 @@ const ViewMembers = () => {
                 <div>
                   <p className="text-sm font-medium">Date of Birth</p>
                   <p>{selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Shield className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Account Status</p>
+                  <div className="mt-1">{getStatusBadge(selectedMember.account_status)}</div>
                 </div>
               </div>
             </div>
@@ -554,7 +695,6 @@ const ViewMembers = () => {
                   )}
                 />
               </div>
-
               <FormField
                 control={form.control}
                 name="lname"
@@ -568,7 +708,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="email"
@@ -582,7 +721,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="password"
@@ -596,7 +734,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -636,7 +773,30 @@ const ViewMembers = () => {
                   )}
                 />
               </div>
-
+              <FormField
+                control={form.control}
+                name="account_status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Status</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {statusOptions.map((status) => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                   Cancel
@@ -656,7 +816,7 @@ const ViewMembers = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Member</DialogTitle>
-            <DialogDescription>Update the member's basic information.</DialogDescription>
+            <DialogDescription>Update the member's information and account status.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleUpdateMember)} className="space-y-4">
@@ -688,7 +848,6 @@ const ViewMembers = () => {
                   )}
                 />
               </div>
-
               <FormField
                 control={form.control}
                 name="lname"
@@ -702,7 +861,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="email"
@@ -716,7 +874,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="password"
@@ -730,7 +887,6 @@ const ViewMembers = () => {
                   </FormItem>
                 )}
               />
-
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -770,7 +926,30 @@ const ViewMembers = () => {
                   )}
                 />
               </div>
-
+              <FormField
+                control={form.control}
+                name="account_status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Status</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {statusOptions.map((status) => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                   Cancel
@@ -800,7 +979,8 @@ const ViewMembers = () => {
                 {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
               </p>
               <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-              <div className="mt-2">
+              <div className="mt-2 flex gap-2">
+                {getStatusBadge(selectedMember.account_status)}
                 <Badge variant="outline">{getGenderName(selectedMember.gender_id)}</Badge>
               </div>
             </div>

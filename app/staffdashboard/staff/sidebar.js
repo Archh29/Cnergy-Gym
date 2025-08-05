@@ -28,13 +28,11 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) 
     { name: 'Home', icon: <FaHome className="mr-2 h-4 w-4" /> },
     { name: 'ViewMembers', icon: <FaUsers className="mr-2 h-4 w-4" /> },
     { name: 'ViewCoach', icon: <GiWhistle className="mr-2 h-4 w-4" /> },
-    { name: 'Messages', icon: <FaUserFriends className="mr-2 h-4 w-4" /> },
-    { name: 'Announcement', icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
     { name: 'AttendanceTracking', icon: <GiWhistle className="mr-2 h-4 w-4" /> },
     { name: 'MonitorSubscriptions', icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
-    { name: 'Exercises', icon: <FaDumbbell className="mr-2 h-4 w-4" /> },
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
-    { name: 'FreePrograms', icon: <FaChalkboardTeacher className="mr-2 h-4 w-4" /> }
+    { name: 'Announcement', icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
+    
     
   ];
 

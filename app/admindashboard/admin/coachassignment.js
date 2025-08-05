@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -10,122 +11,202 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, Bell, CheckCircle, XCircle, Clock, Star, MapPin, Phone, Mail, Award } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Search,
+  Bell,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Star,
+  MapPin,
+  Phone,
+  Mail,
+  Award,
+  RefreshCw,
+  Activity,
+  Users,
+  UserCheck,
+} from "lucide-react"
+
+const API_BASE_URL = "http://localhost/cynergy/admin_coach.php"
 
 const CoachAssignments = () => {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [requestDetailOpen, setRequestDetailOpen] = useState(false)
+  const [declineReasonOpen, setDeclineReasonOpen] = useState(false)
+  const [declineReason, setDeclineReason] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  // Pending connection requests from mobile app
-  const [pendingRequests, setPendingRequests] = useState([
-    {
-      id: 1,
-      member: {
-        name: "Sarah Wilson",
-        email: "sarah.wilson@email.com",
-        phone: "+1 (555) 123-4567",
-        age: 28,
-        goals: "Weight loss and strength training",
-        experience: "Beginner",
-        location: "New York, NY",
-        avatar: "/placeholder.svg?height=40&width=40",
-      },
-      coach: {
-        name: "Mike Rodriguez",
-        email: "mike.rodriguez@email.com",
-        phone: "+1 (555) 987-6543",
-        specialties: ["Weight Loss", "Strength Training", "Nutrition"],
-        experience: "5 years",
-        rating: 4.8,
-        certifications: ["NASM-CPT", "Nutrition Specialist"],
-        location: "New York, NY",
-        avatar: "/placeholder.svg?height=40&width=40",
-      },
-      requestedAt: "2024-01-15T10:30:00Z",
-      status: "pending",
-    },
-    {
-      id: 2,
-      member: {
-        name: "David Chen",
-        email: "david.chen@email.com",
-        phone: "+1 (555) 234-5678",
-        age: 35,
-        goals: "Marathon training and endurance",
-        experience: "Intermediate",
-        location: "Los Angeles, CA",
-        avatar: "/placeholder.svg?height=40&width=40",
-      },
-      coach: {
-        name: "Lisa Thompson",
-        email: "lisa.thompson@email.com",
-        phone: "+1 (555) 876-5432",
-        specialties: ["Endurance Training", "Running", "Sports Performance"],
-        experience: "8 years",
-        rating: 4.9,
-        certifications: ["USATF Level 2", "Sports Performance"],
-        location: "Los Angeles, CA",
-        avatar: "/placeholder.svg?height=40&width=40",
-      },
-      requestedAt: "2024-01-15T14:20:00Z",
-      status: "pending",
-    },
-  ])
+  // Data states
+  const [pendingRequests, setPendingRequests] = useState([])
+  const [assignedMembers, setAssignedMembers] = useState([])
+  const [dashboardStats, setDashboardStats] = useState({
+    pending_requests: 0,
+    approved_assignments: 0,
+    total_coaches: 0,
+    total_members: 0,
+  })
+  const [activityLog, setActivityLog] = useState([])
 
-  // Assigned members
-  const [assignedMembers, setAssignedMembers] = useState([
-    {
-      id: 3,
-      name: "John Doe",
-      coach: "Coach Martinez",
-      assignedAt: "2024-01-10T09:00:00Z",
-      status: "active",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: 4,
-      name: "Jane Smith",
-      coach: "Coach Johnson",
-      assignedAt: "2024-01-12T11:30:00Z",
-      status: "active",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-  ])
-
-  const handleApproveRequest = (requestId) => {
-    const request = pendingRequests.find((r) => r.id === requestId)
-    if (request) {
-      // Add to assigned members
-      const newAssignment = {
-        id: Date.now(),
-        name: request.member.name,
-        coach: request.coach.name,
-        assignedAt: new Date().toISOString(),
-        status: "active",
-        avatar: request.member.avatar,
+  // Fetch data functions
+  const fetchPendingRequests = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=pending-requests`)
+      if (response.data.success) {
+        setPendingRequests(response.data.requests || [])
+      } else {
+        throw new Error(response.data.message || "Failed to fetch pending requests")
       }
-
-      setAssignedMembers((prev) => [...prev, newAssignment])
-
-      // Remove from pending requests
-      setPendingRequests((prev) => prev.filter((r) => r.id !== requestId))
-
-      setRequestDetailOpen(false)
+    } catch (err) {
+      console.error("Error fetching pending requests:", err)
+      setError("Failed to load pending requests")
     }
   }
 
-  const handleDeclineRequest = (requestId) => {
-    setPendingRequests((prev) => prev.filter((r) => r.id !== requestId))
-    setRequestDetailOpen(false)
+  const fetchAssignedMembers = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=assigned-members`)
+      if (response.data.success) {
+        setAssignedMembers(response.data.assignments || [])
+      } else {
+        throw new Error(response.data.message || "Failed to fetch assigned members")
+      }
+    } catch (err) {
+      console.error("Error fetching assigned members:", err)
+      setError("Failed to load assigned members")
+    }
   }
 
-  const openRequestDetail = (request) => {
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=dashboard-stats`)
+      if (response.data.success) {
+        setDashboardStats(response.data.stats)
+      }
+    } catch (err) {
+      console.error("Error fetching dashboard stats:", err)
+    }
+  }
+
+  const fetchActivityLog = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=activity-log&limit=10`)
+      if (response.data.success) {
+        setActivityLog(response.data.activities || [])
+      }
+    } catch (err) {
+      console.error("Error fetching activity log:", err)
+    }
+  }
+
+  const fetchRequestDetails = async (requestId) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}?action=request-details&request_id=${requestId}`)
+      if (response.data.success) {
+        setSelectedRequest(response.data.request)
+        setRequestDetailOpen(true)
+      } else {
+        throw new Error(response.data.message || "Failed to fetch request details")
+      }
+    } catch (err) {
+      console.error("Error fetching request details:", err)
+      setError("Failed to load request details")
+    }
+  }
+
+  // Load all data
+  const loadAllData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog()])
+    } catch (err) {
+      console.error("Error loading data:", err)
+      setError("Failed to load data")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Initial load
+  useEffect(() => {
+    loadAllData()
+  }, [])
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPendingRequests()
+      fetchDashboardStats()
+      fetchActivityLog()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleApproveRequest = async (requestId) => {
+    setActionLoading(true)
+    try {
+      const response = await axios.post(`${API_BASE_URL}?action=approve-request`, {
+        request_id: requestId,
+        admin_id: 6, // Use the actual admin user ID from your database
+      })
+      if (response.data.success) {
+        // Refresh data
+        await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog()])
+        setRequestDetailOpen(false)
+        setSelectedRequest(null)
+      } else {
+        throw new Error(response.data.message || "Failed to approve request")
+      }
+    } catch (err) {
+      console.error("Error approving request:", err)
+      setError("Failed to approve request: " + err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDeclineRequest = async (requestId, reason = "") => {
+    setActionLoading(true)
+    try {
+      const response = await axios.post(`${API_BASE_URL}?action=decline-request`, {
+        request_id: requestId,
+        reason: reason || declineReason,
+        admin_id: 6, // Use the actual admin user ID from your database
+      })
+      if (response.data.success) {
+        // Refresh data
+        await Promise.all([fetchPendingRequests(), fetchDashboardStats(), fetchActivityLog()])
+        setRequestDetailOpen(false)
+        setDeclineReasonOpen(false)
+        setSelectedRequest(null)
+        setDeclineReason("")
+      } else {
+        throw new Error(response.data.message || "Failed to decline request")
+      }
+    } catch (err) {
+      console.error("Error declining request:", err)
+      setError("Failed to decline request: " + err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const openRequestDetail = async (request) => {
+    await fetchRequestDetails(request.id)
+  }
+
+  const openDeclineDialog = (request) => {
     setSelectedRequest(request)
-    setRequestDetailOpen(true)
+    setDeclineReasonOpen(true)
   }
 
   const formatDate = (dateString) => {
+    if (!dateString) return "N/A"
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -134,20 +215,123 @@ const CoachAssignments = () => {
     })
   }
 
+  const formatActivityAction = (action) => {
+    switch (action) {
+      case "approve_coach_assignment":
+        return "Approved coach assignment"
+      case "decline_coach_assignment":
+        return "Declined coach assignment"
+      default:
+        return action.replace(/_/g, " ")
+    }
+  }
+
+  const getInitials = (name) => {
+    if (!name) return "??"
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+  }
+
   const filteredRequests = pendingRequests.filter(
     (request) =>
-      request.member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      request.coach.name.toLowerCase().includes(searchQuery.toLowerCase()),
+      request.member?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.coach?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.member?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      request.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   const filteredMembers = assignedMembers.filter(
-    (member) =>
-      member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      member.coach.toLowerCase().includes(searchQuery.toLowerCase()),
+    (assignment) =>
+      assignment.member?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      assignment.coach?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      assignment.member?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      assignment.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <span>Loading coach assignments...</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
+      {/* Error Alert */}
+      {error && (
+        <Alert className="border-red-200 bg-red-50">
+          <XCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-800">
+            {error}
+            <Button
+              variant="link"
+              className="p-0 h-auto ml-2 text-red-600"
+              onClick={() => {
+                setError(null)
+                loadAllData()
+              }}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Dashboard Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-orange-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Pending Requests</p>
+                <p className="text-2xl font-bold">{dashboardStats.pending_requests}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-green-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Approved Assignments</p>
+                <p className="text-2xl font-bold">{dashboardStats.approved_assignments}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-blue-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Total Coaches</p>
+                <p className="text-2xl font-bold">{dashboardStats.total_coaches}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-purple-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Total Members</p>
+                <p className="text-2xl font-bold">{dashboardStats.total_members}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Notification Alert */}
       {pendingRequests.length > 0 && (
         <Alert className="border-orange-200 bg-orange-50">
@@ -159,194 +343,239 @@ const CoachAssignments = () => {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                Coach Assignment Management
-                {pendingRequests.length > 0 && (
-                  <Badge variant="destructive" className="ml-2">
-                    {pendingRequests.length} pending
-                  </Badge>
-                )}
-              </CardTitle>
-              <CardDescription>Manage coach-member connections from mobile app requests</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {/* Search */}
-          <div className="relative w-full max-w-md mb-6">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search members or coaches..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {/* Tabs */}
-          <Tabs defaultValue="pending" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="pending" className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Pending Requests
-                {pendingRequests.length > 0 && (
-                  <Badge variant="secondary" className="ml-1">
-                    {pendingRequests.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="assigned" className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4" />
-                Assigned Members
-                <Badge variant="secondary" className="ml-1">
-                  {assignedMembers.length}
-                </Badge>
-              </TabsTrigger>
-            </TabsList>
-
-            {/* Pending Requests Tab */}
-            <TabsContent value="pending" className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Requested Coach</TableHead>
-                    <TableHead>Requested At</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRequests.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {pendingRequests.length === 0 ? "No pending requests" : "No requests match your search"}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredRequests.map((request) => (
-                      <TableRow key={request.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={request.member.avatar || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {request.member.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-medium">{request.member.name}</div>
-                              <div className="text-sm text-muted-foreground">{request.member.experience}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={request.coach.avatar || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {request.coach.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-medium">{request.coach.name}</div>
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                {request.coach.rating}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Coach Assignment Management
+                    {pendingRequests.length > 0 && (
+                      <Badge variant="destructive" className="ml-2">
+                        {pendingRequests.length} pending
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>Manage coach-member connections from mobile app requests</CardDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={loadAllData} disabled={loading}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Search */}
+              <div className="relative w-full max-w-md mb-6">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search members or coaches..."
+                  className="pl-8"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              {/* Tabs */}
+              <Tabs defaultValue="pending" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="pending" className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Pending Requests
+                    {pendingRequests.length > 0 && (
+                      <Badge variant="secondary" className="ml-1">
+                        {pendingRequests.length}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                  <TabsTrigger value="assigned" className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    Assigned Members
+                    <Badge variant="secondary" className="ml-1">
+                      {assignedMembers.length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+                {/* Pending Requests Tab */}
+                <TabsContent value="pending" className="space-y-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Requested Coach</TableHead>
+                        <TableHead>Coach Approved</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRequests.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            {pendingRequests.length === 0 ? "No pending requests" : "No requests match your search"}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredRequests.map((request) => (
+                          <TableRow key={request.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src="/placeholder.svg?height=32&width=32" />
+                                  <AvatarFallback>{getInitials(request.member?.name)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-medium">{request.member?.name || "Unknown"}</div>
+                                  <div className="text-sm text-muted-foreground">{request.member?.email}</div>
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(request.requestedAt)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => openRequestDetail(request)} variant="outline">
-                              View Details
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => handleApproveRequest(request.id)}
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Approve
-                            </Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleDeclineRequest(request.id)}>
-                              <XCircle className="h-4 w-4 mr-1" />
-                              Decline
-                            </Button>
-                          </div>
-                        </TableCell>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src="/placeholder.svg?height=32&width=32" />
+                                  <AvatarFallback>{getInitials(request.coach?.name)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-medium">{request.coach?.name || "Unknown"}</div>
+                                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                    {request.coach?.rating || "N/A"}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatDate(request.coachApprovedAt)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => openRequestDetail(request)}
+                                  variant="outline"
+                                  disabled={actionLoading}
+                                >
+                                  View Details
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleApproveRequest(request.id)}
+                                  className="bg-green-600 hover:bg-green-700"
+                                  disabled={actionLoading}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => openDeclineDialog(request)}
+                                  disabled={actionLoading}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Decline
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+                {/* Assigned Members Tab */}
+                <TabsContent value="assigned" className="space-y-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Assigned Coach</TableHead>
+                        <TableHead>Assigned Date</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TabsContent>
-
-            {/* Assigned Members Tab */}
-            <TabsContent value="assigned" className="space-y-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Assigned Coach</TableHead>
-                    <TableHead>Assigned Date</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredMembers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {assignedMembers.length === 0 ? "No assigned members" : "No members match your search"}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredMembers.map((member) => (
-                      <TableRow key={member.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={member.avatar || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {member.name
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="font-medium">{member.name}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{member.coach}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{formatDate(member.assignedAt)}</TableCell>
-                        <TableCell>
-                          <Badge variant="default" className="bg-green-100 text-green-800">
-                            {member.status}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredMembers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            {assignedMembers.length === 0 ? "No assigned members" : "No members match your search"}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredMembers.map((assignment) => (
+                          <TableRow key={assignment.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-8 w-8">
+                                  <AvatarImage src="/placeholder.svg?height=32&width=32" />
+                                  <AvatarFallback>{getInitials(assignment.member?.name)}</AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-medium">{assignment.member?.name || "Unknown"}</div>
+                                  <div className="text-sm text-muted-foreground">{assignment.member?.email}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">{assignment.coach?.name || "Unknown"}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {formatDate(assignment.assignedAt)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="default" className="bg-green-100 text-green-800">
+                                {assignment.status || "active"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+        {/* Activity Log Sidebar */}
+        <div className="lg:col-span-1">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                Recent Activity
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {activityLog.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No recent activity</p>
+                ) : (
+                  activityLog.map((activity) => (
+                    <div key={activity.id} className="border-l-2 border-muted pl-4 pb-4">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">{formatActivityAction(activity.action)}</p>
+                          {activity.details?.member_name && (
+                            <p className="text-xs text-muted-foreground">Member: {activity.details.member_name}</p>
+                          )}
+                          {activity.details?.coach_name && (
+                            <p className="text-xs text-muted-foreground">Coach: {activity.details.coach_name}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            by {activity.admin_name} ({activity.details?.user_type || "admin"})
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">{formatDate(activity.created_at)}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* Request Detail Dialog */}
       <Dialog open={requestDetailOpen} onOpenChange={setRequestDetailOpen}>
@@ -354,7 +583,6 @@ const CoachAssignments = () => {
           <DialogHeader>
             <DialogTitle>Connection Request Details</DialogTitle>
           </DialogHeader>
-
           {selectedRequest && (
             <div className="space-y-6">
               {/* Member Details */}
@@ -362,88 +590,77 @@ const CoachAssignments = () => {
                 <h3 className="text-lg font-semibold border-b pb-2">Member Information</h3>
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16">
-                    <AvatarImage src={selectedRequest.member.avatar || "/placeholder.svg"} />
-                    <AvatarFallback className="text-lg">
-                      {selectedRequest.member.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </AvatarFallback>
+                    <AvatarImage src="/placeholder.svg?height=64&width=64" />
+                    <AvatarFallback className="text-lg">{getInitials(selectedRequest.member?.name)}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 space-y-2">
-                    <h4 className="text-xl font-semibold">{selectedRequest.member.name}</h4>
+                    <h4 className="text-xl font-semibold">{selectedRequest.member?.name || "Unknown"}</h4>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex items-center gap-2">
                         <Mail className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.member.email}
+                        {selectedRequest.member?.email || "N/A"}
                       </div>
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.member.phone}
+                        {selectedRequest.member?.phone || "N/A"}
                       </div>
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.member.location}
+                        {selectedRequest.member?.location || "N/A"}
                       </div>
                       <div>
-                        <span className="font-medium">Age:</span> {selectedRequest.member.age}
+                        <span className="font-medium">Age:</span> {selectedRequest.member?.age || "N/A"}
                       </div>
                     </div>
                     <div className="space-y-1">
                       <div>
-                        <span className="font-medium">Experience:</span> {selectedRequest.member.experience}
+                        <span className="font-medium">Experience:</span> {selectedRequest.member?.experience || "N/A"}
                       </div>
                       <div>
-                        <span className="font-medium">Goals:</span> {selectedRequest.member.goals}
+                        <span className="font-medium">Goals:</span> {selectedRequest.member?.goals || "N/A"}
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-
               {/* Coach Details */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">Requested Coach</h3>
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16">
-                    <AvatarImage src={selectedRequest.coach.avatar || "/placeholder.svg"} />
-                    <AvatarFallback className="text-lg">
-                      {selectedRequest.coach.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")}
-                    </AvatarFallback>
+                    <AvatarImage src="/placeholder.svg?height=64&width=64" />
+                    <AvatarFallback className="text-lg">{getInitials(selectedRequest.coach?.name)}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-xl font-semibold">{selectedRequest.coach.name}</h4>
+                      <h4 className="text-xl font-semibold">{selectedRequest.coach?.name || "Unknown"}</h4>
                       <div className="flex items-center gap-1">
                         <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-medium">{selectedRequest.coach.rating}</span>
+                        <span className="font-medium">{selectedRequest.coach?.rating || "N/A"}</span>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex items-center gap-2">
                         <Mail className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.coach.email}
+                        {selectedRequest.coach?.email || "N/A"}
                       </div>
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.coach.phone}
+                        {selectedRequest.coach?.phone || "N/A"}
                       </div>
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-muted-foreground" />
-                        {selectedRequest.coach.location}
+                        {selectedRequest.coach?.location || "N/A"}
                       </div>
                       <div>
-                        <span className="font-medium">Experience:</span> {selectedRequest.coach.experience}
+                        <span className="font-medium">Experience:</span> {selectedRequest.coach?.experience || "N/A"}
                       </div>
                     </div>
                     <div className="space-y-2">
                       <div>
                         <span className="font-medium">Specialties:</span>
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {selectedRequest.coach.specialties.map((specialty, index) => (
+                          {(selectedRequest.coach?.specialties || []).map((specialty, index) => (
                             <Badge key={index} variant="secondary" className="text-xs">
                               {specialty}
                             </Badge>
@@ -453,7 +670,7 @@ const CoachAssignments = () => {
                       <div>
                         <span className="font-medium">Certifications:</span>
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {selectedRequest.coach.certifications.map((cert, index) => (
+                          {(selectedRequest.coach?.certifications || []).map((cert, index) => (
                             <Badge key={index} variant="outline" className="text-xs">
                               <Award className="h-3 w-3 mr-1" />
                               {cert}
@@ -461,34 +678,92 @@ const CoachAssignments = () => {
                           ))}
                         </div>
                       </div>
+                      {selectedRequest.coach?.bio && (
+                        <div>
+                          <span className="font-medium">Bio:</span>
+                          <p className="text-sm text-muted-foreground mt-1">{selectedRequest.coach.bio}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
-
               {/* Request Info */}
               <div className="bg-muted/50 p-4 rounded-lg">
-                <div className="text-sm text-muted-foreground">
-                  <span className="font-medium">Request submitted:</span> {formatDate(selectedRequest.requestedAt)}
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div>
+                    <span className="font-medium">Request submitted:</span> {formatDate(selectedRequest.requestedAt)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Coach approved:</span> {formatDate(selectedRequest.coachApprovedAt)}
+                  </div>
                 </div>
               </div>
             </div>
           )}
-
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setRequestDetailOpen(false)}>
               Close
             </Button>
-            <Button variant="destructive" onClick={() => handleDeclineRequest(selectedRequest?.id)}>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setRequestDetailOpen(false)
+                openDeclineDialog(selectedRequest)
+              }}
+              disabled={actionLoading}
+            >
               <XCircle className="h-4 w-4 mr-2" />
               Decline Request
             </Button>
             <Button
               onClick={() => handleApproveRequest(selectedRequest?.id)}
               className="bg-green-600 hover:bg-green-700"
+              disabled={actionLoading}
             >
-              <CheckCircle className="h-4 w-4 mr-2" />
+              {actionLoading ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
+              )}
               Approve & Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline Reason Dialog */}
+      <Dialog open={declineReasonOpen} onOpenChange={setDeclineReasonOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Decline Request</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Please provide a reason for declining this coach assignment request:
+            </p>
+            <Textarea
+              placeholder="Enter reason for declining..."
+              value={declineReason}
+              onChange={(e) => setDeclineReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeclineReasonOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleDeclineRequest(selectedRequest?.id)}
+              disabled={actionLoading || !declineReason.trim()}
+            >
+              {actionLoading ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Decline Request
             </Button>
           </DialogFooter>
         </DialogContent>

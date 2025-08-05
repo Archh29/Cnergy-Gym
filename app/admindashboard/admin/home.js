@@ -1,9 +1,10 @@
-import React from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+"use client"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle } from "lucide-react"
 
-const Home = () => {
+const GymDashboard = () => {
   // Sample data for charts
   const membershipData = [
     { name: "Jan", members: 400 },
@@ -23,21 +24,96 @@ const Home = () => {
     { name: "Jun", revenue: 8000 },
   ]
 
+  // Sample data for summary cards
+  const summaryStats = {
+    members: {
+      active: 342,
+      total: 456,
+    },
+    salesToday: 2850,
+    activeSubscriptions: 298,
+    checkinsToday: 87,
+    upcomingExpirations: 23,
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Dashboard Overview */}
       <Card>
         <CardHeader>
-          <CardTitle>Dashboard</CardTitle>
+          <CardTitle>Dashboard Overview</CardTitle>
+          <CardDescription>
+            Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-l font-semibold">Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations! </p>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Members</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {summaryStats.members.active}/{summaryStats.members.total}
+                </div>
+                <p className="text-xs text-muted-foreground">Active / Total</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₱{summaryStats.salesToday.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Today's revenue</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.activeSubscriptions}</div>
+                <p className="text-xs text-muted-foreground">Current subscribers</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Gym Check-ins Today</CardTitle>
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.checkinsToday}</div>
+                <p className="text-xs text-muted-foreground">Today's visits</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Upcoming Expirations</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.upcomingExpirations}</div>
+                <p className="text-xs text-muted-foreground">Next 7 days</p>
+              </CardContent>
+            </Card>
+          </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Charts Section */}
+      <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Membership Growth</CardTitle>
+            <CardDescription>Monthly membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -73,6 +149,7 @@ const Home = () => {
         <Card>
           <CardHeader>
             <CardTitle>Monthly Revenue</CardTitle>
+            <CardDescription>Revenue performance over time</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -101,23 +178,32 @@ const Home = () => {
         </Card>
       </div>
 
+      {/* Quick Statistics */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Stats</CardTitle>
+          <CardTitle className="flex items-center">
+            <Users className="mr-2 h-5 w-5" />
+            Quick Statistics
+          </CardTitle>
+          <CardDescription>Key performance metrics at a glance</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="p-4 bg-primary/10 rounded-lg">
-              <h3 className="text-lg font-semibold">Total Members</h3>
-              <p className="text-3xl font-bold">456</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">{summaryStats.members.total}</div>
+              <div className="text-sm text-muted-foreground">Total Members</div>
             </div>
-            <div className="p-4 bg-primary/10 rounded-lg">
-              <h3 className="text-lg font-semibold">Active Trainers</h3>
-              <p className="text-3xl font-bold">12</p>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">₱{summaryStats.salesToday.toLocaleString()}</div>
+              <div className="text-sm text-muted-foreground">Today's Sales</div>
             </div>
-            <div className="p-4 bg-primary/10 rounded-lg">
-              <h3 className="text-lg font-semibold">This Month's Revenue</h3>
-              <p className="text-3xl font-bold">₱15,678</p>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">{summaryStats.activeSubscriptions}</div>
+              <div className="text-sm text-muted-foreground">Active Plans</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-orange-600">{summaryStats.checkinsToday}</div>
+              <div className="text-sm text-muted-foreground">Check-ins Today</div>
             </div>
           </div>
         </CardContent>
@@ -126,4 +212,4 @@ const Home = () => {
   )
 }
 
-export default Home
+export default GymDashboard

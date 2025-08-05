@@ -1,432 +1,545 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-import { Search, Calendar, Users, DollarSign, Loader2 } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Search, Users, AlertTriangle, CheckCircle, XCircle, Clock, Loader2, RefreshCw } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/membership.php"
+const API_URL = "http://localhost/cynergy/monitor_subscription.php"
 
-// Schema for subscription renewal
-const renewalSchema = z.object({
-  plan_id: z.string().min(1, { message: "Please select a subscription plan." }),
-  start_date: z.string().min(1, { message: "Start date is required." }),
-  end_date: z.string().min(1, { message: "End date is required." }),
-})
-
-const MonitorSubscriptions = () => {
+const SubscriptionMonitor = () => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [planFilter, setPlanFilter] = useState("all")
   const [subscriptions, setSubscriptions] = useState([])
-  const [subscriptionPlans, setSubscriptionPlans] = useState([])
-  const [subscriptionStatuses, setSubscriptionStatuses] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [renewOpen, setRenewOpen] = useState(false)
-  const [selectedSubscription, setSelectedSubscription] = useState(null)
-  const [filteredSubscriptions, setFilteredSubscriptions] = useState([])
+  const [pendingSubscriptions, setPendingSubscriptions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(null)
+  const [message, setMessage] = useState(null)
 
-  const { toast } = useToast()
-
-  const form = useForm({
-    resolver: zodResolver(renewalSchema),
-    defaultValues: {
-      plan_id: "",
-      start_date: "",
-      end_date: "",
-    },
+  // Decline dialog state
+  const [declineDialog, setDeclineDialog] = useState({
+    open: false,
+    subscription: null,
   })
+  const [declineReason, setDeclineReason] = useState("")
 
-  // Fetch all subscription data
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true)
+    fetchAllData()
+  }, [])
 
-        // Fetch subscriptions with user and plan details
-        const subscriptionsResponse = await fetch(`${API_URL}?type=subscriptions`)
-        const subscriptionsData = await subscriptionsResponse.json()
-
-        // Fetch subscription plans
-        const plansResponse = await fetch(`${API_URL}?type=plans`)
-        const plansData = await plansResponse.json()
-
-        // Fetch subscription statuses
-        const statusesResponse = await fetch(`${API_URL}?type=statuses`)
-        const statusesData = await statusesResponse.json()
-
-        setSubscriptions(subscriptionsData)
-        setSubscriptionPlans(plansData)
-        setSubscriptionStatuses(statusesData)
-      } catch (error) {
-        console.error("Error fetching data:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch subscription data. Please try again.",
-          variant: "destructive",
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchData()
-  }, [toast])
-
-  // Filter subscriptions based on search and status
-  useEffect(() => {
-    let filtered = subscriptions
-
-    // Filter by search query
-    if (searchQuery.trim() !== "") {
-      const lowercaseQuery = searchQuery.toLowerCase()
-      filtered = filtered.filter(
-        (sub) =>
-          `${sub.fname} ${sub.lname}`.toLowerCase().includes(lowercaseQuery) ||
-          sub.email?.toLowerCase().includes(lowercaseQuery),
-      )
-    }
-
-    // Filter by status
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((sub) => sub.status_name?.toLowerCase() === statusFilter.toLowerCase())
-    }
-
-    setFilteredSubscriptions(filtered)
-  }, [subscriptions, searchQuery, statusFilter])
-
-  // Get status badge styling
-  const getStatusBadge = (statusName) => {
-    switch (statusName?.toLowerCase()) {
-      case "active":
-        return <Badge className="bg-green-500 text-white">Active</Badge>
-      case "expired":
-        return <Badge className="bg-red-500 text-white">Expired</Badge>
-      case "suspended":
-        return <Badge className="bg-yellow-500 text-white">Suspended</Badge>
-      default:
-        return <Badge variant="outline">{statusName || "Unknown"}</Badge>
-    }
-  }
-
-  // Check if subscription is expiring soon (within 7 days)
-  const isExpiringSoon = (endDate) => {
-    const today = new Date()
-    const expiration = new Date(endDate)
-    const diffTime = expiration - today
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    return diffDays <= 7 && diffDays > 0
-  }
-
-  // Handle subscription renewal
-  const handleRenewSubscription = async (data) => {
-    if (!selectedSubscription) return
-
+  const fetchAllData = async () => {
+    setLoading(true)
     try {
-      setIsLoading(true)
+      await Promise.all([fetchSubscriptions(), fetchPendingSubscriptions()])
+    } catch (error) {
+      console.error("Error fetching data:", error)
+      setMessage({ type: "error", text: "Failed to load subscription data" })
+    } finally {
+      setLoading(false)
+    }
+  }
 
-      const renewalData = {
-        user_id: selectedSubscription.user_id,
-        plan_id: Number.parseInt(data.plan_id),
-        start_date: data.start_date,
-        end_date: data.end_date,
-        status_id: 1, // Assuming 1 is "Active" status
-      }
-
-      const response = await fetch(API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(renewalData),
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        // Refresh subscriptions data
-        const subscriptionsResponse = await fetch(`${API_URL}?type=subscriptions`)
-        const updatedSubscriptions = await subscriptionsResponse.json()
-        setSubscriptions(updatedSubscriptions)
-
-        setRenewOpen(false)
-        form.reset()
-        toast({
-          title: "Success",
-          description: "Subscription renewed successfully!",
-        })
-      } else {
-        throw new Error(result.message || "Failed to renew subscription")
+  const fetchSubscriptions = async () => {
+    try {
+      const response = await axios.get(API_URL)
+      if (response.data.success && Array.isArray(response.data.subscriptions)) {
+        setSubscriptions(response.data.subscriptions)
       }
     } catch (error) {
-      console.error("Error renewing subscription:", error)
-      toast({
-        title: "Error",
-        description: "Failed to renew subscription. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
+      console.error("Error fetching subscriptions:", error)
     }
   }
 
-  const handleOpenRenewal = (subscription) => {
-    setSelectedSubscription(subscription)
+  const fetchPendingSubscriptions = async () => {
+    try {
+      const response = await axios.get(`${API_URL}?action=pending`)
+      if (response.data.success) {
+        setPendingSubscriptions(response.data.data)
+      }
+    } catch (error) {
+      console.error("Error fetching pending subscriptions:", error)
+    }
+  }
 
-    // Set default dates (start today, end in 1 month)
-    const today = new Date()
-    const nextMonth = new Date(today)
-    nextMonth.setMonth(today.getMonth() + 1)
+  const handleApprove = async (subscriptionId) => {
+    setActionLoading(subscriptionId)
+    setMessage(null)
 
-    form.reset({
-      plan_id: "",
-      start_date: today.toISOString().split("T")[0],
-      end_date: nextMonth.toISOString().split("T")[0],
+    try {
+      const response = await axios.post(`${API_URL}?action=approve`, {
+        subscription_id: subscriptionId,
+        approved_by: "Admin",
+      })
+
+      if (response.data.success) {
+        setMessage({ type: "success", text: response.data.message })
+        // Refresh data
+        await fetchAllData()
+      } else {
+        setMessage({ type: "error", text: response.data.message })
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "Failed to approve subscription"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleDecline = async () => {
+    if (!declineDialog.subscription) return
+
+    setActionLoading(declineDialog.subscription.subscription_id)
+    setMessage(null)
+
+    try {
+      const response = await axios.post(`${API_URL}?action=decline`, {
+        subscription_id: declineDialog.subscription.subscription_id,
+        declined_by: "Admin",
+        decline_reason: declineReason,
+      })
+
+      if (response.data.success) {
+        setMessage({ type: "success", text: response.data.message })
+        setDeclineDialog({ open: false, subscription: null })
+        setDeclineReason("")
+        // Refresh data
+        await fetchAllData()
+      } else {
+        setMessage({ type: "error", text: response.data.message })
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "Failed to decline subscription"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case "pending_approval":
+      case "pending approval":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "approved":
+      case "active":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "declined":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "expired":
+        return "bg-gray-100 text-gray-800 border-gray-200"
+      default:
+        return "bg-blue-100 text-blue-800 border-blue-200"
+    }
+  }
+
+  const getStatusIcon = (status) => {
+    switch (status?.toLowerCase()) {
+      case "pending_approval":
+      case "pending approval":
+        return <Clock className="h-3 w-3" />
+      case "approved":
+      case "active":
+        return <CheckCircle className="h-3 w-3" />
+      case "declined":
+        return <XCircle className="h-3 w-3" />
+      default:
+        return <Clock className="h-3 w-3" />
+    }
+  }
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     })
+  }
 
-    setRenewOpen(true)
+  const formatDateTime = (dateString) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount)
+  }
+
+  // Filter subscriptions
+  const filteredSubscriptions = subscriptions.filter((subscription) => {
+    const matchesSearch =
+      `${subscription.fname} ${subscription.mname} ${subscription.lname}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      subscription.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      subscription.plan_name.toLowerCase().includes(searchQuery.toLowerCase())
+
+    const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
+    const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
+
+    return matchesSearch && matchesStatus && matchesPlan
+  })
+
+  // Get analytics
+  const analytics = {
+    total: subscriptions.length,
+    pending: pendingSubscriptions.length,
+    approved: subscriptions.filter((s) => s.status_name === "approved" || s.status_name === "active").length,
+    declined: subscriptions.filter((s) => s.status_name === "declined").length,
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Loading subscription data...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Monitor Subscriptions</CardTitle>
-              <CardDescription>Track and manage gym member subscriptions</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Search and Filter Controls */}
-          <div className="flex gap-4">
-            <div className="relative w-full max-w-md">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search by member name or email..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {subscriptionStatuses.map((status) => (
-                  <SelectItem key={status.id} value={status.status_name.toLowerCase()}>
-                    {status.status_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Subscriptions Table */}
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : filteredSubscriptions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No subscriptions found. Try a different search or filter.
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Member</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead>Start Date</TableHead>
-                  <TableHead>End Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredSubscriptions.map((subscription) => (
-                  <TableRow key={subscription.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">
-                          {subscription.fname} {subscription.lname}
-                        </div>
-                        <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{subscription.plan_name}</div>
-                        <div className="text-sm text-muted-foreground">${subscription.price}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{new Date(subscription.start_date).toLocaleDateString()}</TableCell>
-                    <TableCell>
-                      <div>
-                        <div>{new Date(subscription.end_date).toLocaleDateString()}</div>
-                        {isExpiringSoon(subscription.end_date) && (
-                          <div className="text-sm text-yellow-600">Expiring Soon</div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(subscription.status_name)}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleOpenRenewal(subscription)}
-                        disabled={
-                          subscription.status_name?.toLowerCase() === "active" && !isExpiringSoon(subscription.end_date)
-                        }
-                      >
-                        Renew
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Analytics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Subscriptions</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{subscriptions.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {subscriptions.filter((sub) => sub.status_name?.toLowerCase() === "active").length}
+          <CardContent className="flex items-center p-6">
+            <Users className="h-8 w-8 text-blue-600" />
+            <div className="ml-4">
+              <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
+              <p className="text-2xl font-bold">{analytics.total}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {subscriptions.filter((sub) => isExpiringSoon(sub.end_date)).length}
+          <CardContent className="flex items-center p-6">
+            <Clock className="h-8 w-8 text-yellow-600" />
+            <div className="ml-4">
+              <p className="text-sm font-medium text-muted-foreground">Pending Approval</p>
+              <p className="text-2xl font-bold">{analytics.pending}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center p-6">
+            <CheckCircle className="h-8 w-8 text-green-600" />
+            <div className="ml-4">
+              <p className="text-sm font-medium text-muted-foreground">Approved</p>
+              <p className="text-2xl font-bold">{analytics.approved}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center p-6">
+            <XCircle className="h-8 w-8 text-red-600" />
+            <div className="ml-4">
+              <p className="text-sm font-medium text-muted-foreground">Declined</p>
+              <p className="text-2xl font-bold">{analytics.declined}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Renewal Dialog */}
-      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Renew Subscription</DialogTitle>
-          </DialogHeader>
-          {selectedSubscription && (
-            <div className="space-y-4">
-              <div className="border rounded-md p-3">
-                <p className="font-medium">
-                  {selectedSubscription.fname} {selectedSubscription.lname}
-                </p>
-                <p className="text-sm text-muted-foreground">{selectedSubscription.email}</p>
-                <p className="text-sm">Current Plan: {selectedSubscription.plan_name}</p>
+      {/* Alert Messages */}
+      {message && (
+        <Alert className={message.type === "error" ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50"}>
+          {message.type === "error" ? (
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+          ) : (
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          )}
+          <AlertDescription className={message.type === "error" ? "text-red-800" : "text-green-800"}>
+            {message.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                Subscription Request Monitor
+                <Badge variant="outline">{analytics.pending} pending</Badge>
+              </CardTitle>
+              <CardDescription>Monitor and manage gym member subscription requests</CardDescription>
+            </div>
+            <Button onClick={fetchAllData} variant="outline" size="sm">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="pending" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="pending">Pending Requests ({analytics.pending})</TabsTrigger>
+              <TabsTrigger value="all">All Requests ({analytics.total})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="pending" className="space-y-4">
+              {pendingSubscriptions.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No pending subscription requests</p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Member</TableHead>
+                        <TableHead>Plan</TableHead>
+                        <TableHead>Requested</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingSubscriptions.map((subscription) => (
+                        <TableRow key={subscription.subscription_id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback>
+                                  {subscription.fname[0]}
+                                  {subscription.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatCurrency(subscription.price)}/month
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{formatDateTime(subscription.created_at)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                              <Clock className="h-3 w-3" />
+                              Pending
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleApprove(subscription.subscription_id)}
+                                disabled={actionLoading === subscription.subscription_id}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                {actionLoading === subscription.subscription_id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle className="h-4 w-4" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setDeclineDialog({ open: true, subscription })}
+                                disabled={actionLoading === subscription.subscription_id}
+                              >
+                                <XCircle className="h-4 w-4" />
+                                Decline
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="all" className="space-y-4">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search members, emails, or plans..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending_approval">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(handleRenewSubscription)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="plan_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Subscription Plan</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a plan" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {subscriptionPlans.map((plan) => (
-                              <SelectItem key={plan.id} value={plan.id.toString()}>
-                                {plan.plan_name} - ${plan.price}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
+              {/* All Subscriptions Table */}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Total Paid</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSubscriptions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          No subscriptions found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSubscriptions.map((subscription) => (
+                        <TableRow key={subscription.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback>
+                                  {subscription.fname[0]}
+                                  {subscription.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatCurrency(subscription.price)}/month
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                            >
+                              {getStatusIcon(subscription.status_name)}
+                              {subscription.display_status || subscription.status_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.end_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatCurrency(subscription.price)}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {subscription.payments?.length || 0} payment
+                              {(subscription.payments?.length || 0) !== 1 ? "s" : ""}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
                     )}
-                  />
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="start_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Start Date</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="end_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>End Date</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setRenewOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={isLoading}>
-                      {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Confirm Renewal
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </Form>
+      {/* Decline Dialog */}
+      <Dialog open={declineDialog.open} onOpenChange={(open) => setDeclineDialog({ open, subscription: null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Decline Subscription Request</DialogTitle>
+          </DialogHeader>
+          {declineDialog.subscription && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <p>
+                  <strong>Member:</strong> {`${declineDialog.subscription.fname} ${declineDialog.subscription.lname}`}
+                </p>
+                <p>
+                  <strong>Plan:</strong> {declineDialog.subscription.plan_name}
+                </p>
+                <p>
+                  <strong>Price:</strong> {formatCurrency(declineDialog.subscription.price)}/month
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Reason for decline (optional)</label>
+                <Textarea
+                  value={declineReason}
+                  onChange={(e) => setDeclineReason(e.target.value)}
+                  placeholder="Enter reason for declining this subscription request..."
+                  className="mt-2"
+                />
+              </div>
             </div>
           )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeclineDialog({ open: false, subscription: null })}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDecline} disabled={actionLoading !== null}>
+              {actionLoading !== null ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Declining...
+                </>
+              ) : (
+                "Decline Request"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   )
 }
 
-export default MonitorSubscriptions
+export default SubscriptionMonitor
