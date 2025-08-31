@@ -13,7 +13,19 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, Users, AlertTriangle, CheckCircle, XCircle, Clock, Loader2, RefreshCw } from "lucide-react"
+import {
+  Search,
+  Users,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Loader2,
+  RefreshCw,
+  Plus,
+  User,
+  CreditCard,
+} from "lucide-react"
 
 const API_URL = "http://localhost/cynergy/monitor_subscription.php"
 
@@ -27,6 +39,19 @@ const SubscriptionMonitor = () => {
   const [actionLoading, setActionLoading] = useState(null)
   const [message, setMessage] = useState(null)
 
+  // New states for manual subscription creation
+  const [isCreateSubscriptionDialogOpen, setIsCreateSubscriptionDialogOpen] = useState(false)
+  const [subscriptionPlans, setSubscriptionPlans] = useState([])
+  const [availableUsers, setAvailableUsers] = useState([])
+  const [subscriptionForm, setSubscriptionForm] = useState({
+    user_id: "",
+    plan_id: "",
+    start_date: new Date().toISOString().split("T")[0],
+    payment_amount: "",
+    payment_method: "cash",
+    notes: "",
+  })
+
   // Decline dialog state
   const [declineDialog, setDeclineDialog] = useState({
     open: false,
@@ -36,6 +61,8 @@ const SubscriptionMonitor = () => {
 
   useEffect(() => {
     fetchAllData()
+    fetchSubscriptionPlans()
+    fetchAvailableUsers()
   }, [])
 
   const fetchAllData = async () => {
@@ -72,19 +99,42 @@ const SubscriptionMonitor = () => {
     }
   }
 
+  const fetchSubscriptionPlans = async () => {
+    try {
+      const response = await axios.get("http://localhost/cynergy/subscription_plans.php")
+      if (response.data.success) {
+        setSubscriptionPlans(response.data.plans)
+      }
+    } catch (error) {
+      console.error("Error fetching subscription plans:", error)
+    }
+  }
+
+  const fetchAvailableUsers = async () => {
+    try {
+      const response = await axios.get("http://localhost/cynergy/member_management.php")
+      if (Array.isArray(response.data)) {
+        // Filter only approved customers
+        const approvedCustomers = response.data.filter(
+          (user) => user.user_type_id === 4 && user.account_status === "approved",
+        )
+        setAvailableUsers(approvedCustomers)
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error)
+    }
+  }
+
   const handleApprove = async (subscriptionId) => {
     setActionLoading(subscriptionId)
     setMessage(null)
-
     try {
       const response = await axios.post(`${API_URL}?action=approve`, {
         subscription_id: subscriptionId,
         approved_by: "Admin",
       })
-
       if (response.data.success) {
         setMessage({ type: "success", text: response.data.message })
-        // Refresh data
         await fetchAllData()
       } else {
         setMessage({ type: "error", text: response.data.message })
@@ -99,22 +149,18 @@ const SubscriptionMonitor = () => {
 
   const handleDecline = async () => {
     if (!declineDialog.subscription) return
-
     setActionLoading(declineDialog.subscription.subscription_id)
     setMessage(null)
-
     try {
       const response = await axios.post(`${API_URL}?action=decline`, {
         subscription_id: declineDialog.subscription.subscription_id,
         declined_by: "Admin",
         decline_reason: declineReason,
       })
-
       if (response.data.success) {
         setMessage({ type: "success", text: response.data.message })
         setDeclineDialog({ open: false, subscription: null })
         setDeclineReason("")
-        // Refresh data
         await fetchAllData()
       } else {
         setMessage({ type: "error", text: response.data.message })
@@ -125,6 +171,63 @@ const SubscriptionMonitor = () => {
     } finally {
       setActionLoading(null)
     }
+  }
+
+  const handleCreateManualSubscription = async () => {
+    setActionLoading("create")
+    setMessage(null)
+    try {
+      const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+      if (!selectedPlan) {
+        throw new Error("Please select a subscription plan")
+      }
+
+      const subscriptionData = {
+        user_id: subscriptionForm.user_id,
+        plan_id: subscriptionForm.plan_id,
+        start_date: subscriptionForm.start_date,
+        payment_amount: subscriptionForm.payment_amount || selectedPlan.price,
+        payment_method: subscriptionForm.payment_method,
+        notes: subscriptionForm.notes,
+        created_by: "admin",
+      }
+
+      const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
+
+      if (response.data.success) {
+        setMessage({ type: "success", text: "Manual subscription created successfully!" })
+        setIsCreateSubscriptionDialogOpen(false)
+        resetSubscriptionForm()
+        await fetchAllData()
+      } else {
+        throw new Error(response.data.message || "Failed to create subscription")
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create subscription"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const resetSubscriptionForm = () => {
+    setSubscriptionForm({
+      user_id: "",
+      plan_id: "",
+      start_date: new Date().toISOString().split("T")[0],
+      payment_amount: "",
+      payment_method: "cash",
+      notes: "",
+    })
+  }
+
+  const handlePlanChange = (planId) => {
+    const selectedPlan = subscriptionPlans.find((plan) => plan.id == planId)
+    setSubscriptionForm((prev) => ({
+      ...prev,
+      plan_id: planId,
+      payment_amount: selectedPlan ? selectedPlan.price : "",
+    }))
   }
 
   const getStatusColor = (status) => {
@@ -279,15 +382,24 @@ const SubscriptionMonitor = () => {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                Subscription Request Monitor
+                Subscription Management
                 <Badge variant="outline">{analytics.pending} pending</Badge>
               </CardTitle>
-              <CardDescription>Monitor and manage gym member subscription requests</CardDescription>
+              <CardDescription>Monitor subscription requests and create manual subscriptions</CardDescription>
             </div>
-            <Button onClick={fetchAllData} variant="outline" size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setIsCreateSubscriptionDialogOpen(true)}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Subscription
+              </Button>
+              <Button onClick={fetchAllData} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -490,6 +602,218 @@ const SubscriptionMonitor = () => {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Create Manual Subscription Dialog */}
+      <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <CreditCard className="mr-2 h-5 w-5" />
+              Create Manual Subscription
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* User Selection */}
+            <div>
+              <label className="text-sm font-medium">Select Member *</label>
+              <Select
+                value={subscriptionForm.user_id}
+                onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, user_id: value }))}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Choose a member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableUsers.map((user) => (
+                    <SelectItem key={user.id} value={user.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span>
+                          {user.fname} {user.lname} - {user.email}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Plan Selection */}
+            <div>
+              <label className="text-sm font-medium">Subscription Plan *</label>
+              <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Select a subscription plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subscriptionPlans.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id.toString()}>
+                      <div className="flex justify-between items-center w-full">
+                        <span>{plan.plan_name}</span>
+                        <span className="ml-2 text-muted-foreground">
+                          ${plan.price}/{plan.duration_months} month{plan.duration_months > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Start Date */}
+            <div>
+              <label className="text-sm font-medium">Start Date *</label>
+              <Input
+                type="date"
+                value={subscriptionForm.start_date}
+                onChange={(e) =>
+                  setSubscriptionForm((prev) => ({
+                    ...prev,
+                    start_date: e.target.value,
+                  }))
+                }
+                className="mt-2"
+              />
+            </div>
+
+            {/* Payment Amount */}
+            <div>
+              <label className="text-sm font-medium">Payment Amount *</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={subscriptionForm.payment_amount}
+                onChange={(e) =>
+                  setSubscriptionForm((prev) => ({
+                    ...prev,
+                    payment_amount: e.target.value,
+                  }))
+                }
+                className="mt-2"
+              />
+              {subscriptionForm.plan_id && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Recommended: ${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}
+                </p>
+              )}
+            </div>
+
+            {/* Payment Method */}
+            <div>
+              <label className="text-sm font-medium">Payment Method</label>
+              <Select
+                value={subscriptionForm.payment_method}
+                onValueChange={(value) =>
+                  setSubscriptionForm((prev) => ({
+                    ...prev,
+                    payment_method: value,
+                  }))
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Credit/Debit Card</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="gcash">GCash</SelectItem>
+                  <SelectItem value="paymaya">PayMaya</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-sm font-medium">Notes (Optional)</label>
+              <Textarea
+                placeholder="Add any additional notes about this subscription..."
+                value={subscriptionForm.notes}
+                onChange={(e) =>
+                  setSubscriptionForm((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
+                className="mt-2"
+                rows={3}
+              />
+            </div>
+
+            {/* Subscription Preview */}
+            {subscriptionForm.plan_id && subscriptionForm.user_id && (
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <h4 className="font-medium text-blue-900 mb-2">Subscription Preview</h4>
+                {(() => {
+                  const selectedPlan = subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)
+                  const selectedUser = availableUsers.find((u) => u.id == subscriptionForm.user_id)
+                  if (!selectedPlan || !selectedUser) return null
+
+                  const startDate = new Date(subscriptionForm.start_date)
+                  const endDate = new Date(startDate)
+                  endDate.setMonth(endDate.getMonth() + selectedPlan.duration_months)
+
+                  return (
+                    <div className="text-sm text-blue-800 space-y-1">
+                      <p>
+                        <strong>Member:</strong> {selectedUser.fname} {selectedUser.lname}
+                      </p>
+                      <p>
+                        <strong>Plan:</strong> {selectedPlan.plan_name}
+                      </p>
+                      <p>
+                        <strong>Duration:</strong> {selectedPlan.duration_months} month
+                        {selectedPlan.duration_months > 1 ? "s" : ""}
+                      </p>
+                      <p>
+                        <strong>Start Date:</strong> {startDate.toLocaleDateString()}
+                      </p>
+                      <p>
+                        <strong>End Date:</strong> {endDate.toLocaleDateString()}
+                      </p>
+                      <p>
+                        <strong>Amount:</strong> ${subscriptionForm.payment_amount || selectedPlan.price}
+                      </p>
+                      <p>
+                        <strong>Payment Method:</strong> {subscriptionForm.payment_method}
+                      </p>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateSubscriptionDialogOpen(false)
+                resetSubscriptionForm()
+              }}
+              disabled={actionLoading === "create"}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateManualSubscription}
+              disabled={
+                actionLoading === "create" ||
+                !subscriptionForm.plan_id ||
+                !subscriptionForm.user_id ||
+                !subscriptionForm.payment_amount
+              }
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Create Subscription
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Decline Dialog */}
       <Dialog open={declineDialog.open} onOpenChange={(open) => setDeclineDialog({ open, subscription: null })}>
