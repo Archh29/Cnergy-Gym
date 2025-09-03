@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation"; // Corrected import for navigation
-import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
+import { useRouter } from "next/navigation";
+import { FaUser , FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import ReCAPTCHA from "react-google-recaptcha";
 import axios from "axios";
 
@@ -14,19 +14,25 @@ export default function Login() {
   const [captchaValid, setCaptchaValid] = useState(false);
   const [captchaResponse, setCaptchaResponse] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [csrfToken, setCsrfToken] = useState(() => localStorage.getItem("csrfToken") || "");
+  const [csrfToken, setCsrfToken] = useState("");
 
   const router = useRouter();
 
   useEffect(() => {
+    // Read csrfToken from localStorage on client side only
+    const storedToken = localStorage.getItem("csrfToken");
+    if (storedToken) {
+      setCsrfToken(storedToken);
+    }
+
     const fetchCsrfToken = async () => {
       try {
         const response = await axios.get("http://localhost/cynergy/csrf.php", {
-          withCredentials: true, // Ensure session cookies are sent
+          withCredentials: true,
         });
         if (response.data.csrf_token) {
           setCsrfToken(response.data.csrf_token);
-          localStorage.setItem("csrfToken", response.data.csrf_token); // Save for persistence
+          localStorage.setItem("csrfToken", response.data.csrf_token);
         } else {
           setError("Failed to get CSRF token. Please refresh.");
         }
@@ -38,35 +44,32 @@ export default function Login() {
 
     fetchCsrfToken();
 
-    // Check session and redirect if user is already logged in
     const checkUserRole = async () => {
-      try {
-        const response = await axios.get("http://localhost/cynergy/session.php", {
-          withCredentials: true,
-        });
-
-        if (response.data.user_role) {
-          router.replace(`/${response.data.user_role}dashboard`);
-        }
-      } catch (error) {
-        console.error("Session check failed:", error);
+    try {
+      const response = await axios.get("http://localhost/cynergy/session.php", {
+        withCredentials: true,
+      });
+      if (response.data.user_role) {
+        router.replace(`/${response.data.user_role}dashboard`);
       }
-    };
+    } catch (error) {
+      console.error("Session check failed:", error);
+    }
+  };
 
     checkUserRole();
-  }, []);
+  }, [router]);
 
   const handleCaptchaChange = (response) => {
     setCaptchaResponse(response);
-    setCaptchaValid(!!response); // Ensure CAPTCHA is valid
+    setCaptchaValid(!!response);
   };
 
   const handleLogin = async (event) => {
     event.preventDefault();
-    setError(""); // Reset any previous errors
+    setError("");
     setLoading(true);
 
-    // Check if fields are empty
     if (!email || !password) {
       setError("Email and Password are required.");
       setLoading(false);
@@ -88,7 +91,6 @@ export default function Login() {
     try {
       const tokenToSend = csrfToken || localStorage.getItem("csrfToken");
 
-      // Send POST request with login details and CSRF token
       const response = await axios.post(
         "http://localhost/cynergy/login.php",
         {
@@ -99,19 +101,16 @@ export default function Login() {
         {
           withCredentials: true,
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         }
       );
 
       if (response.data.redirect) {
-        // Save new CSRF token from response
         if (response.data.csrf_token) {
           localStorage.setItem("csrfToken", response.data.csrf_token);
-          setCsrfToken(response.data.csrf_token); // Update local state too
+          setCsrfToken(response.data.csrf_token);
         }
-
-        // Redirect immediately
         router.push(response.data.redirect);
       } else {
         setError(response.data.error || "Invalid email or password.");
@@ -139,7 +138,7 @@ export default function Login() {
               <span className="text-orange-500">C</span>NERGY GYM
             </h1>
             <p className="mt-2 text-lg font-medium tracking-wider text-gray-300">
-            Monitoring, Progress, and Sales Tracking Dashboard for CNERGY GYM
+              Monitoring, Progress, and Sales Tracking Dashboard for CNERGY GYM
             </p>
           </div>
           {error && (
@@ -149,7 +148,7 @@ export default function Login() {
           )}
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="relative">
-              <FaUser className="absolute left-3 top-3 text-orange-500" />
+              <FaUser  className="absolute left-3 top-3 text-orange-500" />
               <input
                 type="email"
                 placeholder="Email"
@@ -167,7 +166,11 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 pl-10 text-white"
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3">
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3"
+              >
                 {showPassword ? <FaEyeSlash /> : <FaEye />}
               </button>
             </div>
@@ -186,7 +189,11 @@ export default function Login() {
               </a>
             </div>
             <div className="flex justify-center">
-              <ReCAPTCHA sitekey="6LdRiNMqAAAAALOse29KCWAoHGDop9DQMPgeMoUo" onChange={handleCaptchaChange} theme="dark" />
+              <ReCAPTCHA
+                sitekey="6LdRiNMqAAAAALOse29KCWAoHGDop9DQMPgeMoUo"
+                onChange={handleCaptchaChange}
+                theme="dark"
+              />
             </div>
             <button
               type="submit"

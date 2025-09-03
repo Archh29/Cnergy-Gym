@@ -23,9 +23,22 @@ const App = () => {
     isListening: false,
   })
 
-  // Show notification with improved styling
-  const showNotification = (message, type = "success") => {
-    setNotification({ show: true, message, type })
+  // Show notification with membership info if available
+  const showNotification = (message, type = "success", membership = null) => {
+    let fullMessage = message
+
+    if (membership) {
+      fullMessage += `\nPlan: ${membership.plan_name}`
+      if (membership.days_left >= 0) {
+        fullMessage += ` | ${membership.days_left} day(s) left`
+      } else {
+        fullMessage += ` | Expired`
+      }
+    } else {
+      fullMessage += `\nNo active membership`
+    }
+
+    setNotification({ show: true, message: fullMessage, type })
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 5000)
   }
 
@@ -101,9 +114,9 @@ const App = () => {
       if (response.data.success) {
         const actionType = response.data.action
         if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning")
+          showNotification(response.data.message, "warning", response.data.membership)
         } else {
-          showNotification(response.data.message, "success")
+          showNotification(response.data.message, "success", response.data.membership)
         }
 
         // Trigger custom event for other components
@@ -279,13 +292,13 @@ const App = () => {
         <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-right duration-300">
           <div
             className={`
-              max-w-sm rounded-lg shadow-lg border p-4 bg-white
+              max-w-sm rounded-lg shadow-lg border p-4 bg-white whitespace-pre-line
               ${
                 notification.type === "error"
                   ? "border-red-200 bg-red-50"
                   : notification.type === "warning"
-                    ? "border-orange-200 bg-orange-50"
-                    : "border-green-200 bg-green-50"
+                  ? "border-orange-200 bg-orange-50"
+                  : "border-green-200 bg-green-50"
               }
             `}
           >
@@ -301,12 +314,12 @@ const App = () => {
               </div>
               <div className="flex-1">
                 <p
-                  className={`text-sm font-medium ${
+                  className={`text-sm font-medium whitespace-pre-line ${
                     notification.type === "error"
                       ? "text-red-800"
                       : notification.type === "warning"
-                        ? "text-orange-800"
-                        : "text-green-800"
+                      ? "text-orange-800"
+                      : "text-green-800"
                   }`}
                 >
                   {notification.message}

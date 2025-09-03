@@ -1,40 +1,31 @@
 "use client"
+import { useEffect, useState } from "react"
+import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle } from "lucide-react"
 
 const GymDashboard = () => {
-  // Sample data for charts
-  const membershipData = [
-    { name: "Jan", members: 400 },
-    { name: "Feb", members: 300 },
-    { name: "Mar", members: 500 },
-    { name: "Apr", members: 700 },
-    { name: "May", members: 600 },
-    { name: "Jun", members: 800 },
-  ]
+  const [membershipData, setMembershipData] = useState([])
+  const [revenueData, setRevenueData] = useState([])
+  const [summaryStats, setSummaryStats] = useState({
+    members: { active: 0, total: 0 },
+    salesToday: 0,
+    activeSubscriptions: 0,
+    checkinsToday: 0,
+    upcomingExpirations: 0,
+  })
 
-  const revenueData = [
-    { name: "Jan", revenue: 4000 },
-    { name: "Feb", revenue: 3000 },
-    { name: "Mar", revenue: 5000 },
-    { name: "Apr", revenue: 7000 },
-    { name: "May", revenue: 6000 },
-    { name: "Jun", revenue: 8000 },
-  ]
-
-  // Sample data for summary cards
-  const summaryStats = {
-    members: {
-      active: 342,
-      total: 456,
-    },
-    salesToday: 2850,
-    activeSubscriptions: 298,
-    checkinsToday: 87,
-    upcomingExpirations: 23,
-  }
+  useEffect(() => {
+    axios.get("http://localhost/cynergy/admindashboard.php")
+      .then(res => {
+        setSummaryStats(res.data.summaryStats)
+        setMembershipData(res.data.membershipData)
+        setRevenueData(res.data.revenueData)
+      })
+      .catch(err => console.error("Error fetching dashboard data:", err))
+  }, [])
 
   return (
     <div className="space-y-6">
@@ -48,6 +39,7 @@ const GymDashboard = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {/* Members */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Members</CardTitle>
@@ -61,6 +53,7 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
+            {/* Sales Today */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
@@ -72,6 +65,7 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
+            {/* Active Subscriptions */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
@@ -83,6 +77,7 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
+            {/* Gym Check-ins */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Gym Check-ins Today</CardTitle>
@@ -94,6 +89,7 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
+            {/* Expirations */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Upcoming Expirations</CardTitle>
@@ -108,7 +104,7 @@ const GymDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Charts Section */}
+      {/* Charts */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -118,10 +114,7 @@ const GymDashboard = () => {
           <CardContent>
             <ChartContainer
               config={{
-                members: {
-                  label: "Members",
-                  color: "hsl(var(--chart-1))",
-                },
+                members: { label: "Members", color: "hsl(var(--chart-1))" },
               }}
               className="h-[300px]"
             >
@@ -135,9 +128,7 @@ const GymDashboard = () => {
                       r: 8,
                       style: { fill: "hsl(var(--chart-1))", opacity: 0.8 },
                     }}
-                    style={{
-                      stroke: "hsl(var(--chart-1))",
-                    }}
+                    style={{ stroke: "hsl(var(--chart-1))" }}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </LineChart>
@@ -154,22 +145,13 @@ const GymDashboard = () => {
           <CardContent>
             <ChartContainer
               config={{
-                revenue: {
-                  label: "Revenue",
-                  color: "hsl(var(--chart-2))",
-                },
+                revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
               }}
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={revenueData}>
-                  <Bar
-                    dataKey="revenue"
-                    style={{
-                      fill: "hsl(var(--chart-2))",
-                      opacity: 0.8,
-                    }}
-                  />
+                  <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </BarChart>
               </ResponsiveContainer>
@@ -177,37 +159,6 @@ const GymDashboard = () => {
           </CardContent>
         </Card>
       </div>
-
-      {/* Quick Statistics */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Users className="mr-2 h-5 w-5" />
-            Quick Statistics
-          </CardTitle>
-          <CardDescription>Key performance metrics at a glance</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">{summaryStats.members.total}</div>
-              <div className="text-sm text-muted-foreground">Total Members</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">₱{summaryStats.salesToday.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">Today's Sales</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">{summaryStats.activeSubscriptions}</div>
-              <div className="text-sm text-muted-foreground">Active Plans</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">{summaryStats.checkinsToday}</div>
-              <div className="text-sm text-muted-foreground">Check-ins Today</div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

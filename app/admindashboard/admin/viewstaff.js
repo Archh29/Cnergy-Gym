@@ -10,10 +10,32 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Edit, Trash2, Loader2 } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
-const API_BASE_URL = "http://localhost/cynergy/addstaff.php" // Update this to the correct URL of your PHP backend
+const API_BASE_URL = "http://localhost/cynergy/addstaff.php"
+
+const validatePassword = (password) => {
+  const errors = []
+  if (password.length < 8) {
+    errors.push("Password must be at least 8 characters long")
+  }
+  if (!/[A-Z]/.test(password)) {
+    errors.push("Password must contain at least one uppercase letter")
+  }
+  if (!/[0-9]/.test(password)) {
+    errors.push("Password must contain at least one number")
+  }
+  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
+    errors.push("Password must contain at least one special character")
+  }
+  return errors
+}
+
+const validateEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
+}
 
 const ViewStaff = () => {
   const { toast } = useToast()
@@ -27,8 +49,8 @@ const ViewStaff = () => {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    user_type_id: 2, // Assuming 2 is for Staff
-    gender_id: 1, // Default to Male (1)
+    user_type_id: 2,
+    gender_id: 1,
     fname: "",
     mname: "",
     lname: "",
@@ -37,8 +59,10 @@ const ViewStaff = () => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [staffToDelete, setStaffToDelete] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [validationErrors, setValidationErrors] = useState({})
+  const [showPassword, setShowPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
 
-  // Fetch staff data
   useEffect(() => {
     fetchStaffData()
   }, [])
@@ -60,9 +84,49 @@ const ViewStaff = () => {
     }
   }
 
+  const validateForm = (data, isEdit = false) => {
+    const errors = {}
+
+    // Name validations
+    if (!data.fname.trim()) errors.fname = "First name is required"
+    if (!data.lname.trim()) errors.lname = "Last name is required"
+
+    // Email validation
+    if (!data.email.trim()) {
+      errors.email = "Email is required"
+    } else if (!validateEmail(data.email)) {
+      errors.email = "Please enter a valid email address"
+    }
+
+    // Password validation (only for new staff or when password is provided in edit)
+    if (!isEdit || (isEdit && data.password && data.password.trim())) {
+      if (!data.password || !data.password.trim()) {
+        errors.password = "Password is required"
+      } else {
+        const passwordErrors = validatePassword(data.password)
+        if (passwordErrors.length > 0) {
+          errors.password = passwordErrors[0]
+        }
+      }
+    }
+
+    // Date validation
+    if (!data.bday) errors.bday = "Date of birth is required"
+
+    return errors
+  }
+
   const handleInputChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+
+    if (validationErrors[name]) {
+      setValidationErrors((prev) => {
+        const newErrors = { ...prev }
+        delete newErrors[name]
+        return newErrors
+      })
+    }
   }
 
   const handleSelectChange = (name, value) => {
@@ -76,17 +140,18 @@ const ViewStaff = () => {
 
   const handleEditClick = (staff) => {
     setSelectedStaff(staff)
-    // Populate form data for editing
     setFormData({
       id: staff.id,
       email: staff.email,
-      user_type_id: staff.user_type === "Staff" ? 2 : 1, // Adjust based on your user types
-      gender_id: staff.gender === "Male" ? 1 : 2, // Adjust based on your gender types
+      password: "", // Clear password field for editing
+      user_type_id: staff.user_type === "Staff" ? 2 : 1,
+      gender_id: staff.gender === "Male" ? 1 : 2,
       fname: staff.fname,
       mname: staff.mname || "",
       lname: staff.lname,
       bday: staff.bday,
     })
+    setValidationErrors({}) // Clear validation errors
     setEditOpen(true)
   }
 
@@ -97,6 +162,13 @@ const ViewStaff = () => {
 
   const handleAddStaff = async (e) => {
     e.preventDefault()
+
+    const errors = validateForm(formData)
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors)
+      return
+    }
+
     setSubmitting(true)
 
     try {
@@ -111,11 +183,15 @@ const ViewStaff = () => {
       fetchStaffData()
     } catch (error) {
       console.error("Error adding staff:", error)
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || "Failed to add staff member",
-        variant: "destructive",
-      })
+      if (error.response?.data?.error?.includes("email")) {
+        setValidationErrors({ email: "Email address already exists" })
+      } else {
+        toast({
+          title: "Error",
+          description: error.response?.data?.error || "Failed to add staff member",
+          variant: "destructive",
+        })
+      }
     } finally {
       setSubmitting(false)
     }
@@ -123,6 +199,13 @@ const ViewStaff = () => {
 
   const handleUpdateStaff = async (e) => {
     e.preventDefault()
+
+    const errors = validateForm(formData, true)
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors)
+      return
+    }
+
     setSubmitting(true)
 
     try {
@@ -137,11 +220,15 @@ const ViewStaff = () => {
       fetchStaffData()
     } catch (error) {
       console.error("Error updating staff:", error)
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || "Failed to update staff member",
-        variant: "destructive",
-      })
+      if (error.response?.data?.error?.includes("email")) {
+        setValidationErrors({ email: "Email address already exists" })
+      } else {
+        toast({
+          title: "Error",
+          description: error.response?.data?.error || "Failed to update staff member",
+          variant: "destructive",
+        })
+      }
     } finally {
       setSubmitting(false)
     }
@@ -185,9 +272,9 @@ const ViewStaff = () => {
       lname: "",
       bday: "",
     })
+    setValidationErrors({}) // Clear validation errors
   }
 
-  // Filter staff based on search query
   const filteredStaff = staffList.filter((staff) => {
     const fullName = `${staff.fname} ${staff.mname || ""} ${staff.lname}`.toLowerCase()
     return fullName.includes(searchQuery.toLowerCase()) || staff.email.toLowerCase().includes(searchQuery.toLowerCase())
@@ -217,11 +304,27 @@ const ViewStaff = () => {
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="lname">Last name</Label>
-                        <Input id="lname" name="lname" value={formData.lname} onChange={handleInputChange} required />
+                        <Input
+                          id="lname"
+                          name="lname"
+                          value={formData.lname}
+                          onChange={handleInputChange}
+                          required
+                          className={validationErrors.lname ? "border-red-500" : ""}
+                        />
+                        {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="fname">First name</Label>
-                        <Input id="fname" name="fname" value={formData.fname} onChange={handleInputChange} required />
+                        <Input
+                          id="fname"
+                          name="fname"
+                          value={formData.fname}
+                          onChange={handleInputChange}
+                          required
+                          className={validationErrors.fname ? "border-red-500" : ""}
+                        />
+                        {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="mname">Middle name</Label>
@@ -238,18 +341,40 @@ const ViewStaff = () => {
                           value={formData.email}
                           onChange={handleInputChange}
                           required
+                          className={validationErrors.email ? "border-red-500" : ""}
                         />
+                        {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="password">Password</Label>
-                        <Input
-                          type="password"
-                          id="password"
-                          name="password"
-                          value={formData.password || ""}
-                          onChange={handleInputChange}
-                          required
-                        />
+                        <div className="relative">
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            id="password"
+                            name="password"
+                            value={formData.password || ""}
+                            onChange={handleInputChange}
+                            required
+                            className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
+                          />
+                          <button
+                            type="button"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4 text-gray-400" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-gray-400" />
+                            )}
+                          </button>
+                        </div>
+                        {validationErrors.password && (
+                          <p className="text-sm text-red-500">{validationErrors.password}</p>
+                        )}
+                        <p className="text-xs text-gray-500">
+                          Password must be 8+ characters with uppercase, number, and special character
+                        </p>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -261,7 +386,9 @@ const ViewStaff = () => {
                         value={formData.bday}
                         onChange={handleInputChange}
                         required
+                        className={validationErrors.bday ? "border-red-500" : ""}
                       />
+                      {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label>Gender</Label>
@@ -430,11 +557,27 @@ const ViewStaff = () => {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-lname">Last name</Label>
-                    <Input id="edit-lname" name="lname" value={formData.lname} onChange={handleInputChange} required />
+                    <Input
+                      id="edit-lname"
+                      name="lname"
+                      value={formData.lname}
+                      onChange={handleInputChange}
+                      required
+                      className={validationErrors.lname ? "border-red-500" : ""}
+                    />
+                    {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-fname">First name</Label>
-                    <Input id="edit-fname" name="fname" value={formData.fname} onChange={handleInputChange} required />
+                    <Input
+                      id="edit-fname"
+                      name="fname"
+                      value={formData.fname}
+                      onChange={handleInputChange}
+                      required
+                      className={validationErrors.fname ? "border-red-500" : ""}
+                    />
+                    {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-mname">Middle name</Label>
@@ -450,7 +593,37 @@ const ViewStaff = () => {
                     value={formData.email}
                     onChange={handleInputChange}
                     required
+                    className={validationErrors.email ? "border-red-500" : ""}
                   />
+                  {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-password">New Password (leave blank to keep current)</Label>
+                  <div className="relative">
+                    <Input
+                      type={showEditPassword ? "text" : "password"}
+                      id="edit-password"
+                      name="password"
+                      value={formData.password || ""}
+                      onChange={handleInputChange}
+                      className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      onClick={() => setShowEditPassword(!showEditPassword)}
+                    >
+                      {showEditPassword ? (
+                        <EyeOff className="h-4 w-4 text-gray-400" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-gray-400" />
+                      )}
+                    </button>
+                  </div>
+                  {validationErrors.password && <p className="text-sm text-red-500">{validationErrors.password}</p>}
+                  <p className="text-xs text-gray-500">
+                    If changing password: 8+ characters with uppercase, number, and special character
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-bday">Date of Birth</Label>
@@ -461,7 +634,9 @@ const ViewStaff = () => {
                     value={formData.bday}
                     onChange={handleInputChange}
                     required
+                    className={validationErrors.bday ? "border-red-500" : ""}
                   />
+                  {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Gender</Label>

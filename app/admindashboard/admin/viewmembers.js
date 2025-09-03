@@ -17,7 +17,62 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { useForm } from "react-hook-form"
-import { Search, Plus, Edit, Trash2, User, Mail, Calendar, ChevronLeft, ChevronRight, Loader2, Users, CheckCircle, XCircle, Clock, Shield } from 'lucide-react'
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  User,
+  Mail,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Users,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Shield,
+  Eye,
+  EyeOff,
+} from "lucide-react"
+
+const memberSchema = z.object({
+  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
+  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
+  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
+  gender_id: z.string().min(1, "Gender is required"),
+  bday: z.string().min(1, "Date of birth is required"),
+  user_type_id: z.number().default(4),
+  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+})
+
+const editMemberSchema = z.object({
+  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
+  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
+  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  password: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val || val === "") return true
+      return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
+    }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
+  gender_id: z.string().min(1, "Gender is required"),
+  bday: z.string().min(1, "Date of birth is required"),
+  user_type_id: z.number().default(4),
+  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+})
 
 const ViewMembers = () => {
   const [members, setMembers] = useState([])
@@ -31,12 +86,29 @@ const ViewMembers = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
   const { toast } = useToast()
 
-  // Form for adding/editing members
   const form = useForm({
+    resolver: zodResolver(memberSchema),
+    defaultValues: {
+      fname: "",
+      mname: "",
+      lname: "",
+      email: "",
+      password: "",
+      gender_id: "",
+      bday: "",
+      user_type_id: 4,
+      account_status: "pending",
+    },
+  })
+
+  const editForm = useForm({
+    resolver: zodResolver(editMemberSchema),
     defaultValues: {
       fname: "",
       mname: "",
@@ -63,21 +135,40 @@ const ViewMembers = () => {
     { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-800" },
   ]
 
+  const validateEmail = async (email, excludeId = null) => {
+    try {
+      const response = await fetch("http://localhost/cynergy/member_management.php")
+      const existingMembers = await response.json()
+      const emailExists = existingMembers.some(
+        (member) => member.email.toLowerCase() === email.toLowerCase() && (excludeId ? member.id !== excludeId : true),
+      )
+      return !emailExists
+    } catch (error) {
+      console.error("Error validating email:", error)
+      return true // Allow if validation fails
+    }
+  }
+
   useEffect(() => {
     const fetchMembers = async () => {
       try {
         setIsLoading(true)
         const response = await fetch("http://localhost/cynergy/member_management.php")
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
         const data = await response.json()
-        setMembers(data)
-        setFilteredMembers(data)
+        setMembers(Array.isArray(data) ? data : [])
+        setFilteredMembers(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error("Error fetching members:", error)
         toast({
           title: "Error",
-          description: "Failed to fetch members. Please try again.",
+          description: "Failed to fetch members. Please check your connection and try again.",
           variant: "destructive",
         })
+        setMembers([])
+        setFilteredMembers([])
       } finally {
         setIsLoading(false)
       }
@@ -138,7 +229,7 @@ const ViewMembers = () => {
 
   const handleEditMember = (member) => {
     setSelectedMember(member)
-    form.reset({
+    editForm.reset({
       fname: member.fname || "",
       mname: member.mname || "",
       lname: member.lname || "",
@@ -208,13 +299,24 @@ const ViewMembers = () => {
   const handleAddMember = async (data) => {
     setIsLoading(true)
     try {
+      const isEmailValid = await validateEmail(data.email)
+      if (!isEmailValid) {
+        toast({
+          title: "Error",
+          description: "Email address already exists. Please use a different email.",
+          variant: "destructive",
+        })
+        setIsLoading(false)
+        return
+      }
+
       const formattedData = {
-        fname: data.fname,
-        mname: data.mname,
-        lname: data.lname,
-        email: data.email,
+        fname: data.fname.trim(),
+        mname: data.mname.trim(),
+        lname: data.lname.trim(),
+        email: data.email.trim().toLowerCase(),
         password: data.password,
-        gender_id: parseInt(data.gender_id),
+        gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
         account_status: data.account_status,
@@ -233,8 +335,8 @@ const ViewMembers = () => {
       if (response.ok) {
         const getResponse = await fetch("http://localhost/cynergy/member_management.php")
         const updatedMembers = await getResponse.json()
-        setMembers(updatedMembers)
-        setFilteredMembers(updatedMembers)
+        setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setIsAddDialogOpen(false)
         form.reset()
         toast({
@@ -242,13 +344,13 @@ const ViewMembers = () => {
           description: "Member added successfully!",
         })
       } else {
-        throw new Error(result.message || "Failed to add member")
+        throw new Error(result.error || result.message || "Failed to add member")
       }
     } catch (error) {
       console.error("Error adding member:", error)
       toast({
         title: "Error",
-        description: "Failed to add member. Please try again.",
+        description: error.message || "Failed to add member. Please try again.",
         variant: "destructive",
       })
     }
@@ -259,13 +361,26 @@ const ViewMembers = () => {
     if (!selectedMember) return
     setIsLoading(true)
     try {
+      if (data.email.toLowerCase() !== selectedMember.email.toLowerCase()) {
+        const isEmailValid = await validateEmail(data.email, selectedMember.id)
+        if (!isEmailValid) {
+          toast({
+            title: "Error",
+            description: "Email address already exists. Please use a different email.",
+            variant: "destructive",
+          })
+          setIsLoading(false)
+          return
+        }
+      }
+
       const updateData = {
         id: selectedMember.id,
-        fname: data.fname,
-        mname: data.mname,
-        lname: data.lname,
-        email: data.email,
-        gender_id: parseInt(data.gender_id),
+        fname: data.fname.trim(),
+        mname: data.mname.trim(),
+        lname: data.lname.trim(),
+        email: data.email.trim().toLowerCase(),
+        gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
         account_status: data.account_status,
@@ -287,8 +402,8 @@ const ViewMembers = () => {
       if (response.ok) {
         const getResponse = await fetch("http://localhost/cynergy/member_management.php")
         const updatedMembers = await getResponse.json()
-        setMembers(updatedMembers)
-        setFilteredMembers(updatedMembers)
+        setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setIsEditDialogOpen(false)
         setSelectedMember(null)
         toast({
@@ -296,13 +411,13 @@ const ViewMembers = () => {
           description: "Member updated successfully!",
         })
       } else {
-        throw new Error(result.message || "Failed to update member")
+        throw new Error(result.error || result.message || "Failed to update member")
       }
     } catch (error) {
       console.error("Error updating member:", error)
       toast({
         title: "Error",
-        description: "Failed to update member. Please try again.",
+        description: error.message || "Failed to update member. Please try again.",
         variant: "destructive",
       })
     }
@@ -359,6 +474,7 @@ const ViewMembers = () => {
       user_type_id: 4,
       account_status: "pending",
     })
+    setShowPassword(false)
     setIsAddDialogOpen(true)
   }
 
@@ -536,9 +652,7 @@ const ViewMembers = () => {
               <Shield className="mr-2 h-5 w-5" />
               Account Verification
             </DialogTitle>
-            <DialogDescription>
-              Review and verify this member's account to allow mobile app access.
-            </DialogDescription>
+            <DialogDescription>Review and verify this member's account to allow mobile app access.</DialogDescription>
           </DialogHeader>
           {selectedMember && (
             <div className="space-y-4">
@@ -577,11 +691,7 @@ const ViewMembers = () => {
             <Button variant="outline" onClick={() => setIsVerificationDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => handleUpdateAccountStatus("rejected")}
-              disabled={isLoading}
-            >
+            <Button variant="destructive" onClick={() => handleUpdateAccountStatus("rejected")} disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <XCircle className="mr-2 h-4 w-4" />
               Reject
@@ -660,7 +770,7 @@ const ViewMembers = () => {
 
       {/* Add Member Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Member</DialogTitle>
             <DialogDescription>Enter the basic details for the new member.</DialogDescription>
@@ -728,8 +838,22 @@ const ViewMembers = () => {
                   <FormItem>
                     <FormLabel>Password*</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
+                      <div className="relative">
+                        <Input type={showPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </FormControl>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Password must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -813,16 +937,16 @@ const ViewMembers = () => {
 
       {/* Edit Member Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Member</DialogTitle>
             <DialogDescription>Update the member's information and account status.</DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleUpdateMember)} className="space-y-4">
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(handleUpdateMember)} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormField
-                  control={form.control}
+                  control={editForm.control}
                   name="fname"
                   render={({ field }) => (
                     <FormItem>
@@ -835,7 +959,7 @@ const ViewMembers = () => {
                   )}
                 />
                 <FormField
-                  control={form.control}
+                  control={editForm.control}
                   name="mname"
                   render={({ field }) => (
                     <FormItem>
@@ -849,7 +973,7 @@ const ViewMembers = () => {
                 />
               </div>
               <FormField
-                control={form.control}
+                control={editForm.control}
                 name="lname"
                 render={({ field }) => (
                   <FormItem>
@@ -862,7 +986,7 @@ const ViewMembers = () => {
                 )}
               />
               <FormField
-                control={form.control}
+                control={editForm.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
@@ -875,21 +999,36 @@ const ViewMembers = () => {
                 )}
               />
               <FormField
-                control={form.control}
+                control={editForm.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>New Password (leave blank to keep current)</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="********" {...field} />
+                      <div className="relative">
+                        <Input type={showEditPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowEditPassword(!showEditPassword)}
+                        >
+                          {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </FormControl>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      If changing password: must be at least 8 characters with 1 uppercase letter, 1 number, and 1
+                      special character
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <div className="grid grid-cols-2 gap-4">
                 <FormField
-                  control={form.control}
+                  control={editForm.control}
                   name="gender_id"
                   render={({ field }) => (
                     <FormItem>
@@ -913,7 +1052,7 @@ const ViewMembers = () => {
                   )}
                 />
                 <FormField
-                  control={form.control}
+                  control={editForm.control}
                   name="bday"
                   render={({ field }) => (
                     <FormItem>
@@ -927,7 +1066,7 @@ const ViewMembers = () => {
                 />
               </div>
               <FormField
-                control={form.control}
+                control={editForm.control}
                 name="account_status"
                 render={({ field }) => (
                   <FormItem>
