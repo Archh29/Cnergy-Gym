@@ -25,7 +25,7 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) 
 
   const handleLogout = async () => {
     // Make a request to your logout PHP endpoint to clear session and cookies
-    await fetch("http://localhost/cynergy/logout.php", {
+    await fetch("https://api.cnergy.site/logout.php", {
       method: "GET",
       credentials: "include", // Ensure that cookies are sent with the request
     })
