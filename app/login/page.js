@@ -5,7 +5,7 @@ import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import ReCAPTCHA from "react-google-recaptcha";
 import axios from "axios";
 
-const API_BASE = "https://www.api.cnergy.site"; // match your frontend origin
+const API_BASE = "https://api.cnergy.site/"; // match your frontend origin
 
 export default function Login() {
   const [email, setEmail] = useState("");
