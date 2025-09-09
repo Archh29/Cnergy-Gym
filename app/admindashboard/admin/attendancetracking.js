@@ -32,8 +32,8 @@ const AttendanceTracking = () => {
     setLoading(true)
     try {
       const [membersRes, attendanceRes] = await Promise.all([
-        axios.get("http://localhost/cynergy/attendance.php?action=members"),
-        axios.get("http://localhost/cynergy/attendance.php?action=attendance"),
+        axios.get("https://api.cnergy.site/attendance.php?action=members"),
+        axios.get("https://api.cnergy.site/attendance.php?action=attendance"),
       ])
       setMembers(membersRes.data)
       setAttendance(attendanceRes.data)
@@ -77,7 +77,7 @@ const AttendanceTracking = () => {
   // Handle manual attendance entry
   const handleManualEntry = async (member) => {
     try {
-      const response = await axios.post("http://localhost/cynergy/attendance.php", {
+      const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: `CNERGY_ATTENDANCE:${member.id}`,
       })
@@ -107,7 +107,7 @@ const AttendanceTracking = () => {
       return
     }
     try {
-      const response = await axios.post("http://localhost/cynergy/attendance.php", {
+      const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: manualQrInput.trim(),
       })

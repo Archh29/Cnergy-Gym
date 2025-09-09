@@ -39,7 +39,7 @@ import {
   EyeOff,
 } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/addcoach.php"
+const API_URL = "https://api.cnergy.site/addcoach.php"
 
 const validatePassword = (password) => {
   const errors = []

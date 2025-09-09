@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
-const API_BASE_URL = "http://localhost/cynergy/addstaff.php"
+const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
 
 const validatePassword = (password) => {
   const errors = []

@@ -137,7 +137,7 @@ const ViewMembers = () => {
 
   const validateEmail = async (email, excludeId = null) => {
     try {
-      const response = await fetch("http://localhost/cynergy/member_management.php")
+      const response = await fetch("https://api.cnergy.site/member_management.php")
       const existingMembers = await response.json()
       const emailExists = existingMembers.some(
         (member) => member.email.toLowerCase() === email.toLowerCase() && (excludeId ? member.id !== excludeId : true),
