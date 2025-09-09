@@ -27,7 +27,7 @@ import {
   CreditCard,
 } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/monitor_subscription.php"
+const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionMonitor = () => {
   const [searchQuery, setSearchQuery] = useState("")
@@ -101,7 +101,7 @@ const SubscriptionMonitor = () => {
 
   const fetchSubscriptionPlans = async () => {
     try {
-      const response = await axios.get("http://localhost/cynergy/subscription_plans.php")
+      const response = await axios.get("https://api.cnergy.site/subscription_plans.php")
       if (response.data.success) {
         setSubscriptionPlans(response.data.plans)
       }
@@ -112,7 +112,7 @@ const SubscriptionMonitor = () => {
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await axios.get("http://localhost/cynergy/member_management.php")
+      const response = await axios.get("https://api.cnergy.site/member_management.php")
       if (Array.isArray(response.data)) {
         // Filter only approved customers
         const approvedCustomers = response.data.filter(

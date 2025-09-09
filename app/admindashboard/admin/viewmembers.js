@@ -323,7 +323,7 @@ const ViewMembers = () => {
         failed_attempt: 0,
       }
 
-      const response = await fetch("http://localhost/cynergy/member_management.php", {
+      const response = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -333,7 +333,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("http://localhost/cynergy/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
@@ -390,7 +390,7 @@ const ViewMembers = () => {
         updateData.password = data.password
       }
 
-      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -400,7 +400,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("http://localhost/cynergy/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
@@ -428,7 +428,7 @@ const ViewMembers = () => {
     if (!selectedMember) return
     setIsLoading(true)
     try {
-      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -438,7 +438,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("http://localhost/cynergy/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)

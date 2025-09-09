@@ -18,7 +18,7 @@ const GymDashboard = () => {
   })
 
   useEffect(() => {
-    axios.get("http://localhost/cynergy/admindashboard.php")
+    axios.get("https://api.cnergy.site/admindashboard.php")
       .then(res => {
         setSummaryStats(res.data.summaryStats)
         setMembershipData(res.data.membershipData)

@@ -29,7 +29,7 @@ import {
   UserCheck,
 } from "lucide-react"
 
-const API_BASE_URL = "http://localhost/cynergy/admin_coach.php"
+const API_BASE_URL = "https://api.cnergy.site/admin_coach.php"
 
 const CoachAssignments = () => {
   const [searchQuery, setSearchQuery] = useState("")

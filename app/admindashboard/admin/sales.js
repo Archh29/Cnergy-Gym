@@ -38,7 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 
 // API Configuration
-const API_BASE_URL = "http://localhost/cynergy/sales.php"
+const API_BASE_URL = "https://api.cnergy.site/sales.php"
 
 const Sales = () => {
   const [selectedMember, setSelectedMember] = useState("")

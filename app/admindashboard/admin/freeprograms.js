@@ -41,8 +41,8 @@ const FreePrograms = () => {
   }
 
   // API URLs - using your existing file structure
-  const PROGRAMS_API = "http://localhost/cynergy/programs.php"
-  const EXERCISES_API = "http://localhost/cynergy/exercises.php"
+  const PROGRAMS_API = "https://api.cnergy.site/programs.php"
+  const EXERCISES_API = "https://api.cnergy.site/exercises.php"
 
   useEffect(() => {
     fetchPrograms()

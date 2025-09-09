@@ -61,7 +61,7 @@ const ExerciseMuscleManager = () => {
   const [muscleTargetSearchQuery, setMuscleTargetSearchQuery] = useState("")
 
   // API base URL
-  const API_URL = "http://localhost/cynergy/exercises.php"
+  const API_URL = "https://api.cnergy.site/exercises.php"
 
   useEffect(() => {
     fetchExercises()

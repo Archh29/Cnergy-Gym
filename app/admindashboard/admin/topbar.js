@@ -22,7 +22,7 @@ import {
   UserCheck,
 } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/adminnotification.php"
+const API_URL = "https://api.cnergy.site/adminnotification.php"
 
 const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
   const [notifications, setNotifications] = useState([])

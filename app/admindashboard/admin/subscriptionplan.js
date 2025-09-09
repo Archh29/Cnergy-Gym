@@ -32,7 +32,7 @@ import {
 import { Plus, Trash2, Edit, Loader2, Users, DollarSign, TrendingUp, CreditCard, Search, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
-const API_URL = "http://localhost/cynergy/membership.php"
+const API_URL = "https://api.cnergy.site/membership.php"
 
 const SubscriptionPlans = () => {
   const [plans, setPlans] = useState([])
