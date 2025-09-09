@@ -83,7 +83,7 @@ export default function Login() {
     <div className="relative min-h-screen w-full overflow-hidden bg-black">
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('https://www.cnergy.site/bbg.jpg')" }}
+        style={{ backgroundImage: "url('https://api.cnergy.site/bbg.jpg')" }}
       >
         <div className="absolute inset-0 bg-black/60" />
       </div>
