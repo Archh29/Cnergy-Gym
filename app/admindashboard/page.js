@@ -106,7 +106,7 @@ const App = () => {
     setScanCount((prev) => prev + 1)
 
     try {
-      const response = await axios.post("http://localhost/cynergy/attendance.php", {
+      const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: cleanedData.trim(),
       })

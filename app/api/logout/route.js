@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function GET(req) {
     // 1. Call PHP logout to clear PHP session
-    await fetch("http://localhost/cynergy/logout.php", {
+    await fetch("https://api.cnergy.site/logout.php", {
         method: "GET",
         credentials: "include",
     });

@@ -153,7 +153,7 @@ const ViewMembers = () => {
     const fetchMembers = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch("http://localhost/cynergy/member_management.php")
+        const response = await fetch("https://api.cnergy.site/member_management.php")
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
@@ -258,7 +258,7 @@ const ViewMembers = () => {
     setIsLoading(true)
 
     try {
-      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -272,7 +272,7 @@ const ViewMembers = () => {
       const result = await response.json()
       if (response.ok) {
         // Refresh the members list
-        const getResponse = await fetch("http://localhost/cynergy/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
