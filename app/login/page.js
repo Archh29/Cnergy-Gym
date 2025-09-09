@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { FaUser , FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
+import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import ReCAPTCHA from "react-google-recaptcha";
 import axios from "axios";
+
+const API_BASE = "https://www.cnergy.site"; // match your frontend origin
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,49 +16,22 @@ export default function Login() {
   const [captchaValid, setCaptchaValid] = useState(false);
   const [captchaResponse, setCaptchaResponse] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [csrfToken, setCsrfToken] = useState("");
 
   const router = useRouter();
 
   useEffect(() => {
-    // Read csrfToken from localStorage on client side only
-    const storedToken = localStorage.getItem("csrfToken");
-    if (storedToken) {
-      setCsrfToken(storedToken);
-    }
-
-    const fetchCsrfToken = async () => {
+    const checkUserRole = async () => {
       try {
-        const response = await axios.get("https://cnergy.site/csrf.php", {
+        const response = await axios.get(`${API_BASE}/session.php`, {
           withCredentials: true,
         });
-        if (response.data.csrf_token) {
-          setCsrfToken(response.data.csrf_token);
-          localStorage.setItem("csrfToken", response.data.csrf_token);
-        } else {
-          setError("Failed to get CSRF token. Please refresh.");
+        if (response.data.user_role) {
+          router.replace(`/${response.data.user_role}dashboard`);
         }
-      } catch (error) {
-        console.error("Failed to fetch CSRF token:", error);
-        setError("Failed to fetch CSRF token. Please try again.");
+      } catch {
+        // no active session; ignore
       }
     };
-
-    fetchCsrfToken();
-
-    const checkUserRole = async () => {
-    try {
-      const response = await axios.get("https://cnergy.site/session.php", {
-        withCredentials: true,
-      });
-      if (response.data.user_role) {
-        router.replace(`/${response.data.user_role}dashboard`);
-      }
-    } catch (error) {
-      console.error("Session check failed:", error);
-    }
-  };
-
     checkUserRole();
   }, [router]);
 
@@ -82,52 +57,33 @@ export default function Login() {
       return;
     }
 
-    if (!csrfToken) {
-      setError("CSRF token missing. Please refresh the page.");
-      setLoading(false);
-      return;
-    }
-
     try {
-      const tokenToSend = csrfToken || localStorage.getItem("csrfToken");
-
       const response = await axios.post(
-        "https://cnergy.site/login.php",
-        {
-          email,
-          password,
-          csrf_token: tokenToSend,
-        },
+        `${API_BASE}/login.php`,
+        { email, password },
         {
           withCredentials: true,
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
         }
       );
 
       if (response.data.redirect) {
-        if (response.data.csrf_token) {
-          localStorage.setItem("csrfToken", response.data.csrf_token);
-          setCsrfToken(response.data.csrf_token);
-        }
         router.push(response.data.redirect);
       } else {
         setError(response.data.error || "Invalid email or password.");
       }
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch {
       setError("Error logging in. Please try again.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-black">
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('https://cnergy.site/bbg.jpg')" }}
+        style={{ backgroundImage: "url('https://www.cnergy.site/bbg.jpg')" }}
       >
         <div className="absolute inset-0 bg-black/60" />
       </div>
@@ -148,7 +104,7 @@ export default function Login() {
           )}
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="relative">
-              <FaUser  className="absolute left-3 top-3 text-orange-500" />
+              <FaUser className="absolute left-3 top-3 text-orange-500" />
               <input
                 type="email"
                 placeholder="Email"
