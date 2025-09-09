@@ -27,7 +27,7 @@ export default function Login() {
 
     const fetchCsrfToken = async () => {
       try {
-        const response = await axios.get("http://localhost/cynergy/csrf.php", {
+        const response = await axios.get("https://cnergy.site/csrf.php", {
           withCredentials: true,
         });
         if (response.data.csrf_token) {
@@ -46,7 +46,7 @@ export default function Login() {
 
     const checkUserRole = async () => {
     try {
-      const response = await axios.get("http://localhost/cynergy/session.php", {
+      const response = await axios.get("https://cnergy.site/session.php", {
         withCredentials: true,
       });
       if (response.data.user_role) {
@@ -92,7 +92,7 @@ export default function Login() {
       const tokenToSend = csrfToken || localStorage.getItem("csrfToken");
 
       const response = await axios.post(
-        "http://localhost/cynergy/login.php",
+        "https://cnergy.site/login.php",
         {
           email,
           password,
@@ -127,7 +127,7 @@ export default function Login() {
     <div className="relative min-h-screen w-full overflow-hidden bg-black">
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('http://localhost/cynergy/bbg.jpg')" }}
+        style={{ backgroundImage: "url('https://cnergy.site/bbg.jpg')" }}
       >
         <div className="absolute inset-0 bg-black/60" />
       </div>
