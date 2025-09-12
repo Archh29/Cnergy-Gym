@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -9,252 +11,472 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/components/ui/use-toast";
-import { Badge } from "@/components/ui/badge";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Search, Plus, Edit, Trash2, User, Phone, Mail, Calendar, Dumbbell, ChevronLeft, ChevronRight, Loader2, Shield } from 'lucide-react';
+} from "@/components/ui/dialog"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  User,
+  Mail,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Users,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Shield,
+  Eye,
+  EyeOff,
+} from "lucide-react"
 
-const memberFormSchema = z.object({
-  fname: z.string().min(2, { message: "First name must be at least 2 characters." }),
-  lname: z.string().min(2, { message: "Last name must be at least 2 characters." }),
-  email: z.string().email({ message: "Please enter a valid email address." }),
-  phone_no: z.string().min(10, { message: "Phone number must be at least 10 digits." }),
-  status: z.enum(["active", "inactive", "deactive"], {
-    required_error: "Please select a status.",
-  }),
-});
+const memberSchema = z.object({
+  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
+  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
+  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
+  gender_id: z.string().min(1, "Gender is required"),
+  bday: z.string().min(1, "Date of birth is required"),
+  user_type_id: z.number().default(4),
+  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+})
+
+const editMemberSchema = z.object({
+  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
+  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
+  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  password: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val || val === "") return true
+      return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
+    }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
+  gender_id: z.string().min(1, "Gender is required"),
+  bday: z.string().min(1, "Date of birth is required"),
+  user_type_id: z.number().default(4),
+  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+})
 
 const ViewMembers = () => {
-  const [members, setMembers] = useState([]);
-  const [filteredMembers, setFilteredMembers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedMember, setSelectedMember] = useState(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const membersPerPage = 5;
-
-  const { toast } = useToast();
+  const [members, setMembers] = useState([])
+  const [filteredMembers, setFilteredMembers] = useState([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedMember, setSelectedMember] = useState(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
+  const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const membersPerPage = 5
+  const { toast } = useToast()
 
   const form = useForm({
-    resolver: zodResolver(memberFormSchema),
+    resolver: zodResolver(memberSchema),
     defaultValues: {
       fname: "",
+      mname: "",
       lname: "",
       email: "",
-      phone_no: "",
-      status: "active",
+      password: "",
+      gender_id: "",
+      bday: "",
+      user_type_id: 4,
+      account_status: "pending",
     },
-  });
+  })
+
+  const editForm = useForm({
+    resolver: zodResolver(editMemberSchema),
+    defaultValues: {
+      fname: "",
+      mname: "",
+      lname: "",
+      email: "",
+      password: "",
+      gender_id: "",
+      bday: "",
+      user_type_id: 4,
+      account_status: "pending",
+    },
+  })
+
+  // Gender mapping
+  const genderOptions = [
+    { id: "1", name: "Male" },
+    { id: "2", name: "Female" },
+  ]
+
+  // Account status options
+  const statusOptions = [
+    { value: "pending", label: "Pending", color: "bg-yellow-100 text-yellow-800" },
+    { value: "approved", label: "Approved", color: "bg-green-100 text-green-800" },
+    { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-800" },
+  ]
+
+  const validateEmail = async (email, excludeId = null) => {
+    try {
+      const response = await fetch("https://api.cnergy.site/member_management.php")
+      const existingMembers = await response.json()
+      const emailExists = existingMembers.some(
+        (member) => member.email.toLowerCase() === email.toLowerCase() && (excludeId ? member.id !== excludeId : true),
+      )
+      return !emailExists
+    } catch (error) {
+      console.error("Error validating email:", error)
+      return true // Allow if validation fails
+    }
+  }
 
   useEffect(() => {
     const fetchMembers = async () => {
       try {
-        const response = await fetch('http://localhost/cynergy/member_management.php');
-        const data = await response.json();
-        setMembers(data);
-        setFilteredMembers(data);
-        setIsLoading(false);
+        setIsLoading(true)
+        const response = await fetch("https://api.cnergy.site/member_management.php")
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        const data = await response.json()
+        setMembers(Array.isArray(data) ? data : [])
+        setFilteredMembers(Array.isArray(data) ? data : [])
       } catch (error) {
-        console.error("Error fetching members:", error);
+        console.error("Error fetching members:", error)
         toast({
           title: "Error",
-          description: "Failed to fetch members. Please try again.",
+          description: "Failed to fetch members. Please check your connection and try again.",
           variant: "destructive",
-        });
-        setIsLoading(false);
+        })
+        setMembers([])
+        setFilteredMembers([])
+      } finally {
+        setIsLoading(false)
       }
-    };
-
-    fetchMembers();
-  }, [toast]);
+    }
+    fetchMembers()
+  }, [toast])
 
   useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredMembers(members);
-    } else {
-      const filtered = members.filter(
-        (member) =>
-          member.fname.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          member.lname.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          member.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          member.phone_no.includes(searchQuery),
-      );
-      setFilteredMembers(filtered);
-    }
-    setCurrentPage(1);
-  }, [searchQuery, members]);
+    let filtered = members
 
-  const indexOfLastMember = currentPage * membersPerPage;
-  const indexOfFirstMember = indexOfLastMember - membersPerPage;
-  const currentMembers = filteredMembers.slice(indexOfFirstMember, indexOfLastMember);
-  const totalPages = Math.ceil(filteredMembers.length / membersPerPage);
+    // Filter by search query
+    if (searchQuery.trim() !== "") {
+      const lowercaseQuery = searchQuery.toLowerCase()
+      filtered = filtered.filter(
+        (member) =>
+          `${member.fname} ${member.lname}`.toLowerCase().includes(lowercaseQuery) ||
+          member.email?.toLowerCase().includes(lowercaseQuery),
+      )
+    }
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((member) => member.account_status === statusFilter)
+    }
+
+    setFilteredMembers(filtered)
+    setCurrentPage(1)
+  }, [searchQuery, statusFilter, members])
+
+  const indexOfLastMember = currentPage * membersPerPage
+  const indexOfFirstMember = indexOfLastMember - membersPerPage
+  const currentMembers = filteredMembers.slice(indexOfFirstMember, indexOfLastMember)
+  const totalPages = Math.ceil(filteredMembers.length / membersPerPage)
+
+  const getGenderName = (genderId) => {
+    const gender = genderOptions.find((g) => g.id === genderId?.toString())
+    return gender ? gender.name : "Unknown"
+  }
 
   const getStatusBadge = (status) => {
-    switch (status) {
-      case "active":
-        return <Badge className="bg-green-500">Active</Badge>;
-      case "inactive":
-        return <Badge className="bg-yellow-500">Inactive</Badge>;
-      case "deactive":
-        return <Badge className="bg-red-500">Deactivated</Badge>;
-      default:
-        return <Badge className="bg-gray-500">Unknown</Badge>;
-    }
-  };
+    const statusOption = statusOptions.find((s) => s.value === status)
+    if (!statusOption) return <Badge variant="outline">Unknown</Badge>
+
+    return (
+      <Badge className={statusOption.color} variant="outline">
+        {status === "pending" && <Clock className="w-3 h-3 mr-1" />}
+        {status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
+        {status === "rejected" && <XCircle className="w-3 h-3 mr-1" />}
+        {statusOption.label}
+      </Badge>
+    )
+  }
 
   const handleViewMember = (member) => {
-    setSelectedMember(member);
-    setIsViewDialogOpen(true);
-  };
+    setSelectedMember(member)
+    setIsViewDialogOpen(true)
+  }
 
   const handleEditMember = (member) => {
-    setSelectedMember(member);
-    form.reset({
-      fname: member.fname,
-      lname: member.lname,
-      email: member.email,
-      phone_no: member.phone_no,
-      status: member.status || "active",
-    });
-    setIsEditDialogOpen(true);
-  };
+    setSelectedMember(member)
+    editForm.reset({
+      fname: member.fname || "",
+      mname: member.mname || "",
+      lname: member.lname || "",
+      email: member.email || "",
+      password: "",
+      gender_id: member.gender_id?.toString() || "",
+      bday: member.bday ? new Date(member.bday).toISOString().split("T")[0] : "",
+      user_type_id: member.user_type_id || 4,
+      account_status: member.account_status || "pending",
+    })
+    setIsEditDialogOpen(true)
+  }
 
   const handleDeleteMember = (member) => {
-    setSelectedMember(member);
-    setIsDeleteDialogOpen(true);
-  };
+    setSelectedMember(member)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleVerifyMember = (member) => {
+    setSelectedMember(member)
+    setIsVerificationDialogOpen(true)
+  }
+
+  const handleUpdateAccountStatus = async (status) => {
+    if (!selectedMember) return
+    setIsLoading(true)
+
+    try {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: selectedMember.id,
+          account_status: status,
+        }),
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        // Refresh the members list
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(updatedMembers)
+        setFilteredMembers(updatedMembers)
+        setIsVerificationDialogOpen(false)
+        setSelectedMember(null)
+        toast({
+          title: "Success",
+          description: `Account ${status} successfully!`,
+        })
+      } else {
+        throw new Error(result.message || "Failed to update account status")
+      }
+    } catch (error) {
+      console.error("Error updating account status:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update account status. Please try again.",
+        variant: "destructive",
+      })
+    }
+    setIsLoading(false)
+  }
 
   const handleAddMember = async (data) => {
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      const response = await fetch('http://localhost/cynergy/member_management.php', {
-        method: 'POST',
+      const isEmailValid = await validateEmail(data.email)
+      if (!isEmailValid) {
+        toast({
+          title: "Error",
+          description: "Email address already exists. Please use a different email.",
+          variant: "destructive",
+        })
+        setIsLoading(false)
+        return
+      }
+
+      const formattedData = {
+        fname: data.fname.trim(),
+        mname: data.mname.trim(),
+        lname: data.lname.trim(),
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+        gender_id: Number.parseInt(data.gender_id),
+        bday: data.bday,
+        user_type_id: data.user_type_id,
+        account_status: data.account_status,
+        failed_attempt: 0,
+      }
+
+      const response = await fetch("https://api.cnergy.site/member_management.php", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
-      });
-      const result = await response.json();
+        body: JSON.stringify(formattedData),
+      })
+
+      const result = await response.json()
       if (response.ok) {
-        setMembers([...members, result]);
-        setIsAddDialogOpen(false);
-        form.reset();
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setIsAddDialogOpen(false)
+        form.reset()
         toast({
           title: "Success",
           description: "Member added successfully!",
-        });
+        })
       } else {
-        throw new Error(result.message || 'Failed to add member');
+        throw new Error(result.error || result.message || "Failed to add member")
       }
     } catch (error) {
-      console.error("Error adding member:", error);
+      console.error("Error adding member:", error)
       toast({
         title: "Error",
-        description: "Failed to add member. Please try again.",
+        description: error.message || "Failed to add member. Please try again.",
         variant: "destructive",
-      });
+      })
     }
-    setIsLoading(false);
-  };
+    setIsLoading(false)
+  }
 
   const handleUpdateMember = async (data) => {
-    if (!selectedMember) return;
-
-    setIsLoading(true);
+    if (!selectedMember) return
+    setIsLoading(true)
     try {
+      if (data.email.toLowerCase() !== selectedMember.email.toLowerCase()) {
+        const isEmailValid = await validateEmail(data.email, selectedMember.id)
+        if (!isEmailValid) {
+          toast({
+            title: "Error",
+            description: "Email address already exists. Please use a different email.",
+            variant: "destructive",
+          })
+          setIsLoading(false)
+          return
+        }
+      }
+
       const updateData = {
-        ...data,
-        id_user: selectedMember.id_user,
-      };
-      
-      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id_user}`, {
-        method: 'PUT',
+        id: selectedMember.id,
+        fname: data.fname.trim(),
+        mname: data.mname.trim(),
+        lname: data.lname.trim(),
+        email: data.email.trim().toLowerCase(),
+        gender_id: Number.parseInt(data.gender_id),
+        bday: data.bday,
+        user_type_id: data.user_type_id,
+        account_status: data.account_status,
+      }
+
+      if (data.password && data.password.trim() !== "") {
+        updateData.password = data.password
+      }
+
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+        method: "PUT",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
-      });
-      const result = await response.json();
+      })
+
+      const result = await response.json()
       if (response.ok) {
-        const updatedMembers = members.map((member) =>
-          member.id_user === selectedMember.id_user ? { ...member, ...data } : member,
-        );
-        setMembers(updatedMembers);
-        setIsEditDialogOpen(false);
-        setSelectedMember(null);
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        setIsEditDialogOpen(false)
+        setSelectedMember(null)
         toast({
           title: "Success",
           description: "Member updated successfully!",
-        });
+        })
       } else {
-        throw new Error(result.message || 'Failed to update member');
+        throw new Error(result.error || result.message || "Failed to update member")
       }
     } catch (error) {
-      console.error("Error updating member:", error);
+      console.error("Error updating member:", error)
       toast({
         title: "Error",
-        description: "Failed to update member. Please try again.",
+        description: error.message || "Failed to update member. Please try again.",
         variant: "destructive",
-      });
+      })
     }
-    setIsLoading(false);
-  };
+    setIsLoading(false)
+  }
 
   const handleConfirmDelete = async () => {
-    if (!selectedMember) return;
-
-    setIsLoading(true);
+    if (!selectedMember) return
+    setIsLoading(true)
     try {
-      const response = await fetch(`http://localhost/cynergy/member_management.php?id=${selectedMember.id_user}`, {
-        method: 'DELETE',
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+        method: "DELETE",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id_user: selectedMember.id_user }),
-      });
-      const result = await response.json();
+        body: JSON.stringify({ id: selectedMember.id }),
+      })
+
+      const result = await response.json()
       if (response.ok) {
-        const updatedMembers = members.filter((member) => member.id_user !== selectedMember.id_user);
-        setMembers(updatedMembers);
-        setIsDeleteDialogOpen(false);
-        setSelectedMember(null);
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(updatedMembers)
+        setFilteredMembers(updatedMembers)
+        setIsDeleteDialogOpen(false)
+        setSelectedMember(null)
         toast({
           title: "Success",
           description: "Member deleted successfully!",
-        });
+        })
       } else {
-        throw new Error(result.message || 'Failed to delete member');
+        throw new Error(result.message || "Failed to delete member")
       }
     } catch (error) {
-      console.error("Error deleting member:", error);
+      console.error("Error deleting member:", error)
       toast({
         title: "Error",
         description: "Failed to delete member. Please try again.",
         variant: "destructive",
-      });
+      })
     }
-    setIsLoading(false);
-  };
+    setIsLoading(false)
+  }
 
   const handleOpenAddDialog = () => {
     form.reset({
       fname: "",
+      mname: "",
       lname: "",
       email: "",
-      phone_no: "",
-      status: "active",
-    });
-    setIsAddDialogOpen(true);
-  };
+      password: "",
+      gender_id: "",
+      bday: "",
+      user_type_id: 4,
+      account_status: "pending",
+    })
+    setShowPassword(false)
+    setIsAddDialogOpen(true)
+  }
 
   return (
     <div className="space-y-6">
@@ -262,8 +484,11 @@ const ViewMembers = () => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Member List</CardTitle>
-              <CardDescription>Manage your gym members</CardDescription>
+              <CardTitle className="flex items-center">
+                <Shield className="mr-2 h-5 w-5" />
+                Member Account Management
+              </CardTitle>
+              <CardDescription>Manage and verify member accounts</CardDescription>
             </div>
             <Button onClick={handleOpenAddDialog}>
               <Plus className="mr-2 h-4 w-4" /> Add Member
@@ -271,15 +496,28 @@ const ViewMembers = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search members..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search members by name or email..."
+                className="pl-8"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {isLoading ? (
@@ -294,7 +532,7 @@ const ViewMembers = () => {
             <div className="space-y-2">
               {currentMembers.map((member, index) => (
                 <div
-                  key={member.id_user || `member-${index}`}
+                  key={member.id || `member-${index}`}
                   className="flex items-center justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors"
                 >
                   <Button
@@ -305,13 +543,26 @@ const ViewMembers = () => {
                     <div className="flex items-center">
                       <User className="mr-2 h-4 w-4 text-muted-foreground" />
                       <div className="text-left">
-                        <div className="font-medium">{member.fname} {member.lname}</div>
+                        <div className="font-medium">
+                          {member.fname} {member.mname} {member.lname}
+                        </div>
                         <div className="text-sm text-muted-foreground">{member.email}</div>
                       </div>
                     </div>
                   </Button>
                   <div className="flex items-center gap-2">
-                    {getStatusBadge(member.status)}
+                    {getStatusBadge(member.account_status)}
+                    <Badge variant="outline">{getGenderName(member.gender_id)}</Badge>
+                    {member.account_status === "pending" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleVerifyMember(member)}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        <Shield className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" onClick={() => handleEditMember(member)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -353,6 +604,108 @@ const ViewMembers = () => {
         </CardContent>
       </Card>
 
+      {/* Statistics Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Users className="mr-2 h-5 w-5" />
+            Member Statistics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">{members.length}</div>
+              <div className="text-sm text-muted-foreground">Total Members</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-600">
+                {members.filter((m) => m.account_status === "pending").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Pending</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {members.filter((m) => m.account_status === "approved").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Approved</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {members.filter((m) => m.account_status === "rejected").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Rejected</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">{members.filter((m) => m.gender_id === 1).length}</div>
+              <div className="text-sm text-muted-foreground">Male</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Account Verification Dialog */}
+      <Dialog open={isVerificationDialogOpen} onOpenChange={setIsVerificationDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Shield className="mr-2 h-5 w-5" />
+              Account Verification
+            </DialogTitle>
+            <DialogDescription>Review and verify this member's account to allow mobile app access.</DialogDescription>
+          </DialogHeader>
+          {selectedMember && (
+            <div className="space-y-4">
+              <div className="border rounded-md p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <User className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">
+                      {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Gender:</span> {getGenderName(selectedMember.gender_id)}
+                  </div>
+                  <div>
+                    <span className="font-medium">Birthday:</span>{" "}
+                    {selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="font-medium">Current Status:</span> {getStatusBadge(selectedMember.account_status)}
+                  </div>
+                </div>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> Approving this account will allow the user to access the mobile application.
+                  Rejecting will prevent access until manually approved.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsVerificationDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => handleUpdateAccountStatus("rejected")} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <XCircle className="mr-2 h-4 w-4" />
+              Reject
+            </Button>
+            <Button onClick={() => handleUpdateAccountStatus("approved")} disabled={isLoading}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Approve
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Member Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -363,8 +716,10 @@ const ViewMembers = () => {
               <div className="flex items-center gap-3">
                 <User className="h-5 w-5 text-primary" />
                 <div>
-                  <p className="text-sm font-medium">Name</p>
-                  <p>{selectedMember.fname} {selectedMember.lname}</p>
+                  <p className="text-sm font-medium">Full Name</p>
+                  <p>
+                    {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -375,17 +730,24 @@ const ViewMembers = () => {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Phone className="h-5 w-5 text-primary" />
+                <User className="h-5 w-5 text-primary" />
                 <div>
-                  <p className="text-sm font-medium">Phone</p>
-                  <p>{selectedMember.phone_no}</p>
+                  <p className="text-sm font-medium">Gender</p>
+                  <p>{getGenderName(selectedMember.gender_id)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Calendar className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Date of Birth</p>
+                  <p>{selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <Shield className="h-5 w-5 text-primary" />
                 <div>
-                  <p className="text-sm font-medium">Status</p>
-                  <div>{getStatusBadge(selectedMember.status)}</div>
+                  <p className="text-sm font-medium">Account Status</p>
+                  <div className="mt-1">{getStatusBadge(selectedMember.account_status)}</div>
                 </div>
               </div>
             </div>
@@ -396,8 +758,8 @@ const ViewMembers = () => {
             </Button>
             <Button
               onClick={() => {
-                setIsViewDialogOpen(false);
-                if (selectedMember) handleEditMember(selectedMember);
+                setIsViewDialogOpen(false)
+                if (selectedMember) handleEditMember(selectedMember)
               }}
             >
               Edit
@@ -406,33 +768,49 @@ const ViewMembers = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Add Member Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Member</DialogTitle>
-            <DialogDescription>Enter the details of the new gym member.</DialogDescription>
+            <DialogDescription>Enter the basic details for the new member.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleAddMember)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="fname"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>First Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="John" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="fname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="John" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="mname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Middle Name*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Michael" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
                 control={form.control}
                 name="lname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name</FormLabel>
+                    <FormLabel>Last Name*</FormLabel>
                     <FormControl>
                       <Input placeholder="Doe" {...field} />
                     </FormControl>
@@ -445,7 +823,7 @@ const ViewMembers = () => {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email*</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="john@example.com" {...field} />
                     </FormControl>
@@ -455,33 +833,88 @@ const ViewMembers = () => {
               />
               <FormField
                 control={form.control}
-                name="phone_no"
+                name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone</FormLabel>
+                    <FormLabel>Password*</FormLabel>
                     <FormControl>
-                      <Input placeholder="1234567890" {...field} />
+                      <div className="relative">
+                        <Input type={showPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </FormControl>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Password must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="gender_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Gender*</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {genderOptions.map((gender) => (
+                            <SelectItem key={gender.id} value={gender.id}>
+                              {gender.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="bday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of Birth*</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
                 control={form.control}
-                name="status"
+                name="account_status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Status</FormLabel>
+                    <FormLabel>Account Status</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a status" />
+                          <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                        <SelectItem value="deactive">Deactivated</SelectItem>
+                        {statusOptions.map((status) => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -502,33 +935,49 @@ const ViewMembers = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Member Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Member</DialogTitle>
-            <DialogDescription>Update the details of the gym member.</DialogDescription>
+            <DialogDescription>Update the member's information and account status.</DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleUpdateMember)} className="space-y-4">
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(handleUpdateMember)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editForm.control}
+                  name="fname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First Name*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="John" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="mname"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Middle Name*</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Michael" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
-                control={form.control}
-                name="fname"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>First Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="John" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
+                control={editForm.control}
                 name="lname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name</FormLabel>
+                    <FormLabel>Last Name*</FormLabel>
                     <FormControl>
                       <Input placeholder="Doe" {...field} />
                     </FormControl>
@@ -537,11 +986,11 @@ const ViewMembers = () => {
                 )}
               />
               <FormField
-                control={form.control}
+                control={editForm.control}
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email*</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="john@example.com" {...field} />
                     </FormControl>
@@ -550,34 +999,90 @@ const ViewMembers = () => {
                 )}
               />
               <FormField
-                control={form.control}
-                name="phone_no"
+                control={editForm.control}
+                name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone</FormLabel>
+                    <FormLabel>New Password (leave blank to keep current)</FormLabel>
                     <FormControl>
-                      <Input placeholder="1234567890" {...field} />
+                      <div className="relative">
+                        <Input type={showEditPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowEditPassword(!showEditPassword)}
+                        >
+                          {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                     </FormControl>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      If changing password: must be at least 8 characters with 1 uppercase letter, 1 number, and 1
+                      special character
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={editForm.control}
+                  name="gender_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Gender*</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select gender" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {genderOptions.map((gender) => (
+                            <SelectItem key={gender.id} value={gender.id}>
+                              {gender.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="bday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of Birth*</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
               <FormField
-                control={form.control}
-                name="status"
+                control={editForm.control}
+                name="account_status"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Status</FormLabel>
+                    <FormLabel>Account Status</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a status" />
+                          <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="inactive">Inactive</SelectItem>
-                        <SelectItem value="deactive">Deactivated</SelectItem>
+                        {statusOptions.map((status) => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -598,6 +1103,7 @@ const ViewMembers = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Member Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -608,9 +1114,14 @@ const ViewMembers = () => {
           </DialogHeader>
           {selectedMember && (
             <div className="border rounded-md p-4 mb-4">
-              <p className="font-medium">{selectedMember.fname} {selectedMember.lname}</p>
+              <p className="font-medium">
+                {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+              </p>
               <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-              <div className="mt-2">{getStatusBadge(selectedMember.status)}</div>
+              <div className="mt-2 flex gap-2">
+                {getStatusBadge(selectedMember.account_status)}
+                <Badge variant="outline">{getGenderName(selectedMember.gender_id)}</Badge>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -625,7 +1136,7 @@ const ViewMembers = () => {
         </DialogContent>
       </Dialog>
     </div>
-  );
-};
+  )
+}
 
-export default ViewMembers;
+export default ViewMembers

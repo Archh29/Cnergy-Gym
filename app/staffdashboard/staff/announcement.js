@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "@/components/ui/use-toast"
 import { PlusCircle, Edit, Trash2 } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/announcement.php"
+const API_URL = "https://api.cnergy.site/announcement.php"
 
 const Announcement = () => {
   const [announcements, setAnnouncements] = useState([])
