@@ -100,6 +100,9 @@ const ViewCoach = () => {
     specialty: "",
     experience: "",
     hourly_rate: "",
+    monthly_rate: "",
+    session_package_rate: "",
+    session_package_count: "",
     certifications: "",
     is_available: true,
     image_url: "",
@@ -218,6 +221,9 @@ const ViewCoach = () => {
       specialty: "",
       experience: "",
       hourly_rate: "",
+      monthly_rate: "",
+      session_package_rate: "",
+      session_package_count: "",
       certifications: "",
       is_available: true,
       image_url: "",
@@ -305,6 +311,9 @@ const ViewCoach = () => {
         specialty: formData.specialty,
         experience: formData.experience,
         hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
+        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
+        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -394,6 +403,9 @@ const ViewCoach = () => {
         specialty: formData.specialty,
         experience: formData.experience,
         hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
+        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
+        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -515,6 +527,9 @@ const ViewCoach = () => {
       specialty: coach.specialty || "",
       experience: coach.experience || "",
       hourly_rate: coach.hourly_rate?.toString() || "",
+      monthly_rate: coach.monthly_rate?.toString() || "",
+      session_package_rate: coach.session_package_rate?.toString() || "",
+      session_package_count: coach.session_package_count?.toString() || "",
       certifications: coach.certifications || "",
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
@@ -632,7 +647,9 @@ const ViewCoach = () => {
                   <TableHead>Contact</TableHead>
                   <TableHead>Specialty</TableHead>
                   <TableHead>Experience</TableHead>
-                  <TableHead>Rate/hr</TableHead>
+                  <TableHead>Hourly Rate</TableHead>
+                  <TableHead>Monthly Rate</TableHead>
+                  <TableHead>Package Rate</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
@@ -641,7 +658,7 @@ const ViewCoach = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <div className="flex justify-center items-center">
                         <Loader2 className="h-6 w-6 animate-spin mr-2" />
                         <span>Loading coaches...</span>
@@ -650,7 +667,7 @@ const ViewCoach = () => {
                   </TableRow>
                 ) : currentCoaches.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       No coaches found
                     </TableCell>
                   </TableRow>
@@ -687,6 +704,14 @@ const ViewCoach = () => {
                       </TableCell>
                       <TableCell>{coach.experience}</TableCell>
                       <TableCell>${coach.hourly_rate}</TableCell>
+                      <TableCell>
+                        {coach.monthly_rate ? `$${coach.monthly_rate}` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {coach.session_package_rate && coach.session_package_count 
+                          ? `$${coach.session_package_rate} (${coach.session_package_count} sessions)`
+                          : '-'}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center">
                           <Star className="h-4 w-4 text-yellow-400 mr-1" />
@@ -1015,6 +1040,45 @@ const ViewCoach = () => {
                   )}
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="monthly_rate">Monthly Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="monthly_rate"
+                    name="monthly_rate"
+                    placeholder="500.00"
+                    value={formData.monthly_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="session_package_rate">Session Package Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="session_package_rate"
+                    name="session_package_rate"
+                    placeholder="200.00"
+                    value={formData.session_package_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="session_package_count">Session Package Count</Label>
+                  <Input
+                    type="number"
+                    id="session_package_count"
+                    name="session_package_count"
+                    placeholder="10"
+                    value={formData.session_package_count}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="image_url">Profile Image URL</Label>
                   <Input
                     id="image_url"
@@ -1255,6 +1319,45 @@ const ViewCoach = () => {
                     <p className="text-sm text-red-500">{validationErrors.hourly_rate}</p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-monthly_rate">Monthly Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="edit-monthly_rate"
+                    name="monthly_rate"
+                    placeholder="500.00"
+                    value={formData.monthly_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-session_package_rate">Session Package Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="edit-session_package_rate"
+                    name="session_package_rate"
+                    placeholder="200.00"
+                    value={formData.session_package_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-session_package_count">Session Package Count</Label>
+                  <Input
+                    type="number"
+                    id="edit-session_package_count"
+                    name="session_package_count"
+                    placeholder="10"
+                    value={formData.session_package_count}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
