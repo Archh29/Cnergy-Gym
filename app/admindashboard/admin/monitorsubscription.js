@@ -47,7 +47,8 @@ const SubscriptionMonitor = () => {
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    payment_amount: "",
+    discount_type: "none",
+    amount_paid: "",
     payment_method: "cash",
     notes: "",
   })
@@ -186,7 +187,8 @@ const SubscriptionMonitor = () => {
         user_id: subscriptionForm.user_id,
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
-        payment_amount: subscriptionForm.payment_amount || selectedPlan.price,
+        discount_type: subscriptionForm.discount_type,
+        amount_paid: subscriptionForm.amount_paid,
         payment_method: subscriptionForm.payment_method,
         notes: subscriptionForm.notes,
         created_by: "admin",
@@ -215,7 +217,8 @@ const SubscriptionMonitor = () => {
       user_id: "",
       plan_id: "",
       start_date: new Date().toISOString().split("T")[0],
-      payment_amount: "",
+      discount_type: "none",
+      amount_paid: "",
       payment_method: "cash",
       notes: "",
     })
@@ -223,10 +226,22 @@ const SubscriptionMonitor = () => {
 
   const handlePlanChange = (planId) => {
     const selectedPlan = subscriptionPlans.find((plan) => plan.id == planId)
+    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
     setSubscriptionForm((prev) => ({
       ...prev,
       plan_id: planId,
-      payment_amount: selectedPlan ? selectedPlan.price : "",
+      amount_paid: prev.discount_type === "none" ? discountedPrice : prev.amount_paid,
+    }))
+  }
+
+  const handleDiscountTypeChange = (discountType) => {
+    const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
+    
+    setSubscriptionForm((prev) => ({
+      ...prev,
+      discount_type: discountType,
+      amount_paid: discountType === "none" ? discountedPrice : "",
     }))
   }
 
@@ -586,8 +601,13 @@ const SubscriptionMonitor = () => {
                             <div className="font-medium">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.price)}</div>
+                            <div className="font-medium">{formatCurrency(subscription.amount_paid || subscription.discounted_price || subscription.price)}</div>
                             <div className="text-sm text-muted-foreground">
+                              {subscription.discount_type && subscription.discount_type !== "none" && (
+                                <span className="text-orange-600">
+                                  {subscription.discount_type} discount
+                                </span>
+                              )}
                               {subscription.payments?.length || 0} payment
                               {(subscription.payments?.length || 0) !== 1 ? "s" : ""}
                             </div>
@@ -677,25 +697,48 @@ const SubscriptionMonitor = () => {
               />
             </div>
 
-            {/* Payment Amount */}
+            {/* Discount Type */}
             <div>
-              <label className="text-sm font-medium">Payment Amount *</label>
+              <label className="text-sm font-medium">Discount Type *</label>
+              <Select
+                value={subscriptionForm.discount_type}
+                onValueChange={handleDiscountTypeChange}
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Discount</SelectItem>
+                  <SelectItem value="student">Student Discount</SelectItem>
+                  <SelectItem value="senior">Senior Discount</SelectItem>
+                  <SelectItem value="promo">Promotional Discount</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Amount Paid */}
+            <div>
+              <label className="text-sm font-medium">Amount Paid *</label>
               <Input
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                value={subscriptionForm.payment_amount}
+                value={subscriptionForm.amount_paid}
                 onChange={(e) =>
                   setSubscriptionForm((prev) => ({
                     ...prev,
-                    payment_amount: e.target.value,
+                    amount_paid: e.target.value,
                   }))
                 }
                 className="mt-2"
+                disabled={subscriptionForm.discount_type === "none"}
               />
               {subscriptionForm.plan_id && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Recommended: ${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}
+                  {subscriptionForm.discount_type === "none" 
+                    ? `Plan price: $${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}`
+                    : "Enter the actual amount charged to the customer"
+                  }
                 </p>
               )}
             </div>
@@ -775,7 +818,10 @@ const SubscriptionMonitor = () => {
                         <strong>End Date:</strong> {endDate.toLocaleDateString()}
                       </p>
                       <p>
-                        <strong>Amount:</strong> ${subscriptionForm.payment_amount || selectedPlan.price}
+                        <strong>Discount Type:</strong> {subscriptionForm.discount_type === "none" ? "No Discount" : subscriptionForm.discount_type.charAt(0).toUpperCase() + subscriptionForm.discount_type.slice(1)}
+                      </p>
+                      <p>
+                        <strong>Amount Paid:</strong> ${subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
                       </p>
                       <p>
                         <strong>Payment Method:</strong> {subscriptionForm.payment_method}
@@ -804,7 +850,7 @@ const SubscriptionMonitor = () => {
                 actionLoading === "create" ||
                 !subscriptionForm.plan_id ||
                 !subscriptionForm.user_id ||
-                !subscriptionForm.payment_amount
+                !subscriptionForm.amount_paid
               }
               className="bg-green-600 hover:bg-green-700"
             >
