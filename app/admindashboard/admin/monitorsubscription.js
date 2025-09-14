@@ -142,16 +142,37 @@ const SubscriptionMonitor = () => {
         
         if (response.data.success) {
           console.log("✅ API call successful")
-          console.log("Debug info:", response.data.debug_info)
-          console.log("Available plans:", response.data.available_plans)
-          console.log("Existing subscriptions:", response.data.existing_subscriptions)
-          console.log("Has active member fee:", response.data.has_active_member_fee)
           
-          setSubscriptionPlans(response.data.available_plans || [])
-          return {
-            availablePlans: response.data.available_plans || [],
-            existingSubscriptions: response.data.existing_subscriptions || [],
-            hasActiveMemberFee: response.data.has_active_member_fee || false
+          // Check if this is the expected available-plans response
+          if (response.data.available_plans !== undefined) {
+            console.log("Debug info:", response.data.debug_info)
+            console.log("Available plans:", response.data.available_plans)
+            console.log("Existing subscriptions:", response.data.existing_subscriptions)
+            console.log("Has active member fee:", response.data.has_active_member_fee)
+            
+            setSubscriptionPlans(response.data.available_plans || [])
+            return {
+              availablePlans: response.data.available_plans || [],
+              existingSubscriptions: response.data.existing_subscriptions || [],
+              hasActiveMemberFee: response.data.has_active_member_fee || false
+            }
+          } else {
+            // Fallback: API doesn't have available-plans endpoint yet
+            console.log("⚠️ API doesn't have available-plans endpoint yet, using fallback")
+            console.log("Response structure:", response.data)
+            
+            // For now, show all plans (this is temporary until API is updated)
+            const fallbackPlans = [
+              { id: 1, plan_name: "Member Fee", price: 500.00, discounted_price: 500.00, duration_months: 1 },
+              { id: 3, plan_name: "Non-Member Plan Monthly", price: 1300.00, discounted_price: 1300.00, duration_months: 1 }
+            ]
+            
+            setSubscriptionPlans(fallbackPlans)
+            return {
+              availablePlans: fallbackPlans,
+              existingSubscriptions: [],
+              hasActiveMemberFee: false
+            }
           }
         } else {
           console.error("❌ API response not successful:", response.data)
