@@ -142,16 +142,16 @@ const SubscriptionMonitor = () => {
           console.log("✅ API call successful")
           
           // Check if this is the expected available-plans response
-          if (response.data.available_plans !== undefined) {
-            console.log("Debug info:", response.data.debug_info)
-            console.log("Available plans:", response.data.available_plans)
-            console.log("Existing subscriptions:", response.data.existing_subscriptions)
+          if (response.data.plans !== undefined) {
+            console.log("Available plans:", response.data.plans)
+            console.log("Active subscriptions:", response.data.active_subscriptions)
             console.log("Has active member fee:", response.data.has_active_member_fee)
+            console.log("Active plan IDs:", response.data.active_plan_ids)
             
-            setSubscriptionPlans(response.data.available_plans || [])
+            setSubscriptionPlans(response.data.plans || [])
             return {
-              availablePlans: response.data.available_plans || [],
-              existingSubscriptions: response.data.existing_subscriptions || [],
+              availablePlans: response.data.plans || [],
+              existingSubscriptions: response.data.active_subscriptions || [],
               hasActiveMemberFee: response.data.has_active_member_fee || false
             }
           } else {
@@ -778,11 +778,14 @@ const SubscriptionMonitor = () => {
                         <ul className="list-disc list-inside ml-2">
                           {selectedUserInfo.existingSubscriptions.map((sub, index) => (
                             <li key={index}>
-                              {sub.plan_name || 'Unknown Plan'} (ID: {sub.plan_id || 'N/A'}) - Expires: {sub.end_date ? new Date(sub.end_date).toLocaleDateString() : 'N/A'}
+                              {sub.plan_name || 'Unknown Plan'} - Expires: {sub.end_date ? new Date(sub.end_date).toLocaleDateString() : 'N/A'}
                             </li>
                           ))}
                         </ul>
                       </div>
+                    )}
+                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length === 0 && (
+                      <p className="text-green-600 font-medium">No active subscriptions - can purchase any available plan</p>
                     )}
                   </div>
                 </div>
@@ -824,9 +827,15 @@ const SubscriptionMonitor = () => {
                 </SelectContent>
               </Select>
               {selectedUserInfo && (!subscriptionPlans || subscriptionPlans.length === 0) && (
-                <p className="text-sm text-red-600 mt-1">
-                  This member has no available subscription plans. They may already have active subscriptions to all plans.
-                </p>
+                <div className="text-sm text-red-600 mt-1 p-2 bg-red-50 rounded border border-red-200">
+                  <p className="font-medium">No available subscription plans for this member.</p>
+                  <p>Possible reasons:</p>
+                  <ul className="list-disc list-inside ml-4 mt-1">
+                    <li>Already has active subscriptions to all plans</li>
+                    <li>Has Member Fee but trying to access Non-Member Plan</li>
+                    <li>Doesn't have Member Fee but trying to access Member Plan Monthly</li>
+                  </ul>
+                </div>
               )}
             </div>
 
