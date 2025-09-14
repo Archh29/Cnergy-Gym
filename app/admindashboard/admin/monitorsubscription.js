@@ -123,66 +123,34 @@ const SubscriptionMonitor = () => {
 
   const fetchAvailablePlansForUser = async (userId) => {
     try {
-      console.log("Making API call to:", `${API_URL}?action=available-plans&user_id=${userId}`)
-      const response = await axios.get(`${API_URL}?action=available-plans&user_id=${userId}`)
+      const apiUrl = `${API_URL}?action=available-plans&user_id=${userId}`
+      console.log("Making API call to:", apiUrl)
+      console.log("API_URL constant:", API_URL)
+      
+      const response = await axios.get(apiUrl)
       
       console.log("=== FULL API RESPONSE ===")
-      console.log("Response object:", response)
-      console.log("Response data:", response.data)
       console.log("Response status:", response.status)
-      console.log("Response headers:", response.headers)
-      console.log("Response config:", response.config)
+      console.log("Response data:", response.data)
+      console.log("Response data type:", typeof response.data)
+      console.log("Response data keys:", Object.keys(response.data || {}))
       
       // Check if response.data exists and has the expected structure
-      if (response.data) {
-        console.log("Response.data type:", typeof response.data)
-        console.log("Response.data keys:", Object.keys(response.data))
+      if (response.data && response.data.success) {
+        console.log("✅ API call successful")
+        console.log("Available plans:", response.data.plans)
+        console.log("Active subscriptions:", response.data.active_subscriptions)
+        console.log("Has active member fee:", response.data.has_active_member_fee)
+        console.log("Active plan IDs:", response.data.active_plan_ids)
         
-        if (response.data.success) {
-          console.log("✅ API call successful")
-          
-          // Check if this is the expected available-plans response
-          if (response.data.plans !== undefined) {
-            console.log("Available plans:", response.data.plans)
-            console.log("Active subscriptions:", response.data.active_subscriptions)
-            console.log("Has active member fee:", response.data.has_active_member_fee)
-            console.log("Active plan IDs:", response.data.active_plan_ids)
-            
-            setSubscriptionPlans(response.data.plans || [])
-            return {
-              availablePlans: response.data.plans || [],
-              existingSubscriptions: response.data.active_subscriptions || [],
-              hasActiveMemberFee: response.data.has_active_member_fee || false
-            }
-          } else {
-            // Fallback: API doesn't have available-plans endpoint yet
-            console.log("⚠️ API doesn't have available-plans endpoint yet, using fallback")
-            console.log("Response structure:", response.data)
-            
-            // For now, show all plans (this is temporary until API is updated)
-            const fallbackPlans = [
-              { id: 1, plan_name: "Member Fee", price: 500.00, discounted_price: 500.00, duration_months: 1 },
-              { id: 3, plan_name: "Non-Member Plan Monthly", price: 1300.00, discounted_price: 1300.00, duration_months: 1 }
-            ]
-            
-            setSubscriptionPlans(fallbackPlans)
-            return {
-              availablePlans: fallbackPlans,
-              existingSubscriptions: [],
-              hasActiveMemberFee: false
-            }
-          }
-        } else {
-          console.error("❌ API response not successful:", response.data)
-          setSubscriptionPlans([])
-          return {
-            availablePlans: [],
-            existingSubscriptions: [],
-            hasActiveMemberFee: false
-          }
+        setSubscriptionPlans(response.data.plans || [])
+        return {
+          availablePlans: response.data.plans || [],
+          existingSubscriptions: response.data.active_subscriptions || [],
+          hasActiveMemberFee: response.data.has_active_member_fee || false
         }
       } else {
-        console.error("❌ No response.data found")
+        console.error("❌ API response not successful or no data:", response.data)
         setSubscriptionPlans([])
         return {
           availablePlans: [],
