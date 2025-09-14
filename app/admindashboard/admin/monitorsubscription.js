@@ -126,18 +126,31 @@ const SubscriptionMonitor = () => {
   const fetchAvailablePlansForUser = async (userId) => {
     try {
       const response = await axios.get(`${API_URL}?action=available-plans&user_id=${userId}`)
-      if (response.data.success) {
-        setSubscriptionPlans(response.data.available_plans)
+      if (response.data && response.data.success) {
+        setSubscriptionPlans(response.data.available_plans || [])
         return {
-          availablePlans: response.data.available_plans,
-          existingSubscriptions: response.data.existing_subscriptions,
-          hasActiveMemberFee: response.data.has_active_member_fee
+          availablePlans: response.data.available_plans || [],
+          existingSubscriptions: response.data.existing_subscriptions || [],
+          hasActiveMemberFee: response.data.has_active_member_fee || false
+        }
+      } else {
+        console.error("API response not successful:", response.data)
+        setSubscriptionPlans([])
+        return {
+          availablePlans: [],
+          existingSubscriptions: [],
+          hasActiveMemberFee: false
         }
       }
     } catch (error) {
       console.error("Error fetching available plans:", error)
+      setSubscriptionPlans([])
+      return {
+        availablePlans: [],
+        existingSubscriptions: [],
+        hasActiveMemberFee: false
+      }
     }
-    return null
   }
 
   const handleApprove = async (subscriptionId) => {
@@ -263,19 +276,25 @@ const SubscriptionMonitor = () => {
   }
 
   const handleUserSelection = async (userId) => {
-    setSubscriptionForm((prev) => ({
-      ...prev,
-      user_id: userId,
-      plan_id: "", // Reset plan selection
-    }))
-    
-    if (userId) {
-      const userInfo = await fetchAvailablePlansForUser(userId)
-      setSelectedUserInfo(userInfo)
-    } else {
+    try {
+      setSubscriptionForm((prev) => ({
+        ...prev,
+        user_id: userId,
+        plan_id: "", // Reset plan selection
+      }))
+      
+      if (userId) {
+        const userInfo = await fetchAvailablePlansForUser(userId)
+        setSelectedUserInfo(userInfo)
+      } else {
+        setSelectedUserInfo(null)
+        // Reset to all plans if no user selected
+        fetchSubscriptionPlans()
+      }
+    } catch (error) {
+      console.error("Error in handleUserSelection:", error)
       setSelectedUserInfo(null)
-      // Reset to all plans if no user selected
-      fetchSubscriptionPlans()
+      setMessage({ type: "error", text: "Failed to load user information" })
     }
   }
 
@@ -696,14 +715,14 @@ const SubscriptionMonitor = () => {
                   <h4 className="text-sm font-medium text-blue-900 mb-2">Member Subscription Status</h4>
                   <div className="text-sm text-blue-800 space-y-1">
                     <p><strong>Active Member Fee:</strong> {selectedUserInfo.hasActiveMemberFee ? "Yes" : "No"}</p>
-                    <p><strong>Active Subscriptions:</strong> {selectedUserInfo.existingSubscriptions.length}</p>
-                    {selectedUserInfo.existingSubscriptions.length > 0 && (
+                    <p><strong>Active Subscriptions:</strong> {selectedUserInfo.existingSubscriptions?.length || 0}</p>
+                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length > 0 && (
                       <div className="mt-2">
                         <p className="font-medium">Current Active Plans:</p>
                         <ul className="list-disc list-inside ml-2">
                           {selectedUserInfo.existingSubscriptions.map((sub, index) => (
                             <li key={index}>
-                              {sub.plan_name} (ID: {sub.plan_id}) - Expires: {new Date(sub.end_date).toLocaleDateString()}
+                              {sub.plan_name || 'Unknown Plan'} (ID: {sub.plan_id || 'N/A'}) - Expires: {sub.end_date ? new Date(sub.end_date).toLocaleDateString() : 'N/A'}
                             </li>
                           ))}
                         </ul>
@@ -722,7 +741,7 @@ const SubscriptionMonitor = () => {
                   <SelectValue placeholder="Select a subscription plan" />
                 </SelectTrigger>
                 <SelectContent>
-                  {subscriptionPlans.length === 0 ? (
+                  {!subscriptionPlans || subscriptionPlans.length === 0 ? (
                     <div className="p-2 text-sm text-muted-foreground">
                       {subscriptionForm.user_id ? "No available plans for this member" : "Please select a member first"}
                     </div>
@@ -731,7 +750,7 @@ const SubscriptionMonitor = () => {
                       <SelectItem key={plan.id} value={plan.id.toString()}>
                         <div className="flex justify-between items-center w-full">
                           <div>
-                            <span>{plan.plan_name}</span>
+                            <span>{plan.plan_name || 'Unknown Plan'}</span>
                             {plan.id === 2 && (
                               <span className="ml-2 text-xs text-blue-600">(Requires active member fee)</span>
                             )}
@@ -740,7 +759,7 @@ const SubscriptionMonitor = () => {
                             )}
                           </div>
                           <span className="ml-2 text-muted-foreground">
-                            ${plan.discounted_price || plan.price}/{plan.duration_months} month{plan.duration_months > 1 ? "s" : ""}
+                            ${plan.discounted_price || plan.price || 0}/{plan.duration_months || 1} month{(plan.duration_months || 1) > 1 ? "s" : ""}
                           </span>
                         </div>
                       </SelectItem>
@@ -748,7 +767,7 @@ const SubscriptionMonitor = () => {
                   )}
                 </SelectContent>
               </Select>
-              {selectedUserInfo && subscriptionPlans.length === 0 && (
+              {selectedUserInfo && (!subscriptionPlans || subscriptionPlans.length === 0) && (
                 <p className="text-sm text-red-600 mt-1">
                   This member has no available subscription plans. They may already have active subscriptions to all plans.
                 </p>
