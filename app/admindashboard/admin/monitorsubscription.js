@@ -27,7 +27,7 @@ import {
   CreditCard,
 } from "lucide-react"
 
-const API_URL = "http://localhost/cynergy/monitor_subscription.php"
+const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionMonitor = () => {
   const [searchQuery, setSearchQuery] = useState("")
