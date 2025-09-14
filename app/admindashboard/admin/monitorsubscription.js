@@ -127,6 +127,11 @@ const SubscriptionMonitor = () => {
     try {
       const response = await axios.get(`${API_URL}?action=available-plans&user_id=${userId}`)
       if (response.data && response.data.success) {
+        console.log("Debug info:", response.data.debug_info)
+        console.log("Available plans:", response.data.available_plans)
+        console.log("Existing subscriptions:", response.data.existing_subscriptions)
+        console.log("Has active member fee:", response.data.has_active_member_fee)
+        
         setSubscriptionPlans(response.data.available_plans || [])
         return {
           availablePlans: response.data.available_plans || [],
