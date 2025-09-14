@@ -50,8 +50,6 @@ const SubscriptionMonitor = () => {
     start_date: new Date().toISOString().split("T")[0],
     discount_type: "none",
     amount_paid: "",
-    payment_method: "cash",
-    notes: "",
   })
 
   // Decline dialog state
@@ -272,8 +270,6 @@ const SubscriptionMonitor = () => {
         start_date: subscriptionForm.start_date,
         discount_type: subscriptionForm.discount_type,
         amount_paid: subscriptionForm.amount_paid,
-        payment_method: subscriptionForm.payment_method,
-        notes: subscriptionForm.notes,
         created_by: "admin",
       }
 
@@ -302,8 +298,6 @@ const SubscriptionMonitor = () => {
       start_date: new Date().toISOString().split("T")[0],
       discount_type: "none",
       amount_paid: "",
-      payment_method: "cash",
-      notes: "",
     })
     setSelectedUserInfo(null)
     // Reset to all plans
@@ -896,47 +890,6 @@ const SubscriptionMonitor = () => {
               )}
             </div>
 
-            {/* Payment Method */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method</label>
-              <Select
-                value={subscriptionForm.payment_method}
-                onValueChange={(value) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    payment_method: value,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Credit/Debit Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="gcash">GCash</SelectItem>
-                  <SelectItem value="paymaya">PayMaya</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Notes (Optional)</label>
-              <Textarea
-                placeholder="Add any additional notes about this subscription..."
-                value={subscriptionForm.notes}
-                onChange={(e) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    notes: e.target.value,
-                  }))
-                }
-                rows={3}
-              />
-            </div>
 
             {/* Subscription Preview */}
             {subscriptionForm.plan_id && subscriptionForm.user_id && (
@@ -974,9 +927,6 @@ const SubscriptionMonitor = () => {
                       </p>
                       <p>
                         <strong>Amount Paid:</strong> ${subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
-                      </p>
-                      <p>
-                        <strong>Payment Method:</strong> {subscriptionForm.payment_method}
                       </p>
                     </div>
                   )
