@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -126,6 +126,10 @@ const SubscriptionMonitor = () => {
   const fetchAvailablePlansForUser = async (userId) => {
     try {
       const response = await axios.get(`${API_URL}?action=available-plans&user_id=${userId}`)
+      console.log("Full API response:", response)
+      console.log("Response data:", response.data)
+      console.log("Response status:", response.status)
+      
       if (response.data && response.data.success) {
         console.log("Debug info:", response.data.debug_info)
         console.log("Available plans:", response.data.available_plans)
@@ -149,6 +153,7 @@ const SubscriptionMonitor = () => {
       }
     } catch (error) {
       console.error("Error fetching available plans:", error)
+      console.error("Error response:", error.response)
       setSubscriptionPlans([])
       return {
         availablePlans: [],
@@ -683,12 +688,15 @@ const SubscriptionMonitor = () => {
 
       {/* Create Manual Subscription Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg" aria-describedby="create-subscription-description">
           <DialogHeader>
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
               Create Manual Subscription
             </DialogTitle>
+            <DialogDescription id="create-subscription-description">
+              Create a new subscription for a member with custom pricing and discount options.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6">
