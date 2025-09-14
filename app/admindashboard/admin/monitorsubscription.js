@@ -734,7 +734,10 @@ const SubscriptionMonitor = () => {
 
       {/* Create Manual Subscription Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
-        <DialogContent className="sm:max-w-lg" aria-describedby="create-subscription-description">
+        <DialogContent 
+          className="sm:max-w-lg max-h-[90vh] overflow-y-auto" 
+          aria-describedby="create-subscription-description"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
@@ -745,15 +748,15 @@ const SubscriptionMonitor = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6">
+          <div className="space-y-4 max-h-[calc(90vh-120px)] overflow-y-auto pr-2">
             {/* User Selection */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Select Member *</label>
               <Select
                 value={subscriptionForm.user_id}
                 onValueChange={handleUserSelection}
               >
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue placeholder="Choose a member" />
                 </SelectTrigger>
                 <SelectContent>
@@ -793,10 +796,10 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* Plan Selection */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Subscription Plan *</label>
               <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue placeholder="Select a subscription plan" />
                 </SelectTrigger>
                 <SelectContent>
@@ -834,7 +837,7 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* Start Date */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Start Date *</label>
               <Input
                 type="date"
@@ -845,18 +848,17 @@ const SubscriptionMonitor = () => {
                     start_date: e.target.value,
                   }))
                 }
-                className="mt-2"
               />
             </div>
 
             {/* Discount Type */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Discount Type *</label>
               <Select
                 value={subscriptionForm.discount_type}
                 onValueChange={handleDiscountTypeChange}
               >
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -869,7 +871,7 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* Amount Paid */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Amount Paid *</label>
               <Input
                 type="number"
@@ -882,7 +884,6 @@ const SubscriptionMonitor = () => {
                     amount_paid: e.target.value,
                   }))
                 }
-                className="mt-2"
                 disabled={subscriptionForm.discount_type === "none"}
               />
               {subscriptionForm.plan_id && (
@@ -896,7 +897,7 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* Payment Method */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Payment Method</label>
               <Select
                 value={subscriptionForm.payment_method}
@@ -907,7 +908,7 @@ const SubscriptionMonitor = () => {
                   }))
                 }
               >
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -922,7 +923,7 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* Notes */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Notes (Optional)</label>
               <Textarea
                 placeholder="Add any additional notes about this subscription..."
@@ -933,7 +934,6 @@ const SubscriptionMonitor = () => {
                     notes: e.target.value,
                   }))
                 }
-                className="mt-2"
                 rows={3}
               />
             </div>
@@ -985,7 +985,7 @@ const SubscriptionMonitor = () => {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex justify-end gap-2 mt-4 border-t pt-4">
             <Button
               variant="outline"
               onClick={() => {
