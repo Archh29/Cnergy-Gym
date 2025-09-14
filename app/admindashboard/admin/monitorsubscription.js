@@ -27,7 +27,7 @@ import {
   CreditCard,
 } from "lucide-react"
 
-const API_URL = "https://api.cnergy.site/monitor_subscription.php"
+const API_URL = "http://localhost/cynergy/monitor_subscription.php"
 
 const SubscriptionMonitor = () => {
   const [searchQuery, setSearchQuery] = useState("")
@@ -125,25 +125,45 @@ const SubscriptionMonitor = () => {
 
   const fetchAvailablePlansForUser = async (userId) => {
     try {
+      console.log("Making API call to:", `${API_URL}?action=available-plans&user_id=${userId}`)
       const response = await axios.get(`${API_URL}?action=available-plans&user_id=${userId}`)
-      console.log("Full API response:", response)
+      
+      console.log("=== FULL API RESPONSE ===")
+      console.log("Response object:", response)
       console.log("Response data:", response.data)
       console.log("Response status:", response.status)
+      console.log("Response headers:", response.headers)
+      console.log("Response config:", response.config)
       
-      if (response.data && response.data.success) {
-        console.log("Debug info:", response.data.debug_info)
-        console.log("Available plans:", response.data.available_plans)
-        console.log("Existing subscriptions:", response.data.existing_subscriptions)
-        console.log("Has active member fee:", response.data.has_active_member_fee)
+      // Check if response.data exists and has the expected structure
+      if (response.data) {
+        console.log("Response.data type:", typeof response.data)
+        console.log("Response.data keys:", Object.keys(response.data))
         
-        setSubscriptionPlans(response.data.available_plans || [])
-        return {
-          availablePlans: response.data.available_plans || [],
-          existingSubscriptions: response.data.existing_subscriptions || [],
-          hasActiveMemberFee: response.data.has_active_member_fee || false
+        if (response.data.success) {
+          console.log("✅ API call successful")
+          console.log("Debug info:", response.data.debug_info)
+          console.log("Available plans:", response.data.available_plans)
+          console.log("Existing subscriptions:", response.data.existing_subscriptions)
+          console.log("Has active member fee:", response.data.has_active_member_fee)
+          
+          setSubscriptionPlans(response.data.available_plans || [])
+          return {
+            availablePlans: response.data.available_plans || [],
+            existingSubscriptions: response.data.existing_subscriptions || [],
+            hasActiveMemberFee: response.data.has_active_member_fee || false
+          }
+        } else {
+          console.error("❌ API response not successful:", response.data)
+          setSubscriptionPlans([])
+          return {
+            availablePlans: [],
+            existingSubscriptions: [],
+            hasActiveMemberFee: false
+          }
         }
       } else {
-        console.error("API response not successful:", response.data)
+        console.error("❌ No response.data found")
         setSubscriptionPlans([])
         return {
           availablePlans: [],
@@ -152,8 +172,13 @@ const SubscriptionMonitor = () => {
         }
       }
     } catch (error) {
-      console.error("Error fetching available plans:", error)
+      console.error("❌ Error fetching available plans:", error)
+      console.error("Error message:", error.message)
       console.error("Error response:", error.response)
+      if (error.response) {
+        console.error("Error response data:", error.response.data)
+        console.error("Error response status:", error.response.status)
+      }
       setSubscriptionPlans([])
       return {
         availablePlans: [],
