@@ -735,10 +735,10 @@ const SubscriptionMonitor = () => {
       {/* Create Manual Subscription Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
         <DialogContent 
-          className="sm:max-w-lg max-h-[90vh] overflow-y-auto" 
+          className="sm:max-w-lg h-[80vh] flex flex-col" 
           aria-describedby="create-subscription-description"
         >
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
               Create Manual Subscription
@@ -748,7 +748,7 @@ const SubscriptionMonitor = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 max-h-[calc(90vh-120px)] overflow-y-auto pr-2">
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             {/* User Selection */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Select Member *</label>
@@ -985,7 +985,7 @@ const SubscriptionMonitor = () => {
             )}
           </div>
 
-          <DialogFooter className="flex justify-end gap-2 mt-4 border-t pt-4">
+          <DialogFooter className="flex justify-end gap-2 border-t pt-4 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => {
