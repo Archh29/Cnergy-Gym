@@ -356,13 +356,13 @@ const SubscriptionMonitor = () => {
   }
 
   // Filter subscriptions
-  const filteredSubscriptions = subscriptions.filter((subscription) => {
+  const filteredSubscriptions = (subscriptions || []).filter((subscription) => {
     const matchesSearch =
-      `${subscription.fname} ${subscription.mname} ${subscription.lname}`
+      `${subscription.fname || ''} ${subscription.mname || ''} ${subscription.lname || ''}`
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      subscription.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      subscription.plan_name.toLowerCase().includes(searchQuery.toLowerCase())
+      (subscription.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (subscription.plan_name || '').toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
     const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
@@ -372,10 +372,10 @@ const SubscriptionMonitor = () => {
 
   // Get analytics
   const analytics = {
-    total: subscriptions.length,
-    pending: pendingSubscriptions.length,
-    approved: subscriptions.filter((s) => s.status_name === "approved" || s.status_name === "active").length,
-    declined: subscriptions.filter((s) => s.status_name === "declined").length,
+    total: subscriptions?.length || 0,
+    pending: pendingSubscriptions?.length || 0,
+    approved: subscriptions?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
+    declined: subscriptions?.filter((s) => s.status_name === "declined")?.length || 0,
   }
 
   if (loading) {
@@ -478,7 +478,7 @@ const SubscriptionMonitor = () => {
             </TabsList>
 
             <TabsContent value="pending" className="space-y-4">
-              {pendingSubscriptions.length === 0 ? (
+              {!pendingSubscriptions || pendingSubscriptions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No pending subscription requests</p>
@@ -606,10 +606,10 @@ const SubscriptionMonitor = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredSubscriptions.length === 0 ? (
+                    {!filteredSubscriptions || filteredSubscriptions.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          No subscriptions found
+                          {!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}
                         </TableCell>
                       </TableRow>
                     ) : (
