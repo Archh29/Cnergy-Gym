@@ -10,13 +10,14 @@ import Topbar from "./topbar"
 import Announcement from "./announcement"
 import SubscriptionPlans from "./subscriptionplan"
 import { Button } from "@/components/ui/button"
-import { PanelLeft } from "lucide-react"
+import { PanelLeft, AlertCircle, CheckCircle, Clock, X } from "lucide-react"
 import AttendanceTracking from "./attendancetracking"
 import MonitorSubscriptions from "./monitorsubscription"
 import CoachAssignments from "./coachassignment"
 import Exercises from "./exercises"
 import FreePrograms from "./freeprograms"
 import Sales from "./sales"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 
 export default function AdminDashboard() {
@@ -24,6 +25,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState("")
   const [darkMode, setDarkMode] = useState(false)
+  const [globalModal, setGlobalModal] = useState({ show: false, title: "", message: "", type: "info" })
 
   useEffect(() => {
     const role = sessionStorage.getItem("role") || "Admin"
@@ -34,6 +36,17 @@ export default function AdminDashboard() {
     if (savedTheme === "dark") {
       document.documentElement.classList.add("dark")
       setDarkMode(true)
+    }
+
+    // Listen for global modal events
+    const handleGlobalModal = (event) => {
+      const { title, message, type, show } = event.detail
+      setGlobalModal({ show, title, message, type })
+    }
+
+    window.addEventListener("show-global-modal", handleGlobalModal)
+    return () => {
+      window.removeEventListener("show-global-modal", handleGlobalModal)
     }
   }, [])
 
@@ -99,6 +112,35 @@ export default function AdminDashboard() {
         </header>
         <main className="flex-1 overflow-auto p-6">{renderSection()}</main>
       </div>
+
+      {/* Global Modal for Notifications */}
+      <Dialog open={globalModal.show} onOpenChange={(open) => setGlobalModal({ ...globalModal, show: open })}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {globalModal.type === "error" ? (
+                <AlertCircle className="h-5 w-5 text-red-500" />
+              ) : globalModal.type === "warning" ? (
+                <Clock className="h-5 w-5 text-orange-500" />
+              ) : (
+                <CheckCircle className="h-5 w-5 text-green-500" />
+              )}
+              {globalModal.title}
+            </DialogTitle>
+            <DialogDescription className="text-left">
+              {globalModal.message}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={() => setGlobalModal({ ...globalModal, show: false })}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
