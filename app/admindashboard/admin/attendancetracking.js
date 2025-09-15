@@ -118,10 +118,7 @@ const AttendanceTracking = () => {
   // Handle manual attendance entry
   const handleManualEntry = async (member) => {
     try {
-      const response = await axios.post("https://api.cnergy.site/attendance.php", {
-        action: "qr_scan",
-        qr_data: `CNERGY_ATTENDANCE:${member.id}`,
-      })
+      const response = await axios.get(`https://api.cnergy.site/attendance.php?action=qr_scan&qr_data=${encodeURIComponent(`CNERGY_ATTENDANCE:${member.id}`)}`)
       if (response.data.success) {
         // Handle different action types
         const actionType = response.data.action
@@ -166,10 +163,7 @@ const AttendanceTracking = () => {
       return
     }
     try {
-      const response = await axios.post("https://api.cnergy.site/attendance.php", {
-        action: "qr_scan",
-        qr_data: manualQrInput.trim(),
-      })
+      const response = await axios.get(`https://api.cnergy.site/attendance.php?action=qr_scan&qr_data=${encodeURIComponent(manualQrInput.trim())}`)
       if (response.data.success) {
         const actionType = response.data.action
         if (actionType === "auto_checkout_and_checkin") {
