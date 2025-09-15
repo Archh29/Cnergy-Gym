@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = 'https://api.cnergy.site/guest_session.php';
+const API_URL = 'https://api.cnergy.site/guest_session_admin.php';
 
 export default function GuestManagement() {
     const [guestSessions, setGuestSessions] = useState([]);
