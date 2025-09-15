@@ -16,6 +16,7 @@ import {
   FaSignOutAlt,
   FaSun,
   FaShoppingCart,
+  FaUserFriends,
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
@@ -47,6 +48,7 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) 
     { name: "MonitorSubscriptions", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
     { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> }, // Added Sales section
     { name: "AttendanceTracking", icon: <FaCheckCircle className="mr-2 h-4 w-4" /> },
+    { name: "GuestManagement", icon: <FaUserFriends className="mr-2 h-4 w-4" /> },
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
     { name: "Exercises", icon: <FaDumbbell className="mr-2 h-4 w-4" /> },
     { name: "FreePrograms", icon: <FaChalkboardTeacher className="mr-2 h-4 w-4" /> },

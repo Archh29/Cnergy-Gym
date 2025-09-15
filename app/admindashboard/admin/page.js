@@ -17,6 +17,7 @@ import CoachAssignments from "./coachassignment"
 import Exercises from "./exercises"
 import FreePrograms from "./freeprograms"
 import Sales from "./sales"
+import GuestManagement from "./guestmanagement"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 
@@ -78,6 +79,8 @@ export default function AdminDashboard() {
         return <Announcement />
       case "AttendanceTracking":
         return <AttendanceTracking />
+      case "GuestManagement":
+        return <GuestManagement />
       case "MonitorSubscriptions":
         return <MonitorSubscriptions />
       case "Sales":
