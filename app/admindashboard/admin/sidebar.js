@@ -78,13 +78,13 @@ const Sidebar = ({
 
   return (
     <aside className={`bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col transition-all duration-300 ease-in-out fixed lg:relative z-50 ${
-      collapsed ? 'w-0 -translate-x-full lg:translate-x-0 opacity-0' : 'w-64 translate-x-0 opacity-100'
+      collapsed ? 'w-0 -translate-x-full lg:w-16 lg:translate-x-0' : 'w-64 translate-x-0'
     }`}>
-      <div className={`p-4 border-b dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`p-4 border-b dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0 lg:opacity-100' : 'opacity-100'}`}>
         <div className="flex items-center justify-between">
-          <Button variant="outline" className="flex-1 justify-start p-2">
+          <Button variant="outline" className={`flex-1 justify-start p-2 ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}>
             <div className="w-4 h-4 rounded bg-black dark:bg-white mr-2 flex-shrink-0" />
-            <span className="text-xl font-extrabold truncate">
+            <span className={`text-xl font-extrabold truncate ${collapsed ? 'lg:hidden' : ''}`}>
               <span className="text-orange-500">C</span>NERGY GYM
             </span>
           </Button>
@@ -99,33 +99,50 @@ const Sidebar = ({
           </Button>
         </div>
       </div>
-      <nav className={`flex-1 overflow-y-auto p-2 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
+      <nav className={`flex-1 overflow-y-auto p-2 transition-all duration-300 ${collapsed ? 'opacity-0 lg:opacity-100' : 'opacity-100'}`}>
         <div className="mb-4">
           {sections.map(({ name, icon }) => (
             <Button
               key={name}
               variant={activeSection === name ? "secondary" : "ghost"}
-              className="w-full justify-start mb-1"
+              className={`w-full mb-1 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
               onClick={() => handleSectionClick(name)}
+              title={collapsed ? name.replace(/([A-Z])/g, " $1").trim() : ""}
             >
               {icon}
-              <span className="text-sm font-medium truncate">{name.replace(/([A-Z])/g, " $1").trim()}</span>
+              <span className={`text-sm font-medium truncate ${collapsed ? 'lg:hidden' : ''}`}>
+                {name.replace(/([A-Z])/g, " $1").trim()}
+              </span>
             </Button>
           ))}
         </div>
       </nav>
-      <div className={`p-4 border-t dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
-        <Button variant="outline" className="w-full justify-start mb-2" onClick={toggleDarkMode}>
+      <div className={`p-4 border-t dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0 lg:opacity-100' : 'opacity-100'}`}>
+        <Button 
+          variant="outline" 
+          className={`w-full mb-2 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`} 
+          onClick={toggleDarkMode}
+          title={collapsed ? (darkMode ? "Light Mode" : "Dark Mode") : ""}
+        >
           {darkMode ? (
             <FaSun className="mr-2 h-4 w-4 text-yellow-500" />
           ) : (
             <FaMoon className="mr-2 h-4 w-4 text-gray-500" />
           )}
-          {darkMode ? "Light Mode" : "Dark Mode"}
+          <span className={`${collapsed ? 'lg:hidden' : ''}`}>
+            {darkMode ? "Light Mode" : "Dark Mode"}
+          </span>
         </Button>
-        <Button variant="destructive" className="w-full justify-start" onClick={handleLogout}>
+        <Button 
+          variant="destructive" 
+          className={`w-full ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`} 
+          onClick={handleLogout}
+          title={collapsed ? "Logout" : ""}
+        >
           <FaSignOutAlt className="mr-2 h-4 w-4" />
-          Logout
+          <span className={`${collapsed ? 'lg:hidden' : ''}`}>
+            Logout
+          </span>
         </Button>
       </div>
     </aside>

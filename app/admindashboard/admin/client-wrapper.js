@@ -143,7 +143,7 @@ export default function AdminDashboardClient() {
         collapsed={sidebarCollapsed}
         onToggle={toggleSidebar}
       />
-      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'ml-0' : ''}`}>
+      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'ml-0 lg:ml-16' : 'ml-0 lg:ml-64'}`}>
         {/* ✅ Top bar now supports dark mode */}
         <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-6 py-4">
           <div className="flex items-center gap-4">
