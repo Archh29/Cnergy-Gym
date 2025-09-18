@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useCallback } from "react"
 import {
   FaHome,
   FaUsers,
@@ -22,10 +23,17 @@ import {
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
 
-const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode, collapsed, onToggle }) => {
+const Sidebar = ({ 
+  activeSection = "Home", 
+  setActiveSection = () => {}, 
+  toggleDarkMode = () => {}, 
+  darkMode = false, 
+  collapsed = false, 
+  onToggle = () => {} 
+}) => {
   const router = useRouter()
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     // Make a request to your logout PHP endpoint to clear session and cookies
     await fetch("https://api.cnergy.site/logout.php", {
       method: "GET",
@@ -33,12 +41,24 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode, co
     })
 
     // Clear sessionStorage and cookies
-    sessionStorage.clear()
-    document.cookie = "user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC"
+    if (typeof window !== 'undefined') {
+      sessionStorage.clear()
+      document.cookie = "user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC"
+    }
 
     // Redirect to the login page
     router.push("/login")
-  }
+  }, [router])
+
+  const handleSectionClick = useCallback((name) => {
+    if (setActiveSection) {
+      setActiveSection(name)
+    }
+    // Close sidebar on mobile after navigation
+    if (typeof window !== 'undefined' && window.innerWidth < 1024 && onToggle) {
+      onToggle()
+    }
+  }, [setActiveSection, onToggle])
 
   const sections = [
     { name: "Home", icon: <FaHome className="mr-2 h-4 w-4" /> },
@@ -86,13 +106,7 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode, co
               key={name}
               variant={activeSection === name ? "secondary" : "ghost"}
               className="w-full justify-start mb-1"
-              onClick={() => {
-                setActiveSection(name)
-                // Close sidebar on mobile after navigation
-                if (window.innerWidth < 1024) {
-                  onToggle()
-                }
-              }}
+              onClick={() => handleSectionClick(name)}
             >
               {icon}
               <span className="text-sm font-medium truncate">{name.replace(/([A-Z])/g, " $1").trim()}</span>

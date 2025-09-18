@@ -1,7 +1,12 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import AdminDashboard from "./admin/page"
+import dynamic from "next/dynamic"
+
+const AdminDashboard = dynamic(() => import("./admin/page"), {
+  ssr: false,
+  loading: () => <div className="min-h-screen flex items-center justify-center">Loading...</div>
+})
 import { useRouter } from "next/navigation"
 import axios from "axios"
 import { CheckCircle, AlertCircle, Clock, Wifi } from "lucide-react"
