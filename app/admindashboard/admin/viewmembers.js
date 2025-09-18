@@ -199,19 +199,19 @@ const ViewMembers = () => {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "newest":
-          return (a.id || 0) - (b.id || 0) // Lower ID first (oldest) - FIXED
+          return (b.id || 0) - (a.id || 0) // Higher ID first (newest)
         case "oldest":
-          return (b.id || 0) - (a.id || 0) // Higher ID first (newest) - FIXED
+          return (a.id || 0) - (b.id || 0) // Lower ID first (oldest)
         case "name_asc":
-          return `${b.fname} ${b.lname}`.localeCompare(`${a.fname} ${a.lname}`) // Z-A - FIXED
+          return `${a.fname} ${a.lname}`.localeCompare(`${b.fname} ${b.lname}`) // A-Z
         case "name_desc":
-          return `${a.fname} ${a.lname}`.localeCompare(`${b.fname} ${b.lname}`) // A-Z - FIXED
+          return `${b.fname} ${b.lname}`.localeCompare(`${a.fname} ${a.lname}`) // Z-A
         case "email_asc":
-          return (b.email || "").localeCompare(a.email || "") // Z-A - FIXED
+          return (a.email || "").localeCompare(b.email || "") // A-Z
         case "email_desc":
-          return (a.email || "").localeCompare(b.email || "") // A-Z - FIXED
+          return (b.email || "").localeCompare(a.email || "") // Z-A
         default:
-          return (a.id || 0) - (b.id || 0) // Default to oldest
+          return (b.id || 0) - (a.id || 0) // Default to newest
       }
     })
 
