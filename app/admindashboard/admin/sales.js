@@ -141,8 +141,10 @@ const Sales = () => {
       return
     }
 
-    const product = products.find((p) => p.id === Number.parseInt(selectedProduct))
+    const product = products.find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))
     if (!product) {
+      console.log("Selected product ID:", selectedProduct)
+      console.log("Available products:", products)
       alert("Product not found!")
       return
     }
@@ -190,7 +192,7 @@ const Sales = () => {
       return
     }
 
-    const product = products.find((p) => p.id === productId)
+    const product = products.find((p) => p.id == productId || p.id === Number.parseInt(productId))
     if (!product) {
       alert("Product not found!")
       return
@@ -474,7 +476,7 @@ const Sales = () => {
                     type="number"
                     min="1"
                     max={
-                      selectedProduct ? (products.find((p) => p.id === Number.parseInt(selectedProduct))?.stock || 1) : 1
+                      selectedProduct ? (products.find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))?.stock || 1) : 1
                     }
                     value={quantity}
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
