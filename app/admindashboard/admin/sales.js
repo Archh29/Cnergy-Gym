@@ -142,6 +142,11 @@ const Sales = () => {
     }
 
     const product = products.find((p) => p.id === Number.parseInt(selectedProduct))
+    if (!product) {
+      alert("Product not found!")
+      return
+    }
+
     if (product.stock < quantity) {
       alert("Insufficient stock!")
       return
@@ -186,6 +191,11 @@ const Sales = () => {
     }
 
     const product = products.find((p) => p.id === productId)
+    if (!product) {
+      alert("Product not found!")
+      return
+    }
+
     if (newQuantity > product.stock) {
       alert("Quantity exceeds available stock!")
       return
@@ -447,11 +457,13 @@ const Sales = () => {
                       <SelectValue placeholder="Choose a product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {products.map((product) => (
+                      {products && products.length > 0 ? products.map((product) => (
                         <SelectItem key={product.id} value={product.id.toString()} disabled={product.stock === 0}>
                           {product.name} - {formatCurrency(product.price)} ({product.stock} in stock)
                         </SelectItem>
-                      ))}
+                      )) : (
+                        <SelectItem value="" disabled>No products available</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -462,7 +474,7 @@ const Sales = () => {
                     type="number"
                     min="1"
                     max={
-                      selectedProduct ? products.find((p) => p.id === Number.parseInt(selectedProduct))?.stock || 1 : 1
+                      selectedProduct ? (products.find((p) => p.id === Number.parseInt(selectedProduct))?.stock || 1) : 1
                     }
                     value={quantity}
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
@@ -491,8 +503,8 @@ const Sales = () => {
                       {cart.map((item, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div className="flex-1">
-                            <h4 className="font-medium">{item.product.name}</h4>
-                            <p className="text-sm text-muted-foreground">{formatCurrency(item.product.price)} each</p>
+                            <h4 className="font-medium">{item.product?.name || 'Unknown Product'}</h4>
+                            <p className="text-sm text-muted-foreground">{formatCurrency(item.product?.price || 0)} each</p>
                           </div>
 
                           <div className="flex items-center gap-2">
