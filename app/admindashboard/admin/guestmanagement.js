@@ -349,7 +349,7 @@ export default function GuestManagement() {
                                                 <TableCell>
                                                     <div className="flex items-center space-x-2">
                                                         <span>{formatDate(session.valid_until)}</span>
-                                                        {isSessionExpired(session.valid_until) && (
+                                                        {isSessionExpired(session.valid_until) && activeTab === 'rejected' && (
                                                             <Badge variant="destructive" className="text-xs">Expired</Badge>
                                                         )}
                                                     </div>
@@ -418,7 +418,7 @@ export default function GuestManagement() {
                                     <label className="text-sm font-medium text-muted-foreground">Valid Until</label>
                                     <div className="flex items-center space-x-2">
                                         <p>{formatDate(selectedSession.valid_until)}</p>
-                                        {isSessionExpired(selectedSession.valid_until) && (
+                                        {isSessionExpired(selectedSession.valid_until) && selectedSession.status === 'rejected' && (
                                             <Badge variant="destructive" className="text-xs">Expired</Badge>
                                         )}
                                     </div>

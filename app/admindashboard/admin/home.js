@@ -4,7 +4,8 @@ import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle, Calendar } from "lucide-react"
 
 const GymDashboard = () => {
   const [membershipData, setMembershipData] = useState([])
@@ -16,26 +17,63 @@ const GymDashboard = () => {
     checkinsToday: 0,
     upcomingExpirations: 0,
   })
+  const [timePeriod, setTimePeriod] = useState("today")
+  const [loading, setLoading] = useState(false)
+
+  const fetchDashboardData = async (period = timePeriod) => {
+    setLoading(true)
+    try {
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`)
+      setSummaryStats(response.data.summaryStats)
+      setMembershipData(response.data.membershipData)
+      setRevenueData(response.data.revenueData)
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    axios.get("https://api.cnergy.site/admindashboard.php")
-      .then(res => {
-        setSummaryStats(res.data.summaryStats)
-        setMembershipData(res.data.membershipData)
-        setRevenueData(res.data.revenueData)
-      })
-      .catch(err => console.error("Error fetching dashboard data:", err))
-  }, [])
+    fetchDashboardData()
+  }, [timePeriod])
+
+  const handleTimePeriodChange = (value) => {
+    setTimePeriod(value)
+  }
 
   return (
     <div className="space-y-6">
-      {/* Dashboard Overview */}
+      {loading && (
+        <div className="flex items-center justify-center p-4">
+          <div className="text-sm text-muted-foreground">Loading dashboard data...</div>
+        </div>
+      )}
+      {/* Time Period Filter */}
       <Card>
         <CardHeader>
-          <CardTitle>Dashboard Overview</CardTitle>
-          <CardDescription>
-            Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Dashboard Overview</CardTitle>
+              <CardDescription>
+                Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select time period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -53,15 +91,19 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Sales Today */}
+            {/* Sales */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Sales {timePeriod === 'today' ? 'Today' : timePeriod === 'week' ? 'This Week' : timePeriod === 'month' ? 'This Month' : 'This Year'}
+                </CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">₱{summaryStats.salesToday.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Today's revenue</p>
+                <p className="text-xs text-muted-foreground">
+                  {timePeriod === 'today' ? "Today's revenue" : timePeriod === 'week' ? "This week's revenue" : timePeriod === 'month' ? "This month's revenue" : "This year's revenue"}
+                </p>
               </CardContent>
             </Card>
 
@@ -80,12 +122,16 @@ const GymDashboard = () => {
             {/* Gym Check-ins */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Gym Check-ins Today</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Gym Check-ins {timePeriod === 'today' ? 'Today' : timePeriod === 'week' ? 'This Week' : timePeriod === 'month' ? 'This Month' : 'This Year'}
+                </CardTitle>
                 <UserCheck className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{summaryStats.checkinsToday}</div>
-                <p className="text-xs text-muted-foreground">Today's visits</p>
+                <p className="text-xs text-muted-foreground">
+                  {timePeriod === 'today' ? "Today's visits" : timePeriod === 'week' ? "This week's visits" : timePeriod === 'month' ? "This month's visits" : "This year's visits"}
+                </p>
               </CardContent>
             </Card>
 
@@ -109,7 +155,12 @@ const GymDashboard = () => {
         <Card>
           <CardHeader>
             <CardTitle>Membership Growth</CardTitle>
-            <CardDescription>Monthly membership growth trend</CardDescription>
+            <CardDescription>
+              {timePeriod === 'today' ? 'Daily membership growth trend' : 
+               timePeriod === 'week' ? 'Weekly membership growth trend' : 
+               timePeriod === 'month' ? 'Monthly membership growth trend' : 
+               'Yearly membership growth trend'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -139,8 +190,18 @@ const GymDashboard = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Revenue</CardTitle>
-            <CardDescription>Revenue performance over time</CardDescription>
+            <CardTitle>
+              {timePeriod === 'today' ? 'Daily Revenue' : 
+               timePeriod === 'week' ? 'Weekly Revenue' : 
+               timePeriod === 'month' ? 'Monthly Revenue' : 
+               'Yearly Revenue'}
+            </CardTitle>
+            <CardDescription>
+              {timePeriod === 'today' ? 'Daily revenue performance' : 
+               timePeriod === 'week' ? 'Weekly revenue performance' : 
+               timePeriod === 'month' ? 'Monthly revenue performance' : 
+               'Yearly revenue performance'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
