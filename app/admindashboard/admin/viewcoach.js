@@ -75,6 +75,15 @@ const ViewCoach = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [activities, setActivities] = useState([])
   const [activityLogs, setActivityLogs] = useState([])
+  const [coachStats, setCoachStats] = useState({
+    totalCoaches: 0,
+    availableCoaches: 0,
+    averageRating: 0,
+    averageHourlyRate: 0,
+    totalClients: 0,
+    specialtyDistribution: [],
+    recentActivities: []
+  })
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
@@ -243,9 +252,24 @@ const ViewCoach = () => {
     }
   }
 
+  // Fetch coach statistics from backend
+  const fetchCoachStats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}?stats=true`)
+      if (response.data.stats) {
+        setCoachStats(response.data.stats)
+        // Update activities with real data
+        setActivities(response.data.stats.recentActivities || [])
+      }
+    } catch (error) {
+      console.error("Error fetching coach statistics:", error)
+    }
+  }
+
   useEffect(() => {
     fetchCoaches()
     fetchActivityLogs()
+    fetchCoachStats()
   }, [])
 
   const fetchCoaches = async () => {
@@ -342,11 +366,8 @@ const ViewCoach = () => {
         setFilteredCoaches(enhancedCoaches)
         setIsAddDialogOpen(false)
 
-        const newActivity = {
-          text: `New coach ${formData.fname} ${formData.lname} (${formData.specialty}) registered`,
-          time: "Just now",
-        }
-        setActivities([newActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach added successfully!" })
@@ -443,11 +464,8 @@ const ViewCoach = () => {
         setFilteredCoaches(enhancedCoaches)
         setIsEditDialogOpen(false)
 
-        const updateActivity = {
-          text: `${formData.fname} ${formData.lname}'s profile updated`,
-          time: "Just now",
-        }
-        setActivities([updateActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach updated successfully!" })
@@ -484,11 +502,8 @@ const ViewCoach = () => {
         setFilteredCoaches(filteredCoaches.filter((coach) => coach.id !== selectedCoach.id))
         setIsDeleteDialogOpen(false)
 
-        const deleteActivity = {
-          text: `Coach ${selectedCoach.fullName} removed from system`,
-          time: "Just now",
-        }
-        setActivities([deleteActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach deleted successfully!" })
@@ -577,7 +592,7 @@ const ViewCoach = () => {
             <Users className="h-8 w-8 text-blue-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Total Coaches</p>
-              <p className="text-2xl font-bold">{coaches.length}</p>
+              <p className="text-2xl font-bold">{coachStats.totalCoaches}</p>
             </div>
           </CardContent>
         </Card>
@@ -586,7 +601,7 @@ const ViewCoach = () => {
             <CheckCircle className="h-8 w-8 text-green-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Available</p>
-              <p className="text-2xl font-bold">{coaches.filter((c) => c.is_available).length}</p>
+              <p className="text-2xl font-bold">{coachStats.availableCoaches}</p>
             </div>
           </CardContent>
         </Card>
@@ -595,11 +610,7 @@ const ViewCoach = () => {
             <Star className="h-8 w-8 text-yellow-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Rating</p>
-              <p className="text-2xl font-bold">
-                {coaches.length > 0
-                  ? (coaches.reduce((sum, coach) => sum + coach.rating, 0) / coaches.length).toFixed(1)
-                  : "0.0"}
-              </p>
+              <p className="text-2xl font-bold">{coachStats.averageRating}</p>
             </div>
           </CardContent>
         </Card>
@@ -608,12 +619,7 @@ const ViewCoach = () => {
             <DollarSign className="h-8 w-8 text-green-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Rate/hr</p>
-              <p className="text-2xl font-bold">
-                $
-                {coaches.length > 0
-                  ? (coaches.reduce((sum, coach) => sum + coach.hourly_rate, 0) / coaches.length).toFixed(0)
-                  : "0"}
-              </p>
+              <p className="text-2xl font-bold">${coachStats.averageHourlyRate}</p>
             </div>
           </CardContent>
         </Card>
@@ -795,15 +801,17 @@ const ViewCoach = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {activities.length === 0 ? (
+              {coachStats.recentActivities.length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No recent activity</p>
               ) : (
-                activities.slice(0, 5).map((activity, index) => (
+                coachStats.recentActivities.map((activity, index) => (
                   <div key={index} className="flex items-start space-x-3">
                     <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
                     <div className="flex-1">
-                      <p className="text-sm">{activity.text}</p>
-                      <p className="text-xs text-muted-foreground">{activity.time}</p>
+                      <p className="text-sm">{activity.activity}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(activity.timestamp).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 ))
@@ -823,22 +831,33 @@ const ViewCoach = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span>Active Coaches:</span>
-                <span className="font-semibold text-green-600">{coaches.filter((c) => c.is_available).length}</span>
+                <span className="font-semibold text-green-600">{coachStats.availableCoaches}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Average Rating:</span>
-                <span className="font-semibold text-yellow-600">
-                  {coaches.length > 0
-                    ? (coaches.reduce((sum, coach) => sum + coach.rating, 0) / coaches.length).toFixed(1)
-                    : "0.0"}
-                </span>
+                <span className="font-semibold text-yellow-600">{coachStats.averageRating}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Total Clients:</span>
-                <span className="font-semibold text-blue-600">
-                  {coaches.reduce((sum, coach) => sum + coach.total_clients, 0)}
-                </span>
+                <span className="font-semibold text-blue-600">{coachStats.totalClients}</span>
               </div>
+              <div className="flex items-center justify-between">
+                <span>Avg Hourly Rate:</span>
+                <span className="font-semibold text-green-600">${coachStats.averageHourlyRate}</span>
+              </div>
+              {coachStats.specialtyDistribution.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium mb-2">Top Specialties:</p>
+                  <div className="space-y-1">
+                    {coachStats.specialtyDistribution.slice(0, 3).map((specialty, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">{specialty.specialty}</span>
+                        <span className="font-semibold">{specialty.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
