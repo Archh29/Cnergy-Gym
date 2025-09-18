@@ -49,6 +49,15 @@ const SubscriptionPlans = () => {
   const [selectedPlanId, setSelectedPlanId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [expiringFilter, setExpiringFilter] = useState("all")
+  const [planFilter, setPlanFilter] = useState("all")
+  const [availablePlans, setAvailablePlans] = useState([])
+  const [warnings, setWarnings] = useState({
+    critical_count: 0,
+    warning_count: 0,
+    notice_count: 0
+  })
   const [analytics, setAnalytics] = useState({
     totalPlans: 0,
     activeSubscriptions: 0,
@@ -60,10 +69,14 @@ const SubscriptionPlans = () => {
     loadInitialData()
   }, [])
 
+  useEffect(() => {
+    fetchSubscriptions()
+  }, [statusFilter, expiringFilter, planFilter])
+
   const loadInitialData = async () => {
     setIsLoading(true)
     try {
-      await Promise.all([fetchPlans(), fetchSubscriptions(), fetchAnalytics()])
+      await Promise.all([fetchPlans(), fetchSubscriptions()])
     } catch (error) {
       console.error("Error loading initial data:", error)
     } finally {
@@ -76,6 +89,10 @@ const SubscriptionPlans = () => {
       const response = await axios.get(API_URL)
       if (Array.isArray(response.data.plans)) {
         setPlans(response.data.plans)
+        // Update analytics if provided
+        if (response.data.analytics) {
+          setAnalytics(response.data.analytics)
+        }
       } else {
         setPlans([])
         console.error("Unexpected API response format:", response.data)
@@ -88,33 +105,25 @@ const SubscriptionPlans = () => {
 
   const fetchSubscriptions = async () => {
     try {
-      // This would be a separate API call to get subscription data
-      // For now, using mock data
-      setSubscriptions([])
+      const params = new URLSearchParams({
+        action: 'subscriptions',
+        status: statusFilter,
+        expiring: expiringFilter,
+        plan: planFilter
+      })
+      
+      const response = await axios.get(`${API_URL}?${params}`)
+      if (response.data.subscriptions) {
+        setSubscriptions(response.data.subscriptions)
+        setWarnings(response.data.warnings || { critical_count: 0, warning_count: 0, notice_count: 0 })
+        setAvailablePlans(response.data.availablePlans || [])
+      }
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
       setSubscriptions([])
     }
   }
 
-  const fetchAnalytics = async () => {
-    try {
-      // Calculate analytics from plans data
-      const totalPlans = plans.length
-      const averagePlanPrice =
-        plans.length > 0
-          ? plans.reduce((sum, plan) => sum + Number.parseFloat(plan.price.toString() || "0"), 0) / plans.length
-          : 0
-      setAnalytics({
-        totalPlans,
-        activeSubscriptions: 0, // This would come from actual subscription data
-        monthlyRevenue: 0, // This would come from actual subscription data
-        averagePlanPrice,
-      })
-    } catch (error) {
-      console.error("Error calculating analytics:", error)
-    }
-  }
 
   const handleAdd = () => {
     setCurrentPlan({
@@ -393,7 +402,84 @@ const SubscriptionPlans = () => {
         <TabsContent value="subscriptions">
           <Card>
             <CardHeader>
-              <CardTitle>Active Subscriptions</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Active Subscriptions</CardTitle>
+                <div className="flex items-center gap-4">
+                  {/* Expiration Warnings */}
+                  {(warnings.critical_count > 0 || warnings.warning_count > 0 || warnings.notice_count > 0) && (
+                    <div className="flex items-center gap-2">
+                      {warnings.critical_count > 0 && (
+                        <Badge variant="destructive" className="text-xs">
+                          {warnings.critical_count} Expiring in 3 days
+                        </Badge>
+                      )}
+                      {warnings.warning_count > 0 && (
+                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                          {warnings.warning_count} Expiring in 7 days
+                        </Badge>
+                      )}
+                      {warnings.notice_count > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {warnings.notice_count} Expiring in 14 days
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Filters */}
+              <div className="flex items-center gap-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="status-filter" className="text-sm font-medium">Status:</Label>
+                  <select
+                    id="status-filter"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending_approval">Pending</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="expiring-filter" className="text-sm font-medium">Expiring:</Label>
+                  <select
+                    id="expiring-filter"
+                    value={expiringFilter}
+                    onChange={(e) => setExpiringFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm"
+                  >
+                    <option value="all">All</option>
+                    <option value="active">Active Only</option>
+                    <option value="critical">Critical (3 days)</option>
+                    <option value="warning">Warning (7 days)</option>
+                    <option value="notice">Notice (14 days)</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="plan-filter" className="text-sm font-medium">Plan:</Label>
+                  <select
+                    id="plan-filter"
+                    value={planFilter}
+                    onChange={(e) => setPlanFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm"
+                  >
+                    <option value="all">All Plans</option>
+                    {availablePlans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.plan_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
@@ -403,16 +489,76 @@ const SubscriptionPlans = () => {
                     <TableHead>Plan</TableHead>
                     <TableHead>Start Date</TableHead>
                     <TableHead>End Date</TableHead>
+                    <TableHead>Days Left</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>Amount Paid</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No active subscriptions found
-                    </TableCell>
-                  </TableRow>
+                  {subscriptions.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        No subscriptions found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    subscriptions.map((subscription) => (
+                      <TableRow key={subscription.id}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{subscription.member_name}</div>
+                            <div className="text-sm text-muted-foreground">{subscription.member_email}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{subscription.plan_name}</TableCell>
+                        <TableCell>{new Date(subscription.start_date).toLocaleDateString()}</TableCell>
+                        <TableCell>{new Date(subscription.end_date).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className={`font-medium ${
+                              subscription.days_until_expiry < 0 ? 'text-red-600' :
+                              subscription.expiry_status === 'critical' ? 'text-red-600' :
+                              subscription.expiry_status === 'warning' ? 'text-orange-600' :
+                              subscription.expiry_status === 'notice' ? 'text-yellow-600' :
+                              'text-green-600'
+                            }`}>
+                              {subscription.days_until_expiry < 0 ? 
+                                `Expired ${Math.abs(subscription.days_until_expiry)} days ago` :
+                                `${subscription.days_until_expiry} days`
+                              }
+                            </span>
+                            {subscription.expiry_status === 'critical' && (
+                              <Badge variant="destructive" className="text-xs">Critical</Badge>
+                            )}
+                            {subscription.expiry_status === 'warning' && (
+                              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Warning</Badge>
+                            )}
+                            {subscription.expiry_status === 'notice' && (
+                              <Badge variant="outline" className="text-xs">Notice</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            subscription.status_name === 'approved' ? 'default' :
+                            subscription.status_name === 'pending_approval' ? 'secondary' :
+                            subscription.status_name === 'rejected' ? 'destructive' :
+                            'outline'
+                          }>
+                            {subscription.status_name.replace('_', ' ').toUpperCase()}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(subscription.amount_paid)}
+                          {subscription.discount_type !== 'none' && (
+                            <div className="text-xs text-muted-foreground">
+                              {subscription.discount_type} discount
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </CardContent>

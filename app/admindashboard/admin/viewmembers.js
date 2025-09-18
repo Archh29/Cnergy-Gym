@@ -199,21 +199,19 @@ const ViewMembers = () => {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case "newest":
-          return (b.id || 0) - (a.id || 0) // Higher ID first (most recent)
+          return (a.id || 0) - (b.id || 0) // Lower ID first (oldest) - FIXED
         case "oldest":
-          return (a.id || 0) - (b.id || 0) // Lower ID first (oldest)
+          return (b.id || 0) - (a.id || 0) // Higher ID first (newest) - FIXED
         case "name_asc":
-          return `${a.fname} ${a.lname}`.localeCompare(`${b.fname} ${b.lname}`)
+          return `${b.fname} ${b.lname}`.localeCompare(`${a.fname} ${a.lname}`) // Z-A - FIXED
         case "name_desc":
-          return `${b.fname} ${b.lname}`.localeCompare(`${a.fname} ${a.lname}`)
+          return `${a.fname} ${a.lname}`.localeCompare(`${b.fname} ${b.lname}`) // A-Z - FIXED
         case "email_asc":
-          return (a.email || "").localeCompare(b.email || "")
+          return (b.email || "").localeCompare(a.email || "") // Z-A - FIXED
         case "email_desc":
-          return (b.email || "").localeCompare(a.email || "")
-        case "status":
-          return (a.account_status || "").localeCompare(b.account_status || "")
+          return (a.email || "").localeCompare(b.email || "") // A-Z - FIXED
         default:
-          return (b.id || 0) - (a.id || 0) // Default to newest
+          return (a.id || 0) - (b.id || 0) // Default to oldest
       }
     })
 
@@ -560,7 +558,6 @@ const ViewMembers = () => {
                 <SelectItem value="name_desc">Name Z-A</SelectItem>
                 <SelectItem value="email_asc">Email A-Z</SelectItem>
                 <SelectItem value="email_desc">Email Z-A</SelectItem>
-                <SelectItem value="status">By Status</SelectItem>
               </SelectContent>
             </Select>
           </div>
