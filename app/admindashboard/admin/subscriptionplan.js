@@ -87,12 +87,10 @@ const SubscriptionPlans = () => {
   const fetchPlans = async () => {
     try {
       const response = await axios.get(API_URL)
-      console.log("Plans API Response:", response.data)
       if (Array.isArray(response.data.plans)) {
         setPlans(response.data.plans)
         // Update analytics if provided
         if (response.data.analytics) {
-          console.log("Setting analytics:", response.data.analytics)
           setAnalytics(response.data.analytics)
         }
       } else {
@@ -115,7 +113,6 @@ const SubscriptionPlans = () => {
       })
       
       const response = await axios.get(`${API_URL}?${params}`)
-      console.log("Subscriptions API Response:", response.data)
       if (response.data.subscriptions) {
         setSubscriptions(response.data.subscriptions)
         setWarnings(response.data.warnings || { critical_count: 0, warning_count: 0, notice_count: 0 })
