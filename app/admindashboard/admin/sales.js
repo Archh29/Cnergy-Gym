@@ -30,27 +30,17 @@ import {
   Edit,
   Trash2,
   Minus,
-  Check,
-  ChevronsUpDown,
 } from "lucide-react"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
 
 // API Configuration
 const API_BASE_URL = "https://api.cnergy.site/sales.php"
 
 const Sales = () => {
-  const [selectedMember, setSelectedMember] = useState("")
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "" })
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(false)
-
-  // Member/Coach search states
-  const [memberSearchOpen, setMemberSearchOpen] = useState(false)
-  const [memberSearchValue, setMemberSearchValue] = useState("")
 
   // Filter states
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
@@ -68,7 +58,6 @@ const Sales = () => {
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
-  const [members, setMembers] = useState([])
   const [analytics, setAnalytics] = useState({
     todaysSales: 0,
     productsSoldToday: 0,
@@ -94,7 +83,7 @@ const Sales = () => {
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      await Promise.all([loadMembers(), loadProducts(), loadSales(), loadAnalytics()])
+      await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
     } catch (error) {
       console.error("Error loading initial data:", error)
       alert("Error loading data. Please refresh the page.")
@@ -103,15 +92,6 @@ const Sales = () => {
     }
   }
 
-  const loadMembers = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}?action=members`)
-      console.log("Members API Response:", response.data) // Add this line for debugging
-      setMembers(response.data.members || [])
-    } catch (error) {
-      console.error("Error loading members:", error)
-    }
-  }
 
   const loadProducts = async () => {
     try {
@@ -231,7 +211,6 @@ const Sales = () => {
     setLoading(true)
     try {
       const saleData = {
-        user_id: selectedMember ? Number.parseInt(selectedMember) : null,
         total_amount: getTotalAmount(),
         sale_type: "Product",
         sales_details: cart.map((item) => ({
@@ -245,8 +224,6 @@ const Sales = () => {
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
-        setSelectedMember("")
-        setMemberSearchValue("")
         setCart([])
         // Reload data
         await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
@@ -321,9 +298,6 @@ const Sales = () => {
     }
   }
 
-  const getFullName = (user) => {
-    return `${user.fname} ${user.mname} ${user.lname}`.trim()
-  }
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-PH", {
@@ -350,22 +324,14 @@ const Sales = () => {
   }
 
   const filteredSales = sales.filter((sale) => {
-    const fullName = sale.user ? getFullName(sale.user) : ""
-    const email = sale.user ? sale.user.email : ""
     return (
-      fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase())
+      sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.sales_details.some(detail => 
+        detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
     )
   })
 
-  // Get selected member details for display
-  const getSelectedMemberDisplay = () => {
-    if (!selectedMember) return "No Member (Walk-in Sale)"
-    const member = members.find((m) => m.id.toString() === selectedMember)
-    if (!member) return "No Member (Walk-in Sale)"
-    return `${getFullName(member)} (${member.type_name || "Member"}) - ${member.email}`
-  }
 
   if (loading && sales.length === 0) {
     return (
@@ -474,87 +440,6 @@ const Sales = () => {
                 <CardTitle>Add Products to Cart</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Select Member or Coach (Optional)</Label>
-                  <Popover open={memberSearchOpen} onOpenChange={setMemberSearchOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={memberSearchOpen}
-                        className="w-full justify-between bg-transparent"
-                      >
-                        {getSelectedMemberDisplay()}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-full p-0">
-                      <Command>
-                        <CommandInput
-                          placeholder="Search members and coaches..."
-                          value={memberSearchValue}
-                          onValueChange={setMemberSearchValue}
-                        />
-                        <CommandList>
-                          <CommandEmpty>No member or coach found.</CommandEmpty>
-                          <CommandGroup>
-                            <CommandItem
-                              value=""
-                              onSelect={() => {
-                                setSelectedMember("")
-                                setMemberSearchOpen(false)
-                                setMemberSearchValue("")
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4",
-                                  selectedMember === "" ? "opacity-100" : "opacity-0",
-                                )}
-                              />
-                              <div className="flex flex-col">
-                                <span className="font-medium">No Member (Walk-in Sale)</span>
-                                <span className="text-sm text-muted-foreground">Sell without member selection</span>
-                              </div>
-                            </CommandItem>
-                            {members
-                              .filter((member) => {
-                                const fullName = getFullName(member).toLowerCase()
-                                const email = member.email.toLowerCase()
-                                const searchTerm = memberSearchValue.toLowerCase()
-                                return fullName.includes(searchTerm) || email.includes(searchTerm)
-                              })
-                              .map((member) => (
-                                <CommandItem
-                                  key={member.id}
-                                  value={member.id.toString()}
-                                  onSelect={(currentValue) => {
-                                    setSelectedMember(currentValue === selectedMember ? "" : currentValue)
-                                    setMemberSearchOpen(false)
-                                    setMemberSearchValue("")
-                                  }}
-                                >
-                                  <Check
-                                    className={cn(
-                                      "mr-2 h-4 w-4",
-                                      selectedMember === member.id.toString() ? "opacity-100" : "opacity-0",
-                                    )}
-                                  />
-                                  <div className="flex flex-col">
-                                    <span className="font-medium">
-                                      {getFullName(member)} ({member.type_name || "Member"})
-                                    </span>
-                                    <span className="text-sm text-muted-foreground">{member.email}</span>
-                                  </div>
-                                </CommandItem>
-                              ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
                 <div className="space-y-2">
                   <Label>Select Product</Label>
                   <Select value={selectedProduct} onValueChange={setSelectedProduct}>
@@ -712,7 +597,6 @@ const Sales = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Member</TableHead>
                     <TableHead>Items</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Date</TableHead>
@@ -722,39 +606,13 @@ const Sales = () => {
                 <TableBody>
                   {filteredSales.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                         No sales found matching your search
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredSales.map((sale) => (
                       <TableRow key={sale.id}>
-                        <TableCell>
-                          {sale.user ? (
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-8 w-8">
-                                <AvatarFallback>
-                                  {sale.user.fname[0]}
-                                  {sale.user.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">{getFullName(sale.user)}</div>
-                                <div className="text-sm text-muted-foreground">{sale.user.email}</div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-8 w-8">
-                                <AvatarFallback>W</AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium text-muted-foreground">Walk-in Customer</div>
-                                <div className="text-sm text-muted-foreground">No member selected</div>
-                              </div>
-                            </div>
-                          )}
-                        </TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             {sale.sales_details.map((detail, index) => (
