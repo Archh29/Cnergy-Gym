@@ -52,6 +52,11 @@ const Sales = () => {
   const [memberSearchOpen, setMemberSearchOpen] = useState(false)
   const [memberSearchValue, setMemberSearchValue] = useState("")
 
+  // Filter states
+  const [analyticsFilter, setAnalyticsFilter] = useState("today")
+  const [saleTypeFilter, setSaleTypeFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState("all")
+
   // Cart for multiple products
   const [cart, setCart] = useState([])
 
@@ -75,6 +80,16 @@ const Sales = () => {
   useEffect(() => {
     loadInitialData()
   }, [])
+
+  // Reload analytics when filter changes
+  useEffect(() => {
+    loadAnalytics()
+  }, [analyticsFilter])
+
+  // Reload sales when filters change
+  useEffect(() => {
+    loadSales()
+  }, [saleTypeFilter, dateFilter])
 
   const loadInitialData = async () => {
     setLoading(true)
@@ -109,7 +124,15 @@ const Sales = () => {
 
   const loadSales = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=sales`)
+      const params = new URLSearchParams()
+      if (saleTypeFilter !== "all") {
+        params.append("sale_type", saleTypeFilter)
+      }
+      if (dateFilter !== "all") {
+        params.append("date_filter", dateFilter)
+      }
+      
+      const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
       setSales(response.data.sales || [])
     } catch (error) {
       console.error("Error loading sales:", error)
@@ -118,7 +141,7 @@ const Sales = () => {
 
   const loadAnalytics = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=analytics`)
+      const response = await axios.get(`${API_BASE_URL}?action=analytics&period=${analyticsFilter}`)
       setAnalytics(
         response.data.analytics || {
           todaysSales: 0,
@@ -200,15 +223,15 @@ const Sales = () => {
   }
 
   const handleProductSale = async () => {
-    if (!selectedMember || cart.length === 0) {
-      alert("Please select a member and add products to cart")
+    if (cart.length === 0) {
+      alert("Please add products to cart")
       return
     }
 
     setLoading(true)
     try {
       const saleData = {
-        user_id: Number.parseInt(selectedMember),
+        user_id: selectedMember ? Number.parseInt(selectedMember) : null,
         total_amount: getTotalAmount(),
         sale_type: "Product",
         sales_details: cart.map((item) => ({
@@ -327,19 +350,20 @@ const Sales = () => {
   }
 
   const filteredSales = sales.filter((sale) => {
-    const fullName = getFullName(sale.user)
+    const fullName = sale.user ? getFullName(sale.user) : ""
+    const email = sale.user ? sale.user.email : ""
     return (
       fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sale.user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase())
     )
   })
 
   // Get selected member details for display
   const getSelectedMemberDisplay = () => {
-    if (!selectedMember) return "Choose a member or coach"
+    if (!selectedMember) return "No Member (Walk-in Sale)"
     const member = members.find((m) => m.id.toString() === selectedMember)
-    if (!member) return "Choose a member or coach"
+    if (!member) return "No Member (Walk-in Sale)"
     return `${getFullName(member)} (${member.type_name || "Member"}) - ${member.email}`
   }
 
@@ -365,52 +389,75 @@ const Sales = () => {
         </CardContent>
       </Card>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Sales</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-            <p className="text-xs text-muted-foreground">Product & subscription sales</p>
-          </CardContent>
-        </Card>
+      {/* Quick Stats with Filter */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Analytics Overview</CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="analytics-filter">Period:</Label>
+              <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Sales</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
+                <p className="text-xs text-muted-foreground">Product & subscription sales</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Products Sold Today</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.productsSoldToday}</div>
-            <p className="text-xs text-muted-foreground">Items sold today</p>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Products Sold</CardTitle>
+                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.productsSoldToday}</div>
+                <p className="text-xs text-muted-foreground">Items sold</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
-            <p className="text-xs text-muted-foreground">Need restocking</p>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
+                <Package className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
+                <p className="text-xs text-muted-foreground">Need restocking</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
-            <p className="text-xs text-muted-foreground">All-time revenue</p>
-          </CardContent>
-        </Card>
-      </div>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
+                <p className="text-xs text-muted-foreground">All-time revenue</p>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="sales" className="space-y-4">
         <TabsList>
@@ -428,7 +475,7 @@ const Sales = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Select Member or Coach</Label>
+                  <Label>Select Member or Coach (Optional)</Label>
                   <Popover open={memberSearchOpen} onOpenChange={setMemberSearchOpen}>
                     <PopoverTrigger asChild>
                       <Button
@@ -451,6 +498,25 @@ const Sales = () => {
                         <CommandList>
                           <CommandEmpty>No member or coach found.</CommandEmpty>
                           <CommandGroup>
+                            <CommandItem
+                              value=""
+                              onSelect={() => {
+                                setSelectedMember("")
+                                setMemberSearchOpen(false)
+                                setMemberSearchValue("")
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selectedMember === "" ? "opacity-100" : "opacity-0",
+                                )}
+                              />
+                              <div className="flex flex-col">
+                                <span className="font-medium">No Member (Walk-in Sale)</span>
+                                <span className="text-sm text-muted-foreground">Sell without member selection</span>
+                              </div>
+                            </CommandItem>
                             {members
                               .filter((member) => {
                                 const fullName = getFullName(member).toLowerCase()
@@ -582,7 +648,7 @@ const Sales = () => {
                     <Button
                       onClick={handleProductSale}
                       className="w-full"
-                      disabled={!selectedMember || cart.length === 0 || loading}
+                      disabled={cart.length === 0 || loading}
                     >
                       {loading ? "Processing..." : "Complete Sale"}
                     </Button>
@@ -596,17 +662,49 @@ const Sales = () => {
         <TabsContent value="history">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Sales History</CardTitle>
-                <div className="relative w-full max-w-md">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Search sales..."
-                    className="pl-8"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <CardTitle>Sales History</CardTitle>
+                  <div className="relative w-full max-w-md">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder="Search sales..."
+                      className="pl-8"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="sale-type-filter">Sale Type:</Label>
+                    <Select value={saleTypeFilter} onValueChange={setSaleTypeFilter}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="Product">Product</SelectItem>
+                        <SelectItem value="Subscription">Subscription</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="date-filter">Date Range:</Label>
+                    <Select value={dateFilter} onValueChange={setDateFilter}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Time</SelectItem>
+                        <SelectItem value="today">Today</SelectItem>
+                        <SelectItem value="week">This Week</SelectItem>
+                        <SelectItem value="month">This Month</SelectItem>
+                        <SelectItem value="year">This Year</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -632,18 +730,30 @@ const Sales = () => {
                     filteredSales.map((sale) => (
                       <TableRow key={sale.id}>
                         <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarFallback>
-                                {sale.user.fname[0]}
-                                {sale.user.lname[0]}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div className="font-medium">{getFullName(sale.user)}</div>
-                              <div className="text-sm text-muted-foreground">{sale.user.email}</div>
+                          {sale.user ? (
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarFallback>
+                                  {sale.user.fname[0]}
+                                  {sale.user.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">{getFullName(sale.user)}</div>
+                                <div className="text-sm text-muted-foreground">{sale.user.email}</div>
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarFallback>W</AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium text-muted-foreground">Walk-in Customer</div>
+                                <div className="text-sm text-muted-foreground">No member selected</div>
+                              </div>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
