@@ -517,12 +517,12 @@ const ViewMembers = () => {
             <div>
               <CardTitle className="flex items-center">
                 <Shield className="mr-2 h-5 w-5" />
-                Member Account Management
+                User Account Management
               </CardTitle>
-              <CardDescription>Manage and verify member accounts</CardDescription>
+              <CardDescription>Manage and verify user accounts</CardDescription>
             </div>
             <Button onClick={handleOpenAddDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Add Member
+              <Plus className="mr-2 h-4 w-4" /> Add User
             </Button>
           </div>
         </CardHeader>
@@ -691,10 +691,7 @@ const ViewMembers = () => {
               </div>
               <div className="text-sm text-muted-foreground">Rejected</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{members.filter((m) => m.gender_id === 1).length}</div>
-              <div className="text-sm text-muted-foreground">Male</div>
-            </div>
+            
           </div>
         </CardContent>
       </Card>

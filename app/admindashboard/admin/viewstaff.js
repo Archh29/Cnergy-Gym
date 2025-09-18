@@ -49,7 +49,7 @@ const ViewStaff = () => {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    user_type_id: 2,
+    user_type_id: 2, // Always Staff
     gender_id: 1,
     fname: "",
     mname: "",
@@ -144,7 +144,7 @@ const ViewStaff = () => {
       id: staff.id,
       email: staff.email,
       password: "", // Clear password field for editing
-      user_type_id: staff.user_type === "Staff" ? 2 : 1,
+      user_type_id: 2, // Always Staff
       gender_id: staff.gender === "Male" ? 1 : 2,
       fname: staff.fname,
       mname: staff.mname || "",
@@ -265,7 +265,7 @@ const ViewStaff = () => {
     setFormData({
       email: "",
       password: "",
-      user_type_id: 2,
+      user_type_id: 2, // Always Staff
       gender_id: 1,
       fname: "",
       mname: "",
@@ -406,23 +406,6 @@ const ViewStaff = () => {
                         </div>
                       </RadioGroup>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="user_type">Position</Label>
-                      <Select
-                        value={formData.user_type_id.toString()}
-                        onValueChange={(value) => handleSelectChange("user_type_id", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select position" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="2">Staff</SelectItem>
-                          <SelectItem value="3">Trainer</SelectItem>
-                          <SelectItem value="4">Manager</SelectItem>
-                          <SelectItem value="5">Receptionist</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <DialogFooter className="pt-4">
                       <Button variant="outline" type="button" onClick={() => setOpen(false)}>
                         Cancel
@@ -456,14 +439,13 @@ const ViewStaff = () => {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Position</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8">
+                <TableCell colSpan={3} className="text-center py-8">
                   <div className="flex justify-center items-center">
                     <Loader2 className="h-6 w-6 animate-spin mr-2" />
                     <span>Loading staff data...</span>
@@ -472,7 +454,7 @@ const ViewStaff = () => {
               </TableRow>
             ) : filteredStaff.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8">
+                <TableCell colSpan={3} className="text-center py-8">
                   No staff members found
                 </TableCell>
               </TableRow>
@@ -485,7 +467,6 @@ const ViewStaff = () => {
                     </button>
                   </TableCell>
                   <TableCell>{staff.email}</TableCell>
-                  <TableCell>{staff.user_type}</TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button size="sm" onClick={() => handleEditClick(staff)}>
@@ -513,15 +494,9 @@ const ViewStaff = () => {
           </DialogHeader>
           {selectedStaff && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Name</p>
-                  <p>{`${selectedStaff.fname} ${selectedStaff.mname ? selectedStaff.mname + " " : ""}${selectedStaff.lname}`}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Position</p>
-                  <p>{selectedStaff.user_type}</p>
-                </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Name</p>
+                <p>{`${selectedStaff.fname} ${selectedStaff.mname ? selectedStaff.mname + " " : ""}${selectedStaff.lname}`}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Email</p>
@@ -653,23 +628,6 @@ const ViewStaff = () => {
                       <Label htmlFor="edit-female">Female</Label>
                     </div>
                   </RadioGroup>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-user-type">Position</Label>
-                  <Select
-                    value={formData.user_type_id.toString()}
-                    onValueChange={(value) => handleSelectChange("user_type_id", value)}
-                  >
-                    <SelectTrigger id="edit-user-type">
-                      <SelectValue placeholder="Select position" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="2">Staff</SelectItem>
-                      <SelectItem value="3">Trainer</SelectItem>
-                      <SelectItem value="4">Manager</SelectItem>
-                      <SelectItem value="5">Receptionist</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
                 <DialogFooter className="pt-4">
                   <Button variant="outline" type="button" onClick={() => setEditOpen(false)}>
