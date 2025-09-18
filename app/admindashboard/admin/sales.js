@@ -96,6 +96,7 @@ const Sales = () => {
   const loadProducts = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}?action=products`)
+      console.log("Products loaded:", response.data.products)
       setProducts(response.data.products || [])
     } catch (error) {
       console.error("Error loading products:", error)
