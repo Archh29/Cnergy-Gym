@@ -84,6 +84,7 @@ const ViewCoach = () => {
     specialtyDistribution: [],
     recentActivities: []
   })
+  const [activityFilter, setActivityFilter] = useState('all')
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
@@ -255,7 +256,7 @@ const ViewCoach = () => {
   // Fetch coach statistics from backend
   const fetchCoachStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}?stats=true`)
+      const response = await axios.get(`${API_URL}?stats=true&filter=${activityFilter}`)
       if (response.data.stats) {
         setCoachStats(response.data.stats)
         // Update activities with real data
@@ -266,11 +267,46 @@ const ViewCoach = () => {
     }
   }
 
+  // Filter activities based on time period
+  const getFilteredActivities = () => {
+    if (activityFilter === 'all') return coachStats.recentActivities
+    
+    const now = new Date()
+    const filterDate = new Date()
+    
+    switch (activityFilter) {
+      case 'today':
+        filterDate.setHours(0, 0, 0, 0)
+        break
+      case 'week':
+        filterDate.setDate(now.getDate() - 7)
+        break
+      case 'month':
+        filterDate.setMonth(now.getMonth() - 1)
+        break
+      case 'year':
+        filterDate.setFullYear(now.getFullYear() - 1)
+        break
+      default:
+        return coachStats.recentActivities
+    }
+    
+    return coachStats.recentActivities.filter(activity => {
+      const activityDate = new Date(activity.timestamp)
+      return activityDate >= filterDate
+    })
+  }
+
   useEffect(() => {
     fetchCoaches()
     fetchActivityLogs()
     fetchCoachStats()
   }, [])
+
+  // Refetch stats when filter changes
+  useEffect(() => {
+    fetchCoachStats()
+  }, [activityFilter])
 
   const fetchCoaches = async () => {
     setIsLoading(true)
@@ -794,21 +830,35 @@ const ViewCoach = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Recent Activity
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Recent Activity
+              </CardTitle>
+              <Select value={activityFilter} onValueChange={setActivityFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {coachStats.recentActivities.length === 0 ? (
+            <div className="h-64 overflow-y-auto space-y-4 pr-2">
+              {getFilteredActivities().length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No recent activity</p>
               ) : (
-                coachStats.recentActivities.map((activity, index) => (
+                getFilteredActivities().map((activity, index) => (
                   <div key={index} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
-                    <div className="flex-1">
-                      <p className="text-sm">{activity.activity}</p>
+                    <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm break-words">{activity.activity}</p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(activity.timestamp).toLocaleString()}
                       </p>
