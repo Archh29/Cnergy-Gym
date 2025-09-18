@@ -10,7 +10,7 @@ import Topbar from "./topbar"
 import Announcement from "./announcement"
 import SubscriptionPlans from "./subscriptionplan"
 import { Button } from "@/components/ui/button"
-import { PanelLeft, AlertCircle, CheckCircle, Clock, X } from "lucide-react"
+import { PanelLeft, AlertCircle, CheckCircle, Clock, X, Menu } from "lucide-react"
 import AttendanceTracking from "./attendancetracking"
 import MonitorSubscriptions from "./monitorsubscription"
 import CoachAssignments from "./coachassignment"
@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState("")
   const [darkMode, setDarkMode] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [globalModal, setGlobalModal] = useState({ show: false, title: "", message: "", type: "info" })
 
   useEffect(() => {
@@ -39,6 +40,17 @@ export default function AdminDashboard() {
       setDarkMode(true)
     }
 
+    // Handle responsive sidebar behavior
+    const handleResize = () => {
+      if (window.innerWidth < 1024) { // lg breakpoint
+        setSidebarCollapsed(true)
+      }
+    }
+
+    // Set initial state based on screen size
+    handleResize()
+    window.addEventListener("resize", handleResize)
+
     // Listen for global modal events
     const handleGlobalModal = (event) => {
       const { title, message, type, show } = event.detail
@@ -48,6 +60,7 @@ export default function AdminDashboard() {
     window.addEventListener("show-global-modal", handleGlobalModal)
     return () => {
       window.removeEventListener("show-global-modal", handleGlobalModal)
+      window.removeEventListener("resize", handleResize)
     }
   }, [])
 
@@ -61,6 +74,10 @@ export default function AdminDashboard() {
       document.documentElement.classList.remove("dark")
       localStorage.setItem("theme", "light")
     }
+  }
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(!sidebarCollapsed)
   }
 
   const renderSection = () => {
@@ -97,14 +114,29 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900`}>
-      <Sidebar activeSection={currentSection} setActiveSection={setCurrentSection} toggleDarkMode={toggleDarkMode} darkMode={darkMode} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 relative`}>
+      {/* Mobile backdrop overlay */}
+      {!sidebarCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={toggleSidebar}
+        />
+      )}
+      
+      <Sidebar 
+        activeSection={currentSection} 
+        setActiveSection={setActiveSection} 
+        toggleDarkMode={toggleDarkMode} 
+        darkMode={darkMode}
+        collapsed={sidebarCollapsed}
+        onToggle={toggleSidebar}
+      />
+      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'ml-0' : ''}`}>
         {/* ✅ Top bar now supports dark mode */}
         <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-6 py-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon">
-              <PanelLeft className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={toggleSidebar} className="hover:bg-gray-100 dark:hover:bg-gray-700">
+              {sidebarCollapsed ? <Menu className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </Button>
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
               <span>Dashboard</span>

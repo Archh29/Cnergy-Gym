@@ -17,11 +17,12 @@ import {
   FaSun,
   FaShoppingCart,
   FaUserFriends,
+  FaTimes,
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
 
-const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) => {
+const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode, collapsed, onToggle }) => {
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -56,23 +57,42 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) 
   ]
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col">
-      <div className="p-4 border-b dark:border-gray-800">
-        <Button variant="outline" className="w-full justify-start p-2">
-          <div className="w-4 h-4 rounded bg-black dark:bg-white mr-2 flex-shrink-0" />
-          <span className="text-xl font-extrabold truncate">
-            <span className="text-orange-500">C</span>NERGY GYM
-          </span>
-        </Button>
+    <aside className={`bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col transition-all duration-300 ease-in-out fixed lg:relative z-50 ${
+      collapsed ? 'w-0 -translate-x-full lg:translate-x-0 opacity-0' : 'w-64 translate-x-0 opacity-100'
+    }`}>
+      <div className={`p-4 border-b dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
+        <div className="flex items-center justify-between">
+          <Button variant="outline" className="flex-1 justify-start p-2">
+            <div className="w-4 h-4 rounded bg-black dark:bg-white mr-2 flex-shrink-0" />
+            <span className="text-xl font-extrabold truncate">
+              <span className="text-orange-500">C</span>NERGY GYM
+            </span>
+          </Button>
+          {/* Mobile close button */}
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={onToggle}
+            className="lg:hidden ml-2 h-8 w-8"
+          >
+            <FaTimes className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className={`flex-1 overflow-y-auto p-2 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
         <div className="mb-4">
           {sections.map(({ name, icon }) => (
             <Button
               key={name}
               variant={activeSection === name ? "secondary" : "ghost"}
               className="w-full justify-start mb-1"
-              onClick={() => setActiveSection(name)}
+              onClick={() => {
+                setActiveSection(name)
+                // Close sidebar on mobile after navigation
+                if (window.innerWidth < 1024) {
+                  onToggle()
+                }
+              }}
             >
               {icon}
               <span className="text-sm font-medium truncate">{name.replace(/([A-Z])/g, " $1").trim()}</span>
@@ -80,7 +100,7 @@ const Sidebar = ({ activeSection, setActiveSection, toggleDarkMode, darkMode }) 
           ))}
         </div>
       </nav>
-      <div className="p-4 border-t dark:border-gray-800">
+      <div className={`p-4 border-t dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
         <Button variant="outline" className="w-full justify-start mb-2" onClick={toggleDarkMode}>
           {darkMode ? (
             <FaSun className="mr-2 h-4 w-4 text-yellow-500" />
