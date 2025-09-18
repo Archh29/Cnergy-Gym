@@ -672,15 +672,18 @@ const SubscriptionMonitor = () => {
                             <div className="font-medium">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.amount_paid || subscription.discounted_price || subscription.price)}</div>
+                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
                             <div className="text-sm text-muted-foreground">
                               {subscription.discount_type && subscription.discount_type !== "none" && (
                                 <span className="text-orange-600">
                                   {subscription.discount_type} discount
                                 </span>
                               )}
-                              {subscription.payments?.length || 0} payment
-                              {(subscription.payments?.length || 0) !== 1 ? "s" : ""}
+                              {subscription.total_paid === 0 && (
+                                <span className="text-red-600">
+                                  No payments received
+                                </span>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
