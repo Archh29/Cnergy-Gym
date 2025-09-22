@@ -213,6 +213,11 @@ export default function GuestManagement() {
     };
 
     const getComputedStatus = (session) => {
+        // Add null checks to prevent errors
+        if (!session || !session.valid_until) {
+            return session?.status || 'unknown';
+        }
+        
         const isExpired = new Date(session.valid_until) < new Date();
         
         if (session.status === 'pending') {
@@ -238,10 +243,12 @@ export default function GuestManagement() {
     };
 
     const isSessionExpired = (validUntil) => {
+        if (!validUntil) return false;
         return new Date(validUntil) < new Date();
     };
 
     const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
         return new Date(dateString).toLocaleString('en-US', {
             year: 'numeric',
             month: 'short',
@@ -251,21 +258,24 @@ export default function GuestManagement() {
         });
     };
 
-    const filteredSessions = guestSessions.filter(session => {
+    const filteredSessions = (guestSessions || []).filter(session => {
+        // Add null check for session
+        if (!session) return false;
+        
         // Search filter
         if (searchQuery) {
             const searchLower = searchQuery.toLowerCase();
             const matchesSearch = 
-                session.guest_name.toLowerCase().includes(searchLower) ||
-                session.guest_type.toLowerCase().includes(searchLower) ||
-                session.qr_token.toLowerCase().includes(searchLower) ||
-                session.amount_paid.toString().includes(searchLower);
+                (session.guest_name || '').toLowerCase().includes(searchLower) ||
+                (session.guest_type || '').toLowerCase().includes(searchLower) ||
+                (session.qr_token || '').toLowerCase().includes(searchLower) ||
+                (session.amount_paid || '').toString().includes(searchLower);
             
             if (!matchesSearch) return false;
         }
 
         // Date filter
-        if (dateFilter) {
+        if (dateFilter && session.created_at) {
             const sessionDate = new Date(session.created_at).toDateString();
             const filterDate = new Date(dateFilter).toDateString();
             if (sessionDate !== filterDate) return false;
@@ -289,11 +299,11 @@ export default function GuestManagement() {
     });
 
     const stats = {
-        pending: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'pending').length,
-        awaitingPayment: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'awaiting_payment').length,
-        active: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'active').length,
-        expired: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'expired').length,
-        rejected: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'rejected').length
+        pending: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'pending').length,
+        awaitingPayment: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'awaiting_payment').length,
+        active: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'active').length,
+        expired: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'expired').length,
+        rejected: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'rejected').length
     };
 
     if (loading) {
@@ -475,27 +485,27 @@ export default function GuestManagement() {
                                             ) : (
                                                 filteredSessions.map((session) => (
                                                     <TableRow key={session.id}>
-                                                        <TableCell className="font-medium">
-                                                            {session.guest_name}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {getGuestTypeBadge(session.guest_type)}
-                                                        </TableCell>
-                                                        <TableCell>₱{session.amount_paid}</TableCell>
-                                                        <TableCell>
-                                                            {getStatusBadge(session)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {formatDate(session.created_at)}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            <div className="flex items-center space-x-2">
-                                                                <span>{formatDate(session.valid_until)}</span>
-                                                                {(session.computed_status || getComputedStatus(session)) === 'expired' && (
-                                                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
-                                                                )}
-                                                            </div>
-                                                        </TableCell>
+                                                <TableCell className="font-medium">
+                                                    {session.guest_name || 'N/A'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {getGuestTypeBadge(session.guest_type || 'unknown')}
+                                                </TableCell>
+                                                <TableCell>₱{session.amount_paid || '0.00'}</TableCell>
+                                                <TableCell>
+                                                    {getStatusBadge(session)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {formatDate(session.created_at)}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex items-center space-x-2">
+                                                        <span>{formatDate(session.valid_until)}</span>
+                                                        {(session.computed_status || getComputedStatus(session)) === 'expired' && (
+                                                            <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
                                                         <TableCell>
                                                             <Button
                                                                 variant="outline"
@@ -536,17 +546,17 @@ export default function GuestManagement() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-sm font-medium text-muted-foreground">Guest Name</label>
-                                    <p className="text-lg font-semibold">{selectedSession.guest_name}</p>
+                                    <p className="text-lg font-semibold">{selectedSession.guest_name || 'N/A'}</p>
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium text-muted-foreground">Guest Type</label>
                                     <div className="mt-1">
-                                        {getGuestTypeBadge(selectedSession.guest_type)}
+                                        {getGuestTypeBadge(selectedSession.guest_type || 'unknown')}
                                     </div>
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium text-muted-foreground">Amount Paid</label>
-                                    <p className="text-lg font-semibold">₱{selectedSession.amount_paid}</p>
+                                    <p className="text-lg font-semibold">₱{selectedSession.amount_paid || '0.00'}</p>
                                 </div>
                                 <div>
                                     <label className="text-sm font-medium text-muted-foreground">Status</label>
