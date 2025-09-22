@@ -154,44 +154,6 @@ export default function GuestManagement() {
         }
     };
 
-    const handleMarkPaid = async (sessionId) => {
-        try {
-            setActionLoading(true);
-            const response = await axios.post(API_URL, {
-                action: 'mark_paid',
-                session_id: sessionId
-            }, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.data.success) {
-                toast({
-                    title: "Success",
-                    description: "Payment confirmed successfully",
-                });
-                fetchGuestSessions();
-                setShowDetailsDialog(false);
-            } else {
-                toast({
-                    title: "Error",
-                    description: response.data.message || "Failed to confirm payment",
-                    variant: "destructive"
-                });
-            }
-        } catch (error) {
-            console.error('Error marking as paid:', error);
-            toast({
-                title: "Error",
-                description: "Failed to confirm payment",
-                variant: "destructive"
-            });
-        } finally {
-            setActionLoading(false);
-        }
-    };
 
     const getStatusBadge = (session) => {
         const computedStatus = session.computed_status || getComputedStatus(session);
@@ -290,7 +252,6 @@ export default function GuestManagement() {
         // Tab filter
         const computedStatus = session.computed_status || getComputedStatus(session);
         if (activeTab === 'pending') return computedStatus === 'pending';
-        if (activeTab === 'awaiting_payment') return computedStatus === 'awaiting_payment';
         if (activeTab === 'active') return computedStatus === 'active';
         if (activeTab === 'expired') return computedStatus === 'expired';
         if (activeTab === 'rejected') return computedStatus === 'rejected';
@@ -300,7 +261,6 @@ export default function GuestManagement() {
 
     const stats = {
         pending: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'pending').length,
-        awaitingPayment: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'awaiting_payment').length,
         active: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'active').length,
         expired: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'expired').length,
         rejected: (guestSessions || []).filter(s => s && (s.computed_status || getComputedStatus(s)) === 'rejected').length
@@ -332,7 +292,7 @@ export default function GuestManagement() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-5">
+            <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
@@ -342,18 +302,6 @@ export default function GuestManagement() {
                         <div className="text-2xl font-bold">{stats.pending}</div>
                         <p className="text-xs text-muted-foreground">
                             Awaiting approval
-                        </p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Awaiting Payment</CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.awaitingPayment}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Approved, not paid
                         </p>
                     </CardContent>
                 </Card>
@@ -443,7 +391,6 @@ export default function GuestManagement() {
                                 <SelectContent>
                                     <SelectItem value="all">All Status</SelectItem>
                                     <SelectItem value="pending">Pending</SelectItem>
-                                    <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
                                     <SelectItem value="active">Active</SelectItem>
                                     <SelectItem value="expired">Expired</SelectItem>
                                     <SelectItem value="rejected">Rejected</SelectItem>
@@ -452,9 +399,8 @@ export default function GuestManagement() {
                         </div>
                     </div>
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-5">
+                        <TabsList className="grid w-full grid-cols-4">
                             <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
-                            <TabsTrigger value="awaiting_payment">Awaiting Payment ({stats.awaitingPayment})</TabsTrigger>
                             <TabsTrigger value="active">Active ({stats.active})</TabsTrigger>
                             <TabsTrigger value="expired">Expired ({stats.expired})</TabsTrigger>
                             <TabsTrigger value="rejected">Rejected ({stats.rejected})</TabsTrigger>
@@ -592,15 +538,6 @@ export default function GuestManagement() {
                                                 </AlertDescription>
                                             </Alert>
                                         );
-                                    case 'awaiting_payment':
-                                        return (
-                                            <Alert>
-                                                <DollarSign className="h-4 w-4" />
-                                                <AlertDescription>
-                                                    This session has been approved. Mark as paid once payment is received.
-                                                </AlertDescription>
-                                            </Alert>
-                                        );
                                     case 'active':
                                         return (
                                             <Alert>
@@ -663,16 +600,6 @@ export default function GuestManagement() {
                                                     Approve & Mark Paid
                                                 </Button>
                                             </>
-                                        );
-                                    case 'awaiting_payment':
-                                        return (
-                                            <Button
-                                                onClick={() => handleMarkPaid(selectedSession.id)}
-                                                disabled={actionLoading}
-                                            >
-                                                <DollarSign className="h-4 w-4 mr-2" />
-                                                Mark as Paid
-                                            </Button>
                                         );
                                     default:
                                         return null;
