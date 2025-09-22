@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
     Users, 
     Clock, 
@@ -19,7 +22,10 @@ import {
     RefreshCw,
     Eye,
     UserCheck,
-    UserX
+    UserX,
+    Search,
+    Filter,
+    Calendar
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -32,6 +38,9 @@ export default function GuestManagement() {
     const [showDetailsDialog, setShowDetailsDialog] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('pending');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [dateFilter, setDateFilter] = useState('');
     const { toast } = useToast();
 
     useEffect(() => {
@@ -165,17 +174,39 @@ export default function GuestManagement() {
         }
     };
 
-    const getStatusBadge = (status, paid) => {
-        if (status === 'pending') {
-            return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
-        } else if (status === 'approved' && paid == 0) {
-            return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Approved - Awaiting Payment</Badge>;
-        } else if (status === 'approved' && paid == 1) {
-            return <Badge variant="secondary" className="bg-green-100 text-green-800">Paid & Active</Badge>;
-        } else if (status === 'rejected') {
-            return <Badge variant="destructive">Rejected</Badge>;
+    const getStatusBadge = (session) => {
+        const computedStatus = session.computed_status || getComputedStatus(session);
+        
+        switch (computedStatus) {
+            case 'pending':
+                return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+            case 'awaiting_payment':
+                return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Awaiting Payment</Badge>;
+            case 'active':
+                return <Badge variant="secondary" className="bg-green-100 text-green-800">Active</Badge>;
+            case 'expired':
+                return <Badge variant="destructive" className="bg-red-100 text-red-800">Expired</Badge>;
+            case 'rejected':
+                return <Badge variant="destructive">Rejected</Badge>;
+            default:
+                return <Badge variant="outline">{computedStatus}</Badge>;
         }
-        return <Badge variant="outline">{status}</Badge>;
+    };
+
+    const getComputedStatus = (session) => {
+        const isExpired = new Date(session.valid_until) < new Date();
+        
+        if (session.status === 'pending') {
+            return 'pending';
+        } else if (session.status === 'approved' && session.paid == 0) {
+            return 'awaiting_payment';
+        } else if (session.status === 'approved' && session.paid == 1) {
+            return isExpired ? 'expired' : 'active';
+        } else if (session.status === 'rejected') {
+            return 'rejected';
+        }
+        
+        return session.status;
     };
 
     const getGuestTypeBadge = (type) => {
@@ -202,18 +233,48 @@ export default function GuestManagement() {
     };
 
     const filteredSessions = guestSessions.filter(session => {
-        if (activeTab === 'pending') return session.status === 'pending';
-        if (activeTab === 'approved') return session.status === 'approved' && session.paid == 0;
-        if (activeTab === 'active') return session.status === 'approved' && session.paid == 1;
-        if (activeTab === 'rejected') return session.status === 'rejected';
+        // Search filter
+        if (searchQuery) {
+            const searchLower = searchQuery.toLowerCase();
+            const matchesSearch = 
+                session.guest_name.toLowerCase().includes(searchLower) ||
+                session.guest_type.toLowerCase().includes(searchLower) ||
+                session.qr_token.toLowerCase().includes(searchLower) ||
+                session.amount_paid.toString().includes(searchLower);
+            
+            if (!matchesSearch) return false;
+        }
+
+        // Date filter
+        if (dateFilter) {
+            const sessionDate = new Date(session.created_at).toDateString();
+            const filterDate = new Date(dateFilter).toDateString();
+            if (sessionDate !== filterDate) return false;
+        }
+
+        // Status filter
+        if (statusFilter !== 'all') {
+            const computedStatus = session.computed_status || getComputedStatus(session);
+            if (computedStatus !== statusFilter) return false;
+        }
+
+        // Tab filter
+        const computedStatus = session.computed_status || getComputedStatus(session);
+        if (activeTab === 'pending') return computedStatus === 'pending';
+        if (activeTab === 'awaiting_payment') return computedStatus === 'awaiting_payment';
+        if (activeTab === 'active') return computedStatus === 'active';
+        if (activeTab === 'expired') return computedStatus === 'expired';
+        if (activeTab === 'rejected') return computedStatus === 'rejected';
+        
         return true;
     });
 
     const stats = {
-        pending: guestSessions.filter(s => s.status === 'pending').length,
-        awaitingPayment: guestSessions.filter(s => s.status === 'approved' && s.paid == 0).length,
-        active: guestSessions.filter(s => s.status === 'approved' && s.paid == 1).length,
-        rejected: guestSessions.filter(s => s.status === 'rejected').length
+        pending: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'pending').length,
+        awaitingPayment: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'awaiting_payment').length,
+        active: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'active').length,
+        expired: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'expired').length,
+        rejected: guestSessions.filter(s => (s.computed_status || getComputedStatus(s)) === 'rejected').length
     };
 
     if (loading) {
@@ -242,7 +303,7 @@ export default function GuestManagement() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-5">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
@@ -281,6 +342,18 @@ export default function GuestManagement() {
                 </Card>
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Expired</CardTitle>
+                        <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{stats.expired}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Expired sessions
+                        </p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Rejected</CardTitle>
                         <XCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
@@ -302,76 +375,128 @@ export default function GuestManagement() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
+                    {/* Search and Filter Controls */}
+                    <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                type="search"
+                                placeholder="Search by name, type, QR token, or amount..."
+                                className="pl-8"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            <Input
+                                type="date"
+                                value={dateFilter}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                className="w-[160px]"
+                                placeholder="Filter by date"
+                            />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setDateFilter("")}
+                                className="px-2"
+                            >
+                                Clear
+                            </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Filter className="h-4 w-4 text-muted-foreground" />
+                            <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                <SelectTrigger className="w-[180px]">
+                                    <SelectValue placeholder="Filter by status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Status</SelectItem>
+                                    <SelectItem value="pending">Pending</SelectItem>
+                                    <SelectItem value="awaiting_payment">Awaiting Payment</SelectItem>
+                                    <SelectItem value="active">Active</SelectItem>
+                                    <SelectItem value="expired">Expired</SelectItem>
+                                    <SelectItem value="rejected">Rejected</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
                     <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-4">
+                        <TabsList className="grid w-full grid-cols-5">
                             <TabsTrigger value="pending">Pending ({stats.pending})</TabsTrigger>
-                            <TabsTrigger value="approved">Awaiting Payment ({stats.awaitingPayment})</TabsTrigger>
+                            <TabsTrigger value="awaiting_payment">Awaiting Payment ({stats.awaitingPayment})</TabsTrigger>
                             <TabsTrigger value="active">Active ({stats.active})</TabsTrigger>
+                            <TabsTrigger value="expired">Expired ({stats.expired})</TabsTrigger>
                             <TabsTrigger value="rejected">Rejected ({stats.rejected})</TabsTrigger>
                         </TabsList>
                         
                         <TabsContent value={activeTab} className="mt-6">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Guest Name</TableHead>
-                                        <TableHead>Type</TableHead>
-                                        <TableHead>Amount</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Requested</TableHead>
-                                        <TableHead>Valid Until</TableHead>
-                                        <TableHead>Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredSessions.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                                                No guest sessions found
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        filteredSessions.map((session) => (
-                                            <TableRow key={session.id}>
-                                                <TableCell className="font-medium">
-                                                    {session.guest_name}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {getGuestTypeBadge(session.guest_type)}
-                                                </TableCell>
-                                                <TableCell>₱{session.amount_paid}</TableCell>
-                                                <TableCell>
-                                                    {getStatusBadge(session.status, session.paid)}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {formatDate(session.created_at)}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center space-x-2">
-                                                        <span>{formatDate(session.valid_until)}</span>
-                                                        {isSessionExpired(session.valid_until) && activeTab === 'rejected' && (
-                                                            <Badge variant="destructive" className="text-xs">Expired</Badge>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            setSelectedSession(session);
-                                                            setShowDetailsDialog(true);
-                                                        }}
-                                                    >
-                                                        <Eye className="h-4 w-4 mr-1" />
-                                                        View
-                                                    </Button>
-                                                </TableCell>
+                            <div className="rounded-md border overflow-hidden">
+                                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                                    <Table>
+                                        <TableHeader className="sticky top-0 bg-white z-10">
+                                            <TableRow>
+                                                <TableHead>Guest Name</TableHead>
+                                                <TableHead>Type</TableHead>
+                                                <TableHead>Amount</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead>Requested</TableHead>
+                                                <TableHead>Valid Until</TableHead>
+                                                <TableHead>Actions</TableHead>
                                             </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {filteredSessions.length === 0 ? (
+                                                <TableRow>
+                                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                                        No guest sessions found
+                                                    </TableCell>
+                                                </TableRow>
+                                            ) : (
+                                                filteredSessions.map((session) => (
+                                                    <TableRow key={session.id}>
+                                                        <TableCell className="font-medium">
+                                                            {session.guest_name}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {getGuestTypeBadge(session.guest_type)}
+                                                        </TableCell>
+                                                        <TableCell>₱{session.amount_paid}</TableCell>
+                                                        <TableCell>
+                                                            {getStatusBadge(session)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {formatDate(session.created_at)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex items-center space-x-2">
+                                                                <span>{formatDate(session.valid_until)}</span>
+                                                                {(session.computed_status || getComputedStatus(session)) === 'expired' && (
+                                                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    setSelectedSession(session);
+                                                                    setShowDetailsDialog(true);
+                                                                }}
+                                                            >
+                                                                <Eye className="h-4 w-4 mr-1" />
+                                                                View
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </div>
                         </TabsContent>
                     </Tabs>
                 </CardContent>
@@ -407,7 +532,7 @@ export default function GuestManagement() {
                                 <div>
                                     <label className="text-sm font-medium text-muted-foreground">Status</label>
                                     <div className="mt-1">
-                                        {getStatusBadge(selectedSession.status, selectedSession.paid)}
+                                        {getStatusBadge(selectedSession)}
                                     </div>
                                 </div>
                                 <div>
@@ -425,32 +550,59 @@ export default function GuestManagement() {
                                 </div>
                             </div>
 
-                            {selectedSession.status === 'pending' && (
-                                <Alert>
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>
-                                        This guest session is pending approval. Review the details and approve or reject the request.
-                                    </AlertDescription>
-                                </Alert>
-                            )}
-
-                            {selectedSession.status === 'approved' && selectedSession.paid == 0 && (
-                                <Alert>
-                                    <DollarSign className="h-4 w-4" />
-                                    <AlertDescription>
-                                        This session has been approved. Mark as paid once payment is received.
-                                    </AlertDescription>
-                                </Alert>
-                            )}
-
-                            {selectedSession.status === 'approved' && selectedSession.paid == 1 && (
-                                <Alert>
-                                    <CheckCircle className="h-4 w-4" />
-                                    <AlertDescription>
-                                        This guest session is active and paid. The guest can now use the gym facilities.
-                                    </AlertDescription>
-                                </Alert>
-                            )}
+                            {(() => {
+                                const computedStatus = selectedSession.computed_status || getComputedStatus(selectedSession);
+                                
+                                switch (computedStatus) {
+                                    case 'pending':
+                                        return (
+                                            <Alert>
+                                                <AlertCircle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    This guest session is pending approval. Review the details and approve or reject the request.
+                                                </AlertDescription>
+                                            </Alert>
+                                        );
+                                    case 'awaiting_payment':
+                                        return (
+                                            <Alert>
+                                                <DollarSign className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    This session has been approved. Mark as paid once payment is received.
+                                                </AlertDescription>
+                                            </Alert>
+                                        );
+                                    case 'active':
+                                        return (
+                                            <Alert>
+                                                <CheckCircle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    This guest session is active and paid. The guest can now use the gym facilities.
+                                                </AlertDescription>
+                                            </Alert>
+                                        );
+                                    case 'expired':
+                                        return (
+                                            <Alert>
+                                                <AlertCircle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    This guest session has expired. The guest can no longer use the gym facilities.
+                                                </AlertDescription>
+                                            </Alert>
+                                        );
+                                    case 'rejected':
+                                        return (
+                                            <Alert>
+                                                <XCircle className="h-4 w-4" />
+                                                <AlertDescription>
+                                                    This guest session has been rejected.
+                                                </AlertDescription>
+                                            </Alert>
+                                        );
+                                    default:
+                                        return null;
+                                }
+                            })()}
                         </div>
                     )}
 
@@ -459,34 +611,44 @@ export default function GuestManagement() {
                             Close
                         </Button>
                         <div className="flex space-x-2">
-                            {selectedSession?.status === 'pending' && (
-                                <>
-                                    <Button
-                                        variant="destructive"
-                                        onClick={() => handleReject(selectedSession.id)}
-                                        disabled={actionLoading}
-                                    >
-                                        <UserX className="h-4 w-4 mr-2" />
-                                        Reject
-                                    </Button>
-                                    <Button
-                                        onClick={() => handleApprove(selectedSession.id)}
-                                        disabled={actionLoading}
-                                    >
-                                        <UserCheck className="h-4 w-4 mr-2" />
-                                        Approve
-                                    </Button>
-                                </>
-                            )}
-                            {selectedSession?.status === 'approved' && selectedSession.paid == 0 && (
-                                <Button
-                                    onClick={() => handleMarkPaid(selectedSession.id)}
-                                    disabled={actionLoading}
-                                >
-                                    <DollarSign className="h-4 w-4 mr-2" />
-                                    Mark as Paid
-                                </Button>
-                            )}
+                            {(() => {
+                                const computedStatus = selectedSession?.computed_status || getComputedStatus(selectedSession);
+                                
+                                switch (computedStatus) {
+                                    case 'pending':
+                                        return (
+                                            <>
+                                                <Button
+                                                    variant="destructive"
+                                                    onClick={() => handleReject(selectedSession.id)}
+                                                    disabled={actionLoading}
+                                                >
+                                                    <UserX className="h-4 w-4 mr-2" />
+                                                    Reject
+                                                </Button>
+                                                <Button
+                                                    onClick={() => handleApprove(selectedSession.id)}
+                                                    disabled={actionLoading}
+                                                >
+                                                    <UserCheck className="h-4 w-4 mr-2" />
+                                                    Approve & Mark Paid
+                                                </Button>
+                                            </>
+                                        );
+                                    case 'awaiting_payment':
+                                        return (
+                                            <Button
+                                                onClick={() => handleMarkPaid(selectedSession.id)}
+                                                disabled={actionLoading}
+                                            >
+                                                <DollarSign className="h-4 w-4 mr-2" />
+                                                Mark as Paid
+                                            </Button>
+                                        );
+                                    default:
+                                        return null;
+                                }
+                            })()}
                         </div>
                     </DialogFooter>
                 </DialogContent>
