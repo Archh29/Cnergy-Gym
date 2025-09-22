@@ -19,6 +19,8 @@ import {
   FaShoppingCart,
   FaUserFriends,
   FaTimes,
+  FaGift,
+  FaBox,
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
@@ -73,6 +75,8 @@ const Sidebar = ({
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
     { name: "Exercises", icon: <FaDumbbell className="mr-2 h-4 w-4" /> },
     { name: "FreePrograms", icon: <FaChalkboardTeacher className="mr-2 h-4 w-4" /> },
+    { name: "Promotions", icon: <FaGift className="mr-2 h-4 w-4" /> },
+    { name: "Merchandise", icon: <FaBox className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
   ]
 

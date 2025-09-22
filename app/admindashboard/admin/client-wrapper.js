@@ -18,6 +18,8 @@ import Exercises from "./exercises"
 import FreePrograms from "./freeprograms"
 import Sales from "./sales"
 import GuestManagement from "./guestmanagement"
+import Promotions from "./promotions"
+import Merchandise from "./merchandise"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function AdminDashboardClient() {
@@ -114,8 +116,12 @@ export default function AdminDashboardClient() {
         return <CoachAssignments />
       case "Exercises":
         return <Exercises />
-        case "FreePrograms":
-          return <FreePrograms />
+      case "FreePrograms":
+        return <FreePrograms />
+      case "Promotions":
+        return <Promotions />
+      case "Merchandise":
+        return <Merchandise />
       default:
         return <Home />
     }
