@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock } from "lucide-react"
+import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Calendar } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 const AttendanceTracking = () => {
@@ -20,6 +20,7 @@ const AttendanceTracking = () => {
   const [lastScanTime, setLastScanTime] = useState(0)
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
+  const [selectedDate, setSelectedDate] = useState("") // Date filter
 
   // Show notification with different types
   const showNotification = (message, type = "success") => {
@@ -28,12 +29,16 @@ const AttendanceTracking = () => {
   }
 
   // Load members and attendance data
-  const fetchData = async () => {
+  const fetchData = async (dateFilter = null) => {
     setLoading(true)
     try {
+      const attendanceUrl = dateFilter 
+        ? `https://api.cnergy.site/attendance.php?action=attendance&date=${dateFilter}`
+        : "https://api.cnergy.site/attendance.php?action=attendance"
+        
       const [membersRes, attendanceRes] = await Promise.all([
         axios.get("https://api.cnergy.site/attendance.php?action=members"),
-        axios.get("https://api.cnergy.site/attendance.php?action=attendance"),
+        axios.get(attendanceUrl),
       ])
       setMembers(membersRes.data)
       setAttendance(attendanceRes.data)
@@ -49,6 +54,15 @@ const AttendanceTracking = () => {
   useEffect(() => {
     fetchData()
   }, [])
+
+  // Refetch data when date filter changes
+  useEffect(() => {
+    if (selectedDate) {
+      fetchData(selectedDate)
+    } else {
+      fetchData()
+    }
+  }, [selectedDate])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -270,22 +284,42 @@ const AttendanceTracking = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search attendance records..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search attendance records..."
+                className="pl-8"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-[160px]"
+                placeholder="Select date"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedDate("")}
+                className="px-2"
+              >
+                Clear
+              </Button>
+            </div>
           </div>
 
-          {/* Mobile-friendly table wrapper */}
+          {/* Mobile-friendly table wrapper with fixed height and scroll */}
           <div className="rounded-md border overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className="sticky top-0 bg-white z-10">
                   <TableRow>
                     <TableHead className="min-w-[120px]">Name</TableHead>
                     <TableHead className="min-w-[140px]">Check In</TableHead>
