@@ -162,10 +162,10 @@ const Merchandise = () => {
     if (!item) return
     
     setSelectedMerchandise(item)
-    setName(item.name || "")
-    setPrice(item.price ? item.price.toString() : "")
-    setImageUrl(item.image_url || "")
-    setStatus(item.status || "active")
+    setName(item?.name || "")
+    setPrice(item?.price ? item.price.toString() : "")
+    setImageUrl(item?.image_url || "")
+    setStatus(item?.status || "active")
     setDialogOpen(true)
   }
 
@@ -198,7 +198,7 @@ const Merchandise = () => {
   const getStatusBadge = (item) => {
     if (!item) return <Badge variant="secondary">Unknown</Badge>
     
-    if (item.status === 'inactive') {
+    if (item?.status === 'inactive') {
       return <Badge variant="destructive">Inactive</Badge>
     }
     
@@ -219,7 +219,7 @@ const Merchandise = () => {
 
   const filteredMerchandise = (merchandise || []).filter((item) => {
     if (!item) return false
-    const matchesSearch = item.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesSearch = item?.name?.toLowerCase().includes(searchQuery.toLowerCase())
     
     return matchesSearch
   })
@@ -287,19 +287,19 @@ const Merchandise = () => {
                   filteredMerchandise.map((item) => {
                     if (!item) return null
                     return (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.name || "N/A"}</TableCell>
+                      <TableRow key={item?.id}>
+                        <TableCell className="font-medium">{item?.name || "N/A"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <DollarSign className="h-4 w-4" />
-                            {formatCurrency(item.price || 0)}
+                            {formatCurrency(item?.price || 0)}
                           </div>
                         </TableCell>
                         <TableCell>
-                          {item.image_url ? (
+                          {item?.image_url ? (
                             <img 
                               src={item.image_url} 
-                              alt={item.name || "Item"}
+                              alt={item?.name || "Item"}
                               className="w-12 h-12 object-cover rounded"
                               onError={(e) => {
                                 e.target.style.display = 'none'
@@ -333,7 +333,7 @@ const Merchandise = () => {
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => handleDeleteMerchandise(item.id)}
+                            onClick={() => handleDeleteMerchandise(item?.id)}
                             disabled={loadingStates.savingMerchandise || loadingStates.deletingMerchandise}
                           >
                             <Trash2 className="h-4 w-4" />

@@ -38,6 +38,9 @@ const Promotions = () => {
     deletingPromotion: false,
   })
 
+  // Add error boundary state
+  const [hasError, setHasError] = useState(false)
+
   const setLoadingState = (key, value) => {
     setLoadingStates((prev) => ({ ...prev, [key]: value }))
   }
@@ -171,12 +174,12 @@ const Promotions = () => {
     if (!promotion) return
     
     setSelectedPromotion(promotion)
-    setTitle(promotion.title || "")
-    setDescription(promotion.description || "")
-    setIcon(promotion.icon || "")
-    setStartDate(promotion.start_date || "")
-    setEndDate(promotion.end_date || "")
-    setIsActive(promotion.is_active == 1)
+    setTitle(promotion?.title || "")
+    setDescription(promotion?.description || "")
+    setIcon(promotion?.icon || "")
+    setStartDate(promotion?.start_date || "")
+    setEndDate(promotion?.end_date || "")
+    setIsActive(promotion?.is_active == 1)
     setDialogOpen(true)
   }
 
@@ -214,10 +217,10 @@ const Promotions = () => {
     if (!promotion) return <Badge variant="secondary">Unknown</Badge>
     
     const now = new Date()
-    const startDate = promotion.start_date ? new Date(promotion.start_date) : null
-    const endDate = promotion.end_date ? new Date(promotion.end_date) : null
+    const startDate = promotion?.start_date ? new Date(promotion.start_date) : null
+    const endDate = promotion?.end_date ? new Date(promotion.end_date) : null
     
-    if (!promotion.is_active) {
+    if (!promotion?.is_active) {
       return <Badge variant="destructive">Inactive</Badge>
     }
     
@@ -240,12 +243,34 @@ const Promotions = () => {
 
   const filteredPromotions = (promotions || []).filter((promotion) => {
     if (!promotion) return false
-    return promotion.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           promotion.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    return promotion?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+           promotion?.description?.toLowerCase().includes(searchQuery.toLowerCase())
   })
 
-  return (
-    <div className="space-y-6">
+  // Error boundary fallback
+  if (hasError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-red-600 mb-2">Something went wrong</h3>
+              <p className="text-muted-foreground mb-4">
+                There was an error loading the promotions page. Please try refreshing the page.
+              </p>
+              <Button onClick={() => window.location.reload()}>
+                Refresh Page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  try {
+    return (
+      <div className="space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -321,7 +346,7 @@ const Promotions = () => {
                             </div>
                             {promotion?.end_date && (
                               <div className="text-muted-foreground">
-                                to {formatDate(promotion.end_date)}
+                                to {formatDate(promotion?.end_date)}
                               </div>
                             )}
                           </div>
@@ -526,7 +551,28 @@ const Promotions = () => {
         </DialogContent>
       </Dialog>
     </div>
-  )
+    )
+  } catch (error) {
+    console.error('Error in Promotions component:', error)
+    setHasError(true)
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-red-600 mb-2">Something went wrong</h3>
+              <p className="text-muted-foreground mb-4">
+                There was an error loading the promotions page. Please try refreshing the page.
+              </p>
+              <Button onClick={() => window.location.reload()}>
+                Refresh Page
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 }
 
 export default Promotions
