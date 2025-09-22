@@ -157,11 +157,13 @@ const Promotions = () => {
   }
 
   const handleEditPromotion = (promotion) => {
+    if (!promotion) return
+    
     setSelectedPromotion(promotion)
-    setTitle(promotion.title)
+    setTitle(promotion.title || "")
     setDescription(promotion.description || "")
     setIcon(promotion.icon || "")
-    setStartDate(promotion.start_date)
+    setStartDate(promotion.start_date || "")
     setEndDate(promotion.end_date || "")
     setIsActive(promotion.is_active == 1)
     setDialogOpen(true)
@@ -191,6 +193,8 @@ const Promotions = () => {
   }
 
   const handleViewPromotion = (promotion) => {
+    if (!promotion) return
+    
     setSelectedPromotion(promotion)
     setViewDialogOpen(true)
   }

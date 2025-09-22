@@ -159,11 +159,13 @@ const Merchandise = () => {
   }
 
   const handleEditMerchandise = (item) => {
+    if (!item) return
+    
     setSelectedMerchandise(item)
-    setName(item.name)
-    setPrice(item.price.toString())
+    setName(item.name || "")
+    setPrice(item.price ? item.price.toString() : "")
     setImageUrl(item.image_url || "")
-    setStatus(item.status)
+    setStatus(item.status || "active")
     setDialogOpen(true)
   }
 
@@ -187,6 +189,8 @@ const Merchandise = () => {
   }
 
   const handleViewMerchandise = (item) => {
+    if (!item) return
+    
     setSelectedMerchandise(item)
     setViewDialogOpen(true)
   }
