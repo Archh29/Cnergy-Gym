@@ -479,8 +479,6 @@ const Promotions = () => {
               onClick={handleSavePromotion}
               disabled={
                 !title.trim() ||
-                !discountValue ||
-                parseFloat(discountValue) <= 0 ||
                 loadingStates.savingPromotion
               }
             >
