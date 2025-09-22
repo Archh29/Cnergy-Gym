@@ -29,6 +29,7 @@ const FreePrograms = () => {
   const [programName, setProgramName] = useState("")
   const [programDescription, setProgramDescription] = useState("")
   const [selectedExercises, setSelectedExercises] = useState([])
+  const [exerciseDetails, setExerciseDetails] = useState({}) // Store weight, reps, sets, color for each exercise
   const [error, setError] = useState("")
   const [loadingStates, setLoadingStates] = useState({
     fetchingPrograms: false,
@@ -42,7 +43,7 @@ const FreePrograms = () => {
 
   // API URLs - using your existing file structure
   const PROGRAMS_API = "https://api.cnergy.site/programs.php"
-  const EXERCISES_API = "https://api.cnergy.site/exercises.php"
+  const EXERCISES_API = "https://api.cnergy.site/exercises.php?action=get_exercises"
 
   useEffect(() => {
     fetchPrograms()
@@ -71,8 +72,8 @@ const FreePrograms = () => {
   const fetchExercises = async () => {
     try {
       const response = await axios.get(EXERCISES_API)
-      if (response.data.success && Array.isArray(response.data.exercises)) {
-        setExercises(response.data.exercises)
+      if (response.data.success && Array.isArray(response.data.data)) {
+        setExercises(response.data.data)
       } else {
         setExercises([])
       }
@@ -119,9 +120,14 @@ const FreePrograms = () => {
       // Prepare exercises data for the program
       const exercisesData = selectedExercises.map((exerciseId) => {
         const exercise = exercises.find((ex) => ex.id === exerciseId)
+        const details = exerciseDetails[exerciseId] || {}
         return {
           exercise_id: exerciseId,
           exercise_name: exercise ? exercise.name : "Unknown Exercise",
+          weight: details.weight || "",
+          reps: details.reps || "",
+          sets: details.sets || "",
+          color: details.color || "#3B82F6"
         }
       })
 
@@ -186,12 +192,27 @@ const FreePrograms = () => {
     setProgramName(program.name)
     setProgramDescription(program.description || "")
 
-    // If program has exercises data, pre-select them
+    // If program has exercises data, pre-select them and load details
     if (program.exercises && Array.isArray(program.exercises)) {
       const exerciseIds = program.exercises.map((ex) => ex.exercise_id).filter(Boolean)
       setSelectedExercises(exerciseIds)
+      
+      // Load exercise details
+      const details = {}
+      program.exercises.forEach((ex) => {
+        if (ex.exercise_id) {
+          details[ex.exercise_id] = {
+            weight: ex.weight || "",
+            reps: ex.reps || "",
+            sets: ex.sets || "",
+            color: ex.color || "#3B82F6"
+          }
+        }
+      })
+      setExerciseDetails(details)
     } else {
       setSelectedExercises([])
+      setExerciseDetails({})
     }
 
     setDialogOpen(true)
@@ -202,6 +223,7 @@ const FreePrograms = () => {
     setProgramName("")
     setProgramDescription("")
     setSelectedExercises([])
+    setExerciseDetails({})
     setDialogOpen(true)
   }
 
@@ -211,6 +233,7 @@ const FreePrograms = () => {
     setProgramName("")
     setProgramDescription("")
     setSelectedExercises([])
+    setExerciseDetails({})
     setError("")
   }
 
@@ -222,11 +245,37 @@ const FreePrograms = () => {
   const handleExerciseToggle = (exerciseId) => {
     setSelectedExercises((prev) => {
       if (prev.includes(exerciseId)) {
+        // Remove exercise details when unselecting
+        setExerciseDetails((details) => {
+          const newDetails = { ...details }
+          delete newDetails[exerciseId]
+          return newDetails
+        })
         return prev.filter((id) => id !== exerciseId)
       } else {
+        // Initialize exercise details when selecting
+        setExerciseDetails((details) => ({
+          ...details,
+          [exerciseId]: {
+            weight: "",
+            reps: "",
+            sets: "",
+            color: "#3B82F6"
+          }
+        }))
         return [...prev, exerciseId]
       }
     })
+  }
+
+  const handleExerciseDetailChange = (exerciseId, field, value) => {
+    setExerciseDetails((prev) => ({
+      ...prev,
+      [exerciseId]: {
+        ...prev[exerciseId],
+        [field]: value
+      }
+    }))
   }
 
   const getProgramExerciseCount = (program) => {
@@ -283,13 +332,14 @@ const FreePrograms = () => {
                   <TableHead>Program Name</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Exercises</TableHead>
+                  <TableHead>Created By</TableHead>
                   <TableHead className="w-32">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPrograms.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                       {loadingStates.fetchingPrograms
                         ? "Loading programs..."
                         : searchQuery
@@ -312,6 +362,11 @@ const FreePrograms = () => {
                           <Badge variant="outline">
                             {exerciseCount} exercise{exerciseCount !== 1 ? "s" : ""}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm text-muted-foreground">
+                            System
+                          </span>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
@@ -392,24 +447,84 @@ const FreePrograms = () => {
               ) : (
                 <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto border rounded-lg p-4">
                   {exercises.map((exercise) => (
-                    <div key={exercise.id} className="flex items-start space-x-3">
-                      <Checkbox
-                        id={`exercise-${exercise.id}`}
-                        checked={selectedExercises.includes(exercise.id)}
-                        onCheckedChange={() => handleExerciseToggle(exercise.id)}
-                        disabled={loadingStates.savingProgram}
-                      />
-                      <div className="flex-1">
-                        <label
-                          htmlFor={`exercise-${exercise.id}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                        >
-                          {exercise.name}
-                        </label>
-                        {exercise.description && (
-                          <p className="text-xs text-muted-foreground mt-1">{exercise.description}</p>
-                        )}
+                    <div key={exercise.id} className="space-y-3">
+                      <div className="flex items-start space-x-3">
+                        <Checkbox
+                          id={`exercise-${exercise.id}`}
+                          checked={selectedExercises.includes(exercise.id)}
+                          onCheckedChange={() => handleExerciseToggle(exercise.id)}
+                          disabled={loadingStates.savingProgram}
+                        />
+                        <div className="flex-1">
+                          <label
+                            htmlFor={`exercise-${exercise.id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {exercise.name}
+                          </label>
+                          {exercise.description && (
+                            <p className="text-xs text-muted-foreground mt-1">{exercise.description}</p>
+                          )}
+                        </div>
                       </div>
+                      
+                      {/* Exercise Details - only show if exercise is selected */}
+                      {selectedExercises.includes(exercise.id) && (
+                        <div className="ml-6 grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <Label htmlFor={`weight-${exercise.id}`} className="text-xs">Weight (kg)</Label>
+                            <Input
+                              id={`weight-${exercise.id}`}
+                              type="number"
+                              placeholder="0"
+                              value={exerciseDetails[exercise.id]?.weight || ""}
+                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'weight', e.target.value)}
+                              disabled={loadingStates.savingProgram}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`reps-${exercise.id}`} className="text-xs">Reps</Label>
+                            <Input
+                              id={`reps-${exercise.id}`}
+                              type="number"
+                              placeholder="0"
+                              value={exerciseDetails[exercise.id]?.reps || ""}
+                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'reps', e.target.value)}
+                              disabled={loadingStates.savingProgram}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`sets-${exercise.id}`} className="text-xs">Sets</Label>
+                            <Input
+                              id={`sets-${exercise.id}`}
+                              type="number"
+                              placeholder="0"
+                              value={exerciseDetails[exercise.id]?.sets || ""}
+                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'sets', e.target.value)}
+                              disabled={loadingStates.savingProgram}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor={`color-${exercise.id}`} className="text-xs">Color</Label>
+                            <div className="flex items-center space-x-2">
+                              <Input
+                                id={`color-${exercise.id}`}
+                                type="color"
+                                value={exerciseDetails[exercise.id]?.color || "#3B82F6"}
+                                onChange={(e) => handleExerciseDetailChange(exercise.id, 'color', e.target.value)}
+                                disabled={loadingStates.savingProgram}
+                                className="h-8 w-12 p-1"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {exerciseDetails[exercise.id]?.color || "#3B82F6"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -472,7 +587,31 @@ const FreePrograms = () => {
                 {selectedProgram && selectedProgram.exercises && selectedProgram.exercises.length > 0 ? (
                   selectedProgram.exercises.map((exercise, index) => (
                     <div key={index} className="p-3 border rounded-lg">
-                      <div className="font-medium">{exercise.exercise_name || "Unknown Exercise"}</div>
+                      <div className="font-medium mb-2">{exercise.exercise_name || "Unknown Exercise"}</div>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Weight:</span>
+                          <span className="font-medium">{exercise.weight || "N/A"} kg</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Reps:</span>
+                          <span className="font-medium">{exercise.reps || "N/A"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Sets:</span>
+                          <span className="font-medium">{exercise.sets || "N/A"}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Color:</span>
+                          <div className="flex items-center space-x-2">
+                            <div 
+                              className="w-4 h-4 rounded border"
+                              style={{ backgroundColor: exercise.color || "#3B82F6" }}
+                            ></div>
+                            <span className="font-medium text-xs">{exercise.color || "#3B82F6"}</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ))
                 ) : (

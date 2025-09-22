@@ -134,7 +134,6 @@ const FreePrograms = () => {
       const programData = {
         name: programName.trim(),
         description: programDescription.trim(),
-        admin_id: 1, // Default admin ID
         exercises: exercisesData, // Send exercises with the program
       }
 
@@ -366,7 +365,7 @@ const FreePrograms = () => {
                         </TableCell>
                         <TableCell>
                           <span className="text-sm text-muted-foreground">
-                            Admin #{program.admin_id || "N/A"}
+                            System
                           </span>
                         </TableCell>
                         <TableCell>
