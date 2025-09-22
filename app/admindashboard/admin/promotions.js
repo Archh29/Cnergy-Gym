@@ -54,7 +54,18 @@ const Promotions = () => {
     try {
       const response = await axios.get(PROMOTIONS_API)
       if (response.data.success && Array.isArray(response.data.promotions)) {
-        setPromotions(response.data.promotions)
+        // Sanitize data to ensure all properties exist
+        const safePromotions = response.data.promotions.map(promotion => ({
+          id: promotion?.id || null,
+          title: promotion?.title || "",
+          description: promotion?.description || "",
+          icon: promotion?.icon || "",
+          start_date: promotion?.start_date || "",
+          end_date: promotion?.end_date || "",
+          is_active: promotion?.is_active || 0,
+          created_at: promotion?.created_at || ""
+        }))
+        setPromotions(safePromotions)
         setError("")
       } else {
         setPromotions([])
@@ -295,20 +306,20 @@ const Promotions = () => {
                   filteredPromotions.map((promotion) => {
                     if (!promotion) return null
                     return (
-                      <TableRow key={promotion.id}>
-                        <TableCell className="font-medium">{promotion.title || "N/A"}</TableCell>
+                      <TableRow key={promotion?.id}>
+                        <TableCell className="font-medium">{promotion?.title || "N/A"}</TableCell>
                         <TableCell>
                           <div className="text-sm text-muted-foreground max-w-xs truncate">
-                            {promotion.description || "No description"}
+                            {promotion?.description || "No description"}
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              {formatDate(promotion.start_date)}
+                              {formatDate(promotion?.start_date)}
                             </div>
-                            {promotion.end_date && (
+                            {promotion?.end_date && (
                               <div className="text-muted-foreground">
                                 to {formatDate(promotion.end_date)}
                               </div>
@@ -337,7 +348,7 @@ const Promotions = () => {
                           <Button
                             variant="destructive"
                             size="sm"
-                            onClick={() => handleDeletePromotion(promotion.id)}
+                            onClick={() => handleDeletePromotion(promotion?.id)}
                             disabled={loadingStates.savingPromotion || loadingStates.deletingPromotion}
                           >
                             <Trash2 className="h-4 w-4" />
