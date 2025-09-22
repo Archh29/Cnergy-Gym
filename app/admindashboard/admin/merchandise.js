@@ -192,6 +192,8 @@ const Merchandise = () => {
   }
 
   const getStatusBadge = (item) => {
+    if (!item) return <Badge variant="secondary">Unknown</Badge>
+    
     if (item.status === 'inactive') {
       return <Badge variant="destructive">Inactive</Badge>
     }
@@ -212,7 +214,8 @@ const Merchandise = () => {
   }
 
   const filteredMerchandise = (merchandise || []).filter((item) => {
-    const matchesSearch = item?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    if (!item) return false
+    const matchesSearch = item.name?.toLowerCase().includes(searchQuery.toLowerCase())
     
     return matchesSearch
   })
@@ -271,38 +274,40 @@ const Merchandise = () => {
                     <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                       {loadingStates.fetchingMerchandise
                         ? "Loading merchandise..."
-                        : searchQuery || categoryFilter !== "all"
+                        : searchQuery
                           ? "No merchandise found matching your search"
                           : "No merchandise found"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredMerchandise.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="h-4 w-4" />
-                          {formatCurrency(item.price)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {item.image_url ? (
-                          <img 
-                            src={item.image_url} 
-                            alt={item.name}
-                            className="w-12 h-12 object-cover rounded"
-                            onError={(e) => {
-                              e.target.style.display = 'none'
-                            }}
-                          />
-                        ) : (
-                          <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
-                            <Package className="h-6 w-6 text-gray-400" />
+                  filteredMerchandise.map((item) => {
+                    if (!item) return null
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{item.name || "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <DollarSign className="h-4 w-4" />
+                            {formatCurrency(item.price || 0)}
                           </div>
-                        )}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(item)}</TableCell>
+                        </TableCell>
+                        <TableCell>
+                          {item.image_url ? (
+                            <img 
+                              src={item.image_url} 
+                              alt={item.name || "Item"}
+                              className="w-12 h-12 object-cover rounded"
+                              onError={(e) => {
+                                e.target.style.display = 'none'
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
+                              <Package className="h-6 w-6 text-gray-400" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(item)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
                           <Button
@@ -332,7 +337,8 @@ const Merchandise = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    )
+                  })
                 )}
               </TableBody>
             </Table>

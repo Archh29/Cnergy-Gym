@@ -196,15 +196,17 @@ const Promotions = () => {
   }
 
   const getStatusBadge = (promotion) => {
+    if (!promotion) return <Badge variant="secondary">Unknown</Badge>
+    
     const now = new Date()
-    const startDate = new Date(promotion.start_date)
+    const startDate = promotion.start_date ? new Date(promotion.start_date) : null
     const endDate = promotion.end_date ? new Date(promotion.end_date) : null
     
     if (!promotion.is_active) {
       return <Badge variant="destructive">Inactive</Badge>
     }
     
-    if (now < startDate) {
+    if (startDate && now < startDate) {
       return <Badge variant="secondary">Upcoming</Badge>
     }
     
@@ -221,10 +223,11 @@ const Promotions = () => {
   }
 
 
-  const filteredPromotions = (promotions || []).filter((promotion) =>
-    promotion?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    promotion?.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredPromotions = (promotions || []).filter((promotion) => {
+    if (!promotion) return false
+    return promotion.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+           promotion.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  })
 
   return (
     <div className="space-y-6">
@@ -285,28 +288,30 @@ const Promotions = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredPromotions.map((promotion) => (
-                    <TableRow key={promotion.id}>
-                      <TableCell className="font-medium">{promotion.title}</TableCell>
-                      <TableCell>
-                        <div className="text-sm text-muted-foreground max-w-xs truncate">
-                          {promotion.description || "No description"}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {formatDate(promotion.start_date)}
+                  filteredPromotions.map((promotion) => {
+                    if (!promotion) return null
+                    return (
+                      <TableRow key={promotion.id}>
+                        <TableCell className="font-medium">{promotion.title || "N/A"}</TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground max-w-xs truncate">
+                            {promotion.description || "No description"}
                           </div>
-                          {promotion.end_date && (
-                            <div className="text-muted-foreground">
-                              to {formatDate(promotion.end_date)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              {formatDate(promotion.start_date)}
                             </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(promotion)}</TableCell>
+                            {promotion.end_date && (
+                              <div className="text-muted-foreground">
+                                to {formatDate(promotion.end_date)}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getStatusBadge(promotion)}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
                           <Button
@@ -336,7 +341,8 @@ const Promotions = () => {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
