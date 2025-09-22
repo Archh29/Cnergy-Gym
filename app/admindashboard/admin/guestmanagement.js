@@ -49,7 +49,12 @@ export default function GuestManagement() {
     const fetchGuestSessions = async () => {
         try {
             setLoading(true);
-            const response = await axios.get(`${API_URL}?action=get_all_sessions`);
+            const response = await axios.get(`${API_URL}?action=get_all_sessions`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
             if (response.data.success) {
                 setGuestSessions(response.data.data || []);
             } else {
@@ -77,6 +82,11 @@ export default function GuestManagement() {
             const response = await axios.post(API_URL, {
                 action: 'approve_session',
                 session_id: sessionId
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
             });
 
             if (response.data.success) {
@@ -111,6 +121,11 @@ export default function GuestManagement() {
             const response = await axios.post(API_URL, {
                 action: 'reject_session',
                 session_id: sessionId
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
             });
 
             if (response.data.success) {
@@ -145,6 +160,11 @@ export default function GuestManagement() {
             const response = await axios.post(API_URL, {
                 action: 'mark_paid',
                 session_id: sessionId
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
             });
 
             if (response.data.success) {
