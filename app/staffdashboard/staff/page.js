@@ -16,6 +16,7 @@ import Topbar from "./topbar";
 import Exercises from "./exercises";
 import FreePrograms from "./freeprograms";
 import CoachAssignments from "./coachassignments";
+import Sales from "./sales";
 import { Button } from "@/components/ui/button";
 import { PanelLeft } from "lucide-react";
 
@@ -78,6 +79,8 @@ export default function StaffDashboard() {
           return <FreePrograms />;
       case "CoachAssignments":
           return <CoachAssignments />;
+      case "Sales":
+          return <Sales />;
       default:
         return <Home />;
     }
