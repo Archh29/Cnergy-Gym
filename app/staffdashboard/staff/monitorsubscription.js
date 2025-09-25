@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -43,13 +43,13 @@ const SubscriptionMonitor = () => {
   const [isCreateSubscriptionDialogOpen, setIsCreateSubscriptionDialogOpen] = useState(false)
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
   const [availableUsers, setAvailableUsers] = useState([])
+  const [selectedUserInfo, setSelectedUserInfo] = useState(null)
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    payment_amount: "",
-    payment_method: "cash",
-    notes: "",
+    discount_type: "none",
+    amount_paid: "",
   })
 
   // Decline dialog state
@@ -112,16 +112,66 @@ const SubscriptionMonitor = () => {
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await axios.get("https://api.cnergy.site/member_management.php")
-      if (Array.isArray(response.data)) {
-        // Filter only approved customers
-        const approvedCustomers = response.data.filter(
-          (user) => user.user_type_id === 4 && user.account_status === "approved",
-        )
-        setAvailableUsers(approvedCustomers)
+      const response = await axios.get(`${API_URL}?action=users`)
+      if (response.data.success) {
+        setAvailableUsers(response.data.users)
       }
     } catch (error) {
       console.error("Error fetching users:", error)
+    }
+  }
+
+  const fetchAvailablePlansForUser = async (userId) => {
+    try {
+      const apiUrl = `${API_URL}?action=available-plans&user_id=${userId}`
+      console.log("Making API call to:", apiUrl)
+      console.log("API_URL constant:", API_URL)
+      
+      const response = await axios.get(apiUrl)
+      
+      console.log("=== FULL API RESPONSE ===")
+      console.log("Response status:", response.status)
+      console.log("Response data:", response.data)
+      console.log("Response data type:", typeof response.data)
+      console.log("Response data keys:", Object.keys(response.data || {}))
+      
+      // Check if response.data exists and has the expected structure
+      if (response.data && response.data.success) {
+        console.log("✅ API call successful")
+        console.log("Available plans:", response.data.plans)
+        console.log("Active subscriptions:", response.data.active_subscriptions)
+        console.log("Has active member fee:", response.data.has_active_member_fee)
+        console.log("Active plan IDs:", response.data.active_plan_ids)
+        
+        setSubscriptionPlans(response.data.plans || [])
+        return {
+          availablePlans: response.data.plans || [],
+          existingSubscriptions: response.data.active_subscriptions || [],
+          hasActiveMemberFee: response.data.has_active_member_fee || false
+        }
+      } else {
+        console.error("❌ API response not successful or no data:", response.data)
+        setSubscriptionPlans([])
+        return {
+          availablePlans: [],
+          existingSubscriptions: [],
+          hasActiveMemberFee: false
+        }
+      }
+    } catch (error) {
+      console.error("❌ Error fetching available plans:", error)
+      console.error("Error message:", error.message)
+      console.error("Error response:", error.response)
+      if (error.response) {
+        console.error("Error response data:", error.response.data)
+        console.error("Error response status:", error.response.status)
+      }
+      setSubscriptionPlans([])
+      return {
+        availablePlans: [],
+        existingSubscriptions: [],
+        hasActiveMemberFee: false
+      }
     }
   }
 
@@ -186,9 +236,8 @@ const SubscriptionMonitor = () => {
         user_id: subscriptionForm.user_id,
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
-        payment_amount: subscriptionForm.payment_amount || selectedPlan.price,
-        payment_method: subscriptionForm.payment_method,
-        notes: subscriptionForm.notes,
+        discount_type: subscriptionForm.discount_type,
+        amount_paid: subscriptionForm.amount_paid,
         created_by: "admin",
       }
 
@@ -215,19 +264,56 @@ const SubscriptionMonitor = () => {
       user_id: "",
       plan_id: "",
       start_date: new Date().toISOString().split("T")[0],
-      payment_amount: "",
-      payment_method: "cash",
-      notes: "",
+      discount_type: "none",
+      amount_paid: "",
     })
+    setSelectedUserInfo(null)
+    // Reset to all plans
+    fetchSubscriptionPlans()
   }
 
   const handlePlanChange = (planId) => {
     const selectedPlan = subscriptionPlans.find((plan) => plan.id == planId)
+    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
     setSubscriptionForm((prev) => ({
       ...prev,
       plan_id: planId,
-      payment_amount: selectedPlan ? selectedPlan.price : "",
+      amount_paid: prev.discount_type === "none" ? discountedPrice : prev.amount_paid,
     }))
+  }
+
+  const handleDiscountTypeChange = (discountType) => {
+    const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
+    
+    setSubscriptionForm((prev) => ({
+      ...prev,
+      discount_type: discountType,
+      amount_paid: discountType === "none" ? discountedPrice : "",
+    }))
+  }
+
+  const handleUserSelection = async (userId) => {
+    try {
+      setSubscriptionForm((prev) => ({
+        ...prev,
+        user_id: userId,
+        plan_id: "", // Reset plan selection
+      }))
+      
+      if (userId) {
+        const userInfo = await fetchAvailablePlansForUser(userId)
+        setSelectedUserInfo(userInfo)
+      } else {
+        setSelectedUserInfo(null)
+        // Reset to all plans if no user selected
+        fetchSubscriptionPlans()
+      }
+    } catch (error) {
+      console.error("Error in handleUserSelection:", error)
+      setSelectedUserInfo(null)
+      setMessage({ type: "error", text: "Failed to load user information" })
+    }
   }
 
   const getStatusColor = (status) => {
@@ -288,13 +374,13 @@ const SubscriptionMonitor = () => {
   }
 
   // Filter subscriptions
-  const filteredSubscriptions = subscriptions.filter((subscription) => {
+  const filteredSubscriptions = (subscriptions || []).filter((subscription) => {
     const matchesSearch =
-      `${subscription.fname} ${subscription.mname} ${subscription.lname}`
+      `${subscription.fname || ''} ${subscription.mname || ''} ${subscription.lname || ''}`
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      subscription.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      subscription.plan_name.toLowerCase().includes(searchQuery.toLowerCase())
+      (subscription.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (subscription.plan_name || '').toLowerCase().includes(searchQuery.toLowerCase())
 
     const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
     const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
@@ -304,10 +390,10 @@ const SubscriptionMonitor = () => {
 
   // Get analytics
   const analytics = {
-    total: subscriptions.length,
-    pending: pendingSubscriptions.length,
-    approved: subscriptions.filter((s) => s.status_name === "approved" || s.status_name === "active").length,
-    declined: subscriptions.filter((s) => s.status_name === "declined").length,
+    total: subscriptions?.length || 0,
+    pending: pendingSubscriptions?.length || 0,
+    approved: subscriptions?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
+    declined: subscriptions?.filter((s) => s.status_name === "declined")?.length || 0,
   }
 
   if (loading) {
@@ -410,7 +496,7 @@ const SubscriptionMonitor = () => {
             </TabsList>
 
             <TabsContent value="pending" className="space-y-4">
-              {pendingSubscriptions.length === 0 ? (
+              {!pendingSubscriptions || pendingSubscriptions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No pending subscription requests</p>
@@ -538,10 +624,10 @@ const SubscriptionMonitor = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredSubscriptions.length === 0 ? (
+                    {!filteredSubscriptions || filteredSubscriptions.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          No subscriptions found
+                          {!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -586,10 +672,18 @@ const SubscriptionMonitor = () => {
                             <div className="font-medium">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.price)}</div>
+                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
                             <div className="text-sm text-muted-foreground">
-                              {subscription.payments?.length || 0} payment
-                              {(subscription.payments?.length || 0) !== 1 ? "s" : ""}
+                              {subscription.discount_type && subscription.discount_type !== "none" && (
+                                <span className="text-orange-600">
+                                  {subscription.discount_type} discount
+                                </span>
+                              )}
+                              {subscription.total_paid === 0 && (
+                                <span className="text-red-600">
+                                  No payments received
+                                </span>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -605,23 +699,29 @@ const SubscriptionMonitor = () => {
 
       {/* Create Manual Subscription Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent 
+          className="sm:max-w-lg h-[80vh] flex flex-col" 
+          aria-describedby="create-subscription-description"
+        >
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
               Create Manual Subscription
             </DialogTitle>
+            <DialogDescription id="create-subscription-description">
+              Create a new subscription for a member with custom pricing and discount options.
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6">
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
             {/* User Selection */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Select Member *</label>
               <Select
                 value={subscriptionForm.user_id}
-                onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, user_id: value }))}
+                onValueChange={handleUserSelection}
               >
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue placeholder="Choose a member" />
                 </SelectTrigger>
                 <SelectContent>
@@ -637,32 +737,81 @@ const SubscriptionMonitor = () => {
                   ))}
                 </SelectContent>
               </Select>
+              {selectedUserInfo && (
+                <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Member Subscription Status</h4>
+                  <div className="text-sm text-blue-800 space-y-1">
+                    <p><strong>Active Member Fee:</strong> {selectedUserInfo.hasActiveMemberFee ? "Yes" : "No"}</p>
+                    <p><strong>Active Subscriptions:</strong> {selectedUserInfo.existingSubscriptions?.length || 0}</p>
+                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length > 0 && (
+                      <div className="mt-2">
+                        <p className="font-medium">Current Active Plans:</p>
+                        <ul className="list-disc list-inside ml-2">
+                          {selectedUserInfo.existingSubscriptions.map((sub, index) => (
+                            <li key={index}>
+                              {sub.plan_name || 'Unknown Plan'} - Expires: {sub.end_date ? new Date(sub.end_date).toLocaleDateString() : 'N/A'}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length === 0 && (
+                      <p className="text-green-600 font-medium">No active subscriptions - can purchase any available plan</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Plan Selection */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Subscription Plan *</label>
               <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue placeholder="Select a subscription plan" />
                 </SelectTrigger>
                 <SelectContent>
-                  {subscriptionPlans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id.toString()}>
-                      <div className="flex justify-between items-center w-full">
-                        <span>{plan.plan_name}</span>
-                        <span className="ml-2 text-muted-foreground">
-                          ${plan.price}/{plan.duration_months} month{plan.duration_months > 1 ? "s" : ""}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {!subscriptionPlans || subscriptionPlans.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground">
+                      {subscriptionForm.user_id ? "No available plans for this member" : "Please select a member first"}
+                    </div>
+                  ) : (
+                    subscriptionPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id.toString()}>
+                        <div className="flex justify-between items-center w-full">
+                          <div>
+                            <span>{plan.plan_name || 'Unknown Plan'}</span>
+                            {plan.id === 2 && (
+                              <span className="ml-2 text-xs text-blue-600">(Requires active member fee)</span>
+                            )}
+                            {plan.id === 3 && (
+                              <span className="ml-2 text-xs text-green-600">(Standalone monthly)</span>
+                            )}
+                          </div>
+                          <span className="ml-2 text-muted-foreground">
+                            ${plan.discounted_price || plan.price || 0}/{plan.duration_months || 1} month{(plan.duration_months || 1) > 1 ? "s" : ""}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              {selectedUserInfo && (!subscriptionPlans || subscriptionPlans.length === 0) && (
+                <div className="text-sm text-red-600 mt-1 p-2 bg-red-50 rounded border border-red-200">
+                  <p className="font-medium">No available subscription plans for this member.</p>
+                  <p>Possible reasons:</p>
+                  <ul className="list-disc list-inside ml-4 mt-1">
+                    <li>Already has active subscriptions to all plans</li>
+                    <li>Has Member Fee but trying to access Non-Member Plan</li>
+                    <li>Doesn't have Member Fee but trying to access Member Plan Monthly</li>
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* Start Date */}
-            <div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Start Date *</label>
               <Input
                 type="date"
@@ -673,75 +822,54 @@ const SubscriptionMonitor = () => {
                     start_date: e.target.value,
                   }))
                 }
-                className="mt-2"
               />
             </div>
 
-            {/* Payment Amount */}
-            <div>
-              <label className="text-sm font-medium">Payment Amount *</label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={subscriptionForm.payment_amount}
-                onChange={(e) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    payment_amount: e.target.value,
-                  }))
-                }
-                className="mt-2"
-              />
-              {subscriptionForm.plan_id && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Recommended: ${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}
-                </p>
-              )}
-            </div>
-
-            {/* Payment Method */}
-            <div>
-              <label className="text-sm font-medium">Payment Method</label>
+            {/* Discount Type */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Discount Type *</label>
               <Select
-                value={subscriptionForm.payment_method}
-                onValueChange={(value) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    payment_method: value,
-                  }))
-                }
+                value={subscriptionForm.discount_type}
+                onValueChange={handleDiscountTypeChange}
               >
-                <SelectTrigger className="mt-2">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Credit/Debit Card</SelectItem>
-                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                  <SelectItem value="gcash">GCash</SelectItem>
-                  <SelectItem value="paymaya">PayMaya</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  <SelectItem value="none">No Discount</SelectItem>
+                  <SelectItem value="student">Student Discount</SelectItem>
+                  <SelectItem value="senior">Senior Discount</SelectItem>
+                  <SelectItem value="promo">Promotional Discount</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Notes */}
-            <div>
-              <label className="text-sm font-medium">Notes (Optional)</label>
-              <Textarea
-                placeholder="Add any additional notes about this subscription..."
-                value={subscriptionForm.notes}
+            {/* Amount Paid */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Amount Paid *</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={subscriptionForm.amount_paid}
                 onChange={(e) =>
                   setSubscriptionForm((prev) => ({
                     ...prev,
-                    notes: e.target.value,
+                    amount_paid: e.target.value,
                   }))
                 }
-                className="mt-2"
-                rows={3}
+                disabled={subscriptionForm.discount_type === "none"}
               />
+              {subscriptionForm.plan_id && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {subscriptionForm.discount_type === "none" 
+                    ? `Plan price: $${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}`
+                    : "Enter the actual amount charged to the customer"
+                  }
+                </p>
+              )}
             </div>
+
 
             {/* Subscription Preview */}
             {subscriptionForm.plan_id && subscriptionForm.user_id && (
@@ -775,10 +903,10 @@ const SubscriptionMonitor = () => {
                         <strong>End Date:</strong> {endDate.toLocaleDateString()}
                       </p>
                       <p>
-                        <strong>Amount:</strong> ${subscriptionForm.payment_amount || selectedPlan.price}
+                        <strong>Discount Type:</strong> {subscriptionForm.discount_type === "none" ? "No Discount" : subscriptionForm.discount_type.charAt(0).toUpperCase() + subscriptionForm.discount_type.slice(1)}
                       </p>
                       <p>
-                        <strong>Payment Method:</strong> {subscriptionForm.payment_method}
+                        <strong>Amount Paid:</strong> ${subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
                       </p>
                     </div>
                   )
@@ -787,7 +915,7 @@ const SubscriptionMonitor = () => {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex justify-end gap-2 border-t pt-4 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => {
@@ -804,7 +932,7 @@ const SubscriptionMonitor = () => {
                 actionLoading === "create" ||
                 !subscriptionForm.plan_id ||
                 !subscriptionForm.user_id ||
-                !subscriptionForm.payment_amount
+                !subscriptionForm.amount_paid
               }
               className="bg-green-600 hover:bg-green-700"
             >

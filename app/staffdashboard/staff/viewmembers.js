@@ -79,6 +79,7 @@ const ViewMembers = () => {
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [sortBy, setSortBy] = useState("newest")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -194,9 +195,29 @@ const ViewMembers = () => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
+    // Sort the filtered results
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case "newest":
+          return (b.id || 0) - (a.id || 0) // Higher ID first (newest)
+        case "oldest":
+          return (a.id || 0) - (b.id || 0) // Lower ID first (oldest)
+        case "name_asc":
+          return `${a.fname} ${a.lname}`.localeCompare(`${b.fname} ${b.lname}`) // A-Z
+        case "name_desc":
+          return `${b.fname} ${b.lname}`.localeCompare(`${a.fname} ${a.lname}`) // Z-A
+        case "email_asc":
+          return (a.email || "").localeCompare(b.email || "") // A-Z
+        case "email_desc":
+          return (b.email || "").localeCompare(a.email || "") // Z-A
+        default:
+          return (b.id || 0) - (a.id || 0) // Default to newest
+      }
+    })
+
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, members])
+  }, [searchQuery, statusFilter, sortBy, members])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -220,6 +241,14 @@ const ViewMembers = () => {
         {statusOption.label}
       </Badge>
     )
+  }
+
+  const isNewMember = (member) => {
+    if (!member.created_at) return false
+    const createdDate = new Date(member.created_at)
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    return createdDate > sevenDaysAgo
   }
 
   const handleViewMember = (member) => {
@@ -486,12 +515,12 @@ const ViewMembers = () => {
             <div>
               <CardTitle className="flex items-center">
                 <Shield className="mr-2 h-5 w-5" />
-                Member Account Management
+                User Account Management
               </CardTitle>
-              <CardDescription>Manage and verify member accounts</CardDescription>
+              <CardDescription>Manage and verify user accounts</CardDescription>
             </div>
             <Button onClick={handleOpenAddDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Add Member
+              <Plus className="mr-2 h-4 w-4" /> Add User
             </Button>
           </div>
         </CardHeader>
@@ -516,6 +545,19 @@ const ViewMembers = () => {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest First</SelectItem>
+                <SelectItem value="oldest">Oldest First</SelectItem>
+                <SelectItem value="name_asc">Name A-Z</SelectItem>
+                <SelectItem value="name_desc">Name Z-A</SelectItem>
+                <SelectItem value="email_asc">Email A-Z</SelectItem>
+                <SelectItem value="email_desc">Email Z-A</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -547,10 +589,20 @@ const ViewMembers = () => {
                           {member.fname} {member.mname} {member.lname}
                         </div>
                         <div className="text-sm text-muted-foreground">{member.email}</div>
+                        {member.created_at && (
+                          <div className="text-xs text-muted-foreground">
+                            Created: {new Date(member.created_at).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </Button>
                   <div className="flex items-center gap-2">
+                    {isNewMember(member) && (
+                      <Badge className="bg-green-100 text-green-800" variant="outline">
+                        NEW
+                      </Badge>
+                    )}
                     {getStatusBadge(member.account_status)}
                     <Badge variant="outline">{getGenderName(member.gender_id)}</Badge>
                     {member.account_status === "pending" && (
@@ -636,10 +688,7 @@ const ViewMembers = () => {
               </div>
               <div className="text-sm text-muted-foreground">Rejected</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{members.filter((m) => m.gender_id === 1).length}</div>
-              <div className="text-sm text-muted-foreground">Male</div>
-            </div>
+            
           </div>
         </CardContent>
       </Card>

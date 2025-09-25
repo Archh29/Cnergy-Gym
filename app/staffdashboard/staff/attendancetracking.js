@@ -7,8 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Calendar } from "lucide-react"
+import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const AttendanceTracking = () => {
   const [manualOpen, setManualOpen] = useState(false)
@@ -20,12 +21,29 @@ const AttendanceTracking = () => {
   const [lastScanTime, setLastScanTime] = useState(0)
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
+  const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedDate, setSelectedDate] = useState("") // Date filter
 
   // Show notification with different types
   const showNotification = (message, type = "success") => {
     setNotification({ show: true, message, type })
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 6000)
+  }
+
+  // Filter attendance based on type (date filtering is done server-side)
+  const getFilteredAttendance = () => {
+    let filtered = attendance.filter((entry) => 
+      entry.name.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    
+    // Filter by user type
+    if (filterType === "members") {
+      filtered = filtered.filter(entry => entry.user_type === "member")
+    } else if (filterType === "guests") {
+      filtered = filtered.filter(entry => entry.user_type === "guest")
+    }
+    
+    return filtered
   }
 
   // Load members and attendance data
@@ -79,6 +97,30 @@ const AttendanceTracking = () => {
     }
   }, [])
 
+  // Listen for global modal events for guest session notifications
+  useEffect(() => {
+    const handleGlobalModal = (event) => {
+      const { type, message, guestName, expiredAt } = event.detail
+      
+      if (type === "guest_expired") {
+        // Show global modal for expired guest sessions
+        window.dispatchEvent(new CustomEvent("show-global-modal", {
+          detail: {
+            title: "Guest Session Expired",
+            message: `${guestName}'s guest session has expired at ${expiredAt}. Please inform the guest to purchase a new session.`,
+            type: "error",
+            show: true
+          }
+        }))
+      }
+    }
+
+    window.addEventListener("guest-session-expired", handleGlobalModal)
+    return () => {
+      window.removeEventListener("guest-session-expired", handleGlobalModal)
+    }
+  }, [])
+
   // Auto-refresh every 30 seconds to keep data current
   useEffect(() => {
     const interval = setInterval(() => {
@@ -91,21 +133,36 @@ const AttendanceTracking = () => {
   // Handle manual attendance entry
   const handleManualEntry = async (member) => {
     try {
-      const response = await axios.post("https://api.cnergy.site/attendance.php", {
-        action: "qr_scan",
-        qr_data: `CNERGY_ATTENDANCE:${member.id}`,
-      })
+      const response = await axios.get(`https://api.cnergy.site/attendance.php?action=qr_scan&qr_data=${encodeURIComponent(`CNERGY_ATTENDANCE:${member.id}`)}`)
       if (response.data.success) {
         // Handle different action types
         const actionType = response.data.action
         if (actionType === "auto_checkout_and_checkin") {
           showNotification(response.data.message, "warning")
+        } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
+          showNotification(response.data.message, "success")
         } else {
           showNotification(response.data.message)
         }
         fetchData()
       } else {
-        showNotification(response.data.message || "Failed to record attendance", "error")
+        // Handle guest session specific errors
+        if (response.data.type === "guest_expired") {
+          showNotification(response.data.message, "error")
+          // Trigger global modal for expired guest sessions
+          window.dispatchEvent(new CustomEvent("guest-session-expired", {
+            detail: {
+              type: "guest_expired",
+              message: response.data.message,
+              guestName: response.data.guest_name,
+              expiredAt: response.data.expired_at
+            }
+          }))
+        } else if (response.data.type === "guest_error") {
+          showNotification(response.data.message, "error")
+        } else {
+          showNotification(response.data.message || "Failed to record attendance", "error")
+        }
       }
     } catch (err) {
       console.error("Failed to record attendance", err)
@@ -121,21 +178,36 @@ const AttendanceTracking = () => {
       return
     }
     try {
-      const response = await axios.post("https://api.cnergy.site/attendance.php", {
-        action: "qr_scan",
-        qr_data: manualQrInput.trim(),
-      })
+      const response = await axios.get(`https://api.cnergy.site/attendance.php?action=qr_scan&qr_data=${encodeURIComponent(manualQrInput.trim())}`)
       if (response.data.success) {
         const actionType = response.data.action
         if (actionType === "auto_checkout_and_checkin") {
           showNotification(response.data.message, "warning")
+        } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
+          showNotification(response.data.message, "success")
         } else {
           showNotification(response.data.message)
         }
         fetchData()
         setManualQrInput("")
       } else {
-        showNotification(response.data.message || "Failed to process QR code", "error")
+        // Handle guest session specific errors
+        if (response.data.type === "guest_expired") {
+          showNotification(response.data.message, "error")
+          // Trigger global modal for expired guest sessions
+          window.dispatchEvent(new CustomEvent("guest-session-expired", {
+            detail: {
+              type: "guest_expired",
+              message: response.data.message,
+              guestName: response.data.guest_name,
+              expiredAt: response.data.expired_at
+            }
+          }))
+        } else if (response.data.type === "guest_error") {
+          showNotification(response.data.message, "error")
+        } else {
+          showNotification(response.data.message || "Failed to process QR code", "error")
+        }
       }
     } catch (err) {
       console.error("Failed to process QR scan", err)
@@ -208,11 +280,19 @@ const AttendanceTracking = () => {
                   </DialogHeader>
                   <div className="space-y-4">
                     <p className="text-sm text-muted-foreground">
-                      Enter the QR code data manually (e.g., CNERGY_ATTENDANCE:7)
+                      Enter the QR code data manually:
                     </p>
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        • Member QR: CNERGY_ATTENDANCE:7
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        • Guest QR: GUEST_C17E6DDEC09F
+                      </p>
+                    </div>
                     <Input
                       type="text"
-                      placeholder="CNERGY_ATTENDANCE:7"
+                      placeholder="CNERGY_ATTENDANCE:7 or GUEST_..."
                       value={manualQrInput}
                       onChange={(e) => setManualQrInput(e.target.value)}
                       onKeyPress={(e) => {
@@ -313,6 +393,34 @@ const AttendanceTracking = () => {
                 Clear
               </Button>
             </div>
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Filter by type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      All Users
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="members">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="h-4 w-4" />
+                      Members Only
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="guests">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Guests Only
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Mobile-friendly table wrapper with fixed height and scroll */}
@@ -322,6 +430,7 @@ const AttendanceTracking = () => {
                 <TableHeader className="sticky top-0 bg-white z-10">
                   <TableRow>
                     <TableHead className="min-w-[120px]">Name</TableHead>
+                    <TableHead className="min-w-[100px]">Type</TableHead>
                     <TableHead className="min-w-[140px]">Check In</TableHead>
                     <TableHead className="min-w-[140px]">Check Out</TableHead>
                     <TableHead className="min-w-[80px]">Duration</TableHead>
@@ -329,28 +438,39 @@ const AttendanceTracking = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {attendance
-                    .filter((entry) => entry.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell className="font-medium">{entry.name}</TableCell>
-                        <TableCell className="text-sm">{entry.check_in}</TableCell>
-                        <TableCell className="text-sm">{entry.check_out || "Still in gym"}</TableCell>
-                        <TableCell className="text-sm">{entry.duration || "-"}</TableCell>
-                        <TableCell>
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
-                              entry.check_out ? "bg-gray-100 text-gray-800" : "bg-green-100 text-green-800"
-                            }`}
-                          >
-                            {entry.check_out ? "Completed" : "Active"}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  {attendance.length === 0 && (
+                  {getFilteredAttendance().map((entry) => (
+                    <TableRow key={`${entry.user_type}-${entry.id}`}>
+                      <TableCell className="font-medium">{entry.name}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
+                            entry.user_type === "guest" 
+                              ? "bg-blue-100 text-blue-800" 
+                              : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {entry.user_type === "guest" ? "Guest" : "Member"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-sm">{entry.check_in}</TableCell>
+                      <TableCell className="text-sm">{entry.check_out || "Still in gym"}</TableCell>
+                      <TableCell className="text-sm">{entry.duration || "-"}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
+                            entry.check_out && !entry.check_out.includes("Still in gym") 
+                              ? "bg-gray-100 text-gray-800" 
+                              : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {entry.check_out && !entry.check_out.includes("Still in gym") ? "Completed" : "Active"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {getFilteredAttendance().length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         {loading ? "Loading attendance records..." : "No attendance records found"}
                       </TableCell>
                     </TableRow>

@@ -1,72 +1,169 @@
 "use client"
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useEffect, useState } from "react"
+import axios from "axios"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { CalendarDays, Clock, Users } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle, Calendar } from "lucide-react"
 
-const StaffDashboard = () => {
-  // Sample data for charts - modified for staff focus
-  const attendanceData = [
-    { name: "Mon", attendance: 45 },
-    { name: "Tue", attendance: 38 },
-    { name: "Wed", attendance: 52 },
-    { name: "Thu", attendance: 41 },
-    { name: "Fri", attendance: 58 },
-    { name: "Sat", attendance: 68 },
-    { name: "Sun", attendance: 42 },
-  ]
+const GymDashboard = () => {
+  const [membershipData, setMembershipData] = useState([])
+  const [revenueData, setRevenueData] = useState([])
+  const [summaryStats, setSummaryStats] = useState({
+    members: { active: 0, total: 0 },
+    salesToday: 0,
+    activeSubscriptions: 0,
+    checkinsToday: 0,
+    upcomingExpirations: 0,
+  })
+  const [timePeriod, setTimePeriod] = useState("today")
+  const [loading, setLoading] = useState(false)
 
-  const classesData = [
-    { name: "6AM", classes: 2 },
-    { name: "9AM", classes: 3 },
-    { name: "12PM", classes: 2 },
-    { name: "3PM", classes: 1 },
-    { name: "6PM", classes: 4 },
-    { name: "8PM", classes: 3 },
-  ]
+  const fetchDashboardData = async (period = timePeriod) => {
+    setLoading(true)
+    try {
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`)
+      setSummaryStats(response.data.summaryStats)
+      setMembershipData(response.data.membershipData || [])
+      setRevenueData(response.data.revenueData || [])
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err)
+      setMembershipData([])
+      setRevenueData([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [timePeriod])
+
+  const handleTimePeriodChange = (value) => {
+    setTimePeriod(value)
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Dashboard Overview */}
       <Card>
         <CardHeader>
-          <CardTitle>Staff Dashboard</CardTitle>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Dashboard Overview</CardTitle>
+              <CardDescription>
+                Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
+              </CardDescription>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Select time period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-l font-semibold">
-            Welcome to the CNERGY Gym Staff Portal – Track classes, manage member attendance, and view your schedule!
-          </p>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {/* Members */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Members</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {summaryStats.members.active}/{summaryStats.members.total}
+                </div>
+                <p className="text-xs text-muted-foreground">Active / Total</p>
+              </CardContent>
+            </Card>
+
+            {/* Sales Today */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₱{summaryStats.salesToday.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Today's revenue</p>
+              </CardContent>
+            </Card>
+
+            {/* Active Subscriptions */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.activeSubscriptions}</div>
+                <p className="text-xs text-muted-foreground">Current subscribers</p>
+              </CardContent>
+            </Card>
+
+            {/* Gym Check-ins */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Gym Check-ins Today</CardTitle>
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.checkinsToday}</div>
+                <p className="text-xs text-muted-foreground">Today's visits</p>
+              </CardContent>
+            </Card>
+
+            {/* Expirations */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Upcoming Expirations</CardTitle>
+                <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{summaryStats.upcomingExpirations}</div>
+                <p className="text-xs text-muted-foreground">Next 7 days</p>
+              </CardContent>
+            </Card>
+          </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Charts */}
+      <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Weekly Attendance</CardTitle>
+            <CardTitle>Membership Growth</CardTitle>
+            <CardDescription>Monthly membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
               config={{
-                attendance: {
-                  label: "Members",
-                  color: "hsl(var(--chart-1))",
-                },
+                members: { label: "Members", color: "hsl(var(--chart-1))" },
               }}
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attendanceData}>
+                <LineChart data={membershipData}>
                   <Line
                     type="monotone"
-                    dataKey="attendance"
+                    dataKey="members"
                     strokeWidth={2}
                     activeDot={{
                       r: 8,
                       style: { fill: "hsl(var(--chart-1))", opacity: 0.8 },
                     }}
-                    style={{
-                      stroke: "hsl(var(--chart-1))",
-                    }}
+                    style={{ stroke: "hsl(var(--chart-1))" }}
                   />
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </LineChart>
@@ -77,27 +174,19 @@ const StaffDashboard = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Today's Class Schedule</CardTitle>
+            <CardTitle>Monthly Revenue</CardTitle>
+            <CardDescription>Revenue performance over time</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
               config={{
-                classes: {
-                  label: "Classes",
-                  color: "hsl(var(--chart-2))",
-                },
+                revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
               }}
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={classesData}>
-                  <Bar
-                    dataKey="classes"
-                    style={{
-                      fill: "hsl(var(--chart-2))",
-                      opacity: 0.8,
-                    }}
-                  />
+                <BarChart data={revenueData}>
+                  <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </BarChart>
               </ResponsiveContainer>
@@ -105,42 +194,8 @@ const StaffDashboard = () => {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Today's Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="p-4 bg-primary/10 rounded-lg flex items-center gap-3">
-              <Users className="h-8 w-8 text-primary" />
-              <div>
-                <h3 className="text-lg font-semibold">Members Checked In</h3>
-                <p className="text-3xl font-bold">42</p>
-              </div>
-            </div>
-            <div className="p-4 bg-primary/10 rounded-lg flex items-center gap-3">
-              <CalendarDays className="h-8 w-8 text-primary" />
-              <div>
-                <h3 className="text-lg font-semibold">Your Classes Today</h3>
-                <p className="text-3xl font-bold">4</p>
-              </div>
-            </div>
-            <div className="p-4 bg-primary/10 rounded-lg flex items-center gap-3">
-              <Clock className="h-8 w-8 text-primary" />
-              <div>
-                <h3 className="text-lg font-semibold">Next Class</h3>
-                <p className="text-3xl font-bold">3:00 PM</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      
     </div>
   )
 }
 
-export default StaffDashboard
-
+export default GymDashboard

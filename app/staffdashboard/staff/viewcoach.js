@@ -75,6 +75,16 @@ const ViewCoach = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [activities, setActivities] = useState([])
   const [activityLogs, setActivityLogs] = useState([])
+  const [coachStats, setCoachStats] = useState({
+    totalCoaches: 0,
+    availableCoaches: 0,
+    averageRating: 0,
+    averageHourlyRate: 0,
+    totalClients: 0,
+    specialtyDistribution: [],
+    recentActivities: []
+  })
+  const [activityFilter, setActivityFilter] = useState('all')
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
@@ -100,6 +110,9 @@ const ViewCoach = () => {
     specialty: "",
     experience: "",
     hourly_rate: "",
+    monthly_rate: "",
+    session_package_rate: "",
+    session_package_count: "",
     certifications: "",
     is_available: true,
     image_url: "",
@@ -218,6 +231,9 @@ const ViewCoach = () => {
       specialty: "",
       experience: "",
       hourly_rate: "",
+      monthly_rate: "",
+      session_package_rate: "",
+      session_package_count: "",
       certifications: "",
       is_available: true,
       image_url: "",
@@ -237,10 +253,60 @@ const ViewCoach = () => {
     }
   }
 
+  // Fetch coach statistics from backend
+  const fetchCoachStats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}?stats=true&filter=${activityFilter}`)
+      if (response.data.stats) {
+        setCoachStats(response.data.stats)
+        // Update activities with real data
+        setActivities(response.data.stats.recentActivities || [])
+      }
+    } catch (error) {
+      console.error("Error fetching coach statistics:", error)
+    }
+  }
+
+  // Filter activities based on time period
+  const getFilteredActivities = () => {
+    if (activityFilter === 'all') return coachStats.recentActivities
+    
+    const now = new Date()
+    const filterDate = new Date()
+    
+    switch (activityFilter) {
+      case 'today':
+        filterDate.setHours(0, 0, 0, 0)
+        break
+      case 'week':
+        filterDate.setDate(now.getDate() - 7)
+        break
+      case 'month':
+        filterDate.setMonth(now.getMonth() - 1)
+        break
+      case 'year':
+        filterDate.setFullYear(now.getFullYear() - 1)
+        break
+      default:
+        return coachStats.recentActivities
+    }
+    
+    return coachStats.recentActivities.filter(activity => {
+      const activityDate = new Date(activity.timestamp)
+      return activityDate >= filterDate
+    })
+  }
+
   useEffect(() => {
     fetchCoaches()
     fetchActivityLogs()
+    fetchCoachStats()
   }, [])
+
+  // Refetch stats when filter changes
+  useEffect(() => {
+    fetchCoachStats()
+  }, [activityFilter])
 
   const fetchCoaches = async () => {
     setIsLoading(true)
@@ -305,6 +371,9 @@ const ViewCoach = () => {
         specialty: formData.specialty,
         experience: formData.experience,
         hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
+        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
+        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -333,11 +402,8 @@ const ViewCoach = () => {
         setFilteredCoaches(enhancedCoaches)
         setIsAddDialogOpen(false)
 
-        const newActivity = {
-          text: `New coach ${formData.fname} ${formData.lname} (${formData.specialty}) registered`,
-          time: "Just now",
-        }
-        setActivities([newActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach added successfully!" })
@@ -394,6 +460,9 @@ const ViewCoach = () => {
         specialty: formData.specialty,
         experience: formData.experience,
         hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
+        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
+        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -431,11 +500,8 @@ const ViewCoach = () => {
         setFilteredCoaches(enhancedCoaches)
         setIsEditDialogOpen(false)
 
-        const updateActivity = {
-          text: `${formData.fname} ${formData.lname}'s profile updated`,
-          time: "Just now",
-        }
-        setActivities([updateActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach updated successfully!" })
@@ -472,11 +538,8 @@ const ViewCoach = () => {
         setFilteredCoaches(filteredCoaches.filter((coach) => coach.id !== selectedCoach.id))
         setIsDeleteDialogOpen(false)
 
-        const deleteActivity = {
-          text: `Coach ${selectedCoach.fullName} removed from system`,
-          time: "Just now",
-        }
-        setActivities([deleteActivity, ...activities])
+        // Refresh statistics and activity logs
+        await fetchCoachStats()
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach deleted successfully!" })
@@ -515,6 +578,9 @@ const ViewCoach = () => {
       specialty: coach.specialty || "",
       experience: coach.experience || "",
       hourly_rate: coach.hourly_rate?.toString() || "",
+      monthly_rate: coach.monthly_rate?.toString() || "",
+      session_package_rate: coach.session_package_rate?.toString() || "",
+      session_package_count: coach.session_package_count?.toString() || "",
       certifications: coach.certifications || "",
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
@@ -562,7 +628,7 @@ const ViewCoach = () => {
             <Users className="h-8 w-8 text-blue-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Total Coaches</p>
-              <p className="text-2xl font-bold">{coaches.length}</p>
+              <p className="text-2xl font-bold">{coachStats.totalCoaches}</p>
             </div>
           </CardContent>
         </Card>
@@ -571,7 +637,7 @@ const ViewCoach = () => {
             <CheckCircle className="h-8 w-8 text-green-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Available</p>
-              <p className="text-2xl font-bold">{coaches.filter((c) => c.is_available).length}</p>
+              <p className="text-2xl font-bold">{coachStats.availableCoaches}</p>
             </div>
           </CardContent>
         </Card>
@@ -580,11 +646,7 @@ const ViewCoach = () => {
             <Star className="h-8 w-8 text-yellow-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Rating</p>
-              <p className="text-2xl font-bold">
-                {coaches.length > 0
-                  ? (coaches.reduce((sum, coach) => sum + coach.rating, 0) / coaches.length).toFixed(1)
-                  : "0.0"}
-              </p>
+              <p className="text-2xl font-bold">{coachStats.averageRating}</p>
             </div>
           </CardContent>
         </Card>
@@ -593,12 +655,7 @@ const ViewCoach = () => {
             <DollarSign className="h-8 w-8 text-green-600" />
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Rate/hr</p>
-              <p className="text-2xl font-bold">
-                $
-                {coaches.length > 0
-                  ? (coaches.reduce((sum, coach) => sum + coach.hourly_rate, 0) / coaches.length).toFixed(0)
-                  : "0"}
-              </p>
+              <p className="text-2xl font-bold">${coachStats.averageHourlyRate}</p>
             </div>
           </CardContent>
         </Card>
@@ -632,7 +689,9 @@ const ViewCoach = () => {
                   <TableHead>Contact</TableHead>
                   <TableHead>Specialty</TableHead>
                   <TableHead>Experience</TableHead>
-                  <TableHead>Rate/hr</TableHead>
+                  <TableHead>Hourly Rate</TableHead>
+                  <TableHead>Monthly Rate</TableHead>
+                  <TableHead>Package Rate</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
@@ -641,7 +700,7 @@ const ViewCoach = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <div className="flex justify-center items-center">
                         <Loader2 className="h-6 w-6 animate-spin mr-2" />
                         <span>Loading coaches...</span>
@@ -650,7 +709,7 @@ const ViewCoach = () => {
                   </TableRow>
                 ) : currentCoaches.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       No coaches found
                     </TableCell>
                   </TableRow>
@@ -687,6 +746,14 @@ const ViewCoach = () => {
                       </TableCell>
                       <TableCell>{coach.experience}</TableCell>
                       <TableCell>${coach.hourly_rate}</TableCell>
+                      <TableCell>
+                        {coach.monthly_rate ? `$${coach.monthly_rate}` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        {coach.session_package_rate && coach.session_package_count 
+                          ? `$${coach.session_package_rate} (${coach.session_package_count} sessions)`
+                          : '-'}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center">
                           <Star className="h-4 w-4 text-yellow-400 mr-1" />
@@ -763,22 +830,38 @@ const ViewCoach = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Recent Activity
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Recent Activity
+              </CardTitle>
+              <Select value={activityFilter} onValueChange={setActivityFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {activities.length === 0 ? (
+            <div className="h-64 overflow-y-auto space-y-4 pr-2">
+              {getFilteredActivities().length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No recent activity</p>
               ) : (
-                activities.slice(0, 5).map((activity, index) => (
+                getFilteredActivities().map((activity, index) => (
                   <div key={index} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full mt-2"></div>
-                    <div className="flex-1">
-                      <p className="text-sm">{activity.text}</p>
-                      <p className="text-xs text-muted-foreground">{activity.time}</p>
+                    <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm break-words">{activity.activity}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(activity.timestamp).toLocaleString()}
+                      </p>
                     </div>
                   </div>
                 ))
@@ -798,22 +881,33 @@ const ViewCoach = () => {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <span>Active Coaches:</span>
-                <span className="font-semibold text-green-600">{coaches.filter((c) => c.is_available).length}</span>
+                <span className="font-semibold text-green-600">{coachStats.availableCoaches}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Average Rating:</span>
-                <span className="font-semibold text-yellow-600">
-                  {coaches.length > 0
-                    ? (coaches.reduce((sum, coach) => sum + coach.rating, 0) / coaches.length).toFixed(1)
-                    : "0.0"}
-                </span>
+                <span className="font-semibold text-yellow-600">{coachStats.averageRating}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Total Clients:</span>
-                <span className="font-semibold text-blue-600">
-                  {coaches.reduce((sum, coach) => sum + coach.total_clients, 0)}
-                </span>
+                <span className="font-semibold text-blue-600">{coachStats.totalClients}</span>
               </div>
+              <div className="flex items-center justify-between">
+                <span>Avg Hourly Rate:</span>
+                <span className="font-semibold text-green-600">${coachStats.averageHourlyRate}</span>
+              </div>
+              {coachStats.specialtyDistribution.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium mb-2">Top Specialties:</p>
+                  <div className="space-y-1">
+                    {coachStats.specialtyDistribution.slice(0, 3).map((specialty, index) => (
+                      <div key={index} className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">{specialty.specialty}</span>
+                        <span className="font-semibold">{specialty.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1014,6 +1108,45 @@ const ViewCoach = () => {
                     <p className="text-sm text-red-500">{validationErrors.hourly_rate}</p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="monthly_rate">Monthly Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="monthly_rate"
+                    name="monthly_rate"
+                    placeholder="500.00"
+                    value={formData.monthly_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="session_package_rate">Session Package Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="session_package_rate"
+                    name="session_package_rate"
+                    placeholder="200.00"
+                    value={formData.session_package_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="session_package_count">Session Package Count</Label>
+                  <Input
+                    type="number"
+                    id="session_package_count"
+                    name="session_package_count"
+                    placeholder="10"
+                    value={formData.session_package_count}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="image_url">Profile Image URL</Label>
                   <Input
@@ -1255,6 +1388,45 @@ const ViewCoach = () => {
                     <p className="text-sm text-red-500">{validationErrors.hourly_rate}</p>
                   )}
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-monthly_rate">Monthly Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="edit-monthly_rate"
+                    name="monthly_rate"
+                    placeholder="500.00"
+                    value={formData.monthly_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-session_package_rate">Session Package Rate ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    id="edit-session_package_rate"
+                    name="session_package_rate"
+                    placeholder="200.00"
+                    value={formData.session_package_rate}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-session_package_count">Session Package Count</Label>
+                  <Input
+                    type="number"
+                    id="edit-session_package_count"
+                    name="session_package_count"
+                    placeholder="10"
+                    value={formData.session_package_count}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
