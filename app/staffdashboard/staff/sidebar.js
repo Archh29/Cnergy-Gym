@@ -65,7 +65,6 @@ const Sidebar = ({
   const sections = [
     { name: "Home", icon: <FaHome className="mr-2 h-4 w-4" /> },
     { name: "ViewMembers", icon: <FaUsers className="mr-2 h-4 w-4" /> },
-    { name: "ViewStaff", icon: <FaUserTie className="mr-2 h-4 w-4" /> },
     { name: "ViewCoach", icon: <GiWhistle className="mr-2 h-4 w-4" /> },
     { name: "MonitorSubscriptions", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
     { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> }, // Added Sales section
