@@ -6,6 +6,7 @@ import Home from "./home"
 import ViewMembers from "./viewmembers"
 import ViewStaff from "./viewstaff"
 import ViewCoach from "./viewcoach"
+import StaffMonitoring from "./staffmonitoring"
 import Topbar from "./topbar"
 import Announcement from "./announcement"
 import SubscriptionPlans from "./subscriptionplan"
@@ -100,6 +101,8 @@ export default function AdminDashboardClient() {
         return <ViewStaff />
       case "ViewCoach":
         return <ViewCoach />
+      case "StaffMonitoring":
+        return <StaffMonitoring />
       case "SubscriptionPlans":
           return <SubscriptionPlans />
       case "Announcement":
