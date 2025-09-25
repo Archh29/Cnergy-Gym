@@ -56,6 +56,10 @@ const Sales = () => {
   const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
   const [stockUpdateType, setStockUpdateType] = useState("add")
 
+  // Product edit state
+  const [editProduct, setEditProduct] = useState(null)
+  const [editProductData, setEditProductData] = useState({ name: "", price: "", category: "Uncategorized" })
+
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
@@ -311,6 +315,67 @@ const Sales = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleEditProduct = async () => {
+    if (!editProductData.name || !editProductData.price) {
+      alert("Please fill all required fields")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await axios.put(`${API_BASE_URL}?action=product`, {
+        id: editProduct.id,
+        name: editProductData.name,
+        price: Number.parseFloat(editProductData.price),
+        category: editProductData.category,
+      })
+
+      if (response.data.success) {
+        alert("Product updated successfully!")
+        setEditProduct(null)
+        setEditProductData({ name: "", price: "", category: "Uncategorized" })
+        await loadProducts()
+      }
+    } catch (error) {
+      console.error("Error updating product:", error)
+      alert(error.response?.data?.error || "Error updating product")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteProduct = async (product) => {
+    if (!confirm(`Are you sure you want to delete "${product.name}"? This action cannot be undone.`)) {
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await axios.delete(`${API_BASE_URL}?action=product`, {
+        data: { id: product.id }
+      })
+
+      if (response.data.success) {
+        alert("Product deleted successfully!")
+        await loadProducts()
+      }
+    } catch (error) {
+      console.error("Error deleting product:", error)
+      alert(error.response?.data?.error || "Error deleting product")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openEditDialog = (product) => {
+    setEditProduct(product)
+    setEditProductData({
+      name: product.name,
+      price: product.price.toString(),
+      category: product.category
+    })
   }
 
 
@@ -805,15 +870,35 @@ const Sales = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setStockUpdateProduct(product)}
-                            disabled={loading}
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Update Stock
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setStockUpdateProduct(product)}
+                              disabled={loading}
+                            >
+                              <Package className="mr-1 h-3 w-3" />
+                              Stock
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openEditDialog(product)}
+                              disabled={loading}
+                            >
+                              <Edit className="mr-1 h-3 w-3" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteProduct(product)}
+                              disabled={loading}
+                            >
+                              <Trash2 className="mr-1 h-3 w-3" />
+                              Delete
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -873,6 +958,61 @@ const Sales = () => {
             </Button>
             <Button onClick={handleStockUpdate} disabled={loading}>
               {loading ? "Updating..." : stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Product Dialog */}
+      <Dialog open={!!editProduct} onOpenChange={() => setEditProduct(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Product - {editProduct?.name}</DialogTitle>
+            <DialogDescription>Update product information</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Product Name</Label>
+              <Input
+                value={editProductData.name}
+                onChange={(e) => setEditProductData({ ...editProductData, name: e.target.value })}
+                placeholder="Enter product name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Price (₱)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editProductData.price}
+                onChange={(e) => setEditProductData({ ...editProductData, price: e.target.value })}
+                placeholder="Enter price"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={editProductData.category} onValueChange={(value) => setEditProductData({ ...editProductData, category: value })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Uncategorized">Uncategorized</SelectItem>
+                  <SelectItem value="Beverages">Beverages</SelectItem>
+                  <SelectItem value="Supplements">Supplements</SelectItem>
+                  <SelectItem value="Snacks">Snacks</SelectItem>
+                  <SelectItem value="Merch/Apparel">Merch/Apparel</SelectItem>
+                  <SelectItem value="Accessories">Accessories</SelectItem>
+                  <SelectItem value="Equipment">Equipment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditProduct(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditProduct} disabled={loading}>
+              {loading ? "Updating..." : "Update Product"}
             </Button>
           </DialogFooter>
         </DialogContent>
