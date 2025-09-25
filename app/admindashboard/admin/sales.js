@@ -38,7 +38,7 @@ const API_BASE_URL = "https://api.cnergy.site/sales.php"
 const Sales = () => {
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
-  const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "" })
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "", category: "Uncategorized" })
   const [searchQuery, setSearchQuery] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -46,6 +46,7 @@ const Sales = () => {
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
   const [saleTypeFilter, setSaleTypeFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
+  const [categoryFilter, setCategoryFilter] = useState("all")
 
   // Cart for multiple products
   const [cart, setCart] = useState([])
@@ -142,7 +143,7 @@ const Sales = () => {
       return
     }
 
-    const product = products.find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))
+    const product = getFilteredProducts().find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))
     if (!product) {
       console.log("Selected product ID:", selectedProduct)
       console.log("Available products:", products)
@@ -193,7 +194,7 @@ const Sales = () => {
       return
     }
 
-    const product = products.find((p) => p.id == productId || p.id === Number.parseInt(productId))
+    const product = getFilteredProducts().find((p) => p.id == productId || p.id === Number.parseInt(productId))
     if (!product) {
       alert("Product not found!")
       return
@@ -261,11 +262,12 @@ const Sales = () => {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
+        category: newProduct.category,
       })
 
       if (response.data.success) {
         alert("Product added successfully!")
-        setNewProduct({ name: "", price: "", stock: "" })
+        setNewProduct({ name: "", price: "", stock: "", category: "Uncategorized" })
         await loadProducts()
       }
     } catch (error) {
@@ -334,6 +336,18 @@ const Sales = () => {
       return salesDetail.product.name
     }
     return salesDetail.subscription_id ? "Subscription Plan" : "Unknown Item"
+  }
+
+  const getUniqueCategories = () => {
+    const categories = [...new Set(products.map(product => product.category))]
+    return categories.sort()
+  }
+
+  const getFilteredProducts = () => {
+    if (categoryFilter === "all") {
+      return products
+    }
+    return products.filter(product => product.category === categoryFilter)
   }
 
   const filteredSales = sales.filter((sale) => {
@@ -454,15 +468,32 @@ const Sales = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
+                  <Label>Filter by Category</Label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {getUniqueCategories().map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
                   <Label>Select Product</Label>
                   <Select value={selectedProduct} onValueChange={setSelectedProduct}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a product" />
                     </SelectTrigger>
                     <SelectContent>
-                      {products && products.length > 0 ? products.map((product) => (
+                      {getFilteredProducts() && getFilteredProducts().length > 0 ? getFilteredProducts().map((product) => (
                         <SelectItem key={product.id} value={product.id.toString()} disabled={product.stock === 0}>
-                          {product.name} - {formatCurrency(product.price)} ({product.stock} in stock)
+                          {product.name} - {formatCurrency(product.price)} ({product.stock} in stock) [{product.category}]
                         </SelectItem>
                       )) : (
                         <SelectItem value="" disabled>No products available</SelectItem>
@@ -698,6 +729,23 @@ const Sales = () => {
                         placeholder="Enter stock quantity"
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Uncategorized">Uncategorized</SelectItem>
+                          <SelectItem value="Beverages">Beverages</SelectItem>
+                          <SelectItem value="Supplements">Supplements</SelectItem>
+                          <SelectItem value="Snacks">Snacks</SelectItem>
+                          <SelectItem value="Merch/Apparel">Merch/Apparel</SelectItem>
+                          <SelectItem value="Accessories">Accessories</SelectItem>
+                          <SelectItem value="Equipment">Equipment</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button onClick={handleAddProduct} disabled={loading}>
@@ -708,12 +756,32 @@ const Sales = () => {
               </Dialog>
             </div>
 
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="product-category-filter">Filter by Category:</Label>
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {getUniqueCategories().map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <Card>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Product Name</TableHead>
+                      <TableHead>Category</TableHead>
                       <TableHead>Price</TableHead>
                       <TableHead>Stock</TableHead>
                       <TableHead>Status</TableHead>
@@ -721,9 +789,12 @@ const Sales = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {products.map((product) => (
+                    {getFilteredProducts().map((product) => (
                       <TableRow key={product.id}>
                         <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{product.category}</Badge>
+                        </TableCell>
                         <TableCell>{formatCurrency(product.price)}</TableCell>
                         <TableCell>{product.stock}</TableCell>
                         <TableCell>
