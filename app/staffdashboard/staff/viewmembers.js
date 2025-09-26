@@ -74,7 +74,7 @@ const editMemberSchema = z.object({
   account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
 })
 
-const ViewMembers = () => {
+const ViewMembers = ({ userId }) => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -138,7 +138,7 @@ const ViewMembers = () => {
 
   const validateEmail = async (email, excludeId = null) => {
     try {
-      const response = await fetch("https://api.cnergy.site/member_management.php")
+      const response = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}")
       const existingMembers = await response.json()
       const emailExists = existingMembers.some(
         (member) => member.email.toLowerCase() === email.toLowerCase() && (excludeId ? member.id !== excludeId : true),
@@ -151,10 +151,12 @@ const ViewMembers = () => {
   }
 
   useEffect(() => {
+    if (!userId) return; // Don't fetch until userId is available
+    
     const fetchMembers = async () => {
       try {
         setIsLoading(true)
-        const response = await fetch("https://api.cnergy.site/member_management.php")
+        const response = await fetch(`https://api.cnergy.site/member_management.php?staff_id=${userId}?staff_id=${userId}`)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
@@ -175,7 +177,7 @@ const ViewMembers = () => {
       }
     }
     fetchMembers()
-  }, [toast])
+  }, [toast, userId])
 
   useEffect(() => {
     let filtered = members
@@ -287,7 +289,7 @@ const ViewMembers = () => {
     setIsLoading(true)
 
     try {
-      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?staff_id=${userId}?id=${selectedMember.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -301,7 +303,7 @@ const ViewMembers = () => {
       const result = await response.json()
       if (response.ok) {
         // Refresh the members list
-        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
@@ -352,7 +354,7 @@ const ViewMembers = () => {
         failed_attempt: 0,
       }
 
-      const response = await fetch("https://api.cnergy.site/member_management.php", {
+      const response = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -362,7 +364,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
@@ -419,7 +421,7 @@ const ViewMembers = () => {
         updateData.password = data.password
       }
 
-      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?staff_id=${userId}?id=${selectedMember.id}&staff_id=${userId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -429,7 +431,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
@@ -457,7 +459,7 @@ const ViewMembers = () => {
     if (!selectedMember) return
     setIsLoading(true)
     try {
-      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?staff_id=${userId}?id=${selectedMember.id}`, {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
@@ -467,7 +469,7 @@ const ViewMembers = () => {
 
       const result = await response.json()
       if (response.ok) {
-        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php?staff_id=${userId}")
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)

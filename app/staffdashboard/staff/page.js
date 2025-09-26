@@ -96,7 +96,7 @@ export default function StaffDashboard() {
       case "MembershipDetails":
         return <MembershipDetails />;
         case "ViewMembers":
-          return <ViewMembers />;
+          return <ViewMembers userId={userId} />;
       case "MonitorSubscriptions":
           return <MonitorSubscriptions />;
       case "ViewCoach":

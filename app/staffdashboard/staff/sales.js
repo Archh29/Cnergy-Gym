@@ -72,8 +72,9 @@ const Sales = ({ userId }) => {
 
   // Load initial data
   useEffect(() => {
+    if (!userId) return; // Don't load until userId is available
     loadInitialData()
-  }, [])
+  }, [userId])
 
   // Reload analytics when filter changes
   useEffect(() => {
@@ -238,7 +239,7 @@ const Sales = ({ userId }) => {
         })),
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId || 6}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId}`, saleData)
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
@@ -262,7 +263,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId || 6}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
@@ -296,7 +297,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId || 6}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId}`, {
         product_id: stockUpdateProduct.id,
         quantity: updateQuantity,
         type: stockUpdateType,
@@ -325,7 +326,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=product&staff_id=${userId || 6}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
         id: editProduct.id,
         name: editProductData.name,
         price: Number.parseFloat(editProductData.price),
@@ -353,7 +354,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.delete(`${API_BASE_URL}?action=product&staff_id=${userId || 6}`, {
+      const response = await axios.delete(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
         data: { id: product.id }
       })
 
