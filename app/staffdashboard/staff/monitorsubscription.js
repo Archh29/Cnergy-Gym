@@ -725,7 +725,7 @@ const SubscriptionMonitor = () => {
                   <SelectValue placeholder="Choose a member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableUsers.map((user) => (
+                  {availableUsers.filter(user => user.id && user.fname && user.lname).map((user) => (
                     <SelectItem key={user.id} value={user.id.toString()}>
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4" />
@@ -776,7 +776,7 @@ const SubscriptionMonitor = () => {
                       {subscriptionForm.user_id ? "No available plans for this member" : "Please select a member first"}
                     </div>
                   ) : (
-                    subscriptionPlans.map((plan) => (
+                    subscriptionPlans.filter(plan => plan.id && plan.plan_name).map((plan) => (
                       <SelectItem key={plan.id} value={plan.id.toString()}>
                         <div className="flex justify-between items-center w-full">
                           <div>

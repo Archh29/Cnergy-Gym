@@ -404,7 +404,7 @@ const Sales = ({ userId }) => {
   }
 
   const getUniqueCategories = () => {
-    const categories = [...new Set(products.map(product => product.category))]
+    const categories = [...new Set(products.map(product => product.category).filter(category => category && category.trim() !== ""))]
     return categories.sort()
   }
 
