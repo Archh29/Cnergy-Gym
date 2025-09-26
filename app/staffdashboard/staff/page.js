@@ -25,11 +25,21 @@ export default function StaffDashboard() {
   const [currentSection, setCurrentSection] = useState("Home");
   const [searchQuery, setSearchQuery] = useState("");
   const [userRole, setUserRole] = useState("");
+  const [userId, setUserId] = useState(null);
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
     const role = sessionStorage.getItem("role") || "Staff";
     setUserRole(role);
+    
+    // Get user ID from session storage or API
+    const storedUserId = sessionStorage.getItem("userId");
+    if (storedUserId) {
+      setUserId(parseInt(storedUserId));
+    } else {
+      // If no user ID in session, try to get it from API
+      fetchUserInfo();
+    }
 
     // Load dark mode state
     const savedTheme = localStorage.getItem("theme");
@@ -38,6 +48,23 @@ export default function StaffDashboard() {
       setDarkMode(true);
     }
   }, []);
+
+  const fetchUserInfo = async () => {
+    try {
+      const response = await fetch("https://api.cnergy.site/session.php", {
+        credentials: "include"
+      });
+      const data = await response.json();
+      if (data.user_id) {
+        setUserId(data.user_id);
+        sessionStorage.setItem("userId", data.user_id);
+      }
+    } catch (error) {
+      console.error("Error fetching user info:", error);
+      // Fallback to default user ID
+      setUserId(6);
+    }
+  };
 
   const toggleDarkMode = () => {
     const newMode = !darkMode;
@@ -80,7 +107,7 @@ export default function StaffDashboard() {
       case "CoachAssignments":
           return <CoachAssignments />;
       case "Sales":
-          return <Sales />;
+          return <Sales userId={userId} />;
       default:
         return <Home />;
     }
