@@ -561,7 +561,7 @@ const Sales = ({ userId }) => {
                           {product.name} - {formatCurrency(product.price)} ({product.stock} in stock) [{product.category}]
                         </SelectItem>
                       )) : (
-                        <SelectItem value="" disabled>No products available</SelectItem>
+                        <SelectItem value="no-products" disabled>No products available</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
