@@ -17,6 +17,7 @@ import Exercises from "./exercises";
 import FreePrograms from "./freeprograms";
 import CoachAssignments from "./coachassignments";
 import Sales from "./sales";
+import GuestManagement from "./guestmanagement";
 import { Button } from "@/components/ui/button";
 import { PanelLeft } from "lucide-react";
 
@@ -108,6 +109,8 @@ export default function StaffDashboard() {
           return <CoachAssignments />;
       case "Sales":
           return <Sales userId={userId} />;
+      case "GuestManagement":
+          return <GuestManagement />;
       default:
         return <Home />;
     }
