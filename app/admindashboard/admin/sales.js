@@ -404,7 +404,7 @@ const Sales = () => {
   }
 
   const getUniqueCategories = () => {
-    const categories = [...new Set(products.map(product => product.category))]
+    const categories = [...new Set(products.map(product => product.category).filter(category => category && category.trim() !== ""))]
     return categories.sort()
   }
 
@@ -561,7 +561,7 @@ const Sales = () => {
                           {product.name} - {formatCurrency(product.price)} ({product.stock} in stock) [{product.category}]
                         </SelectItem>
                       )) : (
-                        <SelectItem value="" disabled>No products available</SelectItem>
+                        <SelectItem value="no-products" disabled>No products available</SelectItem>
                       )}
                     </SelectContent>
                   </Select>

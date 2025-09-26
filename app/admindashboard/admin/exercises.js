@@ -861,7 +861,7 @@ const ExerciseMuscleManager = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All muscle groups</SelectItem>
-                    {muscleGroups.map((group) => (
+                    {muscleGroups.filter(group => group.id && group.name).map((group) => (
                       <SelectItem key={group.id} value={group.id.toString()}>
                         {group.name}
                       </SelectItem>
@@ -1296,7 +1296,7 @@ const ExerciseMuscleManager = () => {
                   <SelectValue placeholder="Select parent muscle group" />
                 </SelectTrigger>
                 <SelectContent>
-                  {muscleGroups.map((group) => (
+                  {muscleGroups.filter(group => group.id && group.name).map((group) => (
                     <SelectItem key={group.id} value={group.id.toString()}>
                       {group.name}
                     </SelectItem>
