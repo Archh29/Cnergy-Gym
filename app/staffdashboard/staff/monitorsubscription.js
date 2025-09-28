@@ -377,7 +377,7 @@ const SubscriptionMonitor = () => {
   }
 
   const handlePlanChange = (planId) => {
-    const selectedPlan = subscriptionPlans.find((plan) => plan.id == planId)
+    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
     const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
     setSubscriptionForm((prev) => ({
       ...prev,
@@ -387,7 +387,7 @@ const SubscriptionMonitor = () => {
   }
 
   const handleDiscountTypeChange = (discountType) => {
-    const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
     const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
     
     setSubscriptionForm((prev) => ({
@@ -976,7 +976,7 @@ const SubscriptionMonitor = () => {
               {subscriptionForm.plan_id && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {subscriptionForm.discount_type === "none" 
-                    ? `Plan price: ₱${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}`
+                    ? `Plan price: ₱${subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00") : "0.00"}`
                     : "Enter the actual amount charged to the customer"
                   }
                 </p>
@@ -1034,8 +1034,8 @@ const SubscriptionMonitor = () => {
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <h4 className="font-medium text-blue-900 mb-2">Subscription Preview</h4>
                 {(() => {
-                  const selectedPlan = subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)
-                  const selectedUser = availableUsers.find((u) => u.id == subscriptionForm.user_id)
+                  const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id) : null
+                  const selectedUser = availableUsers && Array.isArray(availableUsers) ? availableUsers.find((u) => u.id == subscriptionForm.user_id) : null
                   if (!selectedPlan || !selectedUser) return null
 
                   const startDate = new Date(subscriptionForm.start_date)
@@ -1163,13 +1163,13 @@ const SubscriptionMonitor = () => {
                 <div className="flex justify-between">
                   <span>Member:</span>
                   <span>
-                    {availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname} {availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname}
+                    {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname || '') : ''} {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname || '') : ''}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Plan:</span>
                   <span>
-                    {subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name}
+                    {subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name || '') : ''}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -1242,13 +1242,13 @@ const SubscriptionMonitor = () => {
                 <div className="flex justify-between">
                   <span>Member:</span>
                   <span className="font-medium">
-                    {availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname} {availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname}
+                    {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname || '') : ''} {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname || '') : ''}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Plan:</span>
                   <span className="font-medium">
-                    {subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name}
+                    {subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name || '') : ''}
                   </span>
                 </div>
                 <div className="flex justify-between">
