@@ -193,7 +193,7 @@ const SubscriptionMonitor = () => {
 
   const handleApprove = async (subscriptionId) => {
     // Find the subscription to get details
-    const subscription = subscriptions && Array.isArray(subscriptions) ? subscriptions.find(s => s.subscription_id === subscriptionId) : null;
+    const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
     if (!subscription) {
       setMessage({ type: "error", text: "Subscription not found" });
       return;
