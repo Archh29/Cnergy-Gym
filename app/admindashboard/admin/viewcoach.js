@@ -378,7 +378,7 @@ const ViewCoach = () => {
         password: formData.password,
         gender_id: Number.parseInt(formData.gender_id),
         bday: formData.bday,
-        user_type_id: formData.user_type_id,
+        user_type_id: Number.parseInt(formData.user_type_id),
         failed_attempt: 0,
 
         // Coaches table data
@@ -468,7 +468,7 @@ const ViewCoach = () => {
         email: formData.email,
         gender_id: Number.parseInt(formData.gender_id),
         bday: formData.bday,
-        user_type_id: formData.user_type_id,
+        user_type_id: Number.parseInt(formData.user_type_id),
 
         // Coaches table data
         bio: formData.bio || "",
