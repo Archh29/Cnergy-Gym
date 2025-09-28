@@ -65,7 +65,7 @@ const SubscriptionMonitor = () => {
   const [declineReason, setDeclineReason] = useState("")
 
   // POS state
-  const [posMode, setPosMode] = useState(false)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
@@ -239,7 +239,6 @@ const SubscriptionMonitor = () => {
   }
 
   const handleCreateManualSubscription = async () => {
-    setActionLoading("create")
     setMessage(null)
     try {
       const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
@@ -249,12 +248,28 @@ const SubscriptionMonitor = () => {
 
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
-      const change = Math.max(0, receivedAmount - totalAmount)
 
       if (subscriptionForm.payment_method === "cash" && receivedAmount < totalAmount) {
         setMessage({ type: "error", text: "Amount received cannot be less than total amount" })
         return
       }
+
+      setShowConfirmDialog(true)
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create subscription"
+      setMessage({ type: "error", text: errorMessage })
+    }
+  }
+
+  const confirmSubscriptionTransaction = async () => {
+    setShowConfirmDialog(false)
+    setActionLoading("create")
+    setMessage(null)
+    try {
+      const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+      const totalAmount = parseFloat(subscriptionForm.amount_paid)
+      const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
+      const change = Math.max(0, receivedAmount - totalAmount)
 
       const subscriptionData = {
         user_id: subscriptionForm.user_id,
@@ -271,17 +286,15 @@ const SubscriptionMonitor = () => {
       const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
 
       if (response.data.success) {
-        if (posMode) {
-          setLastTransaction({
-            ...response.data,
-            change_given: change,
-            total_amount: totalAmount,
-            payment_method: subscriptionForm.payment_method
-          })
-          setReceiptNumber(response.data.receipt_number)
-          setChangeGiven(change)
-          setShowReceipt(true)
-        }
+        setLastTransaction({
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: subscriptionForm.payment_method
+        })
+        setReceiptNumber(response.data.receipt_number)
+        setChangeGiven(change)
+        setShowReceipt(true)
         
         setMessage({ type: "success", text: "Manual subscription created successfully!" })
         setIsCreateSubscriptionDialogOpen(false)
@@ -367,16 +380,12 @@ const SubscriptionMonitor = () => {
     return change
   }
 
-  const resetPOS = () => {
-    setPosMode(false)
-    setPaymentMethod("cash")
-    setAmountReceived("")
-    setChangeGiven(0)
-    setReceiptNumber("")
-    setTransactionNotes("")
-    setShowReceipt(false)
-    setLastTransaction(null)
-  }
+  // Calculate change whenever amount received or amount paid changes
+  useEffect(() => {
+    if (subscriptionForm.payment_method === "cash" && subscriptionForm.amount_received) {
+      calculateChange()
+    }
+  }, [subscriptionForm.amount_received, subscriptionForm.amount_paid, subscriptionForm.payment_method])
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
@@ -536,18 +545,6 @@ const SubscriptionMonitor = () => {
               <CardDescription>Monitor subscription requests and create manual subscriptions</CardDescription>
             </div>
             <div className="flex gap-2">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="pos-mode"
-                  checked={posMode}
-                  onChange={(e) => setPosMode(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <Label htmlFor="pos-mode" className="text-sm font-medium">
-                  POS Mode
-                </Label>
-              </div>
               <Button
                 onClick={() => setIsCreateSubscriptionDialogOpen(true)}
                 className="bg-green-600 hover:bg-green-700"
@@ -945,56 +942,49 @@ const SubscriptionMonitor = () => {
             </div>
 
             {/* POS Payment Fields */}
-            {posMode && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Payment Method *</label>
-                  <Select 
-                    value={subscriptionForm.payment_method} 
-                    onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, payment_method: value }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="digital">Digital Payment</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment Method *</label>
+              <Select 
+                value={subscriptionForm.payment_method} 
+                onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, payment_method: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="digital">Digital Payment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                {subscriptionForm.payment_method === "cash" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Amount Received (₱)</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={subscriptionForm.amount_received}
-                      onChange={(e) => {
-                        setSubscriptionForm((prev) => ({ ...prev, amount_received: e.target.value }));
-                        calculateChange();
-                      }}
-                      placeholder="Enter amount received"
-                    />
-                    {subscriptionForm.amount_received && (
-                      <div className="text-sm text-muted-foreground">
-                        Change: ₱{calculateChange()}
-                      </div>
-                    )}
+            {subscriptionForm.payment_method === "cash" && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Amount Received (₱)</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={subscriptionForm.amount_received}
+                  onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, amount_received: e.target.value }))}
+                  placeholder="Enter amount received"
+                />
+                {subscriptionForm.amount_received && (
+                  <div className="text-sm text-muted-foreground">
+                    Change: ₱{changeGiven.toFixed(2)}
                   </div>
                 )}
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Transaction Notes (Optional)</label>
-                  <Input
-                    value={subscriptionForm.notes}
-                    onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Add notes for this transaction"
-                  />
-                </div>
-              </>
+              </div>
             )}
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Transaction Notes (Optional)</label>
+              <Input
+                value={subscriptionForm.notes}
+                onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Add notes for this transaction"
+              />
+            </div>
 
 
             {/* Subscription Preview */}
@@ -1112,6 +1102,77 @@ const SubscriptionMonitor = () => {
               ) : (
                 "Decline Request"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Subscription Transaction</DialogTitle>
+            <DialogDescription>Please review the transaction details before proceeding</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="font-medium">Subscription Details:</h4>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span>Member:</span>
+                  <span>
+                    {availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname} {availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Plan:</span>
+                  <span>
+                    {subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Start Date:</span>
+                  <span>{subscriptionForm.start_date}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="border-t pt-2 space-y-2">
+              <div className="flex justify-between font-medium">
+                <span>Total Amount:</span>
+                <span>₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Payment Method:</span>
+                <span className="capitalize">{subscriptionForm.payment_method}</span>
+              </div>
+              {subscriptionForm.payment_method === "cash" && (
+                <>
+                  <div className="flex justify-between">
+                    <span>Amount Received:</span>
+                    <span>₱{parseFloat(subscriptionForm.amount_received || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span>Change Given:</span>
+                    <span>₱{changeGiven.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+              {subscriptionForm.notes && (
+                <div className="pt-2">
+                  <p className="text-sm">
+                    <strong>Notes:</strong> {subscriptionForm.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmSubscriptionTransaction} disabled={actionLoading === "create"}>
+              {actionLoading === "create" ? "Processing..." : "Confirm Transaction"}
             </Button>
           </DialogFooter>
         </DialogContent>

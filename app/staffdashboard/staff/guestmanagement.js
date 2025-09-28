@@ -47,7 +47,7 @@ export default function GuestManagement() {
 
     // POS state
     const [showPOSDialog, setShowPOSDialog] = useState(false);
-    const [posMode, setPosMode] = useState(false);
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState("cash");
     const [amountReceived, setAmountReceived] = useState("");
     const [changeGiven, setChangeGiven] = useState(0);
@@ -189,7 +189,6 @@ export default function GuestManagement() {
 
         const totalAmount = parseFloat(newGuestData.amount_paid);
         const receivedAmount = parseFloat(newGuestData.amount_received) || totalAmount;
-        const change = Math.max(0, receivedAmount - totalAmount);
 
         if (newGuestData.payment_method === "cash" && receivedAmount < totalAmount) {
             toast({
@@ -199,6 +198,16 @@ export default function GuestManagement() {
             });
             return;
         }
+
+        setShowConfirmDialog(true);
+    };
+
+    const confirmGuestTransaction = async () => {
+        setShowConfirmDialog(false);
+        
+        const totalAmount = parseFloat(newGuestData.amount_paid);
+        const receivedAmount = parseFloat(newGuestData.amount_received) || totalAmount;
+        const change = Math.max(0, receivedAmount - totalAmount);
 
         try {
             setActionLoading(true);
@@ -271,24 +280,12 @@ export default function GuestManagement() {
         return change;
     };
 
-    const resetPOS = () => {
-        setPosMode(false);
-        setPaymentMethod("cash");
-        setAmountReceived("");
-        setChangeGiven(0);
-        setReceiptNumber("");
-        setTransactionNotes("");
-        setShowReceipt(false);
-        setLastTransaction(null);
-        setNewGuestData({
-            guest_name: "",
-            guest_type: "walkin",
-            amount_paid: "",
-            payment_method: "cash",
-            amount_received: "",
-            notes: ""
-        });
-    };
+    // Calculate change whenever amount received or amount paid changes
+    useEffect(() => {
+        if (newGuestData.payment_method === "cash" && newGuestData.amount_received) {
+            calculateChange();
+        }
+    }, [newGuestData.amount_received, newGuestData.amount_paid, newGuestData.payment_method]);
 
 
     const getStatusBadge = (session) => {
@@ -422,18 +419,6 @@ export default function GuestManagement() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center space-x-2">
-                        <input
-                            type="checkbox"
-                            id="pos-mode"
-                            checked={posMode}
-                            onChange={(e) => setPosMode(e.target.checked)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <Label htmlFor="pos-mode" className="text-sm font-medium">
-                            POS Mode
-                        </Label>
-                    </div>
                     <Button onClick={() => setShowPOSDialog(true)} variant="default" size="sm">
                         <Plus className="h-4 w-4 mr-2" />
                         New Guest POS
@@ -848,15 +833,12 @@ export default function GuestManagement() {
                                     type="number"
                                     step="0.01"
                                     value={newGuestData.amount_received}
-                                    onChange={(e) => {
-                                        setNewGuestData({...newGuestData, amount_received: e.target.value});
-                                        calculateChange();
-                                    }}
+                                    onChange={(e) => setNewGuestData({...newGuestData, amount_received: e.target.value})}
                                     placeholder="Enter amount received"
                                 />
                                 {newGuestData.amount_received && (
                                     <div className="text-sm text-muted-foreground">
-                                        Change: ₱{calculateChange()}
+                                        Change: ₱{changeGiven.toFixed(2)}
                                     </div>
                                 )}
                             </div>
@@ -878,6 +860,69 @@ export default function GuestManagement() {
                         </Button>
                         <Button onClick={handleCreateGuestPOS} disabled={actionLoading}>
                             {actionLoading ? "Creating..." : "Create Guest POS Session"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Confirmation Dialog */}
+            <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Confirm Guest Transaction</DialogTitle>
+                        <DialogDescription>Please review the transaction details before proceeding</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <h4 className="font-medium">Guest Details:</h4>
+                            <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                    <span>Guest Name:</span>
+                                    <span>{newGuestData.guest_name}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Guest Type:</span>
+                                    <span className="capitalize">{newGuestData.guest_type}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="border-t pt-2 space-y-2">
+                            <div className="flex justify-between font-medium">
+                                <span>Total Amount:</span>
+                                <span>₱{parseFloat(newGuestData.amount_paid || 0).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span>Payment Method:</span>
+                                <span className="capitalize">{newGuestData.payment_method}</span>
+                            </div>
+                            {newGuestData.payment_method === "cash" && (
+                                <>
+                                    <div className="flex justify-between">
+                                        <span>Amount Received:</span>
+                                        <span>₱{parseFloat(newGuestData.amount_received || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between font-medium">
+                                        <span>Change Given:</span>
+                                        <span>₱{changeGiven.toFixed(2)}</span>
+                                    </div>
+                                </>
+                            )}
+                            {newGuestData.notes && (
+                                <div className="pt-2">
+                                    <p className="text-sm">
+                                        <strong>Notes:</strong> {newGuestData.notes}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter className="gap-2">
+                        <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={confirmGuestTransaction} disabled={actionLoading}>
+                            {actionLoading ? "Processing..." : "Confirm Transaction"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
