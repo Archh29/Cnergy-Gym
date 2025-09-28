@@ -629,7 +629,7 @@ const SubscriptionMonitor = () => {
                           <TableCell>
                             <Badge variant="outline" className="flex items-center gap-1 w-fit">
                               <Clock className="h-3 w-3" />
-                              Pending
+                              {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
                             </Badge>
                           </TableCell>
                           <TableCell>
