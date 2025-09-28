@@ -595,7 +595,7 @@ const ViewCoach = () => {
       lname: coach.lname,
       email: coach.email,
       password: "", // Clear password for editing
-      gender_id: coach.gender === "Male" ? "1" : coach.gender === "Female" ? "2" : "3",
+      gender_id: coach.gender_id?.toString() || "1",
       bday: coach.bday,
       user_type_id: 3,
       bio: coach.bio || "",
