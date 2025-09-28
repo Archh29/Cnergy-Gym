@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
 import {
   Search,
   Users,
@@ -25,6 +26,7 @@ import {
   Plus,
   User,
   CreditCard,
+  Receipt,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -50,6 +52,9 @@ const SubscriptionMonitor = () => {
     start_date: new Date().toISOString().split("T")[0],
     discount_type: "none",
     amount_paid: "",
+    payment_method: "cash",
+    amount_received: "",
+    notes: ""
   })
 
   // Decline dialog state
@@ -58,6 +63,16 @@ const SubscriptionMonitor = () => {
     subscription: null,
   })
   const [declineReason, setDeclineReason] = useState("")
+
+  // POS state
+  const [posMode, setPosMode] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+  const [amountReceived, setAmountReceived] = useState("")
+  const [changeGiven, setChangeGiven] = useState(0)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [transactionNotes, setTransactionNotes] = useState("")
+  const [showReceipt, setShowReceipt] = useState(false)
+  const [lastTransaction, setLastTransaction] = useState(null)
 
   useEffect(() => {
     fetchAllData()
@@ -232,18 +247,42 @@ const SubscriptionMonitor = () => {
         throw new Error("Please select a subscription plan")
       }
 
+      const totalAmount = parseFloat(subscriptionForm.amount_paid)
+      const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
+      const change = Math.max(0, receivedAmount - totalAmount)
+
+      if (subscriptionForm.payment_method === "cash" && receivedAmount < totalAmount) {
+        setMessage({ type: "error", text: "Amount received cannot be less than total amount" })
+        return
+      }
+
       const subscriptionData = {
         user_id: subscriptionForm.user_id,
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
         discount_type: subscriptionForm.discount_type,
-        amount_paid: subscriptionForm.amount_paid,
+        amount_paid: totalAmount,
+        payment_method: subscriptionForm.payment_method,
+        amount_received: receivedAmount,
+        notes: subscriptionForm.notes,
         created_by: "admin",
       }
 
       const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
 
       if (response.data.success) {
+        if (posMode) {
+          setLastTransaction({
+            ...response.data,
+            change_given: change,
+            total_amount: totalAmount,
+            payment_method: subscriptionForm.payment_method
+          })
+          setReceiptNumber(response.data.receipt_number)
+          setChangeGiven(change)
+          setShowReceipt(true)
+        }
+        
         setMessage({ type: "success", text: "Manual subscription created successfully!" })
         setIsCreateSubscriptionDialogOpen(false)
         resetSubscriptionForm()
@@ -266,6 +305,9 @@ const SubscriptionMonitor = () => {
       start_date: new Date().toISOString().split("T")[0],
       discount_type: "none",
       amount_paid: "",
+      payment_method: "cash",
+      amount_received: "",
+      notes: ""
     })
     setSelectedUserInfo(null)
     // Reset to all plans
@@ -314,6 +356,26 @@ const SubscriptionMonitor = () => {
       setSelectedUserInfo(null)
       setMessage({ type: "error", text: "Failed to load user information" })
     }
+  }
+
+  // POS Functions
+  const calculateChange = () => {
+    const total = parseFloat(subscriptionForm.amount_paid) || 0
+    const received = parseFloat(subscriptionForm.amount_received) || 0
+    const change = Math.max(0, received - total)
+    setChangeGiven(change)
+    return change
+  }
+
+  const resetPOS = () => {
+    setPosMode(false)
+    setPaymentMethod("cash")
+    setAmountReceived("")
+    setChangeGiven(0)
+    setReceiptNumber("")
+    setTransactionNotes("")
+    setShowReceipt(false)
+    setLastTransaction(null)
   }
 
   const getStatusColor = (status) => {
@@ -474,6 +536,18 @@ const SubscriptionMonitor = () => {
               <CardDescription>Monitor subscription requests and create manual subscriptions</CardDescription>
             </div>
             <div className="flex gap-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="pos-mode"
+                  checked={posMode}
+                  onChange={(e) => setPosMode(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <Label htmlFor="pos-mode" className="text-sm font-medium">
+                  POS Mode
+                </Label>
+              </div>
               <Button
                 onClick={() => setIsCreateSubscriptionDialogOpen(true)}
                 className="bg-green-600 hover:bg-green-700"
@@ -870,6 +944,58 @@ const SubscriptionMonitor = () => {
               )}
             </div>
 
+            {/* POS Payment Fields */}
+            {posMode && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method *</label>
+                  <Select 
+                    value={subscriptionForm.payment_method} 
+                    onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, payment_method: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="digital">Digital Payment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {subscriptionForm.payment_method === "cash" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Amount Received (₱)</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={subscriptionForm.amount_received}
+                      onChange={(e) => {
+                        setSubscriptionForm((prev) => ({ ...prev, amount_received: e.target.value }));
+                        calculateChange();
+                      }}
+                      placeholder="Enter amount received"
+                    />
+                    {subscriptionForm.amount_received && (
+                      <div className="text-sm text-muted-foreground">
+                        Change: ₱{calculateChange()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Transaction Notes (Optional)</label>
+                  <Input
+                    value={subscriptionForm.notes}
+                    onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Add notes for this transaction"
+                  />
+                </div>
+              </>
+            )}
+
 
             {/* Subscription Preview */}
             {subscriptionForm.plan_id && subscriptionForm.user_id && (
@@ -986,6 +1112,80 @@ const SubscriptionMonitor = () => {
               ) : (
                 "Decline Request"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Dialog */}
+      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Subscription Receipt</DialogTitle>
+            <DialogDescription>Subscription created successfully</DialogDescription>
+          </DialogHeader>
+          {lastTransaction && (
+            <div className="space-y-4">
+              <div className="text-center border-b pb-4">
+                <h3 className="text-lg font-bold">CNERGY GYM</h3>
+                <p className="text-sm text-muted-foreground">Subscription Receipt</p>
+                <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
+                <p className="text-xs text-muted-foreground">
+                  Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Member:</span>
+                  <span className="font-medium">
+                    {availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname} {availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Plan:</span>
+                  <span className="font-medium">
+                    {subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Payment Method:</span>
+                  <span className="font-medium capitalize">{lastTransaction.payment_method}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Amount:</span>
+                  <span className="font-medium">₱{lastTransaction.total_amount}</span>
+                </div>
+                {lastTransaction.payment_method === "cash" && (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Amount Received:</span>
+                      <span>₱{parseFloat(subscriptionForm.amount_received) || lastTransaction.total_amount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Change Given:</span>
+                      <span className="font-medium">₱{changeGiven}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {subscriptionForm.notes && (
+                <div className="border-t pt-2">
+                  <p className="text-sm">
+                    <strong>Notes:</strong> {subscriptionForm.notes}
+                  </p>
+                </div>
+              )}
+
+              <div className="text-center pt-4">
+                <p className="text-sm text-muted-foreground">Thank you for choosing CNERGY!</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setShowReceipt(false)} className="w-full">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

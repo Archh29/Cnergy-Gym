@@ -51,7 +51,6 @@ const Sales = ({ userId }) => {
   const [cart, setCart] = useState([])
 
   // POS state
-  const [posMode, setPosMode] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
@@ -236,11 +235,7 @@ const Sales = ({ userId }) => {
       return
     }
 
-    if (posMode) {
-      await handlePOSSale()
-    } else {
-      await handleRegularSale()
-    }
+    await handlePOSSale()
   }
 
   const handleRegularSale = async () => {
@@ -340,16 +335,6 @@ const Sales = ({ userId }) => {
     return change
   }
 
-  const resetPOS = () => {
-    setPosMode(false)
-    setPaymentMethod("cash")
-    setAmountReceived("")
-    setChangeGiven(0)
-    setReceiptNumber("")
-    setTransactionNotes("")
-    setShowReceipt(false)
-    setLastTransaction(null)
-  }
 
   const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.price || !newProduct.stock) {
@@ -622,30 +607,6 @@ const Sales = ({ userId }) => {
         </TabsList>
 
         <TabsContent value="sales">
-          {/* POS Mode Toggle */}
-          <Card className="mb-4">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="pos-mode"
-                    checked={posMode}
-                    onChange={(e) => setPosMode(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <Label htmlFor="pos-mode" className="text-sm font-medium">
-                    Enable POS Mode (Payment Processing & Receipt Generation)
-                  </Label>
-                </div>
-                {posMode && (
-                  <Button variant="outline" size="sm" onClick={resetPOS}>
-                    Reset POS
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Product Selection */}
@@ -763,11 +724,11 @@ const Sales = ({ userId }) => {
                       </div>
                     </div>
 
-                    {/* POS Payment Interface */}
-                    {posMode && cart.length > 0 && (
+                    {/* Payment Interface - Always Visible */}
+                    {cart.length > 0 && (
                       <div className="border-t pt-4 space-y-4">
                         <div className="space-y-2">
-                          <Label>Payment Method</Label>
+                          <Label>Payment Method *</Label>
                           <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                             <SelectTrigger>
                               <SelectValue />
@@ -782,7 +743,7 @@ const Sales = ({ userId }) => {
 
                         {paymentMethod === "cash" && (
                           <div className="space-y-2">
-                            <Label>Amount Received (₱)</Label>
+                            <Label>Amount Received (₱) *</Label>
                             <Input
                               type="number"
                               step="0.01"
@@ -815,9 +776,9 @@ const Sales = ({ userId }) => {
                     <Button
                       onClick={handleProductSale}
                       className="w-full"
-                      disabled={cart.length === 0 || loading}
+                      disabled={cart.length === 0 || loading || (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < getTotalAmount()))}
                     >
-                      {loading ? "Processing..." : posMode ? "Process POS Sale" : "Complete Sale"}
+                      {loading ? "Processing..." : "Process Sale"}
                     </Button>
                   </div>
                 )}

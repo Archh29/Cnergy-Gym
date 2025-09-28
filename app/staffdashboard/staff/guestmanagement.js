@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { 
     Users, 
     Clock, 
@@ -23,7 +24,10 @@ import {
     UserX,
     Search,
     Filter,
-    Calendar
+    Calendar,
+    CreditCard,
+    Receipt,
+    Plus
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -40,6 +44,25 @@ export default function GuestManagement() {
     const [statusFilter, setStatusFilter] = useState('all');
     const [dateFilter, setDateFilter] = useState('');
     const { toast } = useToast();
+
+    // POS state
+    const [showPOSDialog, setShowPOSDialog] = useState(false);
+    const [posMode, setPosMode] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState("cash");
+    const [amountReceived, setAmountReceived] = useState("");
+    const [changeGiven, setChangeGiven] = useState(0);
+    const [receiptNumber, setReceiptNumber] = useState("");
+    const [transactionNotes, setTransactionNotes] = useState("");
+    const [showReceipt, setShowReceipt] = useState(false);
+    const [lastTransaction, setLastTransaction] = useState(null);
+    const [newGuestData, setNewGuestData] = useState({
+        guest_name: "",
+        guest_type: "walkin",
+        amount_paid: "",
+        payment_method: "cash",
+        amount_received: "",
+        notes: ""
+    });
 
     useEffect(() => {
         fetchGuestSessions();
@@ -151,6 +174,120 @@ export default function GuestManagement() {
         } finally {
             setActionLoading(false);
         }
+    };
+
+    // POS Functions
+    const handleCreateGuestPOS = async () => {
+        if (!newGuestData.guest_name || !newGuestData.amount_paid) {
+            toast({
+                title: "Error",
+                description: "Please fill in all required fields",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        const totalAmount = parseFloat(newGuestData.amount_paid);
+        const receivedAmount = parseFloat(newGuestData.amount_received) || totalAmount;
+        const change = Math.max(0, receivedAmount - totalAmount);
+
+        if (newGuestData.payment_method === "cash" && receivedAmount < totalAmount) {
+            toast({
+                title: "Error",
+                description: "Amount received cannot be less than total amount",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        try {
+            setActionLoading(true);
+            const response = await axios.post(API_URL, {
+                action: 'create_guest_session',
+                guest_name: newGuestData.guest_name,
+                guest_type: newGuestData.guest_type,
+                amount_paid: totalAmount,
+                payment_method: newGuestData.payment_method,
+                amount_received: receivedAmount,
+                notes: newGuestData.notes
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.data.success) {
+                setLastTransaction({
+                    ...response.data,
+                    change_given: change,
+                    total_amount: totalAmount,
+                    payment_method: newGuestData.payment_method
+                });
+                setReceiptNumber(response.data.receipt_number);
+                setChangeGiven(change);
+                setShowReceipt(true);
+                
+                // Reset form
+                setNewGuestData({
+                    guest_name: "",
+                    guest_type: "walkin",
+                    amount_paid: "",
+                    payment_method: "cash",
+                    amount_received: "",
+                    notes: ""
+                });
+                setShowPOSDialog(false);
+                
+                toast({
+                    title: "Success",
+                    description: "Guest POS session created successfully",
+                });
+                fetchGuestSessions();
+            } else {
+                toast({
+                    title: "Error",
+                    description: response.data.message || "Failed to create guest session",
+                    variant: "destructive"
+                });
+            }
+        } catch (error) {
+            console.error('Error creating guest POS session:', error);
+            toast({
+                title: "Error",
+                description: "Failed to create guest session",
+                variant: "destructive"
+            });
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const calculateChange = () => {
+        const total = parseFloat(newGuestData.amount_paid) || 0;
+        const received = parseFloat(newGuestData.amount_received) || 0;
+        const change = Math.max(0, received - total);
+        setChangeGiven(change);
+        return change;
+    };
+
+    const resetPOS = () => {
+        setPosMode(false);
+        setPaymentMethod("cash");
+        setAmountReceived("");
+        setChangeGiven(0);
+        setReceiptNumber("");
+        setTransactionNotes("");
+        setShowReceipt(false);
+        setLastTransaction(null);
+        setNewGuestData({
+            guest_name: "",
+            guest_type: "walkin",
+            amount_paid: "",
+            payment_method: "cash",
+            amount_received: "",
+            notes: ""
+        });
     };
 
 
@@ -284,10 +421,28 @@ export default function GuestManagement() {
                         Manage guest session requests and payments
                     </p>
                 </div>
-                <Button onClick={fetchGuestSessions} variant="outline" size="sm">
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            id="pos-mode"
+                            checked={posMode}
+                            onChange={(e) => setPosMode(e.target.checked)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <Label htmlFor="pos-mode" className="text-sm font-medium">
+                            POS Mode
+                        </Label>
+                    </div>
+                    <Button onClick={() => setShowPOSDialog(true)} variant="default" size="sm">
+                        <Plus className="h-4 w-4 mr-2" />
+                        New Guest POS
+                    </Button>
+                    <Button onClick={fetchGuestSessions} variant="outline" size="sm">
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Refresh
+                    </Button>
+                </div>
             </div>
 
             {/* Stats Cards */}
@@ -414,6 +569,8 @@ export default function GuestManagement() {
                                                 <TableHead>Guest Name</TableHead>
                                                 <TableHead>Type</TableHead>
                                                 <TableHead>Amount</TableHead>
+                                                <TableHead>Payment</TableHead>
+                                                <TableHead>Receipt</TableHead>
                                                 <TableHead>Status</TableHead>
                                                 <TableHead>Requested</TableHead>
                                                 <TableHead>Valid Until</TableHead>
@@ -423,7 +580,7 @@ export default function GuestManagement() {
                                         <TableBody>
                                             {filteredSessions.length === 0 ? (
                                                 <TableRow>
-                                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                                                         No guest sessions found
                                                     </TableCell>
                                                 </TableRow>
@@ -437,6 +594,23 @@ export default function GuestManagement() {
                                                     {getGuestTypeBadge(session.guest_type || 'unknown')}
                                                 </TableCell>
                                                 <TableCell>₱{session.amount_paid || '0.00'}</TableCell>
+                                                <TableCell>
+                                                    <div className="space-y-1">
+                                                        <Badge variant="outline" className="text-xs">
+                                                            {session.payment_method || "N/A"}
+                                                        </Badge>
+                                                        {session.change_given > 0 && (
+                                                            <div className="text-xs text-muted-foreground">
+                                                                Change: ₱{session.change_given}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="text-xs font-mono">
+                                                        {session.receipt_number || "N/A"}
+                                                    </div>
+                                                </TableCell>
                                                 <TableCell>
                                                     {getStatusBadge(session)}
                                                 </TableCell>
@@ -605,6 +779,176 @@ export default function GuestManagement() {
                                 }
                             })()}
                         </div>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* POS Dialog */}
+            <Dialog open={showPOSDialog} onOpenChange={setShowPOSDialog}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Create Guest POS Session</DialogTitle>
+                        <DialogDescription>
+                            Create a new guest session with POS payment processing
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Guest Name *</Label>
+                                <Input
+                                    value={newGuestData.guest_name}
+                                    onChange={(e) => setNewGuestData({...newGuestData, guest_name: e.target.value})}
+                                    placeholder="Enter guest name"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Guest Type</Label>
+                                <Select value={newGuestData.guest_type} onValueChange={(value) => setNewGuestData({...newGuestData, guest_type: value})}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="walkin">Walk-in</SelectItem>
+                                        <SelectItem value="trial">Trial</SelectItem>
+                                        <SelectItem value="guest">Guest</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Amount to Pay (₱) *</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={newGuestData.amount_paid}
+                                    onChange={(e) => setNewGuestData({...newGuestData, amount_paid: e.target.value})}
+                                    placeholder="Enter amount"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Payment Method</Label>
+                                <Select value={newGuestData.payment_method} onValueChange={(value) => setNewGuestData({...newGuestData, payment_method: value})}>
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="cash">Cash</SelectItem>
+                                        <SelectItem value="card">Card</SelectItem>
+                                        <SelectItem value="digital">Digital Payment</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {newGuestData.payment_method === "cash" && (
+                            <div className="space-y-2">
+                                <Label>Amount Received (₱)</Label>
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={newGuestData.amount_received}
+                                    onChange={(e) => {
+                                        setNewGuestData({...newGuestData, amount_received: e.target.value});
+                                        calculateChange();
+                                    }}
+                                    placeholder="Enter amount received"
+                                />
+                                {newGuestData.amount_received && (
+                                    <div className="text-sm text-muted-foreground">
+                                        Change: ₱{calculateChange()}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label>Notes (Optional)</Label>
+                            <Input
+                                value={newGuestData.notes}
+                                onChange={(e) => setNewGuestData({...newGuestData, notes: e.target.value})}
+                                placeholder="Add notes for this transaction"
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowPOSDialog(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreateGuestPOS} disabled={actionLoading}>
+                            {actionLoading ? "Creating..." : "Create Guest POS Session"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Receipt Dialog */}
+            <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Guest Session Receipt</DialogTitle>
+                        <DialogDescription>Guest session created successfully</DialogDescription>
+                    </DialogHeader>
+                    {lastTransaction && (
+                        <div className="space-y-4">
+                            <div className="text-center border-b pb-4">
+                                <h3 className="text-lg font-bold">CNERGY GYM</h3>
+                                <p className="text-sm text-muted-foreground">Guest Session Receipt</p>
+                                <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <span>Guest Name:</span>
+                                    <span className="font-medium">{newGuestData.guest_name}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Guest Type:</span>
+                                    <span className="font-medium capitalize">{newGuestData.guest_type}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Payment Method:</span>
+                                    <span className="font-medium capitalize">{lastTransaction.payment_method}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span>Total Amount:</span>
+                                    <span className="font-medium">₱{lastTransaction.total_amount}</span>
+                                </div>
+                                {lastTransaction.payment_method === "cash" && (
+                                    <>
+                                        <div className="flex justify-between">
+                                            <span>Amount Received:</span>
+                                            <span>₱{parseFloat(newGuestData.amount_received) || lastTransaction.total_amount}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Change Given:</span>
+                                            <span className="font-medium">₱{changeGiven}</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {newGuestData.notes && (
+                                <div className="border-t pt-2">
+                                    <p className="text-sm">
+                                        <strong>Notes:</strong> {newGuestData.notes}
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="text-center pt-4">
+                                <p className="text-sm text-muted-foreground">Thank you for choosing CNERGY!</p>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button onClick={() => setShowReceipt(false)} className="w-full">
+                            Close
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
