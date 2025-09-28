@@ -58,6 +58,7 @@ const Sales = () => {
   const [transactionNotes, setTransactionNotes] = useState("")
   const [showReceipt, setShowReceipt] = useState(false)
   const [lastTransaction, setLastTransaction] = useState(null)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
 
   // Stock management state
   const [stockUpdateProduct, setStockUpdateProduct] = useState(null)
@@ -234,6 +235,17 @@ const Sales = () => {
       return
     }
 
+    // Validate payment method and amount for cash payments
+    if (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < getTotalAmount())) {
+      alert("Please enter a valid amount received for cash payment")
+      return
+    }
+
+    setShowConfirmDialog(true)
+  }
+
+  const confirmTransaction = async () => {
+    setShowConfirmDialog(false)
     await handlePOSSale()
   }
 
@@ -1166,6 +1178,67 @@ const Sales = () => {
             </Button>
             <Button onClick={handleEditProduct} disabled={loading}>
               {loading ? "Updating..." : "Update Product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Transaction</DialogTitle>
+            <DialogDescription>Please review the transaction details before proceeding</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h4 className="font-medium">Items in Cart:</h4>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {cart.map((item, index) => (
+                  <div key={index} className="flex justify-between text-sm">
+                    <span>{item.product?.name} x{item.quantity}</span>
+                    <span>{formatCurrency(item.price)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="border-t pt-2 space-y-2">
+              <div className="flex justify-between font-medium">
+                <span>Total Amount:</span>
+                <span>{formatCurrency(getTotalAmount())}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Payment Method:</span>
+                <span className="capitalize">{paymentMethod}</span>
+              </div>
+              {paymentMethod === "cash" && (
+                <>
+                  <div className="flex justify-between">
+                    <span>Amount Received:</span>
+                    <span>{formatCurrency(parseFloat(amountReceived) || 0)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span>Change Given:</span>
+                    <span>{formatCurrency(changeGiven)}</span>
+                  </div>
+                </>
+              )}
+              {transactionNotes && (
+                <div className="pt-2">
+                  <p className="text-sm">
+                    <strong>Notes:</strong> {transactionNotes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmTransaction} disabled={loading}>
+              {loading ? "Processing..." : "Confirm Transaction"}
             </Button>
           </DialogFooter>
         </DialogContent>
