@@ -32,7 +32,6 @@ import {
   Award,
   User,
   Star,
-  DollarSign,
   Users,
   CheckCircle,
   Eye,
@@ -652,10 +651,10 @@ const ViewCoach = () => {
         </Card>
         <Card>
           <CardContent className="flex items-center p-6">
-            <DollarSign className="h-8 w-8 text-green-600" />
+            <span className="text-green-600 text-2xl">₱</span>
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Rate/hr</p>
-              <p className="text-2xl font-bold">${coachStats.averageHourlyRate}</p>
+              <p className="text-2xl font-bold">₱{coachStats.averageHourlyRate}</p>
             </div>
           </CardContent>
         </Card>
@@ -745,13 +744,13 @@ const ViewCoach = () => {
                         <Badge variant="secondary">{coach.specialty}</Badge>
                       </TableCell>
                       <TableCell>{coach.experience}</TableCell>
-                      <TableCell>${coach.hourly_rate}</TableCell>
+                      <TableCell>₱{coach.hourly_rate}</TableCell>
                       <TableCell>
-                        {coach.monthly_rate ? `$${coach.monthly_rate}` : '-'}
+                        {coach.monthly_rate ? `₱${coach.monthly_rate}` : '-'}
                       </TableCell>
                       <TableCell>
                         {coach.session_package_rate && coach.session_package_count 
-                          ? `$${coach.session_package_rate} (${coach.session_package_count} sessions)`
+                          ? `₱${coach.session_package_rate} (${coach.session_package_count} sessions)`
                           : '-'}
                       </TableCell>
                       <TableCell>
@@ -893,7 +892,7 @@ const ViewCoach = () => {
               </div>
               <div className="flex items-center justify-between">
                 <span>Avg Hourly Rate:</span>
-                <span className="font-semibold text-green-600">${coachStats.averageHourlyRate}</span>
+                <span className="font-semibold text-green-600">₱{coachStats.averageHourlyRate}</span>
               </div>
               {coachStats.specialtyDistribution.length > 0 && (
                 <div className="mt-4">

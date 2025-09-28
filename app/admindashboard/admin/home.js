@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Users, DollarSign, CreditCard, UserCheck, AlertTriangle, Calendar } from "lucide-react"
+import { Users, CreditCard, UserCheck, AlertTriangle, Calendar } from "lucide-react"
 
 const GymDashboard = () => {
   const [membershipData, setMembershipData] = useState([])
@@ -92,7 +92,7 @@ const GymDashboard = () => {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">₱</span>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">₱{summaryStats.salesToday.toLocaleString()}</div>

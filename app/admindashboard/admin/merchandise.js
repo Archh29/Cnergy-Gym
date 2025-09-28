@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Edit, Trash2, Loader2, Eye, Package, DollarSign, Tag } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Loader2, Eye, Package, Tag } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -206,9 +206,9 @@ const Merchandise = () => {
   }
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-PH', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'PHP'
     }).format(amount)
   }
 
@@ -291,7 +291,7 @@ const Merchandise = () => {
                         <TableCell className="font-medium">{item?.name || "N/A"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <DollarSign className="h-4 w-4" />
+                            <span>₱</span>
                             {formatCurrency(item?.price || 0)}
                           </div>
                         </TableCell>
@@ -466,7 +466,7 @@ const Merchandise = () => {
               <div>
                 <h4 className="font-medium mb-2">Price</h4>
                 <div className="flex items-center gap-2">
-                  <DollarSign className="h-4 w-4" />
+                  <span>₱</span>
                   {formatCurrency(selectedMerchandise?.price)}
                 </div>
               </div>

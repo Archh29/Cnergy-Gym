@@ -29,7 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Trash2, Edit, Loader2, Users, DollarSign, TrendingUp, CreditCard, Search, X } from "lucide-react"
+import { Plus, Trash2, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
 const API_URL = "https://api.cnergy.site/membership.php"
@@ -274,7 +274,7 @@ const SubscriptionPlans = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">₱</span>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>

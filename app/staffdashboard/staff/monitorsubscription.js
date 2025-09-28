@@ -367,9 +367,9 @@ const SubscriptionMonitor = () => {
   }
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
     }).format(amount)
   }
 
@@ -789,7 +789,7 @@ const SubscriptionMonitor = () => {
                             )}
                           </div>
                           <span className="ml-2 text-muted-foreground">
-                            ${plan.discounted_price || plan.price || 0}/{plan.duration_months || 1} month{(plan.duration_months || 1) > 1 ? "s" : ""}
+                            ₱{plan.discounted_price || plan.price || 0}/{plan.duration_months || 1} month{(plan.duration_months || 1) > 1 ? "s" : ""}
                           </span>
                         </div>
                       </SelectItem>
@@ -863,7 +863,7 @@ const SubscriptionMonitor = () => {
               {subscriptionForm.plan_id && (
                 <p className="text-xs text-muted-foreground mt-1">
                   {subscriptionForm.discount_type === "none" 
-                    ? `Plan price: $${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}`
+                    ? `Plan price: ₱${subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00"}`
                     : "Enter the actual amount charged to the customer"
                   }
                 </p>
@@ -906,7 +906,7 @@ const SubscriptionMonitor = () => {
                         <strong>Discount Type:</strong> {subscriptionForm.discount_type === "none" ? "No Discount" : subscriptionForm.discount_type.charAt(0).toUpperCase() + subscriptionForm.discount_type.slice(1)}
                       </p>
                       <p>
-                        <strong>Amount Paid:</strong> ${subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
+                        <strong>Amount Paid:</strong> ₱{subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
                       </p>
                     </div>
                   )

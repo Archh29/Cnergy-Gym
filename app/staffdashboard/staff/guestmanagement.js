@@ -16,7 +16,6 @@ import {
     Clock, 
     CheckCircle, 
     XCircle, 
-    DollarSign, 
     AlertCircle,
     RefreshCw,
     Eye,
