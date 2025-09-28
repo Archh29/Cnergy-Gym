@@ -50,6 +50,16 @@ const Sales = ({ userId }) => {
   // Cart for multiple products
   const [cart, setCart] = useState([])
 
+  // POS state
+  const [posMode, setPosMode] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+  const [amountReceived, setAmountReceived] = useState("")
+  const [changeGiven, setChangeGiven] = useState(0)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [transactionNotes, setTransactionNotes] = useState("")
+  const [showReceipt, setShowReceipt] = useState(false)
+  const [lastTransaction, setLastTransaction] = useState(null)
+
   // Stock management state
   const [stockUpdateProduct, setStockUpdateProduct] = useState(null)
   const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
@@ -226,6 +236,14 @@ const Sales = ({ userId }) => {
       return
     }
 
+    if (posMode) {
+      await handlePOSSale()
+    } else {
+      await handleRegularSale()
+    }
+  }
+
+  const handleRegularSale = async () => {
     setLoading(true)
     try {
       const saleData = {
@@ -252,6 +270,85 @@ const Sales = ({ userId }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handlePOSSale = async () => {
+    if (!paymentMethod) {
+      alert("Please select a payment method")
+      return
+    }
+
+    const totalAmount = getTotalAmount()
+    const receivedAmount = parseFloat(amountReceived) || totalAmount
+    const change = Math.max(0, receivedAmount - totalAmount)
+
+    if (paymentMethod === "cash" && receivedAmount < totalAmount) {
+      alert("Amount received cannot be less than total amount")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const saleData = {
+        total_amount: totalAmount,
+        sale_type: "Product",
+        sales_details: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        payment_method: paymentMethod,
+        amount_received: receivedAmount,
+        cashier_id: userId,
+        notes: transactionNotes
+      }
+
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
+      if (response.data.success) {
+        setLastTransaction({
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: paymentMethod
+        })
+        setReceiptNumber(response.data.receipt_number)
+        setChangeGiven(change)
+        setShowReceipt(true)
+        
+        // Reset form and cart
+        setCart([])
+        setAmountReceived("")
+        setTransactionNotes("")
+        setPaymentMethod("cash")
+        
+        // Reload data
+        await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+      }
+    } catch (error) {
+      console.error("Error creating POS sale:", error)
+      alert(error.response?.data?.error || "Error creating POS sale")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const calculateChange = () => {
+    const total = getTotalAmount()
+    const received = parseFloat(amountReceived) || 0
+    const change = Math.max(0, received - total)
+    setChangeGiven(change)
+    return change
+  }
+
+  const resetPOS = () => {
+    setPosMode(false)
+    setPaymentMethod("cash")
+    setAmountReceived("")
+    setChangeGiven(0)
+    setReceiptNumber("")
+    setTransactionNotes("")
+    setShowReceipt(false)
+    setLastTransaction(null)
   }
 
   const handleAddProduct = async () => {
@@ -525,6 +622,31 @@ const Sales = ({ userId }) => {
         </TabsList>
 
         <TabsContent value="sales">
+          {/* POS Mode Toggle */}
+          <Card className="mb-4">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="pos-mode"
+                    checked={posMode}
+                    onChange={(e) => setPosMode(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <Label htmlFor="pos-mode" className="text-sm font-medium">
+                    Enable POS Mode (Payment Processing & Receipt Generation)
+                  </Label>
+                </div>
+                {posMode && (
+                  <Button variant="outline" size="sm" onClick={resetPOS}>
+                    Reset POS
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Product Selection */}
             <Card>
@@ -641,12 +763,61 @@ const Sales = ({ userId }) => {
                       </div>
                     </div>
 
+                    {/* POS Payment Interface */}
+                    {posMode && cart.length > 0 && (
+                      <div className="border-t pt-4 space-y-4">
+                        <div className="space-y-2">
+                          <Label>Payment Method</Label>
+                          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">Cash</SelectItem>
+                              <SelectItem value="card">Card</SelectItem>
+                              <SelectItem value="digital">Digital Payment</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {paymentMethod === "cash" && (
+                          <div className="space-y-2">
+                            <Label>Amount Received (₱)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={amountReceived}
+                              onChange={(e) => {
+                                setAmountReceived(e.target.value)
+                                calculateChange()
+                              }}
+                              placeholder="Enter amount received"
+                            />
+                            {amountReceived && (
+                              <div className="text-sm text-muted-foreground">
+                                Change: {formatCurrency(calculateChange())}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <Label>Transaction Notes (Optional)</Label>
+                          <Input
+                            value={transactionNotes}
+                            onChange={(e) => setTransactionNotes(e.target.value)}
+                            placeholder="Add notes for this transaction"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <Button
                       onClick={handleProductSale}
                       className="w-full"
                       disabled={cart.length === 0 || loading}
                     >
-                      {loading ? "Processing..." : "Complete Sale"}
+                      {loading ? "Processing..." : posMode ? "Process POS Sale" : "Complete Sale"}
                     </Button>
                   </div>
                 )}
@@ -710,6 +881,8 @@ const Sales = ({ userId }) => {
                   <TableRow>
                     <TableHead>Items</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Payment</TableHead>
+                    <TableHead>Receipt</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead className="text-right">Total Amount</TableHead>
                   </TableRow>
@@ -717,7 +890,7 @@ const Sales = ({ userId }) => {
                 <TableBody>
                   {filteredSales.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         No sales found matching your search
                       </TableCell>
                     </TableRow>
@@ -738,6 +911,23 @@ const Sales = ({ userId }) => {
                           <Badge variant={sale.sale_type === "Product" ? "outline" : "secondary"}>
                             {sale.sale_type}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <Badge variant="outline" className="text-xs">
+                              {sale.payment_method || "N/A"}
+                            </Badge>
+                            {sale.change_given > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Change: {formatCurrency(sale.change_given)}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs font-mono">
+                            {sale.receipt_number || "N/A"}
+                          </div>
                         </TableCell>
                         <TableCell>{formatDate(sale.sale_date)}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(sale.total_amount)}</TableCell>
@@ -1013,6 +1203,68 @@ const Sales = ({ userId }) => {
             </Button>
             <Button onClick={handleEditProduct} disabled={loading}>
               {loading ? "Updating..." : "Update Product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Receipt Dialog */}
+      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Transaction Receipt</DialogTitle>
+            <DialogDescription>Transaction completed successfully</DialogDescription>
+          </DialogHeader>
+          {lastTransaction && (
+            <div className="space-y-4">
+              <div className="text-center border-b pb-4">
+                <h3 className="text-lg font-bold">CNERGY GYM</h3>
+                <p className="text-sm text-muted-foreground">Point of Sale Receipt</p>
+                <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
+                <p className="text-xs text-muted-foreground">
+                  Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Payment Method:</span>
+                  <span className="font-medium capitalize">{lastTransaction.payment_method}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Amount:</span>
+                  <span className="font-medium">{formatCurrency(lastTransaction.total_amount)}</span>
+                </div>
+                {lastTransaction.payment_method === "cash" && (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Amount Received:</span>
+                      <span>{formatCurrency(parseFloat(amountReceived) || lastTransaction.total_amount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Change Given:</span>
+                      <span className="font-medium">{formatCurrency(changeGiven)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {transactionNotes && (
+                <div className="border-t pt-2">
+                  <p className="text-sm">
+                    <strong>Notes:</strong> {transactionNotes}
+                  </p>
+                </div>
+              )}
+
+              <div className="text-center pt-4">
+                <p className="text-sm text-muted-foreground">Thank you for your business!</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setShowReceipt(false)} className="w-full">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

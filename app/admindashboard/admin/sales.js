@@ -50,6 +50,16 @@ const Sales = () => {
   // Cart for multiple products
   const [cart, setCart] = useState([])
 
+  // POS state
+  const [posMode, setPosMode] = useState(false)
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+  const [amountReceived, setAmountReceived] = useState("")
+  const [changeGiven, setChangeGiven] = useState(0)
+  const [receiptNumber, setReceiptNumber] = useState("")
+  const [transactionNotes, setTransactionNotes] = useState("")
+  const [showReceipt, setShowReceipt] = useState(false)
+  const [lastTransaction, setLastTransaction] = useState(null)
+
   // Stock management state
   const [stockUpdateProduct, setStockUpdateProduct] = useState(null)
   const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
@@ -225,6 +235,14 @@ const Sales = () => {
       return
     }
 
+    if (posMode) {
+      await handlePOSSale()
+    } else {
+      await handleRegularSale()
+    }
+  }
+
+  const handleRegularSale = async () => {
     setLoading(true)
     try {
       const saleData = {
@@ -251,6 +269,84 @@ const Sales = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handlePOSSale = async () => {
+    if (!paymentMethod) {
+      alert("Please select a payment method")
+      return
+    }
+
+    const totalAmount = getTotalAmount()
+    const receivedAmount = parseFloat(amountReceived) || totalAmount
+    const change = Math.max(0, receivedAmount - totalAmount)
+
+    if (paymentMethod === "cash" && receivedAmount < totalAmount) {
+      alert("Amount received cannot be less than total amount")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const saleData = {
+        total_amount: totalAmount,
+        sale_type: "Product",
+        sales_details: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          price: item.price,
+        })),
+        payment_method: paymentMethod,
+        amount_received: receivedAmount,
+        notes: transactionNotes
+      }
+
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale`, saleData)
+      if (response.data.success) {
+        setLastTransaction({
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: paymentMethod
+        })
+        setReceiptNumber(response.data.receipt_number)
+        setChangeGiven(change)
+        setShowReceipt(true)
+        
+        // Reset form and cart
+        setCart([])
+        setAmountReceived("")
+        setTransactionNotes("")
+        setPaymentMethod("cash")
+        
+        // Reload data
+        await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+      }
+    } catch (error) {
+      console.error("Error creating POS sale:", error)
+      alert(error.response?.data?.error || "Error creating POS sale")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const calculateChange = () => {
+    const total = getTotalAmount()
+    const received = parseFloat(amountReceived) || 0
+    const change = Math.max(0, received - total)
+    setChangeGiven(change)
+    return change
+  }
+
+  const resetPOS = () => {
+    setPosMode(false)
+    setPaymentMethod("cash")
+    setAmountReceived("")
+    setChangeGiven(0)
+    setReceiptNumber("")
+    setTransactionNotes("")
+    setShowReceipt(false)
+    setLastTransaction(null)
   }
 
   const handleAddProduct = async () => {
@@ -524,6 +620,31 @@ const Sales = () => {
         </TabsList>
 
         <TabsContent value="sales">
+          {/* POS Mode Toggle */}
+          <Card className="mb-4">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="pos-mode"
+                    checked={posMode}
+                    onChange={(e) => setPosMode(e.target.checked)}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <Label htmlFor="pos-mode" className="text-sm font-medium">
+                    Enable POS Mode (Payment Processing & Receipt Generation)
+                  </Label>
+                </div>
+                {posMode && (
+                  <Button variant="outline" size="sm" onClick={resetPOS}>
+                    Reset POS
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Product Selection */}
             <Card>
