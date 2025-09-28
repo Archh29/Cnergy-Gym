@@ -78,7 +78,7 @@ const ViewCoach = () => {
     totalCoaches: 0,
     availableCoaches: 0,
     averageRating: 0,
-    averageHourlyRate: 0,
+    averagePerSessionRate: 0,
     totalClients: 0,
     specialtyDistribution: [],
     recentActivities: []
@@ -108,10 +108,10 @@ const ViewCoach = () => {
     bio: "",
     specialty: "",
     experience: "",
-    hourly_rate: "",
+    per_session_rate: "",
+    package_rate: "",
+    package_sessions: "",
     monthly_rate: "",
-    session_package_rate: "",
-    session_package_count: "",
     certifications: "",
     is_available: true,
     image_url: "",
@@ -177,7 +177,7 @@ const ViewCoach = () => {
     if (!data.gender_id) errors.gender_id = "Please select a gender"
     if (!data.specialty) errors.specialty = "Please specify a specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
-    if (!data.hourly_rate) errors.hourly_rate = "Please set an hourly rate"
+    if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
 
     return errors
   }
@@ -229,10 +229,10 @@ const ViewCoach = () => {
       bio: "",
       specialty: "",
       experience: "",
-      hourly_rate: "",
+      per_session_rate: "",
+      package_rate: "",
+      package_sessions: "",
       monthly_rate: "",
-      session_package_rate: "",
-      session_package_count: "",
       certifications: "",
       is_available: true,
       image_url: "",
@@ -320,7 +320,10 @@ const ViewCoach = () => {
         experience: coach.experience || "Not specified",
         rating: coach.rating || 0.0,
         total_clients: coach.total_clients || 0,
-        hourly_rate: coach.hourly_rate || 0.0,
+        per_session_rate: coach.per_session_rate || 0.0,
+        package_rate: coach.package_rate || 0.0,
+        package_sessions: coach.package_sessions || 0,
+        monthly_rate: coach.monthly_rate || 0.0,
         certifications: coach.certifications || "",
         is_available: coach.is_available !== undefined ? coach.is_available : true,
         image_url: coach.image_url || "",
@@ -369,10 +372,10 @@ const ViewCoach = () => {
         bio: formData.bio || "",
         specialty: formData.specialty,
         experience: formData.experience,
-        hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
+        package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
+        package_sessions: formData.package_sessions ? Number.parseInt(formData.package_sessions) : null,
         monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
-        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
-        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -391,7 +394,10 @@ const ViewCoach = () => {
           experience: coach.experience || "Not specified",
           rating: coach.rating || 0.0,
           total_clients: coach.total_clients || 0,
-          hourly_rate: coach.hourly_rate || 0.0,
+          per_session_rate: coach.per_session_rate || 0.0,
+          package_rate: coach.package_rate || 0.0,
+          package_sessions: coach.package_sessions || 0,
+          monthly_rate: coach.monthly_rate || 0.0,
           certifications: coach.certifications || "",
           is_available: coach.is_available !== undefined ? coach.is_available : true,
           image_url: coach.image_url || "",
@@ -458,10 +464,10 @@ const ViewCoach = () => {
         bio: formData.bio || "",
         specialty: formData.specialty,
         experience: formData.experience,
-        hourly_rate: Number.parseFloat(formData.hourly_rate) || 0.0,
+        per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
+        package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
+        package_sessions: formData.package_sessions ? Number.parseInt(formData.package_sessions) : null,
         monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
-        session_package_rate: formData.session_package_rate ? Number.parseFloat(formData.session_package_rate) : null,
-        session_package_count: formData.session_package_count ? Number.parseInt(formData.session_package_count) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
@@ -489,7 +495,10 @@ const ViewCoach = () => {
           experience: coach.experience || "Not specified",
           rating: coach.rating || 0.0,
           total_clients: coach.total_clients || 0,
-          hourly_rate: coach.hourly_rate || 0.0,
+          per_session_rate: coach.per_session_rate || 0.0,
+          package_rate: coach.package_rate || 0.0,
+          package_sessions: coach.package_sessions || 0,
+          monthly_rate: coach.monthly_rate || 0.0,
           certifications: coach.certifications || "",
           is_available: coach.is_available !== undefined ? coach.is_available : true,
           image_url: coach.image_url || "",
@@ -576,10 +585,10 @@ const ViewCoach = () => {
       bio: coach.bio || "",
       specialty: coach.specialty || "",
       experience: coach.experience || "",
-      hourly_rate: coach.hourly_rate?.toString() || "",
+      per_session_rate: coach.per_session_rate?.toString() || "",
+      package_rate: coach.package_rate?.toString() || "",
+      package_sessions: coach.package_sessions?.toString() || "",
       monthly_rate: coach.monthly_rate?.toString() || "",
-      session_package_rate: coach.session_package_rate?.toString() || "",
-      session_package_count: coach.session_package_count?.toString() || "",
       certifications: coach.certifications || "",
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
@@ -653,8 +662,8 @@ const ViewCoach = () => {
           <CardContent className="flex items-center p-6">
             <span className="text-green-600 text-2xl">₱</span>
             <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Avg Rate/hr</p>
-              <p className="text-2xl font-bold">₱{coachStats.averageHourlyRate}</p>
+              <p className="text-sm font-medium text-muted-foreground">Avg Per Session</p>
+              <p className="text-2xl font-bold">₱{coachStats.averagePerSessionRate}</p>
             </div>
           </CardContent>
         </Card>
@@ -688,9 +697,9 @@ const ViewCoach = () => {
                   <TableHead>Contact</TableHead>
                   <TableHead>Specialty</TableHead>
                   <TableHead>Experience</TableHead>
-                  <TableHead>Hourly Rate</TableHead>
-                  <TableHead>Monthly Rate</TableHead>
-                  <TableHead>Package Rate</TableHead>
+                  <TableHead>Per Session</TableHead>
+                  <TableHead>Package</TableHead>
+                  <TableHead>Monthly Plan</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
@@ -744,14 +753,14 @@ const ViewCoach = () => {
                         <Badge variant="secondary">{coach.specialty}</Badge>
                       </TableCell>
                       <TableCell>{coach.experience}</TableCell>
-                      <TableCell>₱{coach.hourly_rate}</TableCell>
+                      <TableCell>₱{coach.per_session_rate}</TableCell>
                       <TableCell>
-                        {coach.monthly_rate ? `₱${coach.monthly_rate}` : '-'}
+                        {coach.package_rate && coach.package_sessions 
+                          ? `₱${coach.package_rate} (${coach.package_sessions} sessions)`
+                          : '-'}
                       </TableCell>
                       <TableCell>
-                        {coach.session_package_rate && coach.session_package_count 
-                          ? `₱${coach.session_package_rate} (${coach.session_package_count} sessions)`
-                          : '-'}
+                        {coach.monthly_rate ? `₱${coach.monthly_rate} (18 sessions)` : '-'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
@@ -891,8 +900,8 @@ const ViewCoach = () => {
                 <span className="font-semibold text-blue-600">{coachStats.totalClients}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Avg Hourly Rate:</span>
-                <span className="font-semibold text-green-600">₱{coachStats.averageHourlyRate}</span>
+                <span>Avg Per Session Rate:</span>
+                <span className="font-semibold text-green-600">₱{coachStats.averagePerSessionRate}</span>
               </div>
               {coachStats.specialtyDistribution.length > 0 && (
                 <div className="mt-4">
@@ -1092,57 +1101,59 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="hourly_rate">Hourly Rate ($)*</Label>
+                  <Label htmlFor="per_session_rate">Per Session Rate (₱)*</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    id="hourly_rate"
-                    name="hourly_rate"
-                    placeholder="50.00"
-                    value={formData.hourly_rate}
+                    id="per_session_rate"
+                    name="per_session_rate"
+                    placeholder="500.00"
+                    value={formData.per_session_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.hourly_rate ? "border-red-500" : ""}
+                    className={validationErrors.per_session_rate ? "border-red-500" : ""}
                   />
-                  {validationErrors.hourly_rate && (
-                    <p className="text-sm text-red-500">{validationErrors.hourly_rate}</p>
+                  {validationErrors.per_session_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.per_session_rate}</p>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="monthly_rate">Monthly Rate ($)</Label>
+                  <Label htmlFor="monthly_rate">Monthly Plan Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
                     id="monthly_rate"
                     name="monthly_rate"
-                    placeholder="500.00"
+                    placeholder="8000.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
                   />
+                  <p className="text-xs text-gray-500">18 sessions per month</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="session_package_rate">Session Package Rate ($)</Label>
+                  <Label htmlFor="package_rate">Package Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    id="session_package_rate"
-                    name="session_package_rate"
-                    placeholder="200.00"
-                    value={formData.session_package_rate}
+                    id="package_rate"
+                    name="package_rate"
+                    placeholder="2000.00"
+                    value={formData.package_rate}
                     onChange={handleInputChange}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="session_package_count">Session Package Count</Label>
+                  <Label htmlFor="package_sessions">Package Sessions</Label>
                   <Input
                     type="number"
-                    id="session_package_count"
-                    name="session_package_count"
-                    placeholder="10"
-                    value={formData.session_package_count}
+                    id="package_sessions"
+                    name="package_sessions"
+                    placeholder="18"
+                    value={formData.package_sessions}
                     onChange={handleInputChange}
                   />
+                  <p className="text-xs text-gray-500">Default: 18 sessions</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1372,57 +1383,59 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-hourly_rate">Hourly Rate ($)*</Label>
+                  <Label htmlFor="edit-per_session_rate">Per Session Rate (₱)*</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    id="edit-hourly_rate"
-                    name="hourly_rate"
-                    placeholder="50.00"
-                    value={formData.hourly_rate}
+                    id="edit-per_session_rate"
+                    name="per_session_rate"
+                    placeholder="500.00"
+                    value={formData.per_session_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.hourly_rate ? "border-red-500" : ""}
+                    className={validationErrors.per_session_rate ? "border-red-500" : ""}
                   />
-                  {validationErrors.hourly_rate && (
-                    <p className="text-sm text-red-500">{validationErrors.hourly_rate}</p>
+                  {validationErrors.per_session_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.per_session_rate}</p>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-monthly_rate">Monthly Rate ($)</Label>
+                  <Label htmlFor="edit-monthly_rate">Monthly Plan Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
                     id="edit-monthly_rate"
                     name="monthly_rate"
-                    placeholder="500.00"
+                    placeholder="8000.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
                   />
+                  <p className="text-xs text-gray-500">18 sessions per month</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-session_package_rate">Session Package Rate ($)</Label>
+                  <Label htmlFor="edit-package_rate">Package Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    id="edit-session_package_rate"
-                    name="session_package_rate"
-                    placeholder="200.00"
-                    value={formData.session_package_rate}
+                    id="edit-package_rate"
+                    name="package_rate"
+                    placeholder="2000.00"
+                    value={formData.package_rate}
                     onChange={handleInputChange}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-session_package_count">Session Package Count</Label>
+                  <Label htmlFor="edit-package_sessions">Package Sessions</Label>
                   <Input
                     type="number"
-                    id="edit-session_package_count"
-                    name="session_package_count"
-                    placeholder="10"
-                    value={formData.session_package_count}
+                    id="edit-package_sessions"
+                    name="package_sessions"
+                    placeholder="18"
+                    value={formData.package_sessions}
                     onChange={handleInputChange}
                   />
+                  <p className="text-xs text-gray-500">Default: 18 sessions</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
