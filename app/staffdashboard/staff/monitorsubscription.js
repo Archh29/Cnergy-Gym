@@ -192,14 +192,14 @@ const SubscriptionMonitor = () => {
 
   const handleApprove = async (subscriptionId) => {
     // Find the subscription to get details
-    const subscription = subscriptions.find(s => s.subscription_id === subscriptionId);
+    const subscription = subscriptions?.find(s => s.subscription_id === subscriptionId);
     if (!subscription) {
       setMessage({ type: "error", text: "Subscription not found" });
       return;
     }
 
     // Find the subscription plan to get price
-    const plan = subscriptionPlans.find(p => p.id === subscription.plan_id);
+    const plan = subscriptionPlans?.find(p => p.id === subscription.plan_id);
     if (!plan) {
       setMessage({ type: "error", text: "Subscription plan not found" });
       return;
@@ -281,7 +281,7 @@ const SubscriptionMonitor = () => {
       const change = Math.max(0, receivedAmount - totalAmount)
 
       // First, find the pending subscription to approve
-      const pendingSubscription = subscriptions.find(s => 
+      const pendingSubscription = subscriptions?.find(s => 
         s.user_id == subscriptionForm.user_id && 
         s.plan_id == subscriptionForm.plan_id &&
         s.status === 'pending_approval'

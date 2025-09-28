@@ -100,7 +100,7 @@ export default function GuestManagement() {
 
     const handleApprove = async (sessionId) => {
         // Find the session to get payment details
-        const session = guestSessions.find(s => s.id === sessionId);
+        const session = guestSessions?.find(s => s.id === sessionId);
         if (!session) {
             toast({
                 title: "Error",
@@ -200,7 +200,7 @@ export default function GuestManagement() {
             setActionLoading(true);
             
             // First, find the pending session to approve
-            const pendingSession = guestSessions.find(s => 
+            const pendingSession = guestSessions?.find(s => 
                 s.guest_name === newGuestData.guest_name && 
                 s.amount_paid == newGuestData.amount_paid &&
                 (s.computed_status || getComputedStatus(s)) === 'pending'
