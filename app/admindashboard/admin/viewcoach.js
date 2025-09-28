@@ -699,20 +699,20 @@ const ViewCoach = () => {
           </div>
 
           {/* Coaches Table */}
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[800px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Coach</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Specialty</TableHead>
-                  <TableHead>Experience</TableHead>
-                  <TableHead>Per Session</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead>Monthly Plan</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="min-w-[200px]">Coach</TableHead>
+                  <TableHead className="min-w-[150px]">Contact</TableHead>
+                  <TableHead className="min-w-[120px]">Specialty</TableHead>
+                  <TableHead className="min-w-[100px]">Experience</TableHead>
+                  <TableHead className="min-w-[100px]">Per Session</TableHead>
+                  <TableHead className="min-w-[120px]">Package</TableHead>
+                  <TableHead className="min-w-[120px]">Monthly Plan</TableHead>
+                  <TableHead className="min-w-[80px]">Rating</TableHead>
+                  <TableHead className="min-w-[100px]">Status</TableHead>
+                  <TableHead className="min-w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -735,61 +735,73 @@ const ViewCoach = () => {
                   currentCoaches.map((coach) => (
                     <TableRow key={coach.id}>
                       <TableCell>
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2 sm:space-x-3">
                           {coach.image_url ? (
                             <img
-                              className="h-10 w-10 rounded-full object-cover"
+                              className="h-8 w-8 sm:h-10 sm:w-10 rounded-full object-cover flex-shrink-0"
                               src={coach.image_url || "/placeholder.svg"}
                               alt={coach.fullName}
                             />
                           ) : (
-                            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
-                              <User className="h-5 w-5 text-gray-600" />
+                            <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
+                              <User className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
                             </div>
                           )}
-                          <div>
-                            <div className="font-medium">{coach.fullName}</div>
-                            <div className="text-sm text-muted-foreground">{coach.total_clients} clients</div>
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm sm:text-base truncate">{coach.fullName}</div>
+                            <div className="text-xs sm:text-sm text-muted-foreground">{coach.total_clients} clients</div>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <div className="font-medium">{coach.email}</div>
-                          <div className="text-sm text-muted-foreground">{coach.gender}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm truncate">{coach.email}</div>
+                          <div className="text-xs text-muted-foreground">{coach.gender}</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{coach.specialty}</Badge>
+                        <Badge variant="secondary" className="text-xs">{coach.specialty}</Badge>
                       </TableCell>
-                      <TableCell>{coach.experience}</TableCell>
-                      <TableCell>₱{coach.per_session_rate}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-sm">{coach.experience}</TableCell>
+                      <TableCell className="text-sm font-medium">₱{coach.per_session_rate}</TableCell>
+                      <TableCell className="text-sm">
                         {coach.package_rate && coach.package_sessions 
-                          ? `₱${coach.package_rate} (${coach.package_sessions} sessions)`
+                          ? (
+                            <div>
+                              <div>₱{coach.package_rate}</div>
+                              <div className="text-xs text-muted-foreground">({coach.package_sessions} sessions)</div>
+                            </div>
+                          )
                           : '-'}
                       </TableCell>
-                      <TableCell>
-                        {coach.monthly_rate ? `₱${coach.monthly_rate} (18 sessions)` : '-'}
+                      <TableCell className="text-sm">
+                        {coach.monthly_rate ? (
+                          <div>
+                            <div>₱{coach.monthly_rate}</div>
+                            <div className="text-xs text-muted-foreground">(18 sessions)</div>
+                          </div>
+                        ) : '-'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                          {coach.rating.toFixed(1)}
+                          <Star className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-400 mr-1" />
+                          <span className="text-sm">{coach.rating.toFixed(1)}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={coach.is_available ? "default" : "secondary"}>
+                        <Badge variant={coach.is_available ? "default" : "secondary"} className="text-xs">
                           {coach.is_available ? "Available" : "Unavailable"}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)}>
-                            <Edit className="h-4 w-4" />
+                        <div className="flex items-center space-x-1 sm:space-x-2">
+                          <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
+                            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
+                            <span className="hidden sm:inline ml-1">Edit</span>
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)}>
-                            <Trash2 className="h-4 w-4" />
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
+                            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                            <span className="hidden sm:inline ml-1">Delete</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -933,7 +945,7 @@ const ViewCoach = () => {
 
       {/* Add Coach Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Coach</DialogTitle>
             <DialogDescription>
@@ -944,7 +956,7 @@ const ViewCoach = () => {
             {/* Personal Information Section */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="fname">First Name*</Label>
                   <Input
@@ -982,7 +994,7 @@ const ViewCoach = () => {
                 />
                 {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email*</Label>
                   <Input
@@ -1026,7 +1038,7 @@ const ViewCoach = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="gender_id">Gender*</Label>
                   <Select value={formData.gender_id} onValueChange={(value) => handleSelectChange("gender_id", value)}>
@@ -1072,7 +1084,7 @@ const ViewCoach = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="specialty">Specialty*</Label>
                   <Select value={formData.specialty} onValueChange={(value) => handleSelectChange("specialty", value)}>
@@ -1109,7 +1121,7 @@ const ViewCoach = () => {
                   {validationErrors.experience && <p className="text-sm text-red-500">{validationErrors.experience}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="per_session_rate">Per Session Rate (₱)*</Label>
                   <Input
@@ -1144,7 +1156,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="package_rate">Package Rate (₱)</Label>
                   <Input
@@ -1178,7 +1190,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="image_url">Profile Image URL</Label>
                   <Input
@@ -1214,11 +1226,11 @@ const ViewCoach = () => {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Add Coach
               </Button>
@@ -1229,7 +1241,7 @@ const ViewCoach = () => {
 
       {/* Edit Coach Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Coach</DialogTitle>
             <DialogDescription>Update the coach's information in both User and Coaches tables.</DialogDescription>
@@ -1238,7 +1250,7 @@ const ViewCoach = () => {
             {/* Personal Information Section */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-fname">First Name*</Label>
                   <Input
@@ -1276,7 +1288,7 @@ const ViewCoach = () => {
                 />
                 {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-email">Email*</Label>
                   <Input
@@ -1320,7 +1332,7 @@ const ViewCoach = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-gender_id">Gender*</Label>
                   <Select value={formData.gender_id} onValueChange={(value) => handleSelectChange("gender_id", value)}>
@@ -1366,7 +1378,7 @@ const ViewCoach = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-specialty">Specialty*</Label>
                   <Select value={formData.specialty} onValueChange={(value) => handleSelectChange("specialty", value)}>
@@ -1403,7 +1415,7 @@ const ViewCoach = () => {
                   {validationErrors.experience && <p className="text-sm text-red-500">{validationErrors.experience}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-per_session_rate">Per Session Rate (₱)*</Label>
                   <Input
@@ -1438,7 +1450,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-package_rate">Package Rate (₱)</Label>
                   <Input
@@ -1472,7 +1484,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
@@ -1508,11 +1520,11 @@ const ViewCoach = () => {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Update Coach
               </Button>

@@ -116,23 +116,39 @@ export default function StaffDashboard() {
     }
   };
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   return (
     <div className={`flex h-screen bg-gray-50 dark:bg-gray-900`}>
-      <Sidebar activeSection={currentSection} setActiveSection={setCurrentSection} toggleDarkMode={toggleDarkMode} darkMode={darkMode} />
+      <Sidebar 
+        activeSection={currentSection} 
+        setActiveSection={setCurrentSection} 
+        toggleDarkMode={toggleDarkMode} 
+        darkMode={darkMode}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+      />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon">
+        <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-3 sm:px-6 py-3 sm:py-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="lg:hidden"
+            >
               <PanelLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
-              <span>Dashboard</span>
-              <span>{currentSection}</span>
+            <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-gray-500 dark:text-gray-300">
+              <span className="hidden sm:inline">Dashboard</span>
+              <span className="font-medium">{currentSection}</span>
             </div>
           </div>
-          <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} />
+          <div className="flex items-center gap-2">
+            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} userId={userId} />
+          </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">{renderSection()}</main>
+        <main className="flex-1 overflow-auto p-3 sm:p-6">{renderSection()}</main>
       </div>
     </div>
   );

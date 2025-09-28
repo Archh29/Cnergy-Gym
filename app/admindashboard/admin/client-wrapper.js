@@ -154,19 +154,26 @@ export default function AdminDashboardClient() {
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* ✅ Top bar now supports dark mode */}
-        <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={toggleSidebar} className="hover:bg-gray-100 dark:hover:bg-gray-700">
+        <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-3 sm:px-6 py-3 sm:py-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={toggleSidebar} 
+              className="hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
               {sidebarCollapsed ? <Menu className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </Button>
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
-              <span>Dashboard</span>
-              <span>{currentSection}</span>
+            <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-gray-500 dark:text-gray-300">
+              <span className="hidden sm:inline">Dashboard</span>
+              <span className="font-medium">{currentSection}</span>
             </div>
           </div>
-          <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} />
+          <div className="flex items-center gap-2">
+            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} />
+          </div>
         </header>
-        <main className="flex-1 overflow-auto p-6">{renderSection()}</main>
+        <main className="flex-1 overflow-auto p-3 sm:p-6">{renderSection()}</main>
       </div>
 
       {/* Global Modal for Notifications */}

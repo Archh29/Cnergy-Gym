@@ -45,21 +45,21 @@ const GymDashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Dashboard Overview */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <CardTitle>Dashboard Overview</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-lg sm:text-xl">Dashboard Overview</CardTitle>
+              <CardDescription className="text-sm">
                 Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
               </CardDescription>
             </div>
             <div className="flex items-center space-x-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Select time period" />
                 </SelectTrigger>
                 <SelectContent>
@@ -73,7 +73,7 @@ const GymDashboard = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
             {/* Members */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -140,7 +140,7 @@ const GymDashboard = () => {
       </Card>
 
       {/* Charts */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Membership Growth</CardTitle>
