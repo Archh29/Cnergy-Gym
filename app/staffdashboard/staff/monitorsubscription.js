@@ -191,25 +191,34 @@ const SubscriptionMonitor = () => {
   }
 
   const handleApprove = async (subscriptionId) => {
-    setActionLoading(subscriptionId)
-    setMessage(null)
-    try {
-      const response = await axios.post(`${API_URL}?action=approve`, {
-        subscription_id: subscriptionId,
-        approved_by: "Admin",
-      })
-      if (response.data.success) {
-        setMessage({ type: "success", text: response.data.message })
-        await fetchAllData()
-      } else {
-        setMessage({ type: "error", text: response.data.message })
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || "Failed to approve subscription"
-      setMessage({ type: "error", text: errorMessage })
-    } finally {
-      setActionLoading(null)
+    // Find the subscription to get details
+    const subscription = subscriptions.find(s => s.subscription_id === subscriptionId);
+    if (!subscription) {
+      setMessage({ type: "error", text: "Subscription not found" });
+      return;
     }
+
+    // Find the subscription plan to get price
+    const plan = subscriptionPlans.find(p => p.id === subscription.plan_id);
+    if (!plan) {
+      setMessage({ type: "error", text: "Subscription plan not found" });
+      return;
+    }
+
+    // Set up payment data for this subscription
+    setSubscriptionForm({
+      user_id: subscription.user_id,
+      plan_id: subscription.plan_id,
+      start_date: new Date().toISOString().split("T")[0],
+      discount_type: "none",
+      amount_paid: plan.price || plan.discounted_price || "0",
+      payment_method: "cash",
+      amount_received: "",
+      notes: ""
+    });
+    
+    // Show payment dialog
+    setIsCreateSubscriptionDialogOpen(true);
   }
 
   const handleDecline = async () => {
@@ -271,40 +280,77 @@ const SubscriptionMonitor = () => {
       const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
       const change = Math.max(0, receivedAmount - totalAmount)
 
-      const subscriptionData = {
-        user_id: subscriptionForm.user_id,
-        plan_id: subscriptionForm.plan_id,
-        start_date: subscriptionForm.start_date,
-        discount_type: subscriptionForm.discount_type,
-        amount_paid: totalAmount,
-        payment_method: subscriptionForm.payment_method,
-        amount_received: receivedAmount,
-        notes: subscriptionForm.notes,
-        created_by: "admin",
-      }
+      // First, find the pending subscription to approve
+      const pendingSubscription = subscriptions.find(s => 
+        s.user_id == subscriptionForm.user_id && 
+        s.plan_id == subscriptionForm.plan_id &&
+        s.status === 'pending_approval'
+      );
 
-      const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
+      if (pendingSubscription) {
+        // Process payment and approve the existing subscription
+        const response = await axios.post(`${API_URL}?action=approve_with_payment`, {
+          subscription_id: pendingSubscription.subscription_id,
+          payment_method: subscriptionForm.payment_method,
+          amount_received: receivedAmount,
+          notes: subscriptionForm.notes,
+          approved_by: "Admin"
+        });
 
-      if (response.data.success) {
-        setLastTransaction({
-          ...response.data,
-          change_given: change,
-          total_amount: totalAmount,
-          payment_method: subscriptionForm.payment_method
-        })
-        setReceiptNumber(response.data.receipt_number)
-        setChangeGiven(change)
-        setShowReceipt(true)
-        
-        setMessage({ type: "success", text: "Manual subscription created successfully!" })
-        setIsCreateSubscriptionDialogOpen(false)
-        resetSubscriptionForm()
-        await fetchAllData()
+        if (response.data.success) {
+          setLastTransaction({
+            ...response.data,
+            change_given: change,
+            total_amount: totalAmount,
+            payment_method: subscriptionForm.payment_method
+          });
+          setReceiptNumber(response.data.receipt_number);
+          setChangeGiven(change);
+          setShowReceipt(true);
+          
+          setMessage({ type: "success", text: "Subscription approved and payment processed successfully!" });
+        } else {
+          throw new Error(response.data.message || "Failed to approve subscription with payment");
+        }
       } else {
-        throw new Error(response.data.message || "Failed to create subscription")
+        // Fallback: create new subscription if no pending subscription found
+        const subscriptionData = {
+          user_id: subscriptionForm.user_id,
+          plan_id: subscriptionForm.plan_id,
+          start_date: subscriptionForm.start_date,
+          discount_type: subscriptionForm.discount_type,
+          amount_paid: totalAmount,
+          payment_method: subscriptionForm.payment_method,
+          amount_received: receivedAmount,
+          notes: subscriptionForm.notes,
+          created_by: "admin",
+        }
+
+        const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
+
+        if (response.data.success) {
+          setLastTransaction({
+            ...response.data,
+            change_given: change,
+            total_amount: totalAmount,
+            payment_method: subscriptionForm.payment_method
+          })
+          setReceiptNumber(response.data.receipt_number)
+          setChangeGiven(change)
+          setShowReceipt(true)
+          
+          setMessage({ type: "success", text: "Subscription created and payment processed successfully!" })
+        } else {
+          throw new Error(response.data.message || "Failed to create subscription")
+        }
       }
+      
+      setIsCreateSubscriptionDialogOpen(false)
+      resetSubscriptionForm()
+      await fetchAllData()
+      
     } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to create subscription"
+      const errorMessage = error.response?.data?.message || error.message || "Failed to process subscription payment"
       setMessage({ type: "error", text: errorMessage })
     } finally {
       setActionLoading(null)
@@ -545,13 +591,6 @@ const SubscriptionMonitor = () => {
               <CardDescription>Monitor subscription requests and create manual subscriptions</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button
-                onClick={() => setIsCreateSubscriptionDialogOpen(true)}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Subscription
-              </Button>
               <Button onClick={fetchAllData} variant="outline" size="sm">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
@@ -777,10 +816,10 @@ const SubscriptionMonitor = () => {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
-              Create Manual Subscription
+              Process Payment & Approve Subscription
             </DialogTitle>
             <DialogDescription id="create-subscription-description">
-              Create a new subscription for a member with custom pricing and discount options.
+              Process payment to approve this subscription request.
             </DialogDescription>
           </DialogHeader>
 
@@ -1053,7 +1092,7 @@ const SubscriptionMonitor = () => {
               className="bg-green-600 hover:bg-green-700"
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Subscription
+              Process Payment & Approve
             </Button>
           </DialogFooter>
         </DialogContent>

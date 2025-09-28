@@ -99,42 +99,29 @@ export default function GuestManagement() {
     };
 
     const handleApprove = async (sessionId) => {
-        try {
-            setActionLoading(true);
-            const response = await axios.post(API_URL, {
-                action: 'approve_session',
-                session_id: sessionId
-            }, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.data.success) {
-                toast({
-                    title: "Success",
-                    description: "Guest session approved successfully",
-                });
-                fetchGuestSessions();
-                setShowDetailsDialog(false);
-            } else {
-                toast({
-                    title: "Error",
-                    description: response.data.message || "Failed to approve session",
-                    variant: "destructive"
-                });
-            }
-        } catch (error) {
-            console.error('Error approving session:', error);
+        // Find the session to get payment details
+        const session = guestSessions.find(s => s.id === sessionId);
+        if (!session) {
             toast({
                 title: "Error",
-                description: "Failed to approve session",
+                description: "Session not found",
                 variant: "destructive"
             });
-        } finally {
-            setActionLoading(false);
+            return;
         }
+
+        // Set up payment data for this session
+        setNewGuestData({
+            guest_name: session.guest_name || "",
+            guest_type: session.guest_type || "walkin",
+            amount_paid: session.amount_paid || "",
+            payment_method: "cash",
+            amount_received: "",
+            notes: ""
+        });
+        
+        // Show payment dialog
+        setShowPOSDialog(true);
     };
 
     const handleReject = async (sessionId) => {
@@ -211,60 +198,102 @@ export default function GuestManagement() {
 
         try {
             setActionLoading(true);
-            const response = await axios.post(API_URL, {
-                action: 'create_guest_session',
-                guest_name: newGuestData.guest_name,
-                guest_type: newGuestData.guest_type,
-                amount_paid: totalAmount,
-                payment_method: newGuestData.payment_method,
-                amount_received: receivedAmount,
-                notes: newGuestData.notes
-            }, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
+            
+            // First, find the pending session to approve
+            const pendingSession = guestSessions.find(s => 
+                s.guest_name === newGuestData.guest_name && 
+                s.amount_paid == newGuestData.amount_paid &&
+                (s.computed_status || getComputedStatus(s)) === 'pending'
+            );
 
-            if (response.data.success) {
-                setLastTransaction({
-                    ...response.data,
-                    change_given: change,
-                    total_amount: totalAmount,
-                    payment_method: newGuestData.payment_method
+            if (pendingSession) {
+                // Process payment and approve the existing session
+                const response = await axios.post(API_URL, {
+                    action: 'approve_session_with_payment',
+                    session_id: pendingSession.id,
+                    payment_method: newGuestData.payment_method,
+                    amount_received: receivedAmount,
+                    notes: newGuestData.notes
+                }, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
                 });
-                setReceiptNumber(response.data.receipt_number);
-                setChangeGiven(change);
-                setShowReceipt(true);
-                
-                // Reset form
-                setNewGuestData({
-                    guest_name: "",
-                    guest_type: "walkin",
-                    amount_paid: "",
-                    payment_method: "cash",
-                    amount_received: "",
-                    notes: ""
-                });
-                setShowPOSDialog(false);
-                
-                toast({
-                    title: "Success",
-                    description: "Guest POS session created successfully",
-                });
-                fetchGuestSessions();
+
+                if (response.data.success) {
+                    setLastTransaction({
+                        ...response.data,
+                        change_given: change,
+                        total_amount: totalAmount,
+                        payment_method: newGuestData.payment_method
+                    });
+                    setReceiptNumber(response.data.receipt_number);
+                    setChangeGiven(change);
+                    setShowReceipt(true);
+                    
+                    toast({
+                        title: "Success",
+                        description: "Guest session approved and payment processed successfully",
+                    });
+                } else {
+                    throw new Error(response.data.message || "Failed to approve session with payment");
+                }
             } else {
-                toast({
-                    title: "Error",
-                    description: response.data.message || "Failed to create guest session",
-                    variant: "destructive"
+                // Fallback: create new session if no pending session found
+                const response = await axios.post(API_URL, {
+                    action: 'create_guest_session',
+                    guest_name: newGuestData.guest_name,
+                    guest_type: newGuestData.guest_type,
+                    amount_paid: totalAmount,
+                    payment_method: newGuestData.payment_method,
+                    amount_received: receivedAmount,
+                    notes: newGuestData.notes
+                }, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
                 });
+
+                if (response.data.success) {
+                    setLastTransaction({
+                        ...response.data,
+                        change_given: change,
+                        total_amount: totalAmount,
+                        payment_method: newGuestData.payment_method
+                    });
+                    setReceiptNumber(response.data.receipt_number);
+                    setChangeGiven(change);
+                    setShowReceipt(true);
+                    
+                    toast({
+                        title: "Success",
+                        description: "Guest session created and payment processed successfully",
+                    });
+                } else {
+                    throw new Error(response.data.message || "Failed to create guest session");
+                }
             }
+            
+            // Reset form and close dialogs
+            setNewGuestData({
+                guest_name: "",
+                guest_type: "walkin",
+                amount_paid: "",
+                payment_method: "cash",
+                amount_received: "",
+                notes: ""
+            });
+            setShowPOSDialog(false);
+            setShowDetailsDialog(false);
+            fetchGuestSessions();
+            
         } catch (error) {
-            console.error('Error creating guest POS session:', error);
+            console.error('Error processing guest payment:', error);
             toast({
                 title: "Error",
-                description: "Failed to create guest session",
+                description: error.message || "Failed to process payment",
                 variant: "destructive"
             });
         } finally {
@@ -419,10 +448,6 @@ export default function GuestManagement() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button onClick={() => setShowPOSDialog(true)} variant="default" size="sm">
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Guest POS
-                    </Button>
                     <Button onClick={fetchGuestSessions} variant="outline" size="sm">
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Refresh
@@ -772,9 +797,9 @@ export default function GuestManagement() {
             <Dialog open={showPOSDialog} onOpenChange={setShowPOSDialog}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Create Guest POS Session</DialogTitle>
+                        <DialogTitle>Process Payment & Approve Guest Session</DialogTitle>
                         <DialogDescription>
-                            Create a new guest session with POS payment processing
+                            Process payment to approve this guest session
                         </DialogDescription>
                     </DialogHeader>
                     
@@ -859,7 +884,7 @@ export default function GuestManagement() {
                             Cancel
                         </Button>
                         <Button onClick={handleCreateGuestPOS} disabled={actionLoading}>
-                            {actionLoading ? "Creating..." : "Create Guest POS Session"}
+                            {actionLoading ? "Processing..." : "Process Payment & Approve"}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
