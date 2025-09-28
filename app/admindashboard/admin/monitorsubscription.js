@@ -250,7 +250,7 @@ const SubscriptionMonitor = () => {
   const handleCreateManualSubscription = async () => {
     setMessage(null)
     try {
-      const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
       if (!selectedPlan) {
         throw new Error("Please select a subscription plan")
       }
@@ -259,7 +259,10 @@ const SubscriptionMonitor = () => {
       const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
 
       if (subscriptionForm.payment_method === "cash" && receivedAmount < totalAmount) {
-        setMessage({ type: "error", text: "Amount received cannot be less than total amount" })
+        setMessage({ 
+          type: "error", 
+          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        })
         return
       }
 
@@ -275,7 +278,7 @@ const SubscriptionMonitor = () => {
     setActionLoading("create")
     setMessage(null)
     try {
-      const selectedPlan = subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id)
+      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
       const change = Math.max(0, receivedAmount - totalAmount)

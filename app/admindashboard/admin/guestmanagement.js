@@ -179,8 +179,8 @@ export default function GuestManagement() {
 
         if (newGuestData.payment_method === "cash" && receivedAmount < totalAmount) {
             toast({
-                title: "Error",
-                description: "Amount received cannot be less than total amount",
+                title: "Insufficient Payment",
+                description: `Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`,
                 variant: "destructive"
             });
             return;

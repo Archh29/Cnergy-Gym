@@ -829,6 +829,7 @@ const Sales = () => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="Product">Product</SelectItem>
                         <SelectItem value="Subscription">Subscription</SelectItem>
+                        <SelectItem value="Guest">Guest</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -883,7 +884,11 @@ const Sales = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={sale.sale_type === "Product" ? "outline" : "secondary"}>
+                          <Badge variant={
+                            sale.sale_type === "Product" ? "outline" : 
+                            sale.sale_type === "Guest" ? "default" : 
+                            "secondary"
+                          }>
                             {sale.sale_type}
                           </Badge>
                         </TableCell>
