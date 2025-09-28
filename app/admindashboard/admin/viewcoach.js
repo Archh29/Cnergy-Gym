@@ -120,7 +120,7 @@ const ViewCoach = () => {
   const genderOptions = [
     { id: "1", name: "Male" },
     { id: "2", name: "Female" },
-    { id: "3", name: "Other" },
+    // Note: "Other" option removed until added to database
   ]
 
   const specialtyOptions = [
@@ -175,6 +175,9 @@ const ViewCoach = () => {
     // Date validation
     if (!data.bday) errors.bday = "Date of birth is required"
     if (!data.gender_id) errors.gender_id = "Please select a gender"
+    if (data.gender_id && ![1, 2].includes(Number.parseInt(data.gender_id))) {
+      errors.gender_id = "Please select a valid gender"
+    }
     if (!data.specialty) errors.specialty = "Please specify a specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
     if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
