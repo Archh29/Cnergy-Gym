@@ -66,6 +66,7 @@ const SubscriptionMonitor = () => {
 
   // POS state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [currentSubscriptionId, setCurrentSubscriptionId] = useState(null)
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
@@ -205,6 +206,9 @@ const SubscriptionMonitor = () => {
       return;
     }
 
+    // Store the subscription ID for later use
+    setCurrentSubscriptionId(subscriptionId);
+    
     // Set up payment data for this subscription
     setSubscriptionForm({
       user_id: subscription.user_id,
@@ -283,69 +287,35 @@ const SubscriptionMonitor = () => {
       const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
       const change = Math.max(0, receivedAmount - totalAmount)
 
-      // First, find the pending subscription to approve
-      const pendingSubscription = subscriptions && Array.isArray(subscriptions) ? subscriptions.find(s => 
-        s.user_id == subscriptionForm.user_id && 
-        s.plan_id == subscriptionForm.plan_id &&
-        s.status === 'pending_approval'
-      ) : null;
+      // Use the stored subscription ID
+      if (!currentSubscriptionId) {
+        setMessage({ type: "error", text: "No subscription selected for approval" });
+        return;
+      }
 
-      if (pendingSubscription) {
-        // Process payment and approve the existing subscription
-        const response = await axios.post(`${API_URL}?action=approve_with_payment`, {
-          subscription_id: pendingSubscription.subscription_id,
-          payment_method: subscriptionForm.payment_method,
-          amount_received: receivedAmount,
-          notes: subscriptionForm.notes,
-          approved_by: "Admin"
+      // Process payment and approve the existing subscription
+      const response = await axios.post(`${API_URL}?action=approve_with_payment`, {
+        subscription_id: currentSubscriptionId,
+        payment_method: subscriptionForm.payment_method,
+        amount_received: receivedAmount,
+        notes: subscriptionForm.notes,
+        approved_by: "Admin"
+      });
+
+      if (response.data.success) {
+        setLastTransaction({
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: subscriptionForm.payment_method
         });
-
-        if (response.data.success) {
-          setLastTransaction({
-            ...response.data,
-            change_given: change,
-            total_amount: totalAmount,
-            payment_method: subscriptionForm.payment_method
-          });
-          setReceiptNumber(response.data.receipt_number);
-          setChangeGiven(change);
-          setShowReceipt(true);
-          
-          setMessage({ type: "success", text: "Subscription approved and payment processed successfully!" });
-        } else {
-          throw new Error(response.data.message || "Failed to approve subscription with payment");
-        }
+        setReceiptNumber(response.data.receipt_number);
+        setChangeGiven(change);
+        setShowReceipt(true);
+        
+        setMessage({ type: "success", text: "Subscription approved and payment processed successfully!" });
       } else {
-        // Fallback: create new subscription if no pending subscription found
-        const subscriptionData = {
-          user_id: subscriptionForm.user_id,
-          plan_id: subscriptionForm.plan_id,
-          start_date: subscriptionForm.start_date,
-          discount_type: subscriptionForm.discount_type,
-          amount_paid: totalAmount,
-          payment_method: subscriptionForm.payment_method,
-          amount_received: receivedAmount,
-          notes: subscriptionForm.notes,
-          created_by: "admin",
-        }
-
-        const response = await axios.post(`${API_URL}?action=create_manual`, subscriptionData)
-
-        if (response.data.success) {
-          setLastTransaction({
-            ...response.data,
-            change_given: change,
-            total_amount: totalAmount,
-            payment_method: subscriptionForm.payment_method
-          })
-          setReceiptNumber(response.data.receipt_number)
-          setChangeGiven(change)
-          setShowReceipt(true)
-          
-          setMessage({ type: "success", text: "Subscription created and payment processed successfully!" })
-        } else {
-          throw new Error(response.data.message || "Failed to create subscription")
-        }
+        throw new Error(response.data.message || "Failed to approve subscription with payment");
       }
       
       setIsCreateSubscriptionDialogOpen(false)
