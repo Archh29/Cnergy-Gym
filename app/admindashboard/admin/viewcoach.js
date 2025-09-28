@@ -178,6 +178,19 @@ const ViewCoach = () => {
     if (!data.specialty) errors.specialty = "Please specify a specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
     if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
+    
+    // Package sessions validation
+    if (data.package_sessions && (isNaN(data.package_sessions) || data.package_sessions < 1)) {
+      errors.package_sessions = "Package sessions must be a positive number"
+    }
+    
+    // Rate validations
+    if (data.package_rate && (isNaN(data.package_rate) || data.package_rate < 0)) {
+      errors.package_rate = "Package rate must be a positive number"
+    }
+    if (data.monthly_rate && (isNaN(data.monthly_rate) || data.monthly_rate < 0)) {
+      errors.monthly_rate = "Monthly rate must be a positive number"
+    }
 
     return errors
   }
@@ -1120,8 +1133,12 @@ const ViewCoach = () => {
                     placeholder="8000.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
+                    className={validationErrors.monthly_rate ? "border-red-500" : ""}
                   />
                   <p className="text-xs text-gray-500">18 sessions per month</p>
+                  {validationErrors.monthly_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.monthly_rate}</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1135,7 +1152,11 @@ const ViewCoach = () => {
                     placeholder="2000.00"
                     value={formData.package_rate}
                     onChange={handleInputChange}
+                    className={validationErrors.package_rate ? "border-red-500" : ""}
                   />
+                  {validationErrors.package_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.package_rate}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="package_sessions">Package Sessions</Label>
@@ -1146,8 +1167,12 @@ const ViewCoach = () => {
                     placeholder="18"
                     value={formData.package_sessions}
                     onChange={handleInputChange}
+                    className={validationErrors.package_sessions ? "border-red-500" : ""}
                   />
                   <p className="text-xs text-gray-500">Default: 18 sessions</p>
+                  {validationErrors.package_sessions && (
+                    <p className="text-sm text-red-500">{validationErrors.package_sessions}</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1402,8 +1427,12 @@ const ViewCoach = () => {
                     placeholder="8000.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
+                    className={validationErrors.monthly_rate ? "border-red-500" : ""}
                   />
                   <p className="text-xs text-gray-500">18 sessions per month</p>
+                  {validationErrors.monthly_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.monthly_rate}</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1417,7 +1446,11 @@ const ViewCoach = () => {
                     placeholder="2000.00"
                     value={formData.package_rate}
                     onChange={handleInputChange}
+                    className={validationErrors.package_rate ? "border-red-500" : ""}
                   />
+                  {validationErrors.package_rate && (
+                    <p className="text-sm text-red-500">{validationErrors.package_rate}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-package_sessions">Package Sessions</Label>
@@ -1428,8 +1461,12 @@ const ViewCoach = () => {
                     placeholder="18"
                     value={formData.package_sessions}
                     onChange={handleInputChange}
+                    className={validationErrors.package_sessions ? "border-red-500" : ""}
                   />
                   <p className="text-xs text-gray-500">Default: 18 sessions</p>
+                  {validationErrors.package_sessions && (
+                    <p className="text-sm text-red-500">{validationErrors.package_sessions}</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
