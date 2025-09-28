@@ -333,6 +333,13 @@ const Sales = () => {
     return change
   }
 
+  // Calculate change whenever amount received or cart changes
+  useEffect(() => {
+    if (paymentMethod === "cash" && amountReceived) {
+      calculateChange()
+    }
+  }, [amountReceived, cart, paymentMethod])
+
 
   const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.price || !newProduct.stock) {
@@ -746,15 +753,12 @@ const Sales = () => {
                               type="number"
                               step="0.01"
                               value={amountReceived}
-                              onChange={(e) => {
-                                setAmountReceived(e.target.value)
-                                calculateChange()
-                              }}
+                              onChange={(e) => setAmountReceived(e.target.value)}
                               placeholder="Enter amount received"
                             />
                             {amountReceived && (
                               <div className="text-sm text-muted-foreground">
-                                Change: {formatCurrency(calculateChange())}
+                                Change: {formatCurrency(changeGiven)}
                               </div>
                             )}
                           </div>
