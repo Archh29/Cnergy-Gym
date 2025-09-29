@@ -209,8 +209,15 @@ const SubscriptionMonitor = () => {
     console.log("Pending subscriptions length:", pendingSubscriptions ? pendingSubscriptions.length : "null/undefined");
     console.log("Available subscription plans:", subscriptionPlans);
     
-    // Find the subscription to get details
-    const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
+    // Find the subscription to get details - try pendingSubscriptions first, then fallback to subscriptions
+    let subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id == subscriptionId) : null;
+    
+    // If not found in pendingSubscriptions, try the main subscriptions array
+    if (!subscription) {
+      console.log("Not found in pendingSubscriptions, trying main subscriptions array...");
+      subscription = subscriptions && Array.isArray(subscriptions) ? subscriptions.find(s => s.id == subscriptionId) : null;
+    }
+    
     console.log("Found subscription:", subscription);
     console.log("Subscription plan_id:", subscription ? subscription.plan_id : "N/A");
     console.log("Subscription plan_name:", subscription ? subscription.plan_name : "N/A");
