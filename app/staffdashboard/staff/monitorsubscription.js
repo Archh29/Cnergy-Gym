@@ -223,22 +223,21 @@ const SubscriptionMonitor = () => {
       return;
     }
 
-    // Find the subscription plan to get price - try both subscriptionPlans and fetch from API if needed
-    let plan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find(p => p.id == subscription.plan_id) : null;
-    console.log("Found plan in subscriptionPlans:", plan);
+    // Use the plan data directly from the subscription (since it's already included in the pending subscription data)
+    let plan = {
+      id: subscription.plan_id,
+      plan_name: subscription.plan_name,
+      price: subscription.price,
+      discounted_price: subscription.price,
+      duration_months: subscription.duration_months || 1
+    };
+    console.log("Using plan data from subscription:", plan);
     
-    // If plan not found in current array, try to fetch it from the subscription data itself
-    if (!plan) {
-      console.log("Plan not found in subscriptionPlans, using subscription data");
-      // Use the plan data from the subscription itself
-      plan = {
-        id: subscription.plan_id || subscription.id, // fallback to subscription.id if plan_id is missing
-        plan_name: subscription.plan_name,
-        price: subscription.price,
-        discounted_price: subscription.price,
-        duration_months: subscription.duration_months || 1
-      };
-      console.log("Created plan from subscription data:", plan);
+    // Also try to find in subscriptionPlans array as backup
+    const planFromArray = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find(p => p.id == subscription.plan_id) : null;
+    if (planFromArray) {
+      console.log("Found plan in subscriptionPlans array, using that instead:", planFromArray);
+      plan = planFromArray;
     }
 
     // Final check - if we still don't have a plan, show error
