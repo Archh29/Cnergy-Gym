@@ -405,6 +405,7 @@ const CoachAssignments = () => {
                       <TableRow>
                         <TableHead>Member</TableHead>
                         <TableHead>Requested Coach</TableHead>
+                        <TableHead>Rate Type</TableHead>
                         <TableHead>Coach Approved</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
@@ -412,7 +413,7 @@ const CoachAssignments = () => {
                     <TableBody>
                       {filteredRequests.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                             {pendingRequests.length === 0 ? "No pending requests" : "No requests match your search"}
                           </TableCell>
                         </TableRow>
@@ -443,6 +444,20 @@ const CoachAssignments = () => {
                                     <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                                     {request.coach?.rating || "N/A"}
                                   </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {request.rateType === 'monthly' && `₱${request.coach?.monthly_rate || 0}/month`}
+                                    {request.rateType === 'package' && `₱${request.coach?.package_rate || 0}/package`}
+                                    {request.rateType === 'per_session' && `₱${request.coach?.per_session_rate || 0}/session`}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                <div className="font-medium capitalize">{request.rateType || 'monthly'}</div>
+                                <div className="text-muted-foreground">
+                                  {request.remainingSessions > 0 && `${request.remainingSessions} sessions left`}
+                                  {request.expiresAt && `Expires: ${new Date(request.expiresAt).toLocaleDateString()}`}
                                 </div>
                               </div>
                             </TableCell>
@@ -492,6 +507,7 @@ const CoachAssignments = () => {
                       <TableRow>
                         <TableHead>Member</TableHead>
                         <TableHead>Assigned Coach</TableHead>
+                        <TableHead>Rate Type</TableHead>
                         <TableHead>Assigned Date</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
@@ -499,7 +515,7 @@ const CoachAssignments = () => {
                     <TableBody>
                       {filteredMembers.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                             {assignedMembers.length === 0 ? "No assigned members" : "No members match your search"}
                           </TableCell>
                         </TableRow>
@@ -519,6 +535,15 @@ const CoachAssignments = () => {
                               </div>
                             </TableCell>
                             <TableCell className="font-medium">{assignment.coach?.name || "Unknown"}</TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                <div className="font-medium capitalize">{assignment.rateType || 'monthly'}</div>
+                                <div className="text-muted-foreground">
+                                  {assignment.remainingSessions > 0 && `${assignment.remainingSessions} sessions left`}
+                                  {assignment.expiresAt && `Expires: ${new Date(assignment.expiresAt).toLocaleDateString()}`}
+                                </div>
+                              </div>
+                            </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {formatDate(assignment.assignedAt)}
                             </TableCell>
@@ -678,6 +703,20 @@ const CoachAssignments = () => {
                           ))}
                         </div>
                       </div>
+                      <div className="grid grid-cols-3 gap-4 mt-4">
+                        <div className="text-center p-3 bg-blue-50 rounded-lg">
+                          <div className="text-lg font-bold text-blue-600">₱{selectedRequest.coach?.monthly_rate || 0}</div>
+                          <div className="text-sm text-blue-800">Monthly Rate</div>
+                        </div>
+                        <div className="text-center p-3 bg-green-50 rounded-lg">
+                          <div className="text-lg font-bold text-green-600">₱{selectedRequest.coach?.package_rate || 0}</div>
+                          <div className="text-sm text-green-800">Package Rate</div>
+                        </div>
+                        <div className="text-center p-3 bg-purple-50 rounded-lg">
+                          <div className="text-lg font-bold text-purple-600">₱{selectedRequest.coach?.per_session_rate || 0}</div>
+                          <div className="text-sm text-purple-800">Per Session</div>
+                        </div>
+                      </div>
                       {selectedRequest.coach?.bio && (
                         <div>
                           <span className="font-medium">Bio:</span>
@@ -697,6 +736,19 @@ const CoachAssignments = () => {
                   <div>
                     <span className="font-medium">Coach approved:</span> {formatDate(selectedRequest.coachApprovedAt)}
                   </div>
+                  <div>
+                    <span className="font-medium">Rate type:</span> <span className="capitalize">{selectedRequest.rateType || 'monthly'}</span>
+                  </div>
+                  {selectedRequest.remainingSessions > 0 && (
+                    <div>
+                      <span className="font-medium">Remaining sessions:</span> {selectedRequest.remainingSessions}
+                    </div>
+                  )}
+                  {selectedRequest.expiresAt && (
+                    <div>
+                      <span className="font-medium">Expires:</span> {new Date(selectedRequest.expiresAt).toLocaleDateString()}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
