@@ -325,15 +325,16 @@ const SubscriptionMonitor = () => {
   const handleCreateManualSubscription = async () => {
     setMessage(null)
     try {
-      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-      if (!selectedPlan) {
-        throw new Error("Please select a subscription plan")
-      }
+      console.log("=== PROCESS PAYMENT BUTTON CLICKED ===");
+      console.log("Current subscription form:", subscriptionForm);
+      console.log("Payment method:", paymentMethod);
+      console.log("Amount received:", amountReceived);
+      console.log("Current subscription ID:", currentSubscriptionId);
 
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
-      const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
+      const receivedAmount = parseFloat(amountReceived) || totalAmount
 
-      if (subscriptionForm.payment_method === "cash" && receivedAmount < totalAmount) {
+      if (paymentMethod === "cash" && receivedAmount < totalAmount) {
         setMessage({ 
           type: "error", 
           text: `Insufficient Payment: Amount received (â‚±${receivedAmount.toFixed(2)}) is less than required amount (â‚±${totalAmount.toFixed(2)}). Please collect â‚±${(totalAmount - receivedAmount).toFixed(2)} more.` 
@@ -341,7 +342,8 @@ const SubscriptionMonitor = () => {
         return
       }
 
-      setShowConfirmDialog(true)
+      // Call the confirmation function directly
+      await confirmSubscriptionTransaction()
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to create subscription"
       setMessage({ type: "error", text: errorMessage })
