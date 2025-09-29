@@ -271,6 +271,13 @@ const SubscriptionMonitor = () => {
           amount_paid: sub.amount_paid || sub.price || "0"
         }));
         
+        console.log("Updated subscription form:", {
+          user_id: sub.user_id,
+          plan_id: sub.plan_id,
+          plan_name: sub.plan_name,
+          amount_paid: sub.amount_paid || sub.price || "0"
+        });
+        
         // Set user info for display
         setSelectedUserInfo({
           fname: sub.fname,
@@ -975,8 +982,6 @@ const SubscriptionMonitor = () => {
               onClick={handleCreateManualSubscription} 
               disabled={
                 actionLoading === "create" ||
-                !subscriptionForm.plan_id ||
-                !subscriptionForm.user_id ||
                 !subscriptionForm.amount_paid ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
