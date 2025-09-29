@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import axios from "axios"
@@ -82,6 +82,17 @@ const SubscriptionMonitor = () => {
     fetchAvailableUsers()
   }, [])
 
+  // Calculate change when amount received changes
+  useEffect(() => {
+    if (amountReceived && subscriptionForm.amount_paid) {
+      const received = parseFloat(amountReceived) || 0;
+      const amount = parseFloat(subscriptionForm.amount_paid) || 0;
+      setChangeGiven(received - amount);
+    } else {
+      setChangeGiven(0);
+    }
+  }, [amountReceived, subscriptionForm.amount_paid]);
+
   const fetchAllData = async () => {
     setLoading(true)
     try {
@@ -126,13 +137,13 @@ const SubscriptionMonitor = () => {
       console.log("Subscription plans API response:", response.data);
       if (response.data.success) {
         setSubscriptionPlans(response.data.plans)
-        console.log("✅ Successfully set subscription plans:", response.data.plans)
+        console.log("âœ… Successfully set subscription plans:", response.data.plans)
       } else {
-        console.error("❌ Failed to fetch subscription plans:", response.data)
+        console.error("âŒ Failed to fetch subscription plans:", response.data)
         setMessage({ type: "error", text: "Failed to load subscription plans" })
       }
     } catch (error) {
-      console.error("❌ Error fetching subscription plans:", error)
+      console.error("âŒ Error fetching subscription plans:", error)
       setMessage({ type: "error", text: "Failed to load subscription plans" })
     }
   }
@@ -164,7 +175,7 @@ const SubscriptionMonitor = () => {
       
       // Check if response.data exists and has the expected structure
       if (response.data && response.data.success) {
-        console.log("✅ API call successful")
+        console.log("âœ… API call successful")
         console.log("Available plans:", response.data.plans)
         console.log("Active subscriptions:", response.data.active_subscriptions)
         console.log("Has active member fee:", response.data.has_active_member_fee)
@@ -177,7 +188,7 @@ const SubscriptionMonitor = () => {
           hasActiveMemberFee: response.data.has_active_member_fee || false
         }
       } else {
-        console.error("❌ API response not successful or no data:", response.data)
+        console.error("âŒ API response not successful or no data:", response.data)
         setSubscriptionPlans([])
         return {
           availablePlans: [],
@@ -186,7 +197,7 @@ const SubscriptionMonitor = () => {
         }
       }
     } catch (error) {
-      console.error("❌ Error fetching available plans:", error)
+      console.error("âŒ Error fetching available plans:", error)
       console.error("Error message:", error.message)
       console.error("Error response:", error.response)
       if (error.response) {
@@ -209,11 +220,20 @@ const SubscriptionMonitor = () => {
     // Store the subscription ID for later use
     setCurrentSubscriptionId(subscriptionId);
     
+    // Auto-generate receipt number with format SUB202509284924
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hour = String(now.getHours()).padStart(2, '0');
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
+    
     // Reset POS fields
     setPaymentMethod("cash");
     setAmountReceived("");
     setChangeGiven(0);
-    setReceiptNumber("");
+    setReceiptNumber(autoReceiptNumber);
     setTransactionNotes("");
     
     // Set up basic form data - we'll fetch the full details when the modal opens
@@ -247,8 +267,16 @@ const SubscriptionMonitor = () => {
           ...prev,
           user_id: sub.user_id,
           plan_id: sub.plan_id,
+          plan_name: sub.plan_name,
           amount_paid: sub.amount_paid || sub.price || "0"
         }));
+        
+        // Set user info for display
+        setSelectedUserInfo({
+          fname: sub.fname,
+          lname: sub.lname,
+          email: sub.email
+        });
         
         return sub;
       } else {
@@ -301,7 +329,7 @@ const SubscriptionMonitor = () => {
       if (subscriptionForm.payment_method === "cash" && receivedAmount < totalAmount) {
         setMessage({ 
           type: "error", 
-          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+          text: `Insufficient Payment: Amount received (â‚±${receivedAmount.toFixed(2)}) is less than required amount (â‚±${totalAmount.toFixed(2)}). Please collect â‚±${(totalAmount - receivedAmount).toFixed(2)} more.` 
         })
         return
       }
@@ -849,11 +877,10 @@ const SubscriptionMonitor = () => {
         </CardContent>
       </Card>
 
-      {/* Create Manual Subscription Dialog */}
+      {/* POS Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
         <DialogContent 
-          className="sm:max-w-lg h-[80vh] flex flex-col" 
-          aria-describedby="create-subscription-description"
+          className="max-w-2xl" 
           onOpenAutoFocus={async (e) => {
             // Fetch subscription details when modal opens
             if (currentSubscriptionId) {
@@ -862,312 +889,90 @@ const SubscriptionMonitor = () => {
             }
           }}
         >
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="flex items-center">
-              <CreditCard className="mr-2 h-5 w-5" />
-              POS - Process Payment & Approve Subscription
-            </DialogTitle>
-            <DialogDescription id="create-subscription-description">
-              Process payment through POS system to approve this subscription request.
+          <DialogHeader>
+            <DialogTitle>Process Payment & Approve Subscription</DialogTitle>
+            <DialogDescription>
+              Process payment to approve this subscription request
             </DialogDescription>
           </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-            {/* User Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Select Member *</label>
-              <Select
-                value={subscriptionForm.user_id}
-                onValueChange={handleUserSelection}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableUsers.filter(user => user.id && user.fname && user.lname).map((user) => (
-                    <SelectItem key={user.id} value={user.id.toString()}>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4" />
-                        <span>
-                          {user.fname} {user.lname} - {user.email}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedUserInfo && (
-                <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <h4 className="text-sm font-medium text-blue-900 mb-2">Member Subscription Status</h4>
-                  <div className="text-sm text-blue-800 space-y-1">
-                    <p><strong>Active Member Fee:</strong> {selectedUserInfo.hasActiveMemberFee ? "Yes" : "No"}</p>
-                    <p><strong>Active Subscriptions:</strong> {selectedUserInfo.existingSubscriptions?.length || 0}</p>
-                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length > 0 && (
-                      <div className="mt-2">
-                        <p className="font-medium">Current Active Plans:</p>
-                        <ul className="list-disc list-inside ml-2">
-                          {selectedUserInfo.existingSubscriptions.map((sub, index) => (
-                            <li key={index}>
-                              {sub.plan_name || 'Unknown Plan'} - Expires: {sub.end_date ? new Date(sub.end_date).toLocaleDateString() : 'N/A'}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {selectedUserInfo.existingSubscriptions && selectedUserInfo.existingSubscriptions.length === 0 && (
-                      <p className="text-green-600 font-medium">No active subscriptions - can purchase any available plan</p>
-                    )}
-                  </div>
-                </div>
-              )}
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Member Name *</Label>
+                <Input
+                  value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
+                  disabled
+                  placeholder="Loading member details..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Plan Name</Label>
+                <Input
+                  value={subscriptionForm.plan_name || 'Loading...'}
+                  disabled
+                  placeholder="Loading plan details..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Amount to Pay (â‚±) *</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={subscriptionForm.amount_paid}
+                  onChange={(e) => setSubscriptionForm(prev => ({ ...prev, amount_paid: e.target.value }))}
+                  placeholder="Enter amount"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Payment Method</Label>
+                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="digital">Digital Payment</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Plan Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Subscription Plan *</label>
-              <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a subscription plan" />
-                </SelectTrigger>
-                <SelectContent>
-                  {!subscriptionPlans || subscriptionPlans.length === 0 ? (
-                    <div className="p-2 text-sm text-muted-foreground">
-                      {subscriptionForm.user_id ? "No available plans for this member" : "Please select a member first"}
-                    </div>
-                  ) : (
-                    subscriptionPlans.filter(plan => plan.id && plan.plan_name).map((plan) => (
-                      <SelectItem key={plan.id} value={plan.id.toString()}>
-                        <div className="flex justify-between items-center w-full">
-                          <div>
-                            <span>{plan.plan_name || 'Unknown Plan'}</span>
-                            {plan.id === 2 && (
-                              <span className="ml-2 text-xs text-blue-600">(Requires active member fee)</span>
-                            )}
-                            {plan.id === 3 && (
-                              <span className="ml-2 text-xs text-green-600">(Standalone monthly)</span>
-                            )}
-                          </div>
-                          <span className="ml-2 text-muted-foreground">
-                            ₱{plan.discounted_price || plan.price || 0}/{plan.duration_months || 1} month{(plan.duration_months || 1) > 1 ? "s" : ""}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-              {selectedUserInfo && (!subscriptionPlans || subscriptionPlans.length === 0) && (
-                <div className="text-sm text-red-600 mt-1 p-2 bg-red-50 rounded border border-red-200">
-                  <p className="font-medium">No available subscription plans for this member.</p>
-                  <p>Possible reasons:</p>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Already has active subscriptions to all plans</li>
-                    <li>Has Member Fee but trying to access Non-Member Plan</li>
-                    <li>Doesn't have Member Fee but trying to access Member Plan Monthly</li>
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            {/* Start Date */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Start Date *</label>
-              <Input
-                type="date"
-                value={subscriptionForm.start_date}
-                onChange={(e) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    start_date: e.target.value,
-                  }))
-                }
-              />
-            </div>
-
-            {/* Discount Type */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Discount Type *</label>
-              <Select
-                value={subscriptionForm.discount_type}
-                onValueChange={handleDiscountTypeChange}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Discount</SelectItem>
-                  <SelectItem value="student">Student Discount</SelectItem>
-                  <SelectItem value="senior">Senior Discount</SelectItem>
-                  <SelectItem value="promo">Promotional Discount</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Amount Paid */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Amount Paid *</label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={subscriptionForm.amount_paid}
-                onChange={(e) =>
-                  setSubscriptionForm((prev) => ({
-                    ...prev,
-                    amount_paid: e.target.value,
-                  }))
-                }
-                disabled={subscriptionForm.discount_type === "none"}
-              />
-              {subscriptionForm.plan_id && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {subscriptionForm.discount_type === "none" 
-                    ? `Plan price: ₱${subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.discounted_price || subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id)?.price || "0.00") : "0.00"}`
-                    : "Enter the actual amount charged to the customer"
-                  }
-                </p>
-              )}
-            </div>
-
-            {/* POS Payment Section */}
-            <div className="border-t pt-4">
-              <h4 className="text-sm font-medium mb-3 flex items-center">
-                <Receipt className="mr-2 h-4 w-4" />
-                POS Payment Processing
-              </h4>
-              
-              <div className="space-y-4">
-                {/* Payment Method */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Payment Method *</label>
-                  <Select 
-                    value={paymentMethod} 
-                    onValueChange={setPaymentMethod}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="digital">Digital Payment</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Cash Payment Fields */}
-                {paymentMethod === "cash" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Amount Received (₱)</label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={amountReceived}
-                      onChange={(e) => setAmountReceived(e.target.value)}
-                      placeholder="Enter amount received from customer"
-                    />
-                    {amountReceived && (
-                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                        <div className="flex justify-between text-sm">
-                          <span>Total Amount:</span>
-                          <span className="font-medium">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Amount Received:</span>
-                          <span className="font-medium">₱{parseFloat(amountReceived || 0).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
-                          <span>Change Given:</span>
-                          <span className={changeGiven >= 0 ? "text-green-600" : "text-red-600"}>
-                            ₱{changeGiven.toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+            {paymentMethod === "cash" && (
+              <div className="space-y-2">
+                <Label>Amount Received (â‚±)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={amountReceived}
+                  onChange={(e) => setAmountReceived(e.target.value)}
+                  placeholder="Enter amount received"
+                />
+                {amountReceived && (
+                  <div className="text-sm text-muted-foreground">
+                    Change: â‚±{changeGiven.toFixed(2)}
                   </div>
                 )}
-
-                {/* Receipt Number */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Receipt Number</label>
-                  <Input
-                    value={receiptNumber}
-                    onChange={(e) => setReceiptNumber(e.target.value)}
-                    placeholder="Auto-generated if left empty"
-                  />
-                </div>
-
-                {/* Transaction Notes */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Transaction Notes</label>
-                  <Textarea
-                    value={transactionNotes}
-                    onChange={(e) => setTransactionNotes(e.target.value)}
-                    placeholder="Add notes for this transaction (optional)"
-                    rows={3}
-                  />
-                </div>
-              </div>
-            </div>
-
-
-            {/* Subscription Preview */}
-            {subscriptionForm.plan_id && subscriptionForm.user_id && (
-              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                <h4 className="font-medium text-blue-900 mb-2">Subscription Preview</h4>
-                {(() => {
-                  const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((p) => p.id == subscriptionForm.plan_id) : null
-                  const selectedUser = availableUsers && Array.isArray(availableUsers) ? availableUsers.find((u) => u.id == subscriptionForm.user_id) : null
-                  if (!selectedPlan || !selectedUser) return null
-
-                  const startDate = new Date(subscriptionForm.start_date)
-                  const endDate = new Date(startDate)
-                  endDate.setMonth(endDate.getMonth() + selectedPlan.duration_months)
-
-                  return (
-                    <div className="text-sm text-blue-800 space-y-1">
-                      <p>
-                        <strong>Member:</strong> {selectedUser.fname} {selectedUser.lname}
-                      </p>
-                      <p>
-                        <strong>Plan:</strong> {selectedPlan.plan_name}
-                      </p>
-                      <p>
-                        <strong>Duration:</strong> {selectedPlan.duration_months} month
-                        {selectedPlan.duration_months > 1 ? "s" : ""}
-                      </p>
-                      <p>
-                        <strong>Start Date:</strong> {startDate.toLocaleDateString()}
-                      </p>
-                      <p>
-                        <strong>End Date:</strong> {endDate.toLocaleDateString()}
-                      </p>
-                      <p>
-                        <strong>Discount Type:</strong> {subscriptionForm.discount_type === "none" ? "No Discount" : subscriptionForm.discount_type.charAt(0).toUpperCase() + subscriptionForm.discount_type.slice(1)}
-                      </p>
-                      <p>
-                        <strong>Amount Paid:</strong> ₱{subscriptionForm.amount_paid || selectedPlan.discounted_price || selectedPlan.price}
-                      </p>
-                    </div>
-                  )
-                })()}
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Input
+                value={transactionNotes}
+                onChange={(e) => setTransactionNotes(e.target.value)}
+                placeholder="Add notes for this transaction"
+              />
+            </div>
           </div>
 
-          <DialogFooter className="flex justify-end gap-2 border-t pt-4 flex-shrink-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateSubscriptionDialogOpen(false)
-                resetSubscriptionForm()
-              }}
-              disabled={actionLoading === "create"}
-            >
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateSubscriptionDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateManualSubscription}
+            <Button 
+              onClick={handleCreateManualSubscription} 
               disabled={
                 actionLoading === "create" ||
                 !subscriptionForm.plan_id ||
@@ -1175,212 +980,9 @@ const SubscriptionMonitor = () => {
                 !subscriptionForm.amount_paid ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
-              className="bg-green-600 hover:bg-green-700"
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Receipt className="mr-2 h-4 w-4" />
-              Process POS Payment & Approve
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Decline Dialog */}
-      <Dialog open={declineDialog.open} onOpenChange={(open) => setDeclineDialog({ open, subscription: null })}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Decline Subscription Request</DialogTitle>
-          </DialogHeader>
-          {declineDialog.subscription && (
-            <div className="space-y-4">
-              <div className="p-4 bg-muted/50 rounded-lg">
-                <p>
-                  <strong>Member:</strong> {`${declineDialog.subscription.fname} ${declineDialog.subscription.lname}`}
-                </p>
-                <p>
-                  <strong>Plan:</strong> {declineDialog.subscription.plan_name}
-                </p>
-                <p>
-                  <strong>Price:</strong> {formatCurrency(declineDialog.subscription.price)}/month
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Reason for decline (optional)</label>
-                <Textarea
-                  value={declineReason}
-                  onChange={(e) => setDeclineReason(e.target.value)}
-                  placeholder="Enter reason for declining this subscription request..."
-                  className="mt-2"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeclineDialog({ open: false, subscription: null })}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDecline} disabled={actionLoading !== null}>
-              {actionLoading !== null ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Declining...
-                </>
-              ) : (
-                "Decline Request"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Confirmation Dialog */}
-      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm Subscription Transaction</DialogTitle>
-            <DialogDescription>Please review the transaction details before proceeding</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-medium">Subscription Details:</h4>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span>Member:</span>
-                  <span>
-                    {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname || '') : ''} {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname || '') : ''}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Plan:</span>
-                  <span>
-                    {subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name || '') : ''}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Start Date:</span>
-                  <span>{subscriptionForm.start_date}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="border-t pt-2 space-y-2">
-              <div className="flex justify-between font-medium">
-                <span>Total Amount:</span>
-                <span>₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Payment Method:</span>
-                <span className="capitalize">{paymentMethod}</span>
-              </div>
-              {paymentMethod === "cash" && (
-                <>
-                  <div className="flex justify-between">
-                    <span>Amount Received:</span>
-                    <span>₱{parseFloat(amountReceived || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-medium">
-                    <span>Change Given:</span>
-                    <span className={changeGiven >= 0 ? "text-green-600" : "text-red-600"}>
-                      ₱{changeGiven.toFixed(2)}
-                    </span>
-                  </div>
-                </>
-              )}
-              {receiptNumber && (
-                <div className="flex justify-between">
-                  <span>Receipt Number:</span>
-                  <span className="font-mono text-sm">{receiptNumber}</span>
-                </div>
-              )}
-              {transactionNotes && (
-                <div className="pt-2">
-                  <p className="text-sm">
-                    <strong>Notes:</strong> {transactionNotes}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmSubscriptionTransaction} disabled={actionLoading === "create"}>
-              {actionLoading === "create" ? "Processing..." : "Confirm Transaction"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Receipt Dialog */}
-      <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Subscription Receipt</DialogTitle>
-            <DialogDescription>Subscription created successfully</DialogDescription>
-          </DialogHeader>
-          {lastTransaction && (
-            <div className="space-y-4">
-              <div className="text-center border-b pb-4">
-                <h3 className="text-lg font-bold">CNERGY GYM</h3>
-                <p className="text-sm text-muted-foreground">Subscription Receipt</p>
-                <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
-                <p className="text-xs text-muted-foreground">
-                  Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span>Member:</span>
-                  <span className="font-medium">
-                    {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.fname || '') : ''} {availableUsers && Array.isArray(availableUsers) ? (availableUsers.find(u => u.id == subscriptionForm.user_id)?.lname || '') : ''}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Plan:</span>
-                  <span className="font-medium">
-                    {subscriptionPlans && Array.isArray(subscriptionPlans) ? (subscriptionPlans.find(p => p.id == subscriptionForm.plan_id)?.plan_name || '') : ''}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Payment Method:</span>
-                  <span className="font-medium capitalize">{lastTransaction.payment_method}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total Amount:</span>
-                  <span className="font-medium">₱{lastTransaction.total_amount}</span>
-                </div>
-                {lastTransaction.payment_method === "cash" && (
-                  <>
-                    <div className="flex justify-between">
-                      <span>Amount Received:</span>
-                      <span>₱{lastTransaction.amount_received || lastTransaction.total_amount}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Change Given:</span>
-                      <span className="font-medium text-green-600">₱{lastTransaction.change_given || changeGiven}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {transactionNotes && (
-                <div className="border-t pt-2">
-                  <p className="text-sm">
-                    <strong>Notes:</strong> {transactionNotes}
-                  </p>
-                </div>
-              )}
-
-              <div className="text-center pt-4">
-                <p className="text-sm text-muted-foreground">Thank you for choosing CNERGY!</p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setShowReceipt(false)} className="w-full">
-              Close
+              Process Payment & Approve
             </Button>
           </DialogFooter>
         </DialogContent>
