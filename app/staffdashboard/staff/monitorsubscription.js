@@ -76,6 +76,7 @@ const SubscriptionMonitor = () => {
   const [lastTransaction, setLastTransaction] = useState(null)
 
   useEffect(() => {
+    console.log("=== COMPONENT INITIALIZATION ===");
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
@@ -106,9 +107,12 @@ const SubscriptionMonitor = () => {
 
   const fetchPendingSubscriptions = async () => {
     try {
+      console.log("=== FETCHING PENDING SUBSCRIPTIONS ===");
       const response = await axios.get(`${API_URL}?action=pending`)
+      console.log("Pending subscriptions response:", response.data);
       if (response.data.success) {
         setPendingSubscriptions(response.data.data)
+        console.log("Set pending subscriptions:", response.data.data);
       }
     } catch (error) {
       console.error("Error fetching pending subscriptions:", error)
@@ -201,12 +205,24 @@ const SubscriptionMonitor = () => {
     console.log("Pending subscriptions:", pendingSubscriptions);
     console.log("Available subscription plans:", subscriptionPlans);
     
+    // If subscription plans are not loaded, try to load them first
+    if (!subscriptionPlans || subscriptionPlans.length === 0) {
+      console.log("Subscription plans not loaded, fetching them now...");
+      await fetchSubscriptionPlans();
+    }
+    
     // Find the subscription to get details
     const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
     console.log("Found subscription:", subscription);
     
     if (!subscription) {
       setMessage({ type: "error", text: "Subscription not found" });
+      return;
+    }
+
+    // Check if we have the required fields
+    if (!subscription.plan_id && !subscription.plan_name) {
+      setMessage({ type: "error", text: "Subscription plan information is missing" });
       return;
     }
 
@@ -219,7 +235,7 @@ const SubscriptionMonitor = () => {
       console.log("Plan not found in subscriptionPlans, using subscription data");
       // Use the plan data from the subscription itself
       plan = {
-        id: subscription.plan_id,
+        id: subscription.plan_id || subscription.id, // fallback to subscription.id if plan_id is missing
         plan_name: subscription.plan_name,
         price: subscription.price,
         discounted_price: subscription.price,
@@ -228,8 +244,10 @@ const SubscriptionMonitor = () => {
       console.log("Created plan from subscription data:", plan);
     }
 
-    if (!plan) {
-      setMessage({ type: "error", text: "Subscription plan not found" });
+    // Final check - if we still don't have a plan, show error
+    if (!plan || (!plan.id && !plan.plan_name)) {
+      console.error("No plan data available:", { plan, subscription });
+      setMessage({ type: "error", text: "Subscription plan not found - missing plan data" });
       return;
     }
 
@@ -239,7 +257,7 @@ const SubscriptionMonitor = () => {
     // Set up payment data for this subscription
     setSubscriptionForm({
       user_id: subscription.user_id,
-      plan_id: subscription.plan_id,
+      plan_id: plan.id || subscription.plan_id,
       start_date: new Date().toISOString().split("T")[0],
       discount_type: "none",
       amount_paid: plan.price || plan.discounted_price || subscription.price || "0",
@@ -250,7 +268,7 @@ const SubscriptionMonitor = () => {
     
     console.log("Set subscription form:", {
       user_id: subscription.user_id,
-      plan_id: subscription.plan_id,
+      plan_id: plan.id || subscription.plan_id,
       amount_paid: plan.price || plan.discounted_price || subscription.price || "0"
     });
     
@@ -601,6 +619,31 @@ const SubscriptionMonitor = () => {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
+              <Button onClick={() => {
+                console.log("=== MANUAL DEBUG TEST ===");
+                console.log("Pending subscriptions:", pendingSubscriptions);
+                console.log("Subscription plans:", subscriptionPlans);
+                console.log("Available users:", availableUsers);
+              }} variant="outline" size="sm">
+                Debug Data
+              </Button>
+              <Button onClick={async () => {
+                console.log("=== API TEST ===");
+                try {
+                  const response = await axios.get(`${API_URL}?action=pending`);
+                  console.log("Pending API response:", response.data);
+                } catch (error) {
+                  console.error("Pending API error:", error);
+                }
+                try {
+                  const response = await axios.get(`${API_URL}?action=plans`);
+                  console.log("Plans API response:", response.data);
+                } catch (error) {
+                  console.error("Plans API error:", error);
+                }
+              }} variant="outline" size="sm">
+                Test API
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -630,7 +673,9 @@ const SubscriptionMonitor = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingSubscriptions.map((subscription) => (
+                      {pendingSubscriptions.map((subscription) => {
+                        console.log("Rendering subscription row:", subscription);
+                        return (
                         <TableRow key={subscription.subscription_id}>
                           <TableCell>
                             <div className="flex items-center gap-3">
@@ -669,7 +714,10 @@ const SubscriptionMonitor = () => {
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
-                                onClick={() => handleApprove(subscription.subscription_id)}
+                                onClick={() => {
+                                  console.log("Approve button clicked for subscription:", subscription);
+                                  handleApprove(subscription.subscription_id);
+                                }}
                                 disabled={actionLoading === subscription.subscription_id}
                                 className="bg-green-600 hover:bg-green-700"
                               >
@@ -692,7 +740,8 @@ const SubscriptionMonitor = () => {
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
