@@ -388,7 +388,12 @@ const SubscriptionMonitor = () => {
         setChangeGiven(change);
         setShowReceipt(true);
         
-        setMessage({ type: "success", text: "Subscription approved and POS payment processed successfully!" });
+        // Show different message for package plans
+        const successMessage = response.data.is_package_plan ? 
+          "Package subscription approved and split into individual plans (Membership + Access). Payment processed successfully!" :
+          "Subscription approved and POS payment processed successfully!";
+        
+        setMessage({ type: "success", text: successMessage });
       } else {
         throw new Error(response.data.message || "Failed to approve subscription with payment");
       }
