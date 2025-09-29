@@ -208,12 +208,6 @@ const SubscriptionMonitor = () => {
     console.log("Pending subscriptions:", pendingSubscriptions);
     console.log("Available subscription plans:", subscriptionPlans);
     
-    // If subscription plans are not loaded, try to load them first
-    if (!subscriptionPlans || subscriptionPlans.length === 0) {
-      console.log("Subscription plans not loaded, fetching them now...");
-      await fetchSubscriptionPlans();
-    }
-    
     // Find the subscription to get details
     const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
     console.log("Found subscription:", subscription);
@@ -257,7 +251,7 @@ const SubscriptionMonitor = () => {
     // Store the subscription ID for later use
     setCurrentSubscriptionId(subscriptionId);
     
-    // Set up payment data for this subscription
+    // Set up POS data for this subscription
     setSubscriptionForm({
       user_id: subscription.user_id,
       plan_id: plan.id || subscription.plan_id,
@@ -269,13 +263,20 @@ const SubscriptionMonitor = () => {
       notes: ""
     });
     
+    // Reset POS fields
+    setPaymentMethod("cash");
+    setAmountReceived("");
+    setChangeGiven(0);
+    setReceiptNumber("");
+    setTransactionNotes("");
+    
     console.log("Set subscription form:", {
       user_id: subscription.user_id,
       plan_id: plan.id || subscription.plan_id,
       amount_paid: plan.price || plan.discounted_price || subscription.price || "0"
     });
     
-    // Show payment dialog
+    // Show POS dialog
     setIsCreateSubscriptionDialogOpen(true);
   }
 
@@ -338,7 +339,7 @@ const SubscriptionMonitor = () => {
     try {
       const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
-      const receivedAmount = parseFloat(subscriptionForm.amount_received) || totalAmount
+      const receivedAmount = parseFloat(amountReceived) || totalAmount
       const change = Math.max(0, receivedAmount - totalAmount)
 
       // Use the stored subscription ID
@@ -350,9 +351,10 @@ const SubscriptionMonitor = () => {
       // Process payment and approve the existing subscription
       const response = await axios.post(`${API_URL}?action=approve_with_payment`, {
         subscription_id: currentSubscriptionId,
-        payment_method: subscriptionForm.payment_method,
+        payment_method: paymentMethod,
         amount_received: receivedAmount,
-        notes: subscriptionForm.notes,
+        notes: transactionNotes,
+        receipt_number: receiptNumber || undefined,
         approved_by: "Admin"
       });
 
@@ -361,13 +363,14 @@ const SubscriptionMonitor = () => {
           ...response.data,
           change_given: change,
           total_amount: totalAmount,
-          payment_method: subscriptionForm.payment_method
+          payment_method: paymentMethod,
+          amount_received: receivedAmount
         });
         setReceiptNumber(response.data.receipt_number);
         setChangeGiven(change);
         setShowReceipt(true);
         
-        setMessage({ type: "success", text: "Subscription approved and payment processed successfully!" });
+        setMessage({ type: "success", text: "Subscription approved and POS payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to approve subscription with payment");
       }
@@ -874,10 +877,10 @@ const SubscriptionMonitor = () => {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center">
               <CreditCard className="mr-2 h-5 w-5" />
-              Process Payment & Approve Subscription
+              POS - Process Payment & Approve Subscription
             </DialogTitle>
             <DialogDescription id="create-subscription-description">
-              Process payment to approve this subscription request.
+              Process payment through POS system to approve this subscription request.
             </DialogDescription>
           </DialogHeader>
 
@@ -1038,49 +1041,85 @@ const SubscriptionMonitor = () => {
               )}
             </div>
 
-            {/* POS Payment Fields */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment Method *</label>
-              <Select 
-                value={subscriptionForm.payment_method} 
-                onValueChange={(value) => setSubscriptionForm((prev) => ({ ...prev, payment_method: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="digital">Digital Payment</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* POS Payment Section */}
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium mb-3 flex items-center">
+                <Receipt className="mr-2 h-4 w-4" />
+                POS Payment Processing
+              </h4>
+              
+              <div className="space-y-4">
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method *</label>
+                  <Select 
+                    value={paymentMethod} 
+                    onValueChange={setPaymentMethod}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="digital">Digital Payment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {subscriptionForm.payment_method === "cash" && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Amount Received (₱)</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={subscriptionForm.amount_received}
-                  onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, amount_received: e.target.value }))}
-                  placeholder="Enter amount received"
-                />
-                {subscriptionForm.amount_received && (
-                  <div className="text-sm text-muted-foreground">
-                    Change: ₱{changeGiven.toFixed(2)}
+                {/* Cash Payment Fields */}
+                {paymentMethod === "cash" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Amount Received (₱)</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                      placeholder="Enter amount received from customer"
+                    />
+                    {amountReceived && (
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <div className="flex justify-between text-sm">
+                          <span>Total Amount:</span>
+                          <span className="font-medium">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Amount Received:</span>
+                          <span className="font-medium">₱{parseFloat(amountReceived || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
+                          <span>Change Given:</span>
+                          <span className={changeGiven >= 0 ? "text-green-600" : "text-red-600"}>
+                            ₱{changeGiven.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Transaction Notes (Optional)</label>
-              <Input
-                value={subscriptionForm.notes}
-                onChange={(e) => setSubscriptionForm((prev) => ({ ...prev, notes: e.target.value }))}
-                placeholder="Add notes for this transaction"
-              />
+                {/* Receipt Number */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Receipt Number</label>
+                  <Input
+                    value={receiptNumber}
+                    onChange={(e) => setReceiptNumber(e.target.value)}
+                    placeholder="Auto-generated if left empty"
+                  />
+                </div>
+
+                {/* Transaction Notes */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Transaction Notes</label>
+                  <Textarea
+                    value={transactionNotes}
+                    onChange={(e) => setTransactionNotes(e.target.value)}
+                    placeholder="Add notes for this transaction (optional)"
+                    rows={3}
+                  />
+                </div>
+              </div>
             </div>
 
 
@@ -1145,12 +1184,14 @@ const SubscriptionMonitor = () => {
                 actionLoading === "create" ||
                 !subscriptionForm.plan_id ||
                 !subscriptionForm.user_id ||
-                !subscriptionForm.amount_paid
+                !subscriptionForm.amount_paid ||
+                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
               className="bg-green-600 hover:bg-green-700"
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Process Payment & Approve
+              <Receipt className="mr-2 h-4 w-4" />
+              Process POS Payment & Approve
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1241,24 +1282,32 @@ const SubscriptionMonitor = () => {
               </div>
               <div className="flex justify-between">
                 <span>Payment Method:</span>
-                <span className="capitalize">{subscriptionForm.payment_method}</span>
+                <span className="capitalize">{paymentMethod}</span>
               </div>
-              {subscriptionForm.payment_method === "cash" && (
+              {paymentMethod === "cash" && (
                 <>
                   <div className="flex justify-between">
                     <span>Amount Received:</span>
-                    <span>₱{parseFloat(subscriptionForm.amount_received || 0).toFixed(2)}</span>
+                    <span>₱{parseFloat(amountReceived || 0).toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between font-medium">
                     <span>Change Given:</span>
-                    <span>₱{changeGiven.toFixed(2)}</span>
+                    <span className={changeGiven >= 0 ? "text-green-600" : "text-red-600"}>
+                      ₱{changeGiven.toFixed(2)}
+                    </span>
                   </div>
                 </>
               )}
-              {subscriptionForm.notes && (
+              {receiptNumber && (
+                <div className="flex justify-between">
+                  <span>Receipt Number:</span>
+                  <span className="font-mono text-sm">{receiptNumber}</span>
+                </div>
+              )}
+              {transactionNotes && (
                 <div className="pt-2">
                   <p className="text-sm">
-                    <strong>Notes:</strong> {subscriptionForm.notes}
+                    <strong>Notes:</strong> {transactionNotes}
                   </p>
                 </div>
               )}
@@ -1318,20 +1367,20 @@ const SubscriptionMonitor = () => {
                   <>
                     <div className="flex justify-between">
                       <span>Amount Received:</span>
-                      <span>₱{parseFloat(subscriptionForm.amount_received) || lastTransaction.total_amount}</span>
+                      <span>₱{lastTransaction.amount_received || lastTransaction.total_amount}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Change Given:</span>
-                      <span className="font-medium">₱{changeGiven}</span>
+                      <span className="font-medium text-green-600">₱{lastTransaction.change_given || changeGiven}</span>
                     </div>
                   </>
                 )}
               </div>
 
-              {subscriptionForm.notes && (
+              {transactionNotes && (
                 <div className="border-t pt-2">
                   <p className="text-sm">
-                    <strong>Notes:</strong> {subscriptionForm.notes}
+                    <strong>Notes:</strong> {transactionNotes}
                   </p>
                 </div>
               )}
