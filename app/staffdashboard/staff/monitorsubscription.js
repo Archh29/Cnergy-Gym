@@ -205,72 +205,9 @@ const SubscriptionMonitor = () => {
   const handleApprove = async (subscriptionId) => {
     console.log("=== HANDLE APPROVE DEBUG ===");
     console.log("Subscription ID:", subscriptionId);
-    console.log("Pending subscriptions array:", pendingSubscriptions);
-    console.log("Pending subscriptions length:", pendingSubscriptions ? pendingSubscriptions.length : "null/undefined");
-    console.log("Available subscription plans:", subscriptionPlans);
     
-    // Find the subscription to get details - try pendingSubscriptions first, then fallback to subscriptions
-    let subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id == subscriptionId) : null;
-    
-    // If not found in pendingSubscriptions, try the main subscriptions array
-    if (!subscription) {
-      console.log("Not found in pendingSubscriptions, trying main subscriptions array...");
-      subscription = subscriptions && Array.isArray(subscriptions) ? subscriptions.find(s => s.id == subscriptionId) : null;
-    }
-    
-    console.log("Found subscription:", subscription);
-    console.log("Subscription plan_id:", subscription ? subscription.plan_id : "N/A");
-    console.log("Subscription plan_name:", subscription ? subscription.plan_name : "N/A");
-    
-    if (!subscription) {
-      setMessage({ type: "error", text: "Subscription not found" });
-      return;
-    }
-
-    // Check if we have the required fields
-    if (!subscription.plan_id && !subscription.plan_name) {
-      setMessage({ type: "error", text: "Subscription plan information is missing" });
-      return;
-    }
-
-    // Use the plan data directly from the subscription (since it's already included in the pending subscription data)
-    let plan = {
-      id: subscription.plan_id,
-      plan_name: subscription.plan_name,
-      price: subscription.price,
-      discounted_price: subscription.price,
-      duration_months: subscription.duration_months || 1
-    };
-    console.log("Using plan data from subscription:", plan);
-    
-    // Also try to find in subscriptionPlans array as backup
-    const planFromArray = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find(p => p.id == subscription.plan_id) : null;
-    if (planFromArray) {
-      console.log("Found plan in subscriptionPlans array, using that instead:", planFromArray);
-      plan = planFromArray;
-    }
-
-    // Final check - if we still don't have a plan, show error
-    if (!plan || (!plan.id && !plan.plan_name)) {
-      console.error("No plan data available:", { plan, subscription });
-      setMessage({ type: "error", text: "Subscription plan not found - missing plan data" });
-      return;
-    }
-
     // Store the subscription ID for later use
     setCurrentSubscriptionId(subscriptionId);
-    
-    // Set up POS data for this subscription
-    setSubscriptionForm({
-      user_id: subscription.user_id,
-      plan_id: plan.id || subscription.plan_id,
-      start_date: new Date().toISOString().split("T")[0],
-      discount_type: "none",
-      amount_paid: plan.price || plan.discounted_price || subscription.price || "0",
-      payment_method: "cash",
-      amount_received: "",
-      notes: ""
-    });
     
     // Reset POS fields
     setPaymentMethod("cash");
@@ -279,14 +216,49 @@ const SubscriptionMonitor = () => {
     setReceiptNumber("");
     setTransactionNotes("");
     
-    console.log("Set subscription form:", {
-      user_id: subscription.user_id,
-      plan_id: plan.id || subscription.plan_id,
-      amount_paid: plan.price || plan.discounted_price || subscription.price || "0"
+    // Set up basic form data - we'll fetch the full details when the modal opens
+    setSubscriptionForm({
+      user_id: "",
+      plan_id: "",
+      start_date: new Date().toISOString().split("T")[0],
+      discount_type: "none",
+      amount_paid: "",
+      payment_method: "cash",
+      amount_received: "",
+      notes: ""
     });
     
-    // Show POS dialog
+    // Show POS dialog immediately - let the modal handle fetching the data
     setIsCreateSubscriptionDialogOpen(true);
+  }
+
+  // Fetch subscription details for the POS modal
+  const fetchSubscriptionDetails = async (subscriptionId) => {
+    try {
+      console.log("Fetching subscription details for ID:", subscriptionId);
+      const response = await axios.get(`${API_URL}?action=get-subscription&id=${subscriptionId}`);
+      
+      if (response.data.success && response.data.subscription) {
+        const sub = response.data.subscription;
+        console.log("Fetched subscription details:", sub);
+        
+        // Update the form with the fetched data
+        setSubscriptionForm(prev => ({
+          ...prev,
+          user_id: sub.user_id,
+          plan_id: sub.plan_id,
+          amount_paid: sub.amount_paid || sub.price || "0"
+        }));
+        
+        return sub;
+      } else {
+        console.error("Failed to fetch subscription details:", response.data);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error fetching subscription details:", error);
+      return null;
+    }
   }
 
   const handleDecline = async () => {
@@ -882,6 +854,13 @@ const SubscriptionMonitor = () => {
         <DialogContent 
           className="sm:max-w-lg h-[80vh] flex flex-col" 
           aria-describedby="create-subscription-description"
+          onOpenAutoFocus={async (e) => {
+            // Fetch subscription details when modal opens
+            if (currentSubscriptionId) {
+              e.preventDefault();
+              await fetchSubscriptionDetails(currentSubscriptionId);
+            }
+          }}
         >
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center">
