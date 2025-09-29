@@ -117,12 +117,16 @@ const SubscriptionMonitor = () => {
 
   const fetchSubscriptionPlans = async () => {
     try {
-      const response = await axios.get("https://api.cnergy.site/subscription_plans.php")
+      const response = await axios.get(`${API_URL}?action=plans`)
       if (response.data.success) {
         setSubscriptionPlans(response.data.plans)
+        console.log("Fetched subscription plans:", response.data.plans)
+      } else {
+        console.error("Failed to fetch subscription plans:", response.data)
       }
     } catch (error) {
       console.error("Error fetching subscription plans:", error)
+      setMessage({ type: "error", text: "Failed to load subscription plans" })
     }
   }
 
@@ -192,15 +196,38 @@ const SubscriptionMonitor = () => {
   }
 
   const handleApprove = async (subscriptionId) => {
+    console.log("=== HANDLE APPROVE DEBUG ===");
+    console.log("Subscription ID:", subscriptionId);
+    console.log("Pending subscriptions:", pendingSubscriptions);
+    console.log("Available subscription plans:", subscriptionPlans);
+    
     // Find the subscription to get details
     const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
+    console.log("Found subscription:", subscription);
+    
     if (!subscription) {
       setMessage({ type: "error", text: "Subscription not found" });
       return;
     }
 
-    // Find the subscription plan to get price
-    const plan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find(p => p.id === subscription.plan_id) : null;
+    // Find the subscription plan to get price - try both subscriptionPlans and fetch from API if needed
+    let plan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find(p => p.id == subscription.plan_id) : null;
+    console.log("Found plan in subscriptionPlans:", plan);
+    
+    // If plan not found in current array, try to fetch it from the subscription data itself
+    if (!plan) {
+      console.log("Plan not found in subscriptionPlans, using subscription data");
+      // Use the plan data from the subscription itself
+      plan = {
+        id: subscription.plan_id,
+        plan_name: subscription.plan_name,
+        price: subscription.price,
+        discounted_price: subscription.price,
+        duration_months: subscription.duration_months || 1
+      };
+      console.log("Created plan from subscription data:", plan);
+    }
+
     if (!plan) {
       setMessage({ type: "error", text: "Subscription plan not found" });
       return;
@@ -215,10 +242,16 @@ const SubscriptionMonitor = () => {
       plan_id: subscription.plan_id,
       start_date: new Date().toISOString().split("T")[0],
       discount_type: "none",
-      amount_paid: plan.price || plan.discounted_price || "0",
+      amount_paid: plan.price || plan.discounted_price || subscription.price || "0",
       payment_method: "cash",
       amount_received: "",
       notes: ""
+    });
+    
+    console.log("Set subscription form:", {
+      user_id: subscription.user_id,
+      plan_id: subscription.plan_id,
+      amount_paid: plan.price || plan.discounted_price || subscription.price || "0"
     });
     
     // Show payment dialog
