@@ -121,15 +121,18 @@ const SubscriptionMonitor = () => {
 
   const fetchSubscriptionPlans = async () => {
     try {
+      console.log("=== FETCHING SUBSCRIPTION PLANS ===");
       const response = await axios.get(`${API_URL}?action=plans`)
+      console.log("Subscription plans API response:", response.data);
       if (response.data.success) {
         setSubscriptionPlans(response.data.plans)
-        console.log("Fetched subscription plans:", response.data.plans)
+        console.log("✅ Successfully set subscription plans:", response.data.plans)
       } else {
-        console.error("Failed to fetch subscription plans:", response.data)
+        console.error("❌ Failed to fetch subscription plans:", response.data)
+        setMessage({ type: "error", text: "Failed to load subscription plans" })
       }
     } catch (error) {
-      console.error("Error fetching subscription plans:", error)
+      console.error("❌ Error fetching subscription plans:", error)
       setMessage({ type: "error", text: "Failed to load subscription plans" })
     }
   }
