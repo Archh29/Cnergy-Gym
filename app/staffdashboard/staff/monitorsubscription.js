@@ -205,12 +205,15 @@ const SubscriptionMonitor = () => {
   const handleApprove = async (subscriptionId) => {
     console.log("=== HANDLE APPROVE DEBUG ===");
     console.log("Subscription ID:", subscriptionId);
-    console.log("Pending subscriptions:", pendingSubscriptions);
+    console.log("Pending subscriptions array:", pendingSubscriptions);
+    console.log("Pending subscriptions length:", pendingSubscriptions ? pendingSubscriptions.length : "null/undefined");
     console.log("Available subscription plans:", subscriptionPlans);
     
     // Find the subscription to get details
     const subscription = pendingSubscriptions && Array.isArray(pendingSubscriptions) ? pendingSubscriptions.find(s => s.subscription_id === subscriptionId) : null;
     console.log("Found subscription:", subscription);
+    console.log("Subscription plan_id:", subscription ? subscription.plan_id : "N/A");
+    console.log("Subscription plan_name:", subscription ? subscription.plan_name : "N/A");
     
     if (!subscription) {
       setMessage({ type: "error", text: "Subscription not found" });
