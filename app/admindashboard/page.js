@@ -272,10 +272,6 @@ const App = () => {
     };
   }, []); // Empty dependency array - run only once
 
-    // No periodic validation or focus handlers to prevent infinite loops
-    // Authentication is checked once on mount only
-  }, []);
-
   // Enhanced Global QR Scanner
   useEffect(() => {
     // Reset scanner buffer
