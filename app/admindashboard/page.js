@@ -202,172 +202,79 @@ const App = () => {
     }
   }
 
-  // Authentication check
+  // Authentication check - run only once on mount
   useEffect(() => {
-    const checkAuth = () => {
+    let isMounted = true;
+    
+    const checkAuth = async () => {
       try {
         console.log('Checking authentication...');
+        console.log('Current URL:', window.location.href);
+        console.log('Session storage:', sessionStorage.getItem('user_role'));
+        console.log('Is redirecting:', isRedirecting);
+        
         // Always verify with server - never trust client-side storage
-        fetch('https://api.cnergy.site/session.php', {
+        const response = await fetch('https://api.cnergy.site/session.php', {
           credentials: 'include'
-        })
-        .then(response => {
-          console.log('Session response status:', response.status);
-          if (response.status === 401) {
-            // Session is invalid, clear everything and redirect
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              console.log('Session invalid (401), clearing storage and redirecting');
-              // Use window.location for more reliable redirect
-              window.location.href = '/login';
-            }
-            return;
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (!data) return; // Skip if we already handled 401 above
-          
-          console.log('Session data:', data);
-          if (data.user_role === 'admin') {
-            // Only set sessionStorage after server confirmation
-            sessionStorage.setItem('user_role', 'admin');
-            setIsAuthenticated(true);
-            console.log('Admin authenticated successfully');
-          } else {
-            // Clear any potentially tampered sessionStorage
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              console.log('Not admin, redirecting to login');
-              window.location.href = '/login';
-            }
-          }
-        })
-        .catch((error) => {
-          console.error('Authentication error:', error);
-          // Clear any potentially tampered sessionStorage
-          if (!isRedirecting) {
-            setIsRedirecting(true);
-            sessionStorage.clear();
-            window.location.href = '/login';
-          }
-        })
-        .finally(() => {
-          setIsLoading(false);
         });
-      } catch (error) {
-        console.error('Authentication check error:', error);
-        setIsLoading(false);
-        if (!isRedirecting) {
-          setIsRedirecting(true);
+        
+        console.log('Session response status:', response.status);
+        
+        if (!isMounted) return; // Component unmounted, stop execution
+        
+        if (response.status === 401) {
+          // Session is invalid, clear everything and redirect
+          console.log('Session invalid (401), clearing storage and redirecting');
           sessionStorage.clear();
-          window.location.href = '/login';
+          localStorage.clear();
+          
+          // Force immediate redirect
+          window.location.replace('/login');
+          return;
+        }
+        
+        const data = await response.json();
+        if (!isMounted) return; // Component unmounted, stop execution
+        
+        console.log('Session data:', data);
+        if (data.user_role === 'admin') {
+          // Only set sessionStorage after server confirmation
+          sessionStorage.setItem('user_role', 'admin');
+          setIsAuthenticated(true);
+          console.log('Admin authenticated successfully');
+        } else {
+          // Clear any potentially tampered sessionStorage
+          console.log('Not admin, redirecting to login');
+          sessionStorage.clear();
+          localStorage.clear();
+          window.location.replace('/login');
+        }
+      } catch (error) {
+        console.error('Authentication error:', error);
+        if (!isMounted) return; // Component unmounted, stop execution
+        
+        // Clear any potentially tampered sessionStorage
+        console.log('Authentication error, redirecting to login');
+        sessionStorage.clear();
+        localStorage.clear();
+        window.location.replace('/login');
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
         }
       }
     };
 
     checkAuth();
-
-    // Set up periodic re-validation every 30 seconds to prevent session hijacking
-    const interval = setInterval(() => {
-      try {
-        // Only check if we're still authenticated and not redirecting to prevent loops
-        if (!isAuthenticated || isRedirecting) {
-          clearInterval(interval);
-          return;
-        }
-        
-        fetch('https://api.cnergy.site/session.php', {
-          credentials: 'include'
-        })
-        .then(response => {
-          if (response.status === 401) {
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              clearInterval(interval); // Stop the interval
-              window.location.href = '/login';
-            }
-            return;
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data && data.user_role !== 'admin') {
-            // Role changed or session expired
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              clearInterval(interval); // Stop the interval
-              window.location.href = '/login';
-            }
-          }
-        })
-        .catch(() => {
-          // Server error - redirect to login for security
-          if (!isRedirecting) {
-            setIsRedirecting(true);
-            sessionStorage.clear();
-            clearInterval(interval); // Stop the interval
-            window.location.href = '/login';
-          }
-        });
-      } catch (error) {
-        console.error('Periodic validation error:', error);
-        clearInterval(interval);
-      }
-    }, 30000); // Check every 30 seconds
-
-    // Add security check on page focus to catch tampering attempts
-    const handleFocus = () => {
-      try {
-        // Skip if already redirecting
-        if (isRedirecting) return;
-        
-        fetch('https://api.cnergy.site/session.php', {
-          credentials: 'include'
-        })
-        .then(response => {
-          if (response.status === 401) {
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              window.location.href = '/login';
-            }
-            return;
-          }
-          return response.json();
-        })
-        .then(data => {
-          if (data && data.user_role !== 'admin') {
-            if (!isRedirecting) {
-              setIsRedirecting(true);
-              sessionStorage.clear();
-              window.location.href = '/login';
-            }
-          }
-        })
-        .catch(() => {
-          if (!isRedirecting) {
-            setIsRedirecting(true);
-            sessionStorage.clear();
-            window.location.href = '/login';
-          }
-        });
-      } catch (error) {
-        console.error('Focus handler error:', error);
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-
+    
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', handleFocus);
+      isMounted = false;
     };
-  }, [router]);
+  }, []); // Empty dependency array - run only once
+
+    // No periodic validation or focus handlers to prevent infinite loops
+    // Authentication is checked once on mount only
+  }, []);
 
   // Enhanced Global QR Scanner
   useEffect(() => {
@@ -514,26 +421,24 @@ const App = () => {
   }
 
   if (!isAuthenticated) {
-    // Force redirect if not authenticated
-    useEffect(() => {
-      try {
-        sessionStorage.clear();
-        window.location.href = '/login';
-      } catch (error) {
-        console.error('Redirect error:', error);
-        // Fallback redirect
-        setTimeout(() => {
-          window.location.href = '/login';
-        }, 1000);
-      }
-    }, []);
-    
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
           <div className="text-lg text-gray-700">Redirecting to login...</div>
           <div className="text-sm text-gray-500 mt-2">If this takes too long, <a href="/login" className="text-orange-500 underline">click here</a></div>
+          <div className="mt-4">
+            <button 
+              onClick={() => {
+                sessionStorage.clear();
+                localStorage.clear();
+                window.location.replace('/login');
+              }}
+              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg"
+            >
+              Force Redirect to Login
+            </button>
+          </div>
         </div>
       </div>
     );
