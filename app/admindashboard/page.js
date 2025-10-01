@@ -1,15 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import dynamic from "next/dynamic"
-
-const AdminDashboard = dynamic(() => import("./admin/page"), {
-  ssr: false,
-  loading: () => <div className="min-h-screen flex items-center justify-center">Loading...</div>
-})
 import { useRouter } from "next/navigation"
 import axios from "axios"
 import { CheckCircle, AlertCircle, Clock, Wifi } from "lucide-react"
+import AdminDashboard from "./admin/page"
 
 const App = () => {
   const router = useRouter()
@@ -147,23 +142,31 @@ const App = () => {
   // Authentication check
   useEffect(() => {
     const checkAuth = () => {
+      console.log('Checking authentication...');
       // Always verify with server - never trust client-side storage
       fetch('https://api.cnergy.site/session.php', {
         credentials: 'include'
       })
-      .then(response => response.json())
+      .then(response => {
+        console.log('Session response status:', response.status);
+        return response.json();
+      })
       .then(data => {
+        console.log('Session data:', data);
         if (data.user_role === 'admin') {
           // Only set sessionStorage after server confirmation
           sessionStorage.setItem('user_role', 'admin');
           setIsAuthenticated(true);
+          console.log('Admin authenticated successfully');
         } else {
           // Clear any potentially tampered sessionStorage
           sessionStorage.removeItem('user_role');
+          console.log('Not admin, redirecting to login');
           router.push('/login');
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Authentication error:', error);
         // Clear any potentially tampered sessionStorage
         sessionStorage.removeItem('user_role');
         router.push('/login');
@@ -356,14 +359,23 @@ const App = () => {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-lg">Loading...</div>
+      <div className="flex justify-center items-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+          <div className="text-lg text-gray-700">Loading Admin Dashboard...</div>
+        </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    return null; // Will redirect to login
+    return (
+      <div className="flex justify-center items-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="text-lg text-gray-700">Redirecting to login...</div>
+        </div>
+      </div>
+    );
   }
 
   return (
