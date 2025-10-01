@@ -54,26 +54,7 @@ const App = () => {
   const [scanCount, setScanCount] = useState(0)
   const [isConnected, setIsConnected] = useState(true)
 
-  // Logout function
-  const handleLogout = () => {
-    // Clear all storage
-    sessionStorage.clear();
-    localStorage.clear();
-    
-    // Call logout API
-    fetch('/api/logout', {
-      method: 'GET',
-      credentials: 'include'
-    })
-    .then(() => {
-      // Force redirect to login
-      window.location.href = '/login';
-    })
-    .catch(() => {
-      // Even if API fails, redirect to login
-      window.location.href = '/login';
-    });
-  };
+  // Logout function removed - handled by sidebar
 
   // Global scanner state
   const globalScannerRef = useRef({
@@ -338,15 +319,6 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Logout Button - top right */}
-      <div className="fixed top-4 right-4 z-50">
-        <button
-          onClick={handleLogout}
-          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg transition-colors"
-        >
-          Logout
-        </button>
-      </div>
 
       {/* Clean Status Indicator - moved to bottom right */}
       <div className="fixed bottom-4 right-4 z-50">

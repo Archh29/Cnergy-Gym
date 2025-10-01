@@ -20,19 +20,11 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
-    const checkUserRole = async () => {
-      try {
-        const response = await axios.get(`${API_BASE}/session.php`, {
-          withCredentials: true,
-        });
-        if (response.data.user_role) {
-          router.replace(`/${response.data.user_role}dashboard`);
-        }
-      } catch {
-        // no active session; ignore
-      }
-    };
-    checkUserRole();
+    // Check if user is already logged in via sessionStorage
+    const storedRole = sessionStorage.getItem('user_role');
+    if (storedRole === 'admin' || storedRole === 'staff') {
+      router.replace(`/${storedRole}dashboard`);
+    }
   }, [router]);
 
   const handleCaptchaChange = (response) => {
