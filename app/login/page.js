@@ -68,7 +68,19 @@ export default function Login() {
       );
 
       if (response.data.redirect) {
-        router.push(response.data.redirect);
+        // Set user role in sessionStorage for the main page
+        const userRole = response.data.user_role || response.data.redirect.split('/')[1].replace('dashboard', '');
+        // Only allow admin and staff roles
+        if (userRole === 'admin' || userRole === 'staff') {
+          sessionStorage.setItem('user_role', userRole);
+        } else {
+          setError('Invalid user role. Only admin and staff are allowed.');
+          setLoading(false);
+          return;
+        }
+        
+        // Force a page reload to ensure proper state synchronization
+        window.location.href = response.data.redirect;
       } else {
         setError(response.data.error || "Invalid email or password.");
       }

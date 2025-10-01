@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter for navigation
 import AdminDashboard from './admindashboard/page'; // Import AdminDashboard for admin role
 import StaffDashboard from './staffdashboard/page'; // Import StaffDashboard for staff role
-import CustomerDashboard from './customerdashboard/page';
 
 
 const Home = () => {
@@ -11,19 +10,27 @@ const Home = () => {
   const router = useRouter(); // Initialize the useRouter hook
 
   useEffect(() => {
-    // Check if a user role is stored in sessionStorage
-    const storedRole = sessionStorage.getItem('user_role');
-    if (storedRole === 'admin') {
-      setUserRole(storedRole); // Set role to admin
-    } else if (storedRole === 'staff') {
-      setUserRole(storedRole); 
-    }// Set role to staff
-      else if (storedRole === 'customer') {
-        setUserRole(storedRole); // Set role to customer
-    } else {
-      // Redirect to login page if role is not admin or staff
-      router.push('/login'); // Redirect to login page
-    }
+    // Always verify with server - never trust client-side storage
+    fetch('https://api.cnergy.site/session.php', {
+      credentials: 'include'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.user_role === 'admin' || data.user_role === 'staff') {
+        // Only set sessionStorage after server confirmation
+        sessionStorage.setItem('user_role', data.user_role);
+        setUserRole(data.user_role);
+      } else {
+        // Clear any potentially tampered sessionStorage
+        sessionStorage.removeItem('user_role');
+        router.push('/login');
+      }
+    })
+    .catch(() => {
+      // Clear any potentially tampered sessionStorage
+      sessionStorage.removeItem('user_role');
+      router.push('/login');
+    });
   }, [router]); // Dependency array ensures the effect runs once
 
   const renderDashboard = () => {
@@ -31,10 +38,7 @@ const Home = () => {
       return <AdminDashboard />;  // Render AdminDashboard for admin role
     } else if (userRole === 'staff') {
       return <StaffDashboard />;  // Render StaffDashboard for staff role
-    }else if (userRole === 'customer') {
-        return <CustomerDashboard />;  // Render StaffDashboard for staff role
-      }
-     else {
+    } else {
       return <p>Redirecting to login...</p>;  // Show a message if no role is found
     }
   };
