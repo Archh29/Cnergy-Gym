@@ -51,7 +51,6 @@ const App = () => {
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRedirecting, setIsRedirecting] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [lastScanTime, setLastScanTime] = useState(0)
   const [scanCount, setScanCount] = useState(0)
@@ -202,75 +201,30 @@ const App = () => {
     }
   }
 
-  // Authentication check - run only once on mount
+  // Simple authentication check - run only once
   useEffect(() => {
-    let isMounted = true;
-    
-    const checkAuth = async () => {
-      try {
-        console.log('Checking authentication...');
-        console.log('Current URL:', window.location.href);
-        console.log('Session storage:', sessionStorage.getItem('user_role'));
-        console.log('Is redirecting:', isRedirecting);
-        
-        // Always verify with server - never trust client-side storage
-        const response = await fetch('https://api.cnergy.site/session.php', {
-          credentials: 'include'
-        });
-        
-        console.log('Session response status:', response.status);
-        
-        if (!isMounted) return; // Component unmounted, stop execution
-        
-        if (response.status === 401) {
-          // Session is invalid, clear everything and redirect
-          console.log('Session invalid (401), clearing storage and redirecting');
-          sessionStorage.clear();
-          localStorage.clear();
-          
-          // Force immediate redirect
-          window.location.replace('/login');
-          return;
-        }
-        
-        const data = await response.json();
-        if (!isMounted) return; // Component unmounted, stop execution
-        
-        console.log('Session data:', data);
-        if (data.user_role === 'admin') {
-          // Only set sessionStorage after server confirmation
-          sessionStorage.setItem('user_role', 'admin');
-          setIsAuthenticated(true);
-          console.log('Admin authenticated successfully');
-        } else {
-          // Clear any potentially tampered sessionStorage
-          console.log('Not admin, redirecting to login');
-          sessionStorage.clear();
-          localStorage.clear();
-          window.location.replace('/login');
-        }
-      } catch (error) {
-        console.error('Authentication error:', error);
-        if (!isMounted) return; // Component unmounted, stop execution
-        
-        // Clear any potentially tampered sessionStorage
-        console.log('Authentication error, redirecting to login');
-        sessionStorage.clear();
-        localStorage.clear();
-        window.location.replace('/login');
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+    const checkAuth = () => {
+      // Check if we have a valid session in storage first
+      const storedRole = sessionStorage.getItem('user_role');
+      
+      if (storedRole === 'admin') {
+        setIsAuthenticated(true);
+        setIsLoading(false);
+        return;
       }
+      
+      // If no valid session, redirect immediately
+      console.log('No valid session, redirecting to login');
+      sessionStorage.clear();
+      localStorage.clear();
+      window.location.replace('/login');
     };
 
-    checkAuth();
+    // Run check after a short delay to prevent race conditions
+    const timeoutId = setTimeout(checkAuth, 100);
     
-    return () => {
-      isMounted = false;
-    };
-  }, []); // Empty dependency array - run only once
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   // Enhanced Global QR Scanner
   useEffect(() => {
@@ -410,7 +364,7 @@ const App = () => {
       <div className="flex justify-center items-center h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <div className="text-lg text-gray-700">Loading Admin Dashboard...</div>
+          <div className="text-lg text-gray-700">Loading...</div>
         </div>
       </div>
     );
@@ -420,21 +374,18 @@ const App = () => {
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <div className="text-lg text-gray-700">Redirecting to login...</div>
-          <div className="text-sm text-gray-500 mt-2">If this takes too long, <a href="/login" className="text-orange-500 underline">click here</a></div>
-          <div className="mt-4">
-            <button 
-              onClick={() => {
-                sessionStorage.clear();
-                localStorage.clear();
-                window.location.replace('/login');
-              }}
-              className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg"
-            >
-              Force Redirect to Login
-            </button>
-          </div>
+          <div className="text-lg text-gray-700 mb-4">Access Denied</div>
+          <div className="text-sm text-gray-500 mb-4">You need to log in to access this page</div>
+          <button 
+            onClick={() => {
+              sessionStorage.clear();
+              localStorage.clear();
+              window.location.replace('/login');
+            }}
+            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg"
+          >
+            Go to Login
+          </button>
         </div>
       </div>
     );
