@@ -41,6 +41,17 @@ const CoachAssignments = () => {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // POS Modal states
+  const [posModalOpen, setPosModalOpen] = useState(false)
+  const [posData, setPosData] = useState({
+    payment_method: 'cash',
+    amount_received: 0,
+    change_given: 0,
+    receipt_number: '',
+    cashier_id: null,
+    notes: ''
+  })
+
   // Data states
   const [pendingRequests, setPendingRequests] = useState([])
   const [assignedMembers, setAssignedMembers] = useState([])
@@ -148,17 +159,43 @@ const CoachAssignments = () => {
   }, [])
 
   const handleApproveRequest = async (requestId) => {
+    // Open POS modal instead of directly approving
+    const request = pendingRequests.find(r => r.id === requestId)
+    if (request) {
+      setSelectedRequest(request)
+      setPosModalOpen(true)
+    }
+  }
+
+  const handleApproveWithPayment = async () => {
+    if (!selectedRequest) return
+
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=approve-request`, {
-        request_id: requestId,
+      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, {
+        request_id: selectedRequest.id,
         admin_id: 6, // Use the actual admin user ID from your database
+        payment_method: posData.payment_method,
+        amount_received: parseFloat(posData.amount_received),
+        receipt_number: posData.receipt_number,
+        cashier_id: posData.cashier_id,
+        notes: posData.notes
       })
       if (response.data.success) {
         // Refresh data
         await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog()])
         setRequestDetailOpen(false)
+        setPosModalOpen(false)
         setSelectedRequest(null)
+        // Reset POS data
+        setPosData({
+          payment_method: 'cash',
+          amount_received: 0,
+          change_given: 0,
+          receipt_number: '',
+          cashier_id: null,
+          notes: ''
+        })
       } else {
         throw new Error(response.data.message || "Failed to approve request")
       }
@@ -721,12 +758,8 @@ const CoachAssignments = () => {
               className="bg-green-600 hover:bg-green-700"
               disabled={actionLoading}
             >
-              {actionLoading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              )}
-              Approve & Assign
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Approve & Process Payment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -764,6 +797,123 @@ const CoachAssignments = () => {
                 <XCircle className="h-4 w-4 mr-2" />
               )}
               Decline Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* POS Payment Modal */}
+      <Dialog open={posModalOpen} onOpenChange={setPosModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Process Payment - Coach Assignment</DialogTitle>
+          </DialogHeader>
+          {selectedRequest && (
+            <div className="space-y-4">
+              {/* Assignment Summary */}
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-semibold mb-2">Assignment Details</h4>
+                <div className="text-sm space-y-1">
+                  <div><span className="font-medium">Member:</span> {selectedRequest.member?.name}</div>
+                  <div><span className="font-medium">Coach:</span> {selectedRequest.coach?.name}</div>
+                  <div><span className="font-medium">Rate Type:</span> {selectedRequest.rateType || 'Monthly'}</div>
+                </div>
+              </div>
+
+              {/* Payment Method */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Payment Method</label>
+                <select
+                  value={posData.payment_method}
+                  onChange={(e) => setPosData({...posData, payment_method: e.target.value})}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="digital">Digital Payment</option>
+                </select>
+              </div>
+
+              {/* Amount Received */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Amount Received (₱)</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={posData.amount_received}
+                  onChange={(e) => {
+                    const amount = parseFloat(e.target.value) || 0
+                    const change = Math.max(0, amount - (selectedRequest.coach?.monthly_rate || 0))
+                    setPosData({
+                      ...posData,
+                      amount_received: amount,
+                      change_given: change
+                    })
+                  }}
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* Change Given */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Change Given (₱)</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={posData.change_given}
+                  readOnly
+                  className="bg-muted"
+                />
+              </div>
+
+              {/* Receipt Number */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Receipt Number</label>
+                <Input
+                  value={posData.receipt_number}
+                  onChange={(e) => setPosData({...posData, receipt_number: e.target.value})}
+                  placeholder="Auto-generated if empty"
+                />
+              </div>
+
+              {/* Cashier ID */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Cashier ID</label>
+                <Input
+                  type="number"
+                  value={posData.cashier_id || ''}
+                  onChange={(e) => setPosData({...posData, cashier_id: e.target.value ? parseInt(e.target.value) : null})}
+                  placeholder="Optional"
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Notes</label>
+                <Textarea
+                  value={posData.notes}
+                  onChange={(e) => setPosData({...posData, notes: e.target.value})}
+                  placeholder="Additional notes..."
+                  rows={2}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPosModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApproveWithPayment}
+              className="bg-green-600 hover:bg-green-700"
+              disabled={actionLoading || posData.amount_received <= 0}
+            >
+              {actionLoading ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
+              )}
+              Process Payment & Approve
             </Button>
           </DialogFooter>
         </DialogContent>
