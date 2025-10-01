@@ -930,6 +930,33 @@ const CoachAssignments = () => {
                     placeholder="0.00"
                     className="text-sm"
                   />
+                  {/* Warning message for insufficient amount */}
+                  {posData.amount_received && selectedRequest && (() => {
+                    const rateType = selectedRequest.rateType || 'monthly';
+                    let dueAmount = 0;
+                    switch (rateType) {
+                      case 'monthly':
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                        break;
+                      case 'package':
+                        dueAmount = selectedRequest.coach?.package_rate || 0;
+                        break;
+                      case 'per_session':
+                        dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                        break;
+                      default:
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    }
+                    const amountReceived = parseFloat(posData.amount_received) || 0;
+                    if (amountReceived > 0 && amountReceived < dueAmount) {
+                      return (
+                        <p className="text-sm text-red-600 font-medium">
+                          ⚠️ Insufficient amount. Need ₱{dueAmount.toFixed(2)} but only received ₱{amountReceived.toFixed(2)}
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* Change Given */}
@@ -970,7 +997,25 @@ const CoachAssignments = () => {
             <Button
               onClick={handleApproveWithPayment}
               className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-              disabled={actionLoading || !posData.amount_received || parseFloat(posData.amount_received) <= 0}
+              disabled={actionLoading || !posData.amount_received || parseFloat(posData.amount_received) <= 0 || (() => {
+                if (!selectedRequest) return true;
+                const rateType = selectedRequest.rateType || 'monthly';
+                let dueAmount = 0;
+                switch (rateType) {
+                  case 'monthly':
+                    dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    break;
+                  case 'package':
+                    dueAmount = selectedRequest.coach?.package_rate || 0;
+                    break;
+                  case 'per_session':
+                    dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                    break;
+                  default:
+                    dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                }
+                return parseFloat(posData.amount_received) < dueAmount;
+              })()}
             >
               {actionLoading ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
