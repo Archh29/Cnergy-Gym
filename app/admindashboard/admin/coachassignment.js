@@ -45,7 +45,7 @@ const CoachAssignments = () => {
   const [posModalOpen, setPosModalOpen] = useState(false)
   const [posData, setPosData] = useState({
     payment_method: 'cash',
-    amount_received: 0,
+    amount_received: '',
     change_given: 0,
     notes: ''
   })
@@ -204,7 +204,7 @@ const CoachAssignments = () => {
         // Reset POS data
         setPosData({
           payment_method: 'cash',
-          amount_received: 0,
+          amount_received: '',
           change_given: 0,
           notes: ''
         })
@@ -891,7 +891,8 @@ const CoachAssignments = () => {
                     step="0.01"
                     value={posData.amount_received}
                   onChange={(e) => {
-                    const amount = parseFloat(e.target.value) || 0
+                    const inputValue = e.target.value;
+                    const amount = inputValue === '' ? 0 : parseFloat(inputValue) || 0;
                     const rateType = selectedRequest.rateType || 'monthly';
                     let dueAmount = 0;
                     switch (rateType) {
@@ -910,7 +911,7 @@ const CoachAssignments = () => {
                     const change = Math.max(0, amount - dueAmount)
                     setPosData({
                       ...posData,
-                      amount_received: amount,
+                      amount_received: inputValue === '' ? '' : amount,
                       change_given: change
                     })
                   }}
@@ -957,7 +958,7 @@ const CoachAssignments = () => {
             <Button
               onClick={handleApproveWithPayment}
               className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-              disabled={actionLoading || posData.amount_received <= 0}
+              disabled={actionLoading || !posData.amount_received || parseFloat(posData.amount_received) <= 0}
             >
               {actionLoading ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
