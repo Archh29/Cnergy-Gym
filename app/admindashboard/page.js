@@ -15,6 +15,27 @@ const App = () => {
   const [scanCount, setScanCount] = useState(0)
   const [isConnected, setIsConnected] = useState(true)
 
+  // Logout function
+  const handleLogout = () => {
+    // Clear all storage
+    sessionStorage.clear();
+    localStorage.clear();
+    
+    // Call logout API
+    fetch('/api/logout', {
+      method: 'GET',
+      credentials: 'include'
+    })
+    .then(() => {
+      // Force redirect to login
+      window.location.href = '/login';
+    })
+    .catch(() => {
+      // Even if API fails, redirect to login
+      window.location.href = '/login';
+    });
+  };
+
   // Global scanner state
   const globalScannerRef = useRef({
     buffer: "",
@@ -149,9 +170,18 @@ const App = () => {
       })
       .then(response => {
         console.log('Session response status:', response.status);
+        if (response.status === 401) {
+          // Session is invalid, clear everything and redirect
+          sessionStorage.clear();
+          console.log('Session invalid (401), clearing storage and redirecting');
+          router.push('/login');
+          return;
+        }
         return response.json();
       })
       .then(data => {
+        if (!data) return; // Skip if we already handled 401 above
+        
         console.log('Session data:', data);
         if (data.user_role === 'admin') {
           // Only set sessionStorage after server confirmation
@@ -168,7 +198,7 @@ const App = () => {
       .catch((error) => {
         console.error('Authentication error:', error);
         // Clear any potentially tampered sessionStorage
-        sessionStorage.removeItem('user_role');
+        sessionStorage.clear();
         router.push('/login');
       })
       .finally(() => {
@@ -183,17 +213,24 @@ const App = () => {
       fetch('https://api.cnergy.site/session.php', {
         credentials: 'include'
       })
-      .then(response => response.json())
+      .then(response => {
+        if (response.status === 401) {
+          sessionStorage.clear();
+          router.push('/login');
+          return;
+        }
+        return response.json();
+      })
       .then(data => {
-        if (data.user_role !== 'admin') {
+        if (data && data.user_role !== 'admin') {
           // Role changed or session expired
-          sessionStorage.removeItem('user_role');
+          sessionStorage.clear();
           router.push('/login');
         }
       })
       .catch(() => {
         // Server error - redirect to login for security
-        sessionStorage.removeItem('user_role');
+        sessionStorage.clear();
         router.push('/login');
       });
     }, 30000); // Check every 30 seconds
@@ -203,15 +240,22 @@ const App = () => {
       fetch('https://api.cnergy.site/session.php', {
         credentials: 'include'
       })
-      .then(response => response.json())
+      .then(response => {
+        if (response.status === 401) {
+          sessionStorage.clear();
+          router.push('/login');
+          return;
+        }
+        return response.json();
+      })
       .then(data => {
-        if (data.user_role !== 'admin') {
-          sessionStorage.removeItem('user_role');
+        if (data && data.user_role !== 'admin') {
+          sessionStorage.clear();
           router.push('/login');
         }
       })
       .catch(() => {
-        sessionStorage.removeItem('user_role');
+        sessionStorage.clear();
         router.push('/login');
       });
     };
@@ -380,6 +424,16 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Logout Button - top right */}
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={handleLogout}
+          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg transition-colors"
+        >
+          Logout
+        </button>
+      </div>
+
       {/* Clean Status Indicator - moved to bottom right */}
       <div className="fixed bottom-4 right-4 z-50">
         <div className="flex items-center gap-2 bg-white rounded-lg shadow-lg px-3 py-2 border">
