@@ -49,8 +49,6 @@ class ErrorBoundary extends React.Component {
 
 const App = () => {
   const router = useRouter()
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [lastScanTime, setLastScanTime] = useState(0)
   const [scanCount, setScanCount] = useState(0)
@@ -201,30 +199,7 @@ const App = () => {
     }
   }
 
-  // Simple authentication check - run only once
-  useEffect(() => {
-    const checkAuth = () => {
-      // Check if we have a valid session in storage first
-      const storedRole = sessionStorage.getItem('user_role');
-      
-      if (storedRole === 'admin') {
-        setIsAuthenticated(true);
-        setIsLoading(false);
-        return;
-      }
-      
-      // If no valid session, redirect immediately
-      console.log('No valid session, redirecting to login');
-      sessionStorage.clear();
-      localStorage.clear();
-      window.location.replace('/login');
-    };
-
-    // Run check after a short delay to prevent race conditions
-    const timeoutId = setTimeout(checkAuth, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, []);
+  // No authentication logic here - handled by main page
 
   // Enhanced Global QR Scanner
   useEffect(() => {
@@ -359,37 +334,7 @@ const App = () => {
     }
   }, [router])
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <div className="text-lg text-gray-700">Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex justify-center items-center h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="text-lg text-gray-700 mb-4">Access Denied</div>
-          <div className="text-sm text-gray-500 mb-4">You need to log in to access this page</div>
-          <button 
-            onClick={() => {
-              sessionStorage.clear();
-              localStorage.clear();
-              window.location.replace('/login');
-            }}
-            className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-lg"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // No authentication checks - main page handles this
 
   return (
     <div className="min-h-screen bg-gray-50">

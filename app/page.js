@@ -10,28 +10,17 @@ const Home = () => {
   const router = useRouter(); // Initialize the useRouter hook
 
   useEffect(() => {
-    // Always verify with server - never trust client-side storage
-    fetch('https://api.cnergy.site/session.php', {
-      credentials: 'include'
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.user_role === 'admin' || data.user_role === 'staff') {
-        // Only set sessionStorage after server confirmation
-        sessionStorage.setItem('user_role', data.user_role);
-        setUserRole(data.user_role);
-      } else {
-        // Clear any potentially tampered sessionStorage
-        sessionStorage.removeItem('user_role');
-        router.push('/login');
-      }
-    })
-    .catch(() => {
-      // Clear any potentially tampered sessionStorage
-      sessionStorage.removeItem('user_role');
+    // Simple check - only look at sessionStorage, no API calls
+    const storedRole = sessionStorage.getItem('user_role');
+    
+    if (storedRole === 'admin' || storedRole === 'staff') {
+      setUserRole(storedRole);
+    } else {
+      // No valid session, redirect to login
+      sessionStorage.clear();
       router.push('/login');
-    });
-  }, [router]); // Dependency array ensures the effect runs once
+    }
+  }, [router]);
 
   const renderDashboard = () => {
     if (userRole === 'admin') {
