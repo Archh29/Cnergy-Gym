@@ -48,9 +48,9 @@ const CoachAssignments = () => {
     amount_received: 0,
     change_given: 0,
     receipt_number: '',
-    cashier_id: null,
     notes: ''
   })
+  const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
 
   // Data states
   const [pendingRequests, setPendingRequests] = useState([])
@@ -143,6 +143,22 @@ const CoachAssignments = () => {
     }
   }
 
+  // Get current user ID from session
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        const response = await axios.get('https://api.cnergy.site/session.php')
+        if (response.data.authenticated && response.data.user_id) {
+          setCurrentUserId(response.data.user_id)
+        }
+      } catch (err) {
+        console.error("Error getting current user:", err)
+        // Keep default admin ID if session fails
+      }
+    }
+    getCurrentUser()
+  }, [])
+
   // Initial load
   useEffect(() => {
     loadAllData()
@@ -174,11 +190,11 @@ const CoachAssignments = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, {
         request_id: selectedRequest.id,
-        admin_id: 6, // Use the actual admin user ID from your database
+        admin_id: currentUserId, // Use the current logged-in user ID
         payment_method: posData.payment_method,
         amount_received: parseFloat(posData.amount_received),
         receipt_number: posData.receipt_number,
-        cashier_id: posData.cashier_id,
+        cashier_id: currentUserId, // Automatically use current user as cashier
         notes: posData.notes
       })
       if (response.data.success) {
@@ -193,7 +209,6 @@ const CoachAssignments = () => {
           amount_received: 0,
           change_given: 0,
           receipt_number: '',
-          cashier_id: null,
           notes: ''
         })
       } else {
@@ -804,108 +819,106 @@ const CoachAssignments = () => {
 
       {/* POS Payment Modal */}
       <Dialog open={posModalOpen} onOpenChange={setPosModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[90vw] max-w-md mx-auto">
           <DialogHeader>
-            <DialogTitle>Process Payment - Coach Assignment</DialogTitle>
+            <DialogTitle className="text-center">Process Payment - Coach Assignment</DialogTitle>
           </DialogHeader>
           {selectedRequest && (
             <div className="space-y-4">
               {/* Assignment Summary */}
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <h4 className="font-semibold mb-2">Assignment Details</h4>
-                <div className="text-sm space-y-1">
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <h4 className="font-semibold mb-2 text-sm">Assignment Details</h4>
+                <div className="text-xs space-y-1">
                   <div><span className="font-medium">Member:</span> {selectedRequest.member?.name}</div>
                   <div><span className="font-medium">Coach:</span> {selectedRequest.coach?.name}</div>
                   <div><span className="font-medium">Rate Type:</span> {selectedRequest.rateType || 'Monthly'}</div>
                 </div>
               </div>
 
-              {/* Payment Method */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Payment Method</label>
-                <select
-                  value={posData.payment_method}
-                  onChange={(e) => setPosData({...posData, payment_method: e.target.value})}
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="card">Card</option>
-                  <option value="digital">Digital Payment</option>
-                </select>
-              </div>
+              <div className="grid grid-cols-1 gap-4">
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <select
+                    value={posData.payment_method}
+                    onChange={(e) => setPosData({...posData, payment_method: e.target.value})}
+                    className="w-full p-2 border rounded-md text-sm"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="digital">Digital Payment</option>
+                  </select>
+                </div>
 
-              {/* Amount Received */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Amount Received (₱)</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={posData.amount_received}
-                  onChange={(e) => {
-                    const amount = parseFloat(e.target.value) || 0
-                    const change = Math.max(0, amount - (selectedRequest.coach?.monthly_rate || 0))
-                    setPosData({
-                      ...posData,
-                      amount_received: amount,
-                      change_given: change
-                    })
-                  }}
-                  placeholder="0.00"
-                />
-              </div>
+                {/* Amount Received */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Amount Received (₱)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={posData.amount_received}
+                    onChange={(e) => {
+                      const amount = parseFloat(e.target.value) || 0
+                      const change = Math.max(0, amount - (selectedRequest.coach?.monthly_rate || 0))
+                      setPosData({
+                        ...posData,
+                        amount_received: amount,
+                        change_given: change
+                      })
+                    }}
+                    placeholder="0.00"
+                    className="text-sm"
+                  />
+                </div>
 
-              {/* Change Given */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Change Given (₱)</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={posData.change_given}
-                  readOnly
-                  className="bg-muted"
-                />
-              </div>
+                {/* Change Given */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Change Given (₱)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={posData.change_given}
+                    readOnly
+                    className="bg-muted text-sm"
+                  />
+                </div>
 
-              {/* Receipt Number */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Receipt Number</label>
-                <Input
-                  value={posData.receipt_number}
-                  onChange={(e) => setPosData({...posData, receipt_number: e.target.value})}
-                  placeholder="Auto-generated if empty"
-                />
-              </div>
+                {/* Receipt Number */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Receipt Number</label>
+                  <Input
+                    value={posData.receipt_number}
+                    onChange={(e) => setPosData({...posData, receipt_number: e.target.value})}
+                    placeholder="Auto-generated if empty"
+                    className="text-sm"
+                  />
+                </div>
 
-              {/* Cashier ID */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Cashier ID</label>
-                <Input
-                  type="number"
-                  value={posData.cashier_id || ''}
-                  onChange={(e) => setPosData({...posData, cashier_id: e.target.value ? parseInt(e.target.value) : null})}
-                  placeholder="Optional"
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Notes</label>
-                <Textarea
-                  value={posData.notes}
-                  onChange={(e) => setPosData({...posData, notes: e.target.value})}
-                  placeholder="Additional notes..."
-                  rows={2}
-                />
+                {/* Notes */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Notes</label>
+                  <Textarea
+                    value={posData.notes}
+                    onChange={(e) => setPosData({...posData, notes: e.target.value})}
+                    placeholder="Additional notes..."
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPosModalOpen(false)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setPosModalOpen(false)}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleApproveWithPayment}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
               disabled={actionLoading || posData.amount_received <= 0}
             >
               {actionLoading ? (
