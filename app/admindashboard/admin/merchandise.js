@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Edit, Trash2, Loader2, Eye, Package, Tag } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Loader2, Eye, Package, Tag, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -28,6 +28,8 @@ const Merchandise = () => {
   const [name, setName] = useState("")
   const [price, setPrice] = useState("")
   const [imageUrl, setImageUrl] = useState("")
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState("")
   const [status, setStatus] = useState("active")
   const [error, setError] = useState("")
   const [loadingStates, setLoadingStates] = useState({
@@ -86,6 +88,40 @@ const Merchandise = () => {
     console.error(defaultMessage, error)
   }
 
+  const handleFileUpload = async (file, type) => {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("action", "upload_file")
+    formData.append("type", type)
+
+    try {
+      const response = await axios.post(MERCHANDISE_API, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+
+      if (response.data.success) {
+        return response.data.file_url
+      } else {
+        throw new Error(response.data.message || "Upload failed")
+      }
+    } catch (error) {
+      console.error("Upload error:", error)
+      throw error
+    }
+  }
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onload = (e) => setImagePreview(e.target.result)
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSaveMerchandise = async () => {
     if (!name.trim()) {
       setError("Merchandise name is required")
@@ -101,10 +137,17 @@ const Merchandise = () => {
     setError("")
 
     try {
+      let imageUrl = selectedMerchandise?.image_url || ""
+
+      // Upload image if new file selected
+      if (imageFile) {
+        imageUrl = await handleFileUpload(imageFile, "image")
+      }
+
       const merchandiseData = {
         name: name.trim(),
         price: parseFloat(price),
-        image_url: imageUrl.trim(),
+        image_url: imageUrl,
         status: status
       }
 
@@ -165,6 +208,8 @@ const Merchandise = () => {
     setName(item?.name || "")
     setPrice(item?.price ? item.price.toString() : "")
     setImageUrl(item?.image_url || "")
+    setImagePreview(item?.image_url || "")
+    setImageFile(null)
     setStatus(item?.status || "active")
     setDialogOpen(true)
   }
@@ -174,6 +219,8 @@ const Merchandise = () => {
     setName("")
     setPrice("")
     setImageUrl("")
+    setImagePreview("")
+    setImageFile(null)
     setStatus("active")
     setDialogOpen(true)
   }
@@ -184,6 +231,8 @@ const Merchandise = () => {
     setName("")
     setPrice("")
     setImageUrl("")
+    setImagePreview("")
+    setImageFile(null)
     setStatus("active")
     setError("")
   }
@@ -397,15 +446,40 @@ const Merchandise = () => {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="imageUrl">Image URL</Label>
-              <Input
-                id="imageUrl"
-                placeholder="https://example.com/image.jpg"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                disabled={loadingStates.savingMerchandise}
-              />
+            <div className="space-y-3">
+              <Label>Merchandise Image</Label>
+              <div className="flex items-center gap-4">
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  disabled={loadingStates.savingMerchandise}
+                  className="flex-1"
+                />
+                {imagePreview && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setImagePreview("")
+                      setImageFile(null)
+                    }}
+                    disabled={loadingStates.savingMerchandise}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              {imagePreview && (
+                <div className="mt-2">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-32 h-32 object-cover rounded border"
+                  />
+                </div>
+              )}
             </div>
 
             {error && (
