@@ -174,7 +174,8 @@ const App = () => {
           // Session is invalid, clear everything and redirect
           sessionStorage.clear();
           console.log('Session invalid (401), clearing storage and redirecting');
-          router.push('/login');
+          // Use window.location for more reliable redirect
+          window.location.href = '/login';
           return;
         }
         return response.json();
@@ -190,16 +191,16 @@ const App = () => {
           console.log('Admin authenticated successfully');
         } else {
           // Clear any potentially tampered sessionStorage
-          sessionStorage.removeItem('user_role');
+          sessionStorage.clear();
           console.log('Not admin, redirecting to login');
-          router.push('/login');
+          window.location.href = '/login';
         }
       })
       .catch((error) => {
         console.error('Authentication error:', error);
         // Clear any potentially tampered sessionStorage
         sessionStorage.clear();
-        router.push('/login');
+        window.location.href = '/login';
       })
       .finally(() => {
         setIsLoading(false);
@@ -216,7 +217,7 @@ const App = () => {
       .then(response => {
         if (response.status === 401) {
           sessionStorage.clear();
-          router.push('/login');
+          window.location.href = '/login';
           return;
         }
         return response.json();
@@ -225,13 +226,13 @@ const App = () => {
         if (data && data.user_role !== 'admin') {
           // Role changed or session expired
           sessionStorage.clear();
-          router.push('/login');
+          window.location.href = '/login';
         }
       })
       .catch(() => {
         // Server error - redirect to login for security
         sessionStorage.clear();
-        router.push('/login');
+        window.location.href = '/login';
       });
     }, 30000); // Check every 30 seconds
 
@@ -243,7 +244,7 @@ const App = () => {
       .then(response => {
         if (response.status === 401) {
           sessionStorage.clear();
-          router.push('/login');
+          window.location.href = '/login';
           return;
         }
         return response.json();
@@ -251,12 +252,12 @@ const App = () => {
       .then(data => {
         if (data && data.user_role !== 'admin') {
           sessionStorage.clear();
-          router.push('/login');
+          window.location.href = '/login';
         }
       })
       .catch(() => {
         sessionStorage.clear();
-        router.push('/login');
+        window.location.href = '/login';
       });
     };
 
@@ -413,10 +414,18 @@ const App = () => {
   }
 
   if (!isAuthenticated) {
+    // Force redirect if not authenticated
+    useEffect(() => {
+      sessionStorage.clear();
+      window.location.href = '/login';
+    }, []);
+    
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
         <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
           <div className="text-lg text-gray-700">Redirecting to login...</div>
+          <div className="text-sm text-gray-500 mt-2">If this takes too long, <a href="/login" className="text-orange-500 underline">click here</a></div>
         </div>
       </div>
     );
