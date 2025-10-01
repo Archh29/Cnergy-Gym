@@ -832,6 +832,23 @@ const CoachAssignments = () => {
                   <div><span className="font-medium">Member:</span> {selectedRequest.member?.name}</div>
                   <div><span className="font-medium">Coach:</span> {selectedRequest.coach?.name}</div>
                   <div><span className="font-medium">Rate Type:</span> {selectedRequest.rateType || 'Monthly'}</div>
+                  <div className="pt-2 border-t border-muted">
+                    <div className="text-sm font-semibold text-green-600">
+                      Amount Due: ₱{(() => {
+                        const rateType = selectedRequest.rateType || 'monthly';
+                        switch (rateType) {
+                          case 'monthly':
+                            return selectedRequest.coach?.monthly_rate || 0;
+                          case 'package':
+                            return selectedRequest.coach?.package_rate || 0;
+                          case 'per_session':
+                            return selectedRequest.coach?.per_session_rate || 0;
+                          default:
+                            return selectedRequest.coach?.monthly_rate || 0;
+                        }
+                      })()}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -850,6 +867,25 @@ const CoachAssignments = () => {
                   </select>
                 </div>
 
+                {/* Amount Due Display */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="text-sm font-medium text-green-800">
+                    Amount Due: ₱{(() => {
+                      const rateType = selectedRequest.rateType || 'monthly';
+                      switch (rateType) {
+                        case 'monthly':
+                          return selectedRequest.coach?.monthly_rate || 0;
+                        case 'package':
+                          return selectedRequest.coach?.package_rate || 0;
+                        case 'per_session':
+                          return selectedRequest.coach?.per_session_rate || 0;
+                        default:
+                          return selectedRequest.coach?.monthly_rate || 0;
+                      }
+                    })()}
+                  </div>
+                </div>
+
                 {/* Amount Received */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Amount Received (₱)</label>
@@ -857,15 +893,30 @@ const CoachAssignments = () => {
                     type="number"
                     step="0.01"
                     value={posData.amount_received}
-                    onChange={(e) => {
-                      const amount = parseFloat(e.target.value) || 0
-                      const change = Math.max(0, amount - (selectedRequest.coach?.monthly_rate || 0))
-                      setPosData({
-                        ...posData,
-                        amount_received: amount,
-                        change_given: change
-                      })
-                    }}
+                  onChange={(e) => {
+                    const amount = parseFloat(e.target.value) || 0
+                    const rateType = selectedRequest.rateType || 'monthly';
+                    let dueAmount = 0;
+                    switch (rateType) {
+                      case 'monthly':
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                        break;
+                      case 'package':
+                        dueAmount = selectedRequest.coach?.package_rate || 0;
+                        break;
+                      case 'per_session':
+                        dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                        break;
+                      default:
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    }
+                    const change = Math.max(0, amount - dueAmount)
+                    setPosData({
+                      ...posData,
+                      amount_received: amount,
+                      change_given: change
+                    })
+                  }}
                     placeholder="0.00"
                     className="text-sm"
                   />
