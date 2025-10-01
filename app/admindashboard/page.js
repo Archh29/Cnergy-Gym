@@ -10,6 +10,7 @@ const App = () => {
   const router = useRouter()
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRedirecting, setIsRedirecting] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [lastScanTime, setLastScanTime] = useState(0)
   const [scanCount, setScanCount] = useState(0)
@@ -172,10 +173,13 @@ const App = () => {
         console.log('Session response status:', response.status);
         if (response.status === 401) {
           // Session is invalid, clear everything and redirect
-          sessionStorage.clear();
-          console.log('Session invalid (401), clearing storage and redirecting');
-          // Use window.location for more reliable redirect
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            console.log('Session invalid (401), clearing storage and redirecting');
+            // Use window.location for more reliable redirect
+            window.location.href = '/login';
+          }
           return;
         }
         return response.json();
@@ -191,16 +195,22 @@ const App = () => {
           console.log('Admin authenticated successfully');
         } else {
           // Clear any potentially tampered sessionStorage
-          sessionStorage.clear();
-          console.log('Not admin, redirecting to login');
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            console.log('Not admin, redirecting to login');
+            window.location.href = '/login';
+          }
         }
       })
       .catch((error) => {
         console.error('Authentication error:', error);
         // Clear any potentially tampered sessionStorage
-        sessionStorage.clear();
-        window.location.href = '/login';
+        if (!isRedirecting) {
+          setIsRedirecting(true);
+          sessionStorage.clear();
+          window.location.href = '/login';
+        }
       })
       .finally(() => {
         setIsLoading(false);
@@ -211,13 +221,23 @@ const App = () => {
 
     // Set up periodic re-validation every 30 seconds to prevent session hijacking
     const interval = setInterval(() => {
+      // Only check if we're still authenticated and not redirecting to prevent loops
+      if (!isAuthenticated || isRedirecting) {
+        clearInterval(interval);
+        return;
+      }
+      
       fetch('https://api.cnergy.site/session.php', {
         credentials: 'include'
       })
       .then(response => {
         if (response.status === 401) {
-          sessionStorage.clear();
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            clearInterval(interval); // Stop the interval
+            window.location.href = '/login';
+          }
           return;
         }
         return response.json();
@@ -225,39 +245,59 @@ const App = () => {
       .then(data => {
         if (data && data.user_role !== 'admin') {
           // Role changed or session expired
-          sessionStorage.clear();
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            clearInterval(interval); // Stop the interval
+            window.location.href = '/login';
+          }
         }
       })
       .catch(() => {
         // Server error - redirect to login for security
-        sessionStorage.clear();
-        window.location.href = '/login';
+        if (!isRedirecting) {
+          setIsRedirecting(true);
+          sessionStorage.clear();
+          clearInterval(interval); // Stop the interval
+          window.location.href = '/login';
+        }
       });
     }, 30000); // Check every 30 seconds
 
     // Add security check on page focus to catch tampering attempts
     const handleFocus = () => {
+      // Skip if already redirecting
+      if (isRedirecting) return;
+      
       fetch('https://api.cnergy.site/session.php', {
         credentials: 'include'
       })
       .then(response => {
         if (response.status === 401) {
-          sessionStorage.clear();
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            window.location.href = '/login';
+          }
           return;
         }
         return response.json();
       })
       .then(data => {
         if (data && data.user_role !== 'admin') {
-          sessionStorage.clear();
-          window.location.href = '/login';
+          if (!isRedirecting) {
+            setIsRedirecting(true);
+            sessionStorage.clear();
+            window.location.href = '/login';
+          }
         }
       })
       .catch(() => {
-        sessionStorage.clear();
-        window.location.href = '/login';
+        if (!isRedirecting) {
+          setIsRedirecting(true);
+          sessionStorage.clear();
+          window.location.href = '/login';
+        }
       });
     };
 
