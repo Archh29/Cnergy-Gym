@@ -47,7 +47,6 @@ const CoachAssignments = () => {
     payment_method: 'cash',
     amount_received: 0,
     change_given: 0,
-    receipt_number: '',
     notes: ''
   })
   const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
@@ -193,7 +192,6 @@ const CoachAssignments = () => {
         admin_id: currentUserId, // Use the current logged-in user ID
         payment_method: posData.payment_method,
         amount_received: parseFloat(posData.amount_received),
-        receipt_number: posData.receipt_number,
         cashier_id: currentUserId, // Automatically use current user as cashier
         notes: posData.notes
       })
@@ -208,7 +206,6 @@ const CoachAssignments = () => {
           payment_method: 'cash',
           amount_received: 0,
           change_given: 0,
-          receipt_number: '',
           notes: ''
         })
       } else {
@@ -819,7 +816,7 @@ const CoachAssignments = () => {
 
       {/* POS Payment Modal */}
       <Dialog open={posModalOpen} onOpenChange={setPosModalOpen}>
-        <DialogContent className="w-[90vw] max-w-md mx-auto">
+        <DialogContent className="w-[95vw] max-w-2xl mx-auto max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-center">Process Payment - Coach Assignment</DialogTitle>
           </DialogHeader>
@@ -934,16 +931,6 @@ const CoachAssignments = () => {
                   />
                 </div>
 
-                {/* Receipt Number */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Receipt Number</label>
-                  <Input
-                    value={posData.receipt_number}
-                    onChange={(e) => setPosData({...posData, receipt_number: e.target.value})}
-                    placeholder="Auto-generated if empty"
-                    className="text-sm"
-                  />
-                </div>
 
                 {/* Notes */}
                 <div className="space-y-2">
