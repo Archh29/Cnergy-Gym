@@ -44,6 +44,8 @@ const SubscriptionPlans = () => {
     plan_name: "",
     price: "",
     is_member_only: false,
+    duration_months: 1,
+    duration_days: 0,
     features: [],
   })
   const [selectedPlanId, setSelectedPlanId] = useState(null)
@@ -131,6 +133,8 @@ const SubscriptionPlans = () => {
       plan_name: "",
       price: "",
       is_member_only: false,
+      duration_months: 1,
+      duration_days: 0,
       features: [],
     })
     setIsDialogOpen(true)
@@ -142,6 +146,8 @@ const SubscriptionPlans = () => {
       plan_name: plan.name,
       price: plan.price.toString(),
       is_member_only: plan.is_member_only,
+      duration_months: plan.duration_months || 1,
+      duration_days: plan.duration_days || 0,
       features: plan.features || [],
     })
     setIsDialogOpen(true)
@@ -168,6 +174,12 @@ const SubscriptionPlans = () => {
 
   const handleSave = async () => {
     if (!currentPlan.plan_name || !currentPlan.price) return
+    
+    // Validate that at least one duration is set
+    if (currentPlan.duration_months === 0 && currentPlan.duration_days === 0) {
+      alert("Please set either duration in months or days")
+      return
+    }
 
     setIsLoading(true)
     try {
@@ -176,6 +188,8 @@ const SubscriptionPlans = () => {
         name: currentPlan.plan_name,
         price: Number.parseFloat(currentPlan.price),
         is_member_only: currentPlan.is_member_only,
+        duration_months: currentPlan.duration_months,
+        duration_days: currentPlan.duration_days,
         features: currentPlan.features.filter((f) => f.feature_name.trim() !== ""),
       }
 
@@ -332,6 +346,7 @@ const SubscriptionPlans = () => {
                   <TableRow>
                     <TableHead>Plan Name</TableHead>
                     <TableHead>Price</TableHead>
+                    <TableHead>Duration</TableHead>
                     <TableHead>Member Only</TableHead>
                     <TableHead>Features</TableHead>
                     <TableHead>Status</TableHead>
@@ -341,7 +356,7 @@ const SubscriptionPlans = () => {
                 <TableBody>
                   {filteredPlans.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         {searchQuery ? "No plans found matching your search" : "No membership plans found"}
                       </TableCell>
                     </TableRow>
@@ -350,6 +365,19 @@ const SubscriptionPlans = () => {
                       <TableRow key={plan.id}>
                         <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
+                        <TableCell>
+                          {plan.duration_days > 0 ? (
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                              {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
+                            </Badge>
+                          ) : plan.duration_months > 0 ? (
+                            <Badge variant="outline">
+                              {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">1 Month</Badge>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {plan.is_member_only ? (
                             <Badge variant="secondary">Members Only</Badge>
@@ -596,6 +624,62 @@ const SubscriptionPlans = () => {
                   onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
                   placeholder="Enter price"
                 />
+              </div>
+            </div>
+
+            {/* Duration Fields */}
+            <div className="space-y-4">
+              <Label className="text-base font-medium">Plan Duration</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="duration_months">Duration (Months)</Label>
+                  <Input
+                    id="duration_months"
+                    type="number"
+                    min="0"
+                    value={currentPlan.duration_months}
+                    onChange={(e) => {
+                      const months = parseInt(e.target.value) || 0;
+                      setCurrentPlan({ 
+                        ...currentPlan, 
+                        duration_months: months,
+                        duration_days: months > 0 ? 0 : currentPlan.duration_days
+                      });
+                    }}
+                    placeholder="0 for day pass plans"
+                    className={currentPlan.duration_months > 0 ? "border-green-500 bg-green-50" : ""}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave as 0 for day pass plans</p>
+                  {currentPlan.duration_months > 0 && (
+                    <p className="text-xs text-green-600 font-medium">✓ Monthly Plan</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duration_days">Duration (Days)</Label>
+                  <Input
+                    id="duration_days"
+                    type="number"
+                    min="0"
+                    value={currentPlan.duration_days}
+                    onChange={(e) => {
+                      const days = parseInt(e.target.value) || 0;
+                      setCurrentPlan({ 
+                        ...currentPlan, 
+                        duration_days: days,
+                        duration_months: days > 0 ? 0 : currentPlan.duration_months
+                      });
+                    }}
+                    placeholder="0 for monthly plans"
+                    className={currentPlan.duration_days > 0 ? "border-blue-500 bg-blue-50" : ""}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave as 0 for monthly plans</p>
+                  {currentPlan.duration_days > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">✓ Day Pass Plan</p>
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <strong>Note:</strong> Use either months OR days, not both. Set one to 0 when using the other.
               </div>
             </div>
 
