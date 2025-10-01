@@ -146,13 +146,25 @@ const CoachAssignments = () => {
   useEffect(() => {
     const getCurrentUser = async () => {
       try {
+        // Try the session endpoint first
         const response = await axios.get('https://api.cnergy.site/session.php')
         if (response.data.authenticated && response.data.user_id) {
           setCurrentUserId(response.data.user_id)
+          return
         }
       } catch (err) {
-        console.error("Error getting current user:", err)
-        // Keep default admin ID if session fails
+        console.error("Error getting current user from session:", err)
+      }
+      
+      // Fallback: try to get user from admin_coach.php
+      try {
+        const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
+        if (response.data.success && response.data.user_id) {
+          setCurrentUserId(response.data.user_id)
+        }
+      } catch (err) {
+        console.error("Error getting current user from API:", err)
+        // Keep default admin ID if both fail
       }
     }
     getCurrentUser()
