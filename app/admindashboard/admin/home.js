@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react"
 import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Bar, BarChart, Line, LineChart, ResponsiveContainer } from "recharts"
+import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Users, CreditCard, UserCheck, AlertTriangle, Calendar } from "lucide-react"
@@ -42,6 +42,15 @@ const GymDashboard = () => {
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
+  }
+
+  // Custom formatters
+  const formatCurrency = (value) => {
+    return `₱${value.toLocaleString()}`
+  }
+
+  const formatNumber = (value) => {
+    return value.toLocaleString()
   }
 
   return (
@@ -155,6 +164,19 @@ const GymDashboard = () => {
             >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={membershipData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="name" 
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatNumber}
+                  />
                   <Line
                     type="monotone"
                     dataKey="members"
@@ -165,7 +187,11 @@ const GymDashboard = () => {
                     }}
                     style={{ stroke: "hsl(var(--chart-1))" }}
                   />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip 
+                    content={<ChartTooltipContent 
+                      formatter={(value, name) => [formatNumber(value), "Members"]}
+                    />} 
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -186,8 +212,25 @@ const GymDashboard = () => {
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={revenueData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis 
+                    dataKey="name" 
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatCurrency}
+                  />
                   <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
-                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartTooltip 
+                    content={<ChartTooltipContent 
+                      formatter={(value, name) => [formatCurrency(value), "Revenue"]}
+                    />} 
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartContainer>
