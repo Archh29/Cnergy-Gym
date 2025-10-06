@@ -176,14 +176,29 @@ const App = () => {
             detail: { data: cleanedData, response: response.data },
           }),
         )
-      } else {
-        // Handle plan validation errors
-        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
-          showNotification(response.data.message, "error")
-        } else {
-          showNotification(response.data.message || "Failed to process QR code", "error")
-        }
-      }
+          } else {
+            // Handle plan validation errors
+            if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+              showNotification(response.data.message, "error")
+            }
+            // Handle cooldown errors
+            else if (response.data.type === "cooldown") {
+              showNotification(response.data.message, "warning")
+            }
+            // Handle attendance limit errors
+            else if (response.data.type === "already_checked_in") {
+              showNotification(response.data.message, "warning")
+            }
+            else if (response.data.type === "already_attended_today") {
+              showNotification(response.data.message, "info")
+            }
+            // Handle session conflict errors
+            else if (response.data.type === "session_conflict") {
+              showNotification(response.data.message, "error")
+            } else {
+              showNotification(response.data.message || "Failed to process QR code", "error")
+            }
+          }
       setIsConnected(true)
     } catch (err) {
       setIsConnected(false)

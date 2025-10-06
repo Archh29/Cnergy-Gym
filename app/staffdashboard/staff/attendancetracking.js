@@ -162,6 +162,21 @@ const AttendanceTracking = ({ userId }) => {
         if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
           showNotification(response.data.message, "error")
         }
+        // Handle cooldown errors
+        else if (response.data.type === "cooldown") {
+          showNotification(response.data.message, "warning")
+        }
+        // Handle attendance limit errors
+        else if (response.data.type === "already_checked_in") {
+          showNotification(response.data.message, "warning")
+        }
+        else if (response.data.type === "already_attended_today") {
+          showNotification(response.data.message, "info")
+        }
+        // Handle session conflict errors
+        else if (response.data.type === "session_conflict") {
+          showNotification(response.data.message, "error")
+        }
         // Handle guest session specific errors
         else if (response.data.type === "guest_expired") {
           showNotification(response.data.message, "error")
@@ -221,6 +236,21 @@ const AttendanceTracking = ({ userId }) => {
       } else {
         // Handle plan validation errors
         if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        }
+        // Handle cooldown errors
+        else if (response.data.type === "cooldown") {
+          showNotification(response.data.message, "warning")
+        }
+        // Handle attendance limit errors
+        else if (response.data.type === "already_checked_in") {
+          showNotification(response.data.message, "warning")
+        }
+        else if (response.data.type === "already_attended_today") {
+          showNotification(response.data.message, "info")
+        }
+        // Handle session conflict errors
+        else if (response.data.type === "session_conflict") {
           showNotification(response.data.message, "error")
         }
         // Handle guest session specific errors
