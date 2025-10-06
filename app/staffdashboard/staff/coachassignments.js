@@ -199,9 +199,10 @@ const CoachAssignments = ({ userId }) => {
 
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment&staff_id=${userId}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, {
         request_id: selectedRequest.id,
         admin_id: userId, // Use the current logged-in user ID
+        staff_id: userId, // Send staff_id in POST data body
         payment_method: posData.payment_method,
         amount_received: parseFloat(posData.amount_received),
         cashier_id: currentUserId, // Automatically use current user as cashier
@@ -234,10 +235,11 @@ const CoachAssignments = ({ userId }) => {
   const handleDeclineRequest = async (requestId, reason = "") => {
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=decline-request&staff_id=${userId}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=decline-request`, {
         request_id: requestId,
         reason: reason || declineReason,
         admin_id: userId, // Use the current logged-in user ID
+        staff_id: userId, // Send staff_id in POST data body
       })
       if (response.data.success) {
         // Refresh data
