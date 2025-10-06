@@ -106,22 +106,22 @@ const StaffMonitoring = () => {
       if (response.data.activities) {
         setActivities(response.data.activities)
       } else {
-        // Create mock data for demonstration
+        // Create comprehensive mock data for demonstration
         setActivities([
           {
             id: 1,
-            user_id: null,
+            user_id: 1,
             activity: "Member account approved: John Doe (ID: 123)",
             timestamp: new Date().toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
-            user_type: "staff",
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
             activity_category: "Member Management"
           },
           {
             id: 2,
-            user_id: null,
+            user_id: 2,
             activity: "New sale recorded: Protein Shake - ₱150.00",
             timestamp: new Date(Date.now() - 3600000).toISOString(),
             fname: "Staff",
@@ -129,6 +129,50 @@ const StaffMonitoring = () => {
             email: "staff@cnergy.com",
             user_type: "staff",
             activity_category: "Sales"
+          },
+          {
+            id: 3,
+            user_id: 2,
+            activity: "POS Sale completed: Creatine + Pre-workout - Total: ₱200.00, Payment: cash, Receipt: RCP20241201001",
+            timestamp: new Date(Date.now() - 7200000).toISOString(),
+            fname: "Staff",
+            lname: "Member",
+            email: "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Sales"
+          },
+          {
+            id: 4,
+            user_id: 1,
+            activity: "New product added: Cnergy Shirt - Price: ₱300, Stock: 50, Category: Merch/Apparel",
+            timestamp: new Date(Date.now() - 10800000).toISOString(),
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
+            activity_category: "Product Management"
+          },
+          {
+            id: 5,
+            user_id: 2,
+            activity: "Guest session created: Guest Name: Mike Johnson, Type: Day Pass, Amount: ₱100",
+            timestamp: new Date(Date.now() - 14400000).toISOString(),
+            fname: "Staff",
+            lname: "Member",
+            email: "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Guest Management"
+          },
+          {
+            id: 6,
+            user_id: 1,
+            activity: "Stock updated for Protein Powder: add 25 units",
+            timestamp: new Date(Date.now() - 18000000).toISOString(),
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
+            activity_category: "Inventory Management"
           }
         ])
       }
@@ -207,15 +251,15 @@ const StaffMonitoring = () => {
       setStaffList([
         {
           id: 1,
-          name: "Staff Member",
-          email: "staff@cnergy.com",
-          user_type: "staff"
-        },
-        {
-          id: 2,
           name: "Admin User",
           email: "admin@cnergy.com",
           user_type: "admin"
+        },
+        {
+          id: 2,
+          name: "Staff Member",
+          email: "staff@cnergy.com",
+          user_type: "staff"
         }
       ])
     }
@@ -303,9 +347,9 @@ const StaffMonitoring = () => {
         </CardHeader>
         <CardContent>
           <p className="text-l font-semibold">Monitor staff activities and performance across all CNERGY Gym operations</p>
-          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-800">
-              <strong>Note:</strong> Staff activity logging has been implemented. When staff members approve members, process sales, or perform other actions, they will appear in this monitoring system.
+          <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-sm text-yellow-800">
+              <strong>Demo Mode:</strong> Staff monitoring API is not yet deployed to the live server. Currently showing demo data. To enable real-time staff monitoring, deploy the staff_monitoring.php file to your server.
             </p>
           </div>
         </CardContent>
