@@ -67,6 +67,7 @@ const StaffMonitoring = () => {
 
   const loadInitialData = async () => {
     setLoading(true)
+    setHasError(false)
     try {
       await Promise.all([
         loadStaffActivities(),
@@ -76,7 +77,18 @@ const StaffMonitoring = () => {
       ])
     } catch (error) {
       console.error("Error loading initial data:", error)
-      alert("Error loading data. Please refresh the page.")
+      setHasError(true)
+      // Set empty states as fallback
+      setActivities([])
+      setPerformance([])
+      setSummary({
+        total_staff: 0,
+        total_admins: 0,
+        total_staff_members: 0,
+        activities_today: 0,
+        activities_week: 0,
+        activities_month: 0
+      })
     } finally {
       setLoading(false)
     }
@@ -94,8 +106,8 @@ const StaffMonitoring = () => {
       setActivities(response.data.activities || [])
     } catch (error) {
       console.error("Error loading staff activities:", error)
-      // Fallback: Load from existing activity log data
-      await loadFallbackActivities()
+      // Set empty array instead of calling fallback to prevent infinite loops
+      setActivities([])
     }
   }
 
@@ -188,43 +200,36 @@ const StaffMonitoring = () => {
       setPerformance(response.data.performance || [])
     } catch (error) {
       console.error("Error loading staff performance:", error)
-      // Fallback: Create mock performance data
-      setPerformance([
-        {
-          staff_id: 1,
-          staff_name: "Staff Member",
-          email: "staff@cnergy.com",
-          user_type: "staff",
-          total_activities: 15,
-          coach_management: 2,
-          subscription_management: 3,
-          guest_management: 4,
-          coach_assignments: 1,
-          sales_activities: 3,
-          inventory_management: 2,
-          member_management: 5,
-          last_activity: new Date().toISOString()
-        }
-      ])
+      // Set empty array instead of mock data to prevent confusion
+      setPerformance([])
     }
   }
 
   const loadStaffSummary = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}?action=staff_summary`)
-      setSummary(response.data.summary || summary)
+      setSummary(response.data.summary || {
+        total_staff: 0,
+        total_admins: 0,
+        total_staff_members: 0,
+        activities_today: 0,
+        activities_this_week: 0,
+        activities_this_month: 0,
+        most_active_staff_today: "N/A",
+        most_active_count: 0
+      })
     } catch (error) {
       console.error("Error loading staff summary:", error)
-      // Fallback: Create mock summary data
+      // Set default empty summary
       setSummary({
-        total_staff: 5,
-        total_admins: 1,
-        total_staff_members: 4,
-        activities_today: 8,
-        activities_this_week: 25,
-        activities_this_month: 120,
-        most_active_staff_today: "Staff Member",
-        most_active_count: 5
+        total_staff: 0,
+        total_admins: 0,
+        total_staff_members: 0,
+        activities_today: 0,
+        activities_this_week: 0,
+        activities_this_month: 0,
+        most_active_staff_today: "N/A",
+        most_active_count: 0
       })
     }
   }
@@ -237,31 +242,18 @@ const StaffMonitoring = () => {
       if (response.data.staff) {
         const staff = response.data.staff.map(staff => ({
           id: staff.id,
-          name: `${staff.fname} ${staff.lname}`,
-          email: staff.email,
-          user_type: staff.user_type
+          name: `${staff.fname || ''} ${staff.lname || ''}`.trim() || 'Unknown Staff',
+          email: staff.email || 'No email',
+          user_type: staff.user_type || 'unknown'
         }))
         setStaffList(staff)
       } else {
-        throw new Error("No staff data received")
+        setStaffList([])
       }
     } catch (error) {
       console.error("Error loading staff list:", error)
-      // Fallback: Create mock staff list
-      setStaffList([
-        {
-          id: 1,
-          name: "Admin User",
-          email: "admin@cnergy.com",
-          user_type: "admin"
-        },
-        {
-          id: 2,
-          name: "Staff Member",
-          email: "staff@cnergy.com",
-          user_type: "staff"
-        }
-      ])
+      // Set empty array instead of mock data
+      setStaffList([])
     }
   }
 
@@ -325,6 +317,9 @@ const StaffMonitoring = () => {
     )
   })
 
+  // Add error state
+  const [hasError, setHasError] = useState(false)
+
   if (loading && activities.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -332,6 +327,34 @@ const StaffMonitoring = () => {
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900 mx-auto"></div>
           <p className="mt-4 text-lg">Loading staff monitoring data...</p>
         </div>
+      </div>
+    )
+  }
+
+  if (hasError) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <Activity className="h-5 w-5" />
+              Staff Monitoring - Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">
+                There was an error loading the staff monitoring data.
+              </p>
+              <Button onClick={() => {
+                setHasError(false)
+                loadInitialData()
+              }}>
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
