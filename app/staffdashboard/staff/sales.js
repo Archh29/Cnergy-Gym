@@ -276,7 +276,10 @@ const Sales = ({ userId }) => {
         })),
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=sale`, {
+        ...saleData,
+        staff_id: userId
+      })
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
@@ -322,7 +325,10 @@ const Sales = ({ userId }) => {
         notes: transactionNotes
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale`, {
+        ...saleData,
+        staff_id: userId
+      })
       if (response.data.success) {
         setLastTransaction({
           ...response.data,
@@ -375,11 +381,12 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=product`, {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
         category: newProduct.category,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -409,10 +416,11 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=stock`, {
         product_id: stockUpdateProduct.id,
         quantity: updateQuantity,
         type: stockUpdateType,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -438,11 +446,12 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=product`, {
         id: editProduct.id,
         name: editProductData.name,
         price: Number.parseFloat(editProductData.price),
         category: editProductData.category,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -466,8 +475,11 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.delete(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
-        data: { id: product.id }
+      const response = await axios.delete(`${API_BASE_URL}?action=product`, {
+        data: { 
+          id: product.id,
+          staff_id: userId
+        }
       })
 
       if (response.data.success) {
