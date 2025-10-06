@@ -607,12 +607,12 @@ const StaffMonitoring = () => {
                           <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                               <span className="text-sm font-medium">
-                                {staff.staff_name.split(' ').map(n => n[0]).join('')}
+                                {staff.staff_name ? staff.staff_name.split(' ').map(n => n[0]).join('') : 'N/A'}
                               </span>
                             </div>
                             <div>
-                              <div className="font-medium">{staff.staff_name}</div>
-                              <div className="text-sm text-muted-foreground">{staff.email}</div>
+                              <div className="font-medium">{staff.staff_name || 'Unknown Staff'}</div>
+                              <div className="text-sm text-muted-foreground">{staff.email || 'No email'}</div>
                             </div>
                           </div>
                         </TableCell>

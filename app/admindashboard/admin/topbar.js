@@ -53,13 +53,36 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
-      const data = await response.json()
-      if (data.success) {
+      // Get raw text first to handle malformed JSON
+      const rawText = await response.text()
+      
+      // Clean the response text (remove trailing characters)
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+      
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError)
+        console.error("Raw response:", rawText)
+        // Fallback: try to extract JSON from the response
+        const jsonMatch = rawText.match(/\{.*\}/)
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error("Invalid JSON response")
+        }
+      }
+      
+      if (data && data.success) {
         setNotifications(data.notifications || [])
         setUnreadCount(data.unread_count || 0)
       }
     } catch (error) {
       console.error("Error fetching notifications:", error)
+      // Set empty state on error
+      setNotifications([])
+      setUnreadCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -72,7 +95,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: notificationId, action: "mark_read" }),
       })
-      const data = await response.json()
+      
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+      
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+      
       if (response.ok) {
         setNotifications((prev) =>
           prev.map((notif) => (notif.id === notificationId ? { ...notif, status_name: "Read" } : notif))
@@ -94,7 +128,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId, action: "mark_all_read" }),
       })
-      const data = await response.json()
+      
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+      
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+      
       if (response.ok) {
         setNotifications((prev) => prev.map((notif) => ({ ...notif, status_name: "Read" })))
         setUnreadCount(0)
@@ -115,7 +160,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: notificationId }),
       })
-      const data = await response.json()
+      
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+      
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+      
       if (response.ok) {
         setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId))
         const deletedNotif = notifications.find((n) => n.id === notificationId)
