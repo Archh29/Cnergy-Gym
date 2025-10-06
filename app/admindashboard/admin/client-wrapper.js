@@ -133,7 +133,7 @@ export default function AdminDashboardClient() {
       case "Announcement":
         return <Announcement />
       case "AttendanceTracking":
-        return <AttendanceTracking />
+        return <AttendanceTracking userId={userId} />
       case "GuestManagement":
         return <GuestManagement />
       case "MonitorSubscriptions":
