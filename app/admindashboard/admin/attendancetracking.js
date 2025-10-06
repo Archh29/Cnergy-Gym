@@ -141,17 +141,46 @@ const AttendanceTracking = ({ userId }) => {
       if (response.data.success) {
         // Handle different action types
         const actionType = response.data.action
-        if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning")
+        let notificationMessage = response.data.message
+        
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
+        
+        if (actionType === "auto_checkout") {
+          showNotification(notificationMessage, "info")
+        } else if (actionType === "auto_checkout_and_checkin") {
+          showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
-          showNotification(response.data.message, "success")
+          showNotification(notificationMessage, "success")
         } else {
-          showNotification(response.data.message)
+          showNotification(notificationMessage)
         }
         fetchData()
       } else {
+        // Handle plan validation errors
+        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        }
+        // Handle cooldown errors
+        else if (response.data.type === "cooldown") {
+          showNotification(response.data.message, "warning")
+        }
+        // Handle attendance limit errors
+        else if (response.data.type === "already_checked_in") {
+          showNotification(response.data.message, "warning")
+        }
+        else if (response.data.type === "already_attended_today") {
+          showNotification(response.data.message, "info")
+        }
+        // Handle session conflict errors
+        else if (response.data.type === "session_conflict") {
+          showNotification(response.data.message, "error")
+        }
         // Handle guest session specific errors
-        if (response.data.type === "guest_expired") {
+        else if (response.data.type === "guest_expired") {
           showNotification(response.data.message, "error")
           // Trigger global modal for expired guest sessions
           window.dispatchEvent(new CustomEvent("guest-session-expired", {
@@ -189,18 +218,47 @@ const AttendanceTracking = ({ userId }) => {
       })
       if (response.data.success) {
         const actionType = response.data.action
-        if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning")
+        let notificationMessage = response.data.message
+        
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
+        
+        if (actionType === "auto_checkout") {
+          showNotification(notificationMessage, "info")
+        } else if (actionType === "auto_checkout_and_checkin") {
+          showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
-          showNotification(response.data.message, "success")
+          showNotification(notificationMessage, "success")
         } else {
-          showNotification(response.data.message)
+          showNotification(notificationMessage)
         }
         fetchData()
         setManualQrInput("")
       } else {
+        // Handle plan validation errors
+        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        }
+        // Handle cooldown errors
+        else if (response.data.type === "cooldown") {
+          showNotification(response.data.message, "warning")
+        }
+        // Handle attendance limit errors
+        else if (response.data.type === "already_checked_in") {
+          showNotification(response.data.message, "warning")
+        }
+        else if (response.data.type === "already_attended_today") {
+          showNotification(response.data.message, "info")
+        }
+        // Handle session conflict errors
+        else if (response.data.type === "session_conflict") {
+          showNotification(response.data.message, "error")
+        }
         // Handle guest session specific errors
-        if (response.data.type === "guest_expired") {
+        else if (response.data.type === "guest_expired") {
           showNotification(response.data.message, "error")
           // Trigger global modal for expired guest sessions
           window.dispatchEvent(new CustomEvent("guest-session-expired", {
@@ -280,7 +338,11 @@ const AttendanceTracking = ({ userId }) => {
               {/* Manual QR Input */}
               <Dialog open={manualScanOpen} onOpenChange={setManualScanOpen}>
                 <DialogTrigger asChild>
-                 
+                  <Button variant="outline" className="w-full sm:w-auto bg-transparent">
+                    <Camera className="mr-2 h-4 w-4" />
+                    <span className="hidden sm:inline">Manual QR</span>
+                    <span className="sm:hidden">QR</span>
+                  </Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-[400px] mx-auto">
                   <DialogHeader>

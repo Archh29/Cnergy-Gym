@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
 import { CheckCircle, AlertCircle, Clock, Wifi } from "lucide-react"
-import AdminDashboard from "./admin/page"
+import AdminDashboardClient from "./admin/client-wrapper"
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -148,10 +148,13 @@ const App = () => {
     setScanCount((prev) => prev + 1)
 
     try {
+      // Get userId from session storage for global QR scanner
+      const currentUserId = sessionStorage.getItem("user_id")
+      
       const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: cleanedData.trim(),
-        staff_id: userId,
+        staff_id: currentUserId,
       })
 
           if (response.data.success) {
@@ -410,7 +413,7 @@ const App = () => {
 
       {/* Main Content */}
       <ErrorBoundary>
-        <AdminDashboard />
+        <AdminDashboardClient />
       </ErrorBoundary>
     </div>
   )
