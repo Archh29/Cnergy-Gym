@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useContext } from "react"
 import axios from "axios"
+import { UserContext } from "../client-wrapper"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,7 @@ import {
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionMonitor = () => {
+  const { userId } = useContext(UserContext)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
@@ -380,7 +382,8 @@ const SubscriptionMonitor = () => {
         change_given: change,
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
-        created_by: "Admin"
+        created_by: "Admin",
+        staff_id: userId || 8 // Use current user ID or fallback
       });
 
       if (response.data.success) {

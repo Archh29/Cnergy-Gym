@@ -347,9 +347,9 @@ const StaffMonitoring = () => {
         </CardHeader>
         <CardContent>
           <p className="text-l font-semibold">Monitor staff activities and performance across all CNERGY Gym operations</p>
-          <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-            <p className="text-sm text-yellow-800">
-              <strong>Demo Mode:</strong> Staff monitoring API is not yet deployed to the live server. Currently showing demo data. To enable real-time staff monitoring, deploy the staff_monitoring.php file to your server.
+          <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-sm text-green-800">
+              <strong>Live Mode:</strong> Staff monitoring is now active and showing real-time data from your gym operations.
             </p>
           </div>
         </CardContent>

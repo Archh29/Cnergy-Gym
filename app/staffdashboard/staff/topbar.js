@@ -131,25 +131,34 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
   const getNotificationIcon = (typeName, message) => {
     const iconClass = "h-4 w-4"
-    if (message?.includes("registration") || message?.includes("joined")) return <Users className={`${iconClass} text-blue-500`} />
-    if (message?.includes("Payment") || message?.includes("paid")) return <CreditCard className={`${iconClass} text-green-500`} />
-    if (message?.includes("Sale") || message?.includes("sold")) return <ShoppingCart className={`${iconClass} text-purple-500`} />
-    if (message?.includes("stock") || message?.includes("Stock")) return <Package className={`${iconClass} text-orange-500`} />
-    if (message?.includes("Staff") || message?.includes("account")) return <UserCheck className={`${iconClass} text-indigo-500`} />
-    if (message?.includes("Product") || message?.includes("added") || message?.includes("updated")) return <Package className={`${iconClass} text-green-500`} />
+    
+    // Handle undefined/null values
+    if (!message) message = ""
+    if (!typeName) typeName = ""
+    
+    if (message.includes("registration") || message.includes("joined")) return <Users className={`${iconClass} text-blue-500`} />
+    if (message.includes("Payment") || message.includes("paid")) return <CreditCard className={`${iconClass} text-green-500`} />
+    if (message.includes("Sale") || message.includes("sold")) return <ShoppingCart className={`${iconClass} text-purple-500`} />
+    if (message.includes("stock") || message.includes("Stock")) return <Package className={`${iconClass} text-orange-500`} />
+    if (message.includes("Staff") || message.includes("account")) return <UserCheck className={`${iconClass} text-indigo-500`} />
+    if (message.includes("Product") || message.includes("added") || message.includes("updated")) return <Package className={`${iconClass} text-green-500`} />
 
-    switch (typeName?.toLowerCase()) {
+    switch (typeName.toLowerCase()) {
       case "info": return <Info className={`${iconClass} text-blue-500`} />
       case "warning": return <AlertTriangle className={`${iconClass} text-yellow-500`} />
       case "error": return <AlertCircle className={`${iconClass} text-red-500`} />
       case "success": return <CheckCircle className={`${iconClass} text-green-500`} />
-      default: return <Info className={`${iconClass} text-gray-500`} />
+      default: return <Bell className={`${iconClass} text-gray-500`} />
     }
   }
 
   const getNotificationBgColor = (typeName, isUnread) => {
     if (!isUnread) return "bg-white hover:bg-gray-50"
-    switch (typeName?.toLowerCase()) {
+    
+    // Handle undefined/null values
+    if (!typeName) typeName = ""
+    
+    switch (typeName.toLowerCase()) {
       case "info": return "bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-400"
       case "warning": return "bg-yellow-50 hover:bg-yellow-100 border-l-4 border-yellow-400"
       case "error": return "bg-red-50 hover:bg-red-100 border-l-4 border-red-400"
@@ -217,31 +226,41 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
               <p className="text-gray-400 text-sm">We'll notify you when something happens</p>
             </div>
           ) : (
-            <ScrollArea className="max-h-[400px] scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-              <div className="p-2">
+            <div className="max-h-[300px] overflow-y-auto">
+              <div className="p-2 space-y-2">
                 {notifications.map((notification) => (
                   <div
                     key={notification.id}
-                    className={`${getNotificationBgColor(notification.type_name, notification.status_name === "Unread")} rounded-xl p-4 mb-2 transition-all duration-200 cursor-pointer hover:shadow-md group`}
+                    className={`${getNotificationBgColor(notification.type_name, notification.status_name === "Unread")} rounded-lg p-3 transition-all duration-200 cursor-pointer hover:shadow-sm group border`}
                     onClick={() => { if (notification.status_name === "Unread") markAsRead(notification.id) }}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 mt-1">{getNotificationIcon(notification.type_name, notification.message)}</div>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-shrink-0 mt-0.5">
+                        {getNotificationIcon(notification.type_name, notification.message)}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{notification.type_name}</span>
-                          {notification.status_name === "Unread" && <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>}
+                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                            {notification.type_name || 'Notification'}
+                          </span>
+                          {notification.status_name === "Unread" && (
+                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                          )}
                         </div>
-                        <p className="text-sm text-gray-900 leading-relaxed mb-2">{notification.message}</p>
+                        <p className="text-sm text-gray-900 leading-snug mb-2 line-clamp-2">
+                          {notification.message || 'No message'}
+                        </p>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">{formatTimestamp(notification.timestamp)}</span>
+                          <span className="text-xs text-gray-500">
+                            {formatTimestamp(notification.timestamp)}
+                          </span>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             {notification.status_name === "Unread" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={(e) => { e.stopPropagation(); markAsRead(notification.id) }}
-                                className="h-7 w-7 p-0 hover:bg-green-100"
+                                className="h-6 w-6 p-0 hover:bg-green-100"
                                 title="Mark as read"
                               >
                                 <Check className="h-3 w-3 text-green-600" />
@@ -251,7 +270,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                               variant="ghost"
                               size="sm"
                               onClick={(e) => { e.stopPropagation(); deleteNotification(notification.id) }}
-                              className="h-7 w-7 p-0 hover:bg-red-100"
+                              className="h-6 w-6 p-0 hover:bg-red-100"
                               title="Delete notification"
                             >
                               <X className="h-3 w-3 text-red-600" />
@@ -263,7 +282,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                   </div>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           {/* Footer */}

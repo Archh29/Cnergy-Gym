@@ -65,6 +65,11 @@ export default function Login() {
         // Only allow admin and staff roles
         if (userRole === 'admin' || userRole === 'staff') {
           sessionStorage.setItem('user_role', userRole);
+          
+          // Store user ID if provided in response
+          if (response.data.user_id) {
+            sessionStorage.setItem('user_id', response.data.user_id);
+          }
         } else {
           setError('Invalid user role. Only admin and staff are allowed.');
           setLoading(false);

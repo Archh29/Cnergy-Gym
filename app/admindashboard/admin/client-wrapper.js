@@ -27,6 +27,7 @@ export default function AdminDashboardClient() {
   const [currentSection, setCurrentSection] = useState("Home")
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState("")
+  const [userId, setUserId] = useState(null)
   const [darkMode, setDarkMode] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [globalModal, setGlobalModal] = useState({ show: false, title: "", message: "", type: "info" })
@@ -36,11 +37,35 @@ export default function AdminDashboardClient() {
     setIsClient(true)
   }, [])
 
+  const fetchUserInfo = async () => {
+    try {
+      const response = await fetch("https://api.cnergy.site/session.php", {
+        credentials: "include"
+      })
+      const data = await response.json()
+      if (data.user_id) {
+        setUserId(data.user_id)
+        sessionStorage.setItem("user_id", data.user_id)
+      }
+    } catch (error) {
+      console.error("Error fetching user info:", error)
+    }
+  }
+
   useEffect(() => {
     if (!isClient) return
 
     const role = sessionStorage.getItem("role") || "Admin"
     setUserRole(role)
+    
+    // Get user ID from session storage or API
+    const storedUserId = sessionStorage.getItem("user_id")
+    if (storedUserId) {
+      setUserId(parseInt(storedUserId))
+    } else {
+      // If no user ID in session, try to get it from API
+      fetchUserInfo()
+    }
 
     // Load dark mode state (only on client)
     const savedTheme = localStorage.getItem("theme")
