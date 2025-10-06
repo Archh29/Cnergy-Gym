@@ -74,6 +74,8 @@ const SubscriptionMonitor = () => {
   const [transactionNotes, setTransactionNotes] = useState("")
   const [showReceipt, setShowReceipt] = useState(false)
   const [lastTransaction, setLastTransaction] = useState(null)
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false)
+  const [confirmationData, setConfirmationData] = useState(null)
 
   useEffect(() => {
     fetchAllData()
@@ -382,17 +384,17 @@ const SubscriptionMonitor = () => {
       });
 
       if (response.data.success) {
-        setLastTransaction({
-          ...response.data,
+        const confirmationData = {
+          ...response.data.data,
           change_given: change,
           total_amount: totalAmount,
           payment_method: paymentMethod,
-          amount_received: receivedAmount
-        });
-        setReceiptNumber(response.data.data.receipt_number);
-        setChangeGiven(change);
-        setShowReceipt(true);
+          amount_received: receivedAmount,
+          receipt_number: response.data.data.receipt_number
+        };
         
+        setConfirmationData(confirmationData);
+        setShowConfirmationModal(true);
         setMessage({ type: "success", text: "Manual subscription created and payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to create manual subscription");
@@ -437,17 +439,18 @@ const SubscriptionMonitor = () => {
       });
 
       if (response.data.success) {
-        setLastTransaction({
-          ...response.data,
+        const confirmationData = {
+          ...response.data.data,
           change_given: change,
           total_amount: totalAmount,
           payment_method: paymentMethod,
-          amount_received: receivedAmount
-        });
-        setReceiptNumber(response.data.receipt_number);
-        setChangeGiven(change);
-        setShowReceipt(true);
+          amount_received: receivedAmount,
+          receipt_number: response.data.receipt_number,
+          is_approval: true
+        };
         
+        setConfirmationData(confirmationData);
+        setShowConfirmationModal(true);
         setMessage({ type: "success", text: "Subscription approved and POS payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to approve subscription with payment");
@@ -1069,6 +1072,92 @@ const SubscriptionMonitor = () => {
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Modal */}
+      <Dialog open={showConfirmationModal} onOpenChange={setShowConfirmationModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <CheckCircle className="h-5 w-5" />
+              Transaction Successful
+            </DialogTitle>
+            <DialogDescription>
+              {confirmationData?.is_approval 
+                ? "Subscription has been approved and payment processed successfully"
+                : "Manual subscription has been created and payment processed successfully"
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          {confirmationData && (
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <h4 className="font-semibold text-green-800 mb-3">Transaction Details</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Receipt Number:</span>
+                    <span className="font-mono font-semibold">{confirmationData.receipt_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Member:</span>
+                    <span className="font-medium">{confirmationData.user_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Plan:</span>
+                    <span className="font-medium">{confirmationData.plan_name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Amount Paid:</span>
+                    <span className="font-semibold">₱{confirmationData.total_amount?.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Payment Method:</span>
+                    <span className="capitalize">{confirmationData.payment_method}</span>
+                  </div>
+                  {confirmationData.payment_method === 'cash' && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Amount Received:</span>
+                        <span>₱{confirmationData.amount_received?.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Change Given:</span>
+                        <span>₱{confirmationData.change_given?.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Start Date:</span>
+                    <span>{new Date(confirmationData.start_date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">End Date:</span>
+                    <span>{new Date(confirmationData.end_date).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This subscription is now active and the member can start using the gym facilities immediately.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button 
+              onClick={() => {
+                setShowConfirmationModal(false)
+                setConfirmationData(null)
+              }} 
+              className="w-full"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
