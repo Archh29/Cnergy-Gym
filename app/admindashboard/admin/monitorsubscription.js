@@ -304,6 +304,7 @@ const SubscriptionMonitor = ({ userId }) => {
         subscription_id: declineDialog.subscription.subscription_id,
         declined_by: "Admin",
         decline_reason: declineReason,
+        staff_id: userId
       })
       if (response.data.success) {
         setMessage({ type: "success", text: response.data.message })
@@ -451,7 +452,8 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_received: receivedAmount,
         notes: transactionNotes,
         receipt_number: receiptNumber || undefined,
-        approved_by: "Admin"
+        approved_by: "Admin",
+        staff_id: userId
       });
 
       if (response.data.success) {
