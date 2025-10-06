@@ -339,10 +339,7 @@ const Merchandise = () => {
                       <TableRow key={item?.id}>
                         <TableCell className="font-medium">{item?.name || "N/A"}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <span>₱ </span>
-                            {formatCurrency(item?.price || 0)}
-                          </div>
+                          {formatCurrency(item?.price || 0)}
                         </TableCell>
                         <TableCell>
                           {item?.image_url ? (
