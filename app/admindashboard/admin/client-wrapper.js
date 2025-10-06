@@ -121,7 +121,7 @@ export default function AdminDashboardClient() {
       case "Home":
         return <Home />
       case "ViewMembers":
-        return <ViewMembers />
+        return <ViewMembers userId={userId} />
       case "ViewStaff":
         return <ViewStaff />
       case "ViewCoach":

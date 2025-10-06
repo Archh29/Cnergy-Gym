@@ -74,7 +74,7 @@ const editMemberSchema = z.object({
   account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
 })
 
-const ViewMembers = () => {
+const ViewMembers = ({ userId }) => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -295,6 +295,7 @@ const ViewMembers = () => {
         body: JSON.stringify({
           id: selectedMember.id,
           account_status: status,
+          staff_id: userId,
         }),
       })
 
@@ -350,6 +351,7 @@ const ViewMembers = () => {
         user_type_id: data.user_type_id,
         account_status: data.account_status,
         failed_attempt: 0,
+        staff_id: userId,
       }
 
       const response = await fetch("https://api.cnergy.site/member_management.php", {
@@ -413,6 +415,7 @@ const ViewMembers = () => {
         bday: data.bday,
         user_type_id: data.user_type_id,
         account_status: data.account_status,
+        staff_id: userId,
       }
 
       if (data.password && data.password.trim() !== "") {
@@ -462,7 +465,10 @@ const ViewMembers = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id: selectedMember.id }),
+        body: JSON.stringify({ 
+          id: selectedMember.id,
+          staff_id: userId,
+        }),
       })
 
       const result = await response.json()
