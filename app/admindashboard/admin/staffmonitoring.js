@@ -187,22 +187,20 @@ const StaffMonitoring = () => {
 
   const loadStaffList = async () => {
     try {
-      // Get staff list from activities
-      const response = await axios.get(`${API_BASE_URL}?action=staff_activities&limit=1000`)
-      const staffMap = new Map()
+      // Get staff list directly from user table
+      const response = await axios.get(`${API_BASE_URL}?action=staff_list`)
       
-      response.data.activities.forEach(activity => {
-        if (activity.user_id && activity.fname) {
-          staffMap.set(activity.user_id, {
-            id: activity.user_id,
-            name: `${activity.fname} ${activity.lname}`,
-            email: activity.email,
-            user_type: activity.user_type
-          })
-        }
-      })
-      
-      setStaffList(Array.from(staffMap.values()))
+      if (response.data.staff) {
+        const staff = response.data.staff.map(staff => ({
+          id: staff.id,
+          name: `${staff.fname} ${staff.lname}`,
+          email: staff.email,
+          user_type: staff.user_type
+        }))
+        setStaffList(staff)
+      } else {
+        throw new Error("No staff data received")
+      }
     } catch (error) {
       console.error("Error loading staff list:", error)
       // Fallback: Create mock staff list
