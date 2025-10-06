@@ -62,7 +62,7 @@ const validateEmail = (email) => {
   return emailRegex.test(email)
 }
 
-const ViewCoach = () => {
+const ViewCoach = ({ userId }) => {
   const [coaches, setCoaches] = useState([])
   const [filteredCoaches, setFilteredCoaches] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -397,7 +397,7 @@ const ViewCoach = () => {
         image_url: formData.image_url || "",
       }
 
-      const response = await axios.post(API_URL, formattedData)
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, formattedData)
       if (response.data.success) {
         // Refresh coaches list
         const getResponse = await axios.get(API_URL)
@@ -490,7 +490,7 @@ const ViewCoach = () => {
         updateData.password = formData.password
       }
 
-      const response = await axios.put(API_URL, updateData, {
+      const response = await axios.put(`${API_URL}?staff_id=${userId}`, updateData, {
         headers: {
           "Content-Type": "application/json",
         },
@@ -547,7 +547,7 @@ const ViewCoach = () => {
 
     try {
       setIsLoading(true)
-      const response = await axios.delete(API_URL, {
+      const response = await axios.delete(`${API_URL}?staff_id=${userId}`, {
         data: { id: selectedCoach.id },
       })
 

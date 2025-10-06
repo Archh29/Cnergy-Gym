@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label"
 axios.defaults.timeout = 10000
 axios.defaults.headers.common["Content-Type"] = "application/json"
 
-const FreePrograms = () => {
+const FreePrograms = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [programs, setPrograms] = useState([])
   const [exercises, setExercises] = useState([])
@@ -140,13 +140,13 @@ const FreePrograms = () => {
       let response
       if (selectedProgram) {
         // Update existing program
-        response = await axios.put(PROGRAMS_API, {
+        response = await axios.put(`${PROGRAMS_API}?staff_id=${userId}`, {
           id: selectedProgram.id,
           ...programData,
         })
       } else {
         // Create new program
-        response = await axios.post(PROGRAMS_API, programData)
+        response = await axios.post(`${PROGRAMS_API}?staff_id=${userId}`, programData)
       }
 
       if (response.data.success) {
@@ -171,7 +171,7 @@ const FreePrograms = () => {
     setError("")
 
     try {
-      const response = await axios.delete(PROGRAMS_API, {
+      const response = await axios.delete(`${PROGRAMS_API}?staff_id=${userId}`, {
         data: { id },
       })
 

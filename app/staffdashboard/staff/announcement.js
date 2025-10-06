@@ -16,7 +16,7 @@ import { PlusCircle, Edit, Trash2 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/announcement.php"
 
-const Announcement = () => {
+const Announcement = ({ userId }) => {
   const [announcements, setAnnouncements] = useState([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -52,7 +52,7 @@ const Announcement = () => {
 
   const handleAddAnnouncement = async () => {
     try {
-      await axios.post(API_URL, newAnnouncement)
+      await axios.post(`${API_URL}?staff_id=${userId}`, newAnnouncement)
       await fetchAnnouncements()
       setIsAddDialogOpen(false)
       setNewAnnouncement({ title: "", content: "", priority: "medium", status: "active" })
@@ -72,7 +72,7 @@ const Announcement = () => {
 
   const handleEditAnnouncement = async () => {
     try {
-      await axios.put(API_URL, selectedAnnouncement)
+      await axios.put(`${API_URL}?staff_id=${userId}`, selectedAnnouncement)
       await fetchAnnouncements()
       setIsEditDialogOpen(false)
       toast({
@@ -91,7 +91,7 @@ const Announcement = () => {
 
   const handleDeleteAnnouncement = async (id) => {
     try {
-      await axios.delete(API_URL, { data: { id } })
+      await axios.delete(`${API_URL}?staff_id=${userId}`, { data: { id } })
       await fetchAnnouncements()
       toast({
         title: "Announcement Deleted",

@@ -89,27 +89,27 @@ export default function StaffDashboard() {
       case "Renewal":
         return <Renewal />;
       case "Announcement":
-        return <Announcement />;
+        return <Announcement userId={userId} />;
       case "AttendanceTracking":
-        return <AttendanceTracking />;
+        return <AttendanceTracking userId={userId} />;
       case "MembershipDetails":
-        return <MembershipDetails />;
+        return <MembershipDetails userId={userId} />;
         case "ViewMembers":
           return <ViewMembers userId={userId} />;
       case "MonitorSubscriptions":
           return <MonitorSubscriptions userId={userId} />;
       case "ViewCoach":
-          return <ViewCoach />
+          return <ViewCoach userId={userId} />
       case "Exercises":
-          return <Exercises />;
+          return <Exercises userId={userId} />;
       case "FreePrograms":
-          return <FreePrograms />;
+          return <FreePrograms userId={userId} />;
       case "CoachAssignments":
-          return <CoachAssignments />;
+          return <CoachAssignments userId={userId} />;
       case "Sales":
           return <Sales userId={userId} />;
       case "GuestManagement":
-          return <GuestManagement />;
+          return <GuestManagement userId={userId} />;
       default:
         return <Home />;
     }

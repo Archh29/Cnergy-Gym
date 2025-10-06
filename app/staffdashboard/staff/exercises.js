@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-const ExerciseMuscleManager = () => {
+const ExerciseMuscleManager = ({ userId }) => {
   // Common states
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -142,7 +142,7 @@ const ExerciseMuscleManager = () => {
     formData.append("type", type)
 
     try {
-      const response = await axios.post(API_URL, formData, {
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -251,7 +251,7 @@ const ExerciseMuscleManager = () => {
         exerciseData.id = selectedExercise.id
       }
 
-      const response = await axios.post(API_URL, exerciseData)
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, exerciseData)
 
       if (response.data.success) {
         await fetchExercises()
@@ -275,7 +275,7 @@ const ExerciseMuscleManager = () => {
     setError("")
 
     try {
-      const response = await axios.post(API_URL, {
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, {
         action: "delete_exercise",
         id: id,
       })
@@ -379,7 +379,7 @@ const ExerciseMuscleManager = () => {
         muscleData.id = selectedMuscle.id
       }
 
-      const response = await axios.post(API_URL, muscleData)
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, muscleData)
 
       if (response.data.success) {
         await fetchMuscleGroups()
@@ -437,7 +437,7 @@ const ExerciseMuscleManager = () => {
         musclePartData.id = selectedMusclePart.id
       }
 
-      const response = await axios.post(API_URL, musclePartData)
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, musclePartData)
 
       if (response.data.success) {
         await fetchMuscleParts(selectedMuscleGroup || null)
@@ -462,7 +462,7 @@ const ExerciseMuscleManager = () => {
     setError("")
 
     try {
-      const response = await axios.post(API_URL, {
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, {
         action: "delete_muscle",
         id: id,
       })
@@ -523,7 +523,7 @@ const ExerciseMuscleManager = () => {
     setError("")
 
     try {
-      const response = await axios.post(API_URL, {
+      const response = await axios.post(`${API_URL}?staff_id=${userId}`, {
         action: "delete_muscle",
         id: id,
       })

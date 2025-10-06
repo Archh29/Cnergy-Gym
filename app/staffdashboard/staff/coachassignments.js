@@ -31,7 +31,7 @@ import {
 
 const API_BASE_URL = "https://api.cnergy.site/admin_coach.php"
 
-const CoachAssignments = () => {
+const CoachAssignments = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedRequest, setSelectedRequest] = useState(null)
   const [requestDetailOpen, setRequestDetailOpen] = useState(false)
@@ -199,9 +199,9 @@ const CoachAssignments = () => {
 
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, {
+      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment&staff_id=${userId}`, {
         request_id: selectedRequest.id,
-        admin_id: currentUserId, // Use the current logged-in user ID
+        admin_id: userId, // Use the current logged-in user ID
         payment_method: posData.payment_method,
         amount_received: parseFloat(posData.amount_received),
         cashier_id: currentUserId, // Automatically use current user as cashier
@@ -234,10 +234,10 @@ const CoachAssignments = () => {
   const handleDeclineRequest = async (requestId, reason = "") => {
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=decline-request`, {
+      const response = await axios.post(`${API_BASE_URL}?action=decline-request&staff_id=${userId}`, {
         request_id: requestId,
         reason: reason || declineReason,
-        admin_id: 6, // Use the actual admin user ID from your database
+        admin_id: userId, // Use the current logged-in user ID
       })
       if (response.data.success) {
         // Refresh data
