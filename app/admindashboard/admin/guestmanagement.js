@@ -129,7 +129,8 @@ export default function GuestManagement() {
             setActionLoading(true);
             const response = await axios.post(API_URL, {
                 action: 'reject_session',
-                session_id: sessionId
+                session_id: sessionId,
+                staff_id: userId
             }, {
                 headers: {
                     'Accept': 'application/json',
@@ -213,7 +214,8 @@ export default function GuestManagement() {
                     session_id: pendingSession.id,
                     payment_method: newGuestData.payment_method,
                     amount_received: receivedAmount,
-                    notes: newGuestData.notes
+                    notes: newGuestData.notes,
+                    staff_id: userId
                 }, {
                     headers: {
                         'Accept': 'application/json',
@@ -248,7 +250,8 @@ export default function GuestManagement() {
                     amount_paid: totalAmount,
                     payment_method: newGuestData.payment_method,
                     amount_received: receivedAmount,
-                    notes: newGuestData.notes
+                    notes: newGuestData.notes,
+                    staff_id: userId
                 }, {
                     headers: {
                         'Accept': 'application/json',
