@@ -34,7 +34,7 @@ import {
 // API Configuration
 const API_BASE_URL = "https://api.cnergy.site/sales.php"
 
-const Sales = ({ userId }) => {
+const Sales = () => {
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "", category: "Uncategorized" })
@@ -77,18 +77,21 @@ const Sales = ({ userId }) => {
     productsSoldToday: 0,
     lowStockItems: 0,
     monthlyRevenue: 0,
+    productSales: 0,
+    subscriptionSales: 0,
+    totalProductSales: 0,
+    totalSubscriptionSales: 0,
   })
 
   // Load initial data
   useEffect(() => {
-    if (!userId) return; // Don't load until userId is available
     loadInitialData()
-  }, [userId])
+  }, [])
 
   // Reload analytics when filter changes
   useEffect(() => {
     loadAnalytics()
-  }, [analyticsFilter])
+  }, [analyticsFilter, saleTypeFilter])
 
   // Reload sales when filters change
   useEffect(() => {
@@ -137,13 +140,23 @@ const Sales = ({ userId }) => {
 
   const loadAnalytics = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&period=${analyticsFilter}`)
+      const params = new URLSearchParams()
+      params.append("period", analyticsFilter)
+      if (saleTypeFilter !== "all") {
+        params.append("sale_type", saleTypeFilter)
+      }
+      
+      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
       setAnalytics(
         response.data.analytics || {
           todaysSales: 0,
           productsSoldToday: 0,
           lowStockItems: 0,
           monthlyRevenue: 0,
+          productSales: 0,
+          subscriptionSales: 0,
+          totalProductSales: 0,
+          totalSubscriptionSales: 0,
         },
       )
     } catch (error) {
@@ -263,7 +276,7 @@ const Sales = ({ userId }) => {
         })),
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=sale`, saleData)
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
@@ -306,11 +319,10 @@ const Sales = ({ userId }) => {
         })),
         payment_method: paymentMethod,
         amount_received: receivedAmount,
-        cashier_id: userId,
         notes: transactionNotes
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale`, saleData)
       if (response.data.success) {
         setLastTransaction({
           ...response.data,
@@ -363,7 +375,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=product`, {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
@@ -397,7 +409,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=stock`, {
         product_id: stockUpdateProduct.id,
         quantity: updateQuantity,
         type: stockUpdateType,
@@ -426,7 +438,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.put(`${API_BASE_URL}?action=product`, {
         id: editProduct.id,
         name: editProductData.name,
         price: Number.parseFloat(editProductData.price),
@@ -454,7 +466,7 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.delete(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.delete(`${API_BASE_URL}?action=product`, {
         data: { id: product.id }
       })
 
@@ -517,12 +529,17 @@ const Sales = ({ userId }) => {
   }
 
   const filteredSales = sales.filter((sale) => {
-    return (
+    // Filter by search query
+    const matchesSearch = searchQuery === "" || 
       sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       sale.sales_details.some(detail => 
         detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    )
+    
+    // Filter by sale type (this should already be handled by the API, but keeping as backup)
+    const matchesSaleType = saleTypeFilter === "all" || sale.sale_type === saleTypeFilter
+    
+    return matchesSearch && matchesSaleType
   })
 
 
@@ -570,26 +587,43 @@ const Sales = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Sales</CardTitle>
+                <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
                 <span className="text-muted-foreground">₱</span>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">Product & subscription sales</p>
+                <p className="text-xs text-muted-foreground">
+                  {saleTypeFilter === "all" ? "All sales" : 
+                   saleTypeFilter === "Product" ? "Product sales only" :
+                   saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Products Sold</CardTitle>
+                <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
                 <ShoppingCart className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.productsSoldToday}</div>
-                <p className="text-xs text-muted-foreground">Items sold</p>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.productSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {analytics.productsSoldToday || 0} items sold
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">Membership revenue</p>
               </CardContent>
             </Card>
 
@@ -601,17 +635,6 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
                 <p className="text-xs text-muted-foreground">Need restocking</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
-                <p className="text-xs text-muted-foreground">All-time revenue</p>
               </CardContent>
             </Card>
           </div>
@@ -808,7 +831,17 @@ const Sales = ({ userId }) => {
             <CardHeader>
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle>Sales History</CardTitle>
+                  <div className="flex items-center gap-4">
+                    <CardTitle>Sales History</CardTitle>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>Showing {filteredSales.length} of {sales.length} sales</span>
+                      {saleTypeFilter !== "all" && (
+                        <Badge variant="outline" className="text-xs">
+                          {saleTypeFilter} only
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                   <div className="relative w-full max-w-md">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input

@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 
 // API Configuration
-const API_BASE_URL = "https://api.cnergy.site/staff_monitoring.php"
+const API_BASE_URL = "https://api.cnergy.site/staff_monitoring_simple.php"
 const FALLBACK_API_URL = "https://api.cnergy.site/sales.php"
 
 const StaffMonitoring = () => {

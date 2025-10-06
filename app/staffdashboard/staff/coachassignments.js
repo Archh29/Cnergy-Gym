@@ -41,6 +41,16 @@ const CoachAssignments = () => {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // POS Modal states
+  const [posModalOpen, setPosModalOpen] = useState(false)
+  const [posData, setPosData] = useState({
+    payment_method: 'cash',
+    amount_received: '',
+    change_given: 0,
+    notes: ''
+  })
+  const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
+
   // Data states
   const [pendingRequests, setPendingRequests] = useState([])
   const [assignedMembers, setAssignedMembers] = useState([])
@@ -132,6 +142,34 @@ const CoachAssignments = () => {
     }
   }
 
+  // Get current user ID from session
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        // Try the session endpoint first
+        const response = await axios.get('https://api.cnergy.site/session.php')
+        if (response.data.authenticated && response.data.user_id) {
+          setCurrentUserId(response.data.user_id)
+          return
+        }
+      } catch (err) {
+        console.error("Error getting current user from session:", err)
+      }
+      
+      // Fallback: try to get user from admin_coach.php
+      try {
+        const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
+        if (response.data.success && response.data.user_id) {
+          setCurrentUserId(response.data.user_id)
+        }
+      } catch (err) {
+        console.error("Error getting current user from API:", err)
+        // Keep default admin ID if both fail
+      }
+    }
+    getCurrentUser()
+  }, [])
+
   // Initial load
   useEffect(() => {
     loadAllData()
@@ -148,17 +186,40 @@ const CoachAssignments = () => {
   }, [])
 
   const handleApproveRequest = async (requestId) => {
+    // Open POS modal instead of directly approving
+    const request = pendingRequests.find(r => r.id === requestId)
+    if (request) {
+      setSelectedRequest(request)
+      setPosModalOpen(true)
+    }
+  }
+
+  const handleApproveWithPayment = async () => {
+    if (!selectedRequest) return
+
     setActionLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=approve-request`, {
-        request_id: requestId,
-        admin_id: 6, // Use the actual admin user ID from your database
+      const response = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, {
+        request_id: selectedRequest.id,
+        admin_id: currentUserId, // Use the current logged-in user ID
+        payment_method: posData.payment_method,
+        amount_received: parseFloat(posData.amount_received),
+        cashier_id: currentUserId, // Automatically use current user as cashier
+        notes: posData.notes
       })
       if (response.data.success) {
         // Refresh data
         await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog()])
         setRequestDetailOpen(false)
+        setPosModalOpen(false)
         setSelectedRequest(null)
+        // Reset POS data
+        setPosData({
+          payment_method: 'cash',
+          amount_received: '',
+          change_given: 0,
+          notes: ''
+        })
       } else {
         throw new Error(response.data.message || "Failed to approve request")
       }
@@ -405,7 +466,6 @@ const CoachAssignments = () => {
                       <TableRow>
                         <TableHead>Member</TableHead>
                         <TableHead>Requested Coach</TableHead>
-                        <TableHead>Rate Type</TableHead>
                         <TableHead>Coach Approved</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
@@ -413,7 +473,7 @@ const CoachAssignments = () => {
                     <TableBody>
                       {filteredRequests.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                             {pendingRequests.length === 0 ? "No pending requests" : "No requests match your search"}
                           </TableCell>
                         </TableRow>
@@ -444,20 +504,6 @@ const CoachAssignments = () => {
                                     <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                                     {request.coach?.rating || "N/A"}
                                   </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {request.rateType === 'monthly' && `₱${request.coach?.monthly_rate || 0}/month`}
-                                    {request.rateType === 'package' && `₱${request.coach?.package_rate || 0}/package`}
-                                    {request.rateType === 'per_session' && `₱${request.coach?.per_session_rate || 0}/session`}
-                                  </div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                <div className="font-medium capitalize">{request.rateType || 'monthly'}</div>
-                                <div className="text-muted-foreground">
-                                  {request.remainingSessions > 0 && `${request.remainingSessions} sessions left`}
-                                  {request.expiresAt && `Expires: ${new Date(request.expiresAt).toLocaleDateString()}`}
                                 </div>
                               </div>
                             </TableCell>
@@ -507,7 +553,6 @@ const CoachAssignments = () => {
                       <TableRow>
                         <TableHead>Member</TableHead>
                         <TableHead>Assigned Coach</TableHead>
-                        <TableHead>Rate Type</TableHead>
                         <TableHead>Assigned Date</TableHead>
                         <TableHead>Status</TableHead>
                       </TableRow>
@@ -515,7 +560,7 @@ const CoachAssignments = () => {
                     <TableBody>
                       {filteredMembers.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                             {assignedMembers.length === 0 ? "No assigned members" : "No members match your search"}
                           </TableCell>
                         </TableRow>
@@ -535,15 +580,6 @@ const CoachAssignments = () => {
                               </div>
                             </TableCell>
                             <TableCell className="font-medium">{assignment.coach?.name || "Unknown"}</TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                <div className="font-medium capitalize">{assignment.rateType || 'monthly'}</div>
-                                <div className="text-muted-foreground">
-                                  {assignment.remainingSessions > 0 && `${assignment.remainingSessions} sessions left`}
-                                  {assignment.expiresAt && `Expires: ${new Date(assignment.expiresAt).toLocaleDateString()}`}
-                                </div>
-                              </div>
-                            </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {formatDate(assignment.assignedAt)}
                             </TableCell>
@@ -703,20 +739,6 @@ const CoachAssignments = () => {
                           ))}
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-4 mt-4">
-                        <div className="text-center p-3 bg-blue-50 rounded-lg">
-                          <div className="text-lg font-bold text-blue-600">₱{selectedRequest.coach?.monthly_rate || 0}</div>
-                          <div className="text-sm text-blue-800">Monthly Rate</div>
-                        </div>
-                        <div className="text-center p-3 bg-green-50 rounded-lg">
-                          <div className="text-lg font-bold text-green-600">₱{selectedRequest.coach?.package_rate || 0}</div>
-                          <div className="text-sm text-green-800">Package Rate</div>
-                        </div>
-                        <div className="text-center p-3 bg-purple-50 rounded-lg">
-                          <div className="text-lg font-bold text-purple-600">₱{selectedRequest.coach?.per_session_rate || 0}</div>
-                          <div className="text-sm text-purple-800">Per Session</div>
-                        </div>
-                      </div>
                       {selectedRequest.coach?.bio && (
                         <div>
                           <span className="font-medium">Bio:</span>
@@ -736,19 +758,6 @@ const CoachAssignments = () => {
                   <div>
                     <span className="font-medium">Coach approved:</span> {formatDate(selectedRequest.coachApprovedAt)}
                   </div>
-                  <div>
-                    <span className="font-medium">Rate type:</span> <span className="capitalize">{selectedRequest.rateType || 'monthly'}</span>
-                  </div>
-                  {selectedRequest.remainingSessions > 0 && (
-                    <div>
-                      <span className="font-medium">Remaining sessions:</span> {selectedRequest.remainingSessions}
-                    </div>
-                  )}
-                  {selectedRequest.expiresAt && (
-                    <div>
-                      <span className="font-medium">Expires:</span> {new Date(selectedRequest.expiresAt).toLocaleDateString()}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -773,12 +782,8 @@ const CoachAssignments = () => {
               className="bg-green-600 hover:bg-green-700"
               disabled={actionLoading}
             >
-              {actionLoading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              )}
-              Approve & Assign
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Approve & Process Payment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -816,6 +821,208 @@ const CoachAssignments = () => {
                 <XCircle className="h-4 w-4 mr-2" />
               )}
               Decline Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* POS Payment Modal */}
+      <Dialog open={posModalOpen} onOpenChange={setPosModalOpen}>
+        <DialogContent className="w-[95vw] max-w-2xl mx-auto max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-center">Process Payment - Coach Assignment</DialogTitle>
+          </DialogHeader>
+          {selectedRequest && (
+            <div className="space-y-4">
+              {/* Assignment Summary */}
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <h4 className="font-semibold mb-2 text-sm">Assignment Details</h4>
+                <div className="text-xs space-y-1">
+                  <div><span className="font-medium">Member:</span> {selectedRequest.member?.name}</div>
+                  <div><span className="font-medium">Coach:</span> {selectedRequest.coach?.name}</div>
+                  <div><span className="font-medium">Rate Type:</span> {selectedRequest.rateType || 'Monthly'}</div>
+                  <div className="pt-2 border-t border-muted">
+                    <div className="text-sm font-semibold text-green-600">
+                      Amount Due: ₱{(() => {
+                        const rateType = selectedRequest.rateType || 'monthly';
+                        switch (rateType) {
+                          case 'monthly':
+                            return selectedRequest.coach?.monthly_rate || 0;
+                          case 'package':
+                            return selectedRequest.coach?.package_rate || 0;
+                          case 'per_session':
+                            return selectedRequest.coach?.per_session_rate || 0;
+                          default:
+                            return selectedRequest.coach?.monthly_rate || 0;
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <select
+                    value={posData.payment_method}
+                    onChange={(e) => setPosData({...posData, payment_method: e.target.value})}
+                    className="w-full p-2 border rounded-md text-sm"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                    <option value="digital">Digital Payment</option>
+                  </select>
+                </div>
+
+                {/* Amount Due Display */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="text-sm font-medium text-green-800">
+                    Amount Due: ₱{(() => {
+                      const rateType = selectedRequest.rateType || 'monthly';
+                      switch (rateType) {
+                        case 'monthly':
+                          return selectedRequest.coach?.monthly_rate || 0;
+                        case 'package':
+                          return selectedRequest.coach?.package_rate || 0;
+                        case 'per_session':
+                          return selectedRequest.coach?.per_session_rate || 0;
+                        default:
+                          return selectedRequest.coach?.monthly_rate || 0;
+                      }
+                    })()}
+                  </div>
+                </div>
+
+                {/* Amount Received */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Amount Received (₱)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={posData.amount_received}
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+                    const amount = inputValue === '' ? 0 : parseFloat(inputValue) || 0;
+                    const rateType = selectedRequest.rateType || 'monthly';
+                    let dueAmount = 0;
+                    switch (rateType) {
+                      case 'monthly':
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                        break;
+                      case 'package':
+                        dueAmount = selectedRequest.coach?.package_rate || 0;
+                        break;
+                      case 'per_session':
+                        dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                        break;
+                      default:
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    }
+                    const change = Math.max(0, amount - dueAmount)
+                    setPosData({
+                      ...posData,
+                      amount_received: inputValue === '' ? '' : amount,
+                      change_given: change
+                    })
+                  }}
+                    placeholder="0.00"
+                    className="text-sm"
+                  />
+                  {/* Warning message for insufficient amount */}
+                  {posData.amount_received && selectedRequest && (() => {
+                    const rateType = selectedRequest.rateType || 'monthly';
+                    let dueAmount = 0;
+                    switch (rateType) {
+                      case 'monthly':
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                        break;
+                      case 'package':
+                        dueAmount = selectedRequest.coach?.package_rate || 0;
+                        break;
+                      case 'per_session':
+                        dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                        break;
+                      default:
+                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    }
+                    const amountReceived = parseFloat(posData.amount_received) || 0;
+                    if (amountReceived > 0 && amountReceived < dueAmount) {
+                      return (
+                        <p className="text-sm text-red-600 font-medium">
+                          ⚠️ Insufficient amount. Need ₱{dueAmount.toFixed(2)} but only received ₱{amountReceived.toFixed(2)}
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+
+                {/* Change Given */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Change Given (₱)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={posData.change_given}
+                    readOnly
+                    className="bg-muted text-sm"
+                  />
+                </div>
+
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Notes</label>
+                  <Textarea
+                    value={posData.notes}
+                    onChange={(e) => setPosData({...posData, notes: e.target.value})}
+                    placeholder="Additional notes..."
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setPosModalOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApproveWithPayment}
+              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+              disabled={actionLoading || !posData.amount_received || parseFloat(posData.amount_received) <= 0 || (() => {
+                if (!selectedRequest) return true;
+                const rateType = selectedRequest.rateType || 'monthly';
+                let dueAmount = 0;
+                switch (rateType) {
+                  case 'monthly':
+                    dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                    break;
+                  case 'package':
+                    dueAmount = selectedRequest.coach?.package_rate || 0;
+                    break;
+                  case 'per_session':
+                    dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                    break;
+                  default:
+                    dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                }
+                return parseFloat(posData.amount_received) < dueAmount;
+              })()}
+            >
+              {actionLoading ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
+              )}
+              Process Payment & Approve
             </Button>
           </DialogFooter>
         </DialogContent>

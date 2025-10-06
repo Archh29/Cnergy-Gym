@@ -316,7 +316,6 @@ export default function GuestManagement() {
         }
     }, [newGuestData.amount_received, newGuestData.amount_paid, newGuestData.payment_method]);
 
-
     const getStatusBadge = (session) => {
         const computedStatus = session.computed_status || getComputedStatus(session);
         

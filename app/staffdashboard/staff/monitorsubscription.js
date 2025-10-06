@@ -119,12 +119,9 @@ const SubscriptionMonitor = () => {
 
   const fetchPendingSubscriptions = async () => {
     try {
-      console.log("=== FETCHING PENDING SUBSCRIPTIONS ===");
       const response = await axios.get(`${API_URL}?action=pending`)
-      console.log("Pending subscriptions response:", response.data);
       if (response.data.success) {
         setPendingSubscriptions(response.data.data)
-        console.log("Set pending subscriptions:", response.data.data);
       }
     } catch (error) {
       console.error("Error fetching pending subscriptions:", error)
@@ -383,7 +380,7 @@ const SubscriptionMonitor = () => {
         change_given: change,
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
-        created_by: "Staff"
+        created_by: "Admin"
       });
 
       if (response.data.success) {
@@ -454,13 +451,7 @@ const SubscriptionMonitor = () => {
         
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
-        
-        // Show different message for package plans
-        const successMessage = response.data.is_package_plan ? 
-          "Package subscription approved and split into individual plans (Membership + Access). Payment processed successfully!" :
-          "Subscription approved and POS payment processed successfully!";
-        
-        setMessage({ type: "success", text: successMessage });
+        setMessage({ type: "success", text: "Subscription approved and POS payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to approve subscription with payment");
       }
@@ -940,12 +931,12 @@ const SubscriptionMonitor = () => {
         </CardContent>
       </Card>
 
-      {/* POS Dialog */}
+      {/* Manual Subscription Creation Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
         <DialogContent 
           className="max-w-2xl" 
           onOpenAutoFocus={async (e) => {
-            // Fetch subscription details when modal opens
+            // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
               e.preventDefault();
               await fetchSubscriptionDetails(currentSubscriptionId);
@@ -953,9 +944,14 @@ const SubscriptionMonitor = () => {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Process Payment & Approve Subscription</DialogTitle>
+            <DialogTitle>
+              {currentSubscriptionId ? "Process Payment & Approve Subscription" : "Create Manual Subscription"}
+            </DialogTitle>
             <DialogDescription>
-              Process payment to approve this subscription request
+              {currentSubscriptionId 
+                ? "Process payment to approve this subscription request"
+                : "Create a new subscription manually and process payment through POS system"
+              }
             </DialogDescription>
           </DialogHeader>
           
@@ -963,19 +959,49 @@ const SubscriptionMonitor = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Member Name *</Label>
-                <Input
-                  value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
-                  disabled
-                  placeholder="Loading member details..."
-                />
+                {currentSubscriptionId ? (
+                  <Input
+                    value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
+                    disabled
+                    placeholder="Loading member details..."
+                  />
+                ) : (
+                  <Select value={subscriptionForm.user_id} onValueChange={handleUserSelection}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {`${user.fname} ${user.lname} (${user.email})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
-                <Label>Plan Name</Label>
-                <Input
-                  value={subscriptionForm.plan_name || 'Loading...'}
-                  disabled
-                  placeholder="Loading plan details..."
-                />
+                <Label>Plan Name *</Label>
+                {currentSubscriptionId ? (
+                  <Input
+                    value={subscriptionForm.plan_name || 'Loading...'}
+                    disabled
+                    placeholder="Loading plan details..."
+                  />
+                ) : (
+                  <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a plan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subscriptionPlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id.toString()}>
+                          {`${plan.plan_name} - ₱${plan.price}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Amount to Pay (â‚±) *</Label>
@@ -1039,6 +1065,8 @@ const SubscriptionMonitor = () => {
               disabled={
                 actionLoading === "create" ||
                 !subscriptionForm.amount_paid ||
+                !subscriptionForm.user_id ||
+                !subscriptionForm.plan_id ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
             >

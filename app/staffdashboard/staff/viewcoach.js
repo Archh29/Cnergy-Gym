@@ -410,10 +410,7 @@ const ViewCoach = () => {
           experience: coach.experience || "Not specified",
           rating: coach.rating || 0.0,
           total_clients: coach.total_clients || 0,
-          per_session_rate: coach.per_session_rate || 0.0,
-          package_rate: coach.package_rate || 0.0,
-          package_sessions: coach.package_sessions || 0,
-          monthly_rate: coach.monthly_rate || 0.0,
+          hourly_rate: coach.hourly_rate || 0.0,
           certifications: coach.certifications || "",
           is_available: coach.is_available !== undefined ? coach.is_available : true,
           image_url: coach.image_url || "",
@@ -511,10 +508,7 @@ const ViewCoach = () => {
           experience: coach.experience || "Not specified",
           rating: coach.rating || 0.0,
           total_clients: coach.total_clients || 0,
-          per_session_rate: coach.per_session_rate || 0.0,
-          package_rate: coach.package_rate || 0.0,
-          package_sessions: coach.package_sessions || 0,
-          monthly_rate: coach.monthly_rate || 0.0,
+          hourly_rate: coach.hourly_rate || 0.0,
           certifications: coach.certifications || "",
           is_available: coach.is_available !== undefined ? coach.is_available : true,
           image_url: coach.image_url || "",
@@ -820,49 +814,41 @@ const ViewCoach = () => {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between space-y-2 sm:space-y-0 sm:space-x-2 py-4">
-              <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+            <div className="flex items-center justify-between space-x-2 py-4">
+              <div className="text-sm text-muted-foreground">
                 Showing {indexOfFirstCoach + 1} to {Math.min(indexOfLastCoach, filteredCoaches.length)} of{" "}
                 {filteredCoaches.length} coaches
               </div>
-              <div className="flex items-center space-x-1 sm:space-x-2">
+              <div className="flex items-center space-x-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => paginate(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="h-8 px-2 sm:px-3"
                 >
-                  <ChevronLeft className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="hidden sm:inline ml-1">Previous</span>
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
                 </Button>
                 <div className="flex items-center space-x-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    const startPage = Math.max(1, currentPage - 2);
-                    const number = startPage + i;
-                    if (number > totalPages) return null;
-                    return (
-                      <Button
-                        key={number}
-                        variant={currentPage === number ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => paginate(number)}
-                        className="h-8 w-8 p-0 sm:w-auto sm:px-3"
-                      >
-                        {number}
-                      </Button>
-                    );
-                  })}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((number) => (
+                    <Button
+                      key={number}
+                      variant={currentPage === number ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => paginate(number)}
+                    >
+                      {number}
+                    </Button>
+                  ))}
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => paginate(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  className="h-8 px-2 sm:px-3"
                 >
-                  <span className="hidden sm:inline mr-1">Next</span>
-                  <ChevronRight className="h-3 w-3 sm:h-4 sm:w-4" />
+                  Next
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -1204,7 +1190,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="image_url">Profile Image URL</Label>
                   <Input
@@ -1264,7 +1250,7 @@ const ViewCoach = () => {
             {/* Personal Information Section */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-fname">First Name*</Label>
                   <Input
@@ -1302,7 +1288,7 @@ const ViewCoach = () => {
                 />
                 {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-email">Email*</Label>
                   <Input
@@ -1346,7 +1332,7 @@ const ViewCoach = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-gender_id">Gender*</Label>
                   <Select value={formData.gender_id} onValueChange={(value) => handleSelectChange("gender_id", value)}>
@@ -1392,7 +1378,7 @@ const ViewCoach = () => {
                   onChange={handleInputChange}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-specialty">Specialty*</Label>
                   <Select value={formData.specialty} onValueChange={(value) => handleSelectChange("specialty", value)}>
@@ -1429,7 +1415,7 @@ const ViewCoach = () => {
                   {validationErrors.experience && <p className="text-sm text-red-500">{validationErrors.experience}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-per_session_rate">Per Session Rate (₱)*</Label>
                   <Input
@@ -1464,7 +1450,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-package_rate">Package Rate (₱)</Label>
                   <Input
@@ -1498,7 +1484,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
@@ -1534,11 +1520,11 @@ const ViewCoach = () => {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading}>
+              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Update Coach
               </Button>
