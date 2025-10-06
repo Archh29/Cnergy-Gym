@@ -149,7 +149,9 @@ const AttendanceTracking = ({ userId }) => {
           notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
         }
         
-        if (actionType === "auto_checkout_and_checkin") {
+        if (actionType === "auto_checkout") {
+          showNotification(notificationMessage, "info")
+        } else if (actionType === "auto_checkout_and_checkin") {
           showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
           showNotification(notificationMessage, "success")
@@ -224,7 +226,9 @@ const AttendanceTracking = ({ userId }) => {
           notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
         }
         
-        if (actionType === "auto_checkout_and_checkin") {
+        if (actionType === "auto_checkout") {
+          showNotification(notificationMessage, "info")
+        } else if (actionType === "auto_checkout_and_checkin") {
           showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
           showNotification(notificationMessage, "success")
