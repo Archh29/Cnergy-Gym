@@ -141,17 +141,29 @@ const AttendanceTracking = ({ userId }) => {
       if (response.data.success) {
         // Handle different action types
         const actionType = response.data.action
+        let notificationMessage = response.data.message
+        
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
+        
         if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning")
+          showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
-          showNotification(response.data.message, "success")
+          showNotification(notificationMessage, "success")
         } else {
-          showNotification(response.data.message)
+          showNotification(notificationMessage)
         }
         fetchData()
       } else {
+        // Handle plan validation errors
+        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        }
         // Handle guest session specific errors
-        if (response.data.type === "guest_expired") {
+        else if (response.data.type === "guest_expired") {
           showNotification(response.data.message, "error")
           // Trigger global modal for expired guest sessions
           window.dispatchEvent(new CustomEvent("guest-session-expired", {
@@ -189,18 +201,30 @@ const AttendanceTracking = ({ userId }) => {
       })
       if (response.data.success) {
         const actionType = response.data.action
+        let notificationMessage = response.data.message
+        
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
+        
         if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning")
+          showNotification(notificationMessage, "warning")
         } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
-          showNotification(response.data.message, "success")
+          showNotification(notificationMessage, "success")
         } else {
-          showNotification(response.data.message)
+          showNotification(notificationMessage)
         }
         fetchData()
         setManualQrInput("")
       } else {
+        // Handle plan validation errors
+        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        }
         // Handle guest session specific errors
-        if (response.data.type === "guest_expired") {
+        else if (response.data.type === "guest_expired") {
           showNotification(response.data.message, "error")
           // Trigger global modal for expired guest sessions
           window.dispatchEvent(new CustomEvent("guest-session-expired", {

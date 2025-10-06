@@ -160,10 +160,18 @@ const App = () => {
 
       if (response.data.success) {
         const actionType = response.data.action
+        let notificationMessage = response.data.message
+        
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
+        
         if (actionType === "auto_checkout_and_checkin") {
-          showNotification(response.data.message, "warning", response.data.membership)
+          showNotification(notificationMessage, "warning", response.data.membership)
         } else {
-          showNotification(response.data.message, "success", response.data.membership)
+          showNotification(notificationMessage, "success", response.data.membership)
         }
 
         // Trigger custom event for other components
@@ -173,7 +181,12 @@ const App = () => {
           }),
         )
       } else {
-        showNotification(response.data.message || "Failed to process QR code", "error")
+        // Handle plan validation errors
+        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
+          showNotification(response.data.message, "error")
+        } else {
+          showNotification(response.data.message || "Failed to process QR code", "error")
+        }
       }
       setIsConnected(true)
     } catch (err) {
