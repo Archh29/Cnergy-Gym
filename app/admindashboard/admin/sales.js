@@ -77,6 +77,10 @@ const Sales = () => {
     productsSoldToday: 0,
     lowStockItems: 0,
     monthlyRevenue: 0,
+    productSales: 0,
+    subscriptionSales: 0,
+    totalProductSales: 0,
+    totalSubscriptionSales: 0,
   })
 
   // Load initial data
@@ -87,7 +91,7 @@ const Sales = () => {
   // Reload analytics when filter changes
   useEffect(() => {
     loadAnalytics()
-  }, [analyticsFilter])
+  }, [analyticsFilter, saleTypeFilter])
 
   // Reload sales when filters change
   useEffect(() => {
@@ -136,13 +140,23 @@ const Sales = () => {
 
   const loadAnalytics = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&period=${analyticsFilter}`)
+      const params = new URLSearchParams()
+      params.append("period", analyticsFilter)
+      if (saleTypeFilter !== "all") {
+        params.append("sale_type", saleTypeFilter)
+      }
+      
+      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
       setAnalytics(
         response.data.analytics || {
           todaysSales: 0,
           productsSoldToday: 0,
           lowStockItems: 0,
           monthlyRevenue: 0,
+          productSales: 0,
+          subscriptionSales: 0,
+          totalProductSales: 0,
+          totalSubscriptionSales: 0,
         },
       )
     } catch (error) {
@@ -515,12 +529,17 @@ const Sales = () => {
   }
 
   const filteredSales = sales.filter((sale) => {
-    return (
+    // Filter by search query
+    const matchesSearch = searchQuery === "" || 
       sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       sale.sales_details.some(detail => 
         detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    )
+    
+    // Filter by sale type (this should already be handled by the API, but keeping as backup)
+    const matchesSaleType = saleTypeFilter === "all" || sale.sale_type === saleTypeFilter
+    
+    return matchesSearch && matchesSaleType
   })
 
 
@@ -568,26 +587,43 @@ const Sales = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Sales</CardTitle>
+                <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
                 <span className="text-muted-foreground">₱</span>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">Product & subscription sales</p>
+                <p className="text-xs text-muted-foreground">
+                  {saleTypeFilter === "all" ? "All sales" : 
+                   saleTypeFilter === "Product" ? "Product sales only" :
+                   saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
+                </p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Products Sold</CardTitle>
+                <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
                 <ShoppingCart className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.productsSoldToday}</div>
-                <p className="text-xs text-muted-foreground">Items sold</p>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.productSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">
+                  {analytics.productsSoldToday || 0} items sold
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">Membership revenue</p>
               </CardContent>
             </Card>
 
@@ -599,17 +635,6 @@ const Sales = () => {
               <CardContent>
                 <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
                 <p className="text-xs text-muted-foreground">Need restocking</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
-                <p className="text-xs text-muted-foreground">All-time revenue</p>
               </CardContent>
             </Card>
           </div>
@@ -806,7 +831,17 @@ const Sales = () => {
             <CardHeader>
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle>Sales History</CardTitle>
+                  <div className="flex items-center gap-4">
+                    <CardTitle>Sales History</CardTitle>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <span>Showing {filteredSales.length} of {sales.length} sales</span>
+                      {saleTypeFilter !== "all" && (
+                        <Badge variant="outline" className="text-xs">
+                          {saleTypeFilter} only
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                   <div className="relative w-full max-w-md">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input

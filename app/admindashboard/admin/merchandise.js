@@ -340,7 +340,7 @@ const Merchandise = () => {
                         <TableCell className="font-medium">{item?.name || "N/A"}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <span>₱</span>
+                            <span>₱ </span>
                             {formatCurrency(item?.price || 0)}
                           </div>
                         </TableCell>
