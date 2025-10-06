@@ -34,7 +34,7 @@ export default function StaffDashboard() {
     setUserRole(role);
     
     // Get user ID from session storage or API
-    const storedUserId = sessionStorage.getItem("userId");
+    const storedUserId = sessionStorage.getItem("user_id");
     if (storedUserId) {
       setUserId(parseInt(storedUserId));
     } else {
@@ -58,12 +58,11 @@ export default function StaffDashboard() {
       const data = await response.json();
       if (data.user_id) {
         setUserId(data.user_id);
-        sessionStorage.setItem("userId", data.user_id);
+        sessionStorage.setItem("user_id", data.user_id);
       }
     } catch (error) {
       console.error("Error fetching user info:", error);
-      // Fallback to default user ID
-      setUserId(6);
+      // No fallback - let it be null if not found
     }
   };
 
@@ -98,7 +97,7 @@ export default function StaffDashboard() {
         case "ViewMembers":
           return <ViewMembers userId={userId} />;
       case "MonitorSubscriptions":
-          return <MonitorSubscriptions />;
+          return <MonitorSubscriptions userId={userId} />;
       case "ViewCoach":
           return <ViewCoach />
       case "Exercises":

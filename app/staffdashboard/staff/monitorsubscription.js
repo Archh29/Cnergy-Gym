@@ -1,7 +1,8 @@
 ﻿"use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useContext } from "react"
 import axios from "axios"
+// No UserContext available in staff dashboard - will get userId from props
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -31,7 +32,7 @@ import {
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
-const SubscriptionMonitor = () => {
+const SubscriptionMonitor = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
@@ -322,12 +323,19 @@ const SubscriptionMonitor = () => {
 
   const handleCreateManualSubscription = async () => {
     setMessage(null)
+    
+    if (!userId) {
+      setMessage({ type: "error", text: "User session not found. Please log in again." })
+      return
+    }
+    
     try {
       console.log("=== PROCESS PAYMENT BUTTON CLICKED ===");
       console.log("Current subscription form:", subscriptionForm);
       console.log("Payment method:", paymentMethod);
       console.log("Amount received:", amountReceived);
       console.log("Current subscription ID:", currentSubscriptionId);
+      console.log("Current user ID:", userId);
 
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(amountReceived) || totalAmount
@@ -380,7 +388,8 @@ const SubscriptionMonitor = () => {
         change_given: change,
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
-        created_by: "Admin"
+        created_by: "Staff",
+        staff_id: userId // Use current user ID - no fallback
       });
 
       if (response.data.success) {

@@ -137,7 +137,7 @@ export default function AdminDashboardClient() {
       case "GuestManagement":
         return <GuestManagement />
       case "MonitorSubscriptions":
-        return <MonitorSubscriptions />
+        return <MonitorSubscriptions userId={userId} />
       case "Sales":
         return <Sales />
       case "CoachAssignments":
