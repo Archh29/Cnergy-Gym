@@ -181,13 +181,13 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
   }
 
   return (
-    <div className="flex items-center gap-2 sm:gap-4">
+    <div className="flex items-center gap-4">
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative hover:bg-gray-100 transition-colors h-8 w-8 sm:h-10 sm:w-10">
-            <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
+          <Button variant="ghost" size="icon" className="relative hover:bg-gray-100 transition-colors">
+            <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
-              <Badge variant="destructive" className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center text-xs p-0 animate-pulse">
+              <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center text-xs p-0 animate-pulse">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </Badge>
             )}
@@ -196,13 +196,13 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
         <DropdownMenuContent
           align="end"
-          className="w-80 sm:w-96 max-h-[500px] p-0 shadow-xl border-0 rounded-xl overflow-hidden"
+          className="w-96 max-h-[500px] p-0 shadow-xl border-0 rounded-xl overflow-hidden"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-xl">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-lg">Admin Notifications</h3>
+                <h3 className="font-semibold text-lg">Staff Notifications</h3>
                 <p className="text-blue-100 text-sm">{unreadCount > 0 ? `${unreadCount} unread messages` : "All caught up!"}</p>
               </div>
               {unreadCount > 0 && (
@@ -301,16 +301,16 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
       </DropdownMenu>
 
       {/* User Avatar */}
-      <div className="flex items-center gap-2 sm:gap-3">
-        <div className="text-right hidden sm:block">
+      <div className="flex items-center gap-3">
+        <div className="text-right">
           <p className="text-sm font-medium text-gray-900 dark:text-white">{userRole}</p>
           <p className="text-xs text-gray-500">Online</p>
         </div>
         <div className="relative">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-md">
-            <span className="text-white font-semibold text-sm sm:text-base">{userRole?.charAt(0) || "U"}</span>
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-md">
+            <span className="text-white font-semibold">{userRole?.charAt(0) || "U"}</span>
           </div>
-          <div className="absolute -bottom-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 border-2 border-white rounded-full"></div>
+          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
         </div>
       </div>
     </div>

@@ -67,10 +67,12 @@ const Sidebar = ({
     { name: "ViewMembers", icon: <FaUsers className="mr-2 h-4 w-4" /> },
     { name: "ViewCoach", icon: <GiWhistle className="mr-2 h-4 w-4" /> },
     { name: "MonitorSubscriptions", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
-    { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> }, // Added Sales section
+    { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> },
     { name: "AttendanceTracking", icon: <FaCheckCircle className="mr-2 h-4 w-4" /> },
     { name: "GuestManagement", icon: <FaUserFriends className="mr-2 h-4 w-4" /> },
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
+    { name: "Exercises", icon: <FaDumbbell className="mr-2 h-4 w-4" /> },
+    { name: "FreePrograms", icon: <FaChalkboardTeacher className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
   ]
 
