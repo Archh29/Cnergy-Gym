@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
 import { CheckCircle, AlertCircle, Clock, Wifi } from "lucide-react"
-import AdminDashboard from "./admin/page"
 import StaffDashboardClient from "./staff/client-wrapper"
 
 // Error Boundary Component
