@@ -77,9 +77,8 @@ const App = () => {
       } else {
         fullMessage += ` | Expired`
       }
-    } else {
-      fullMessage += `\nNo active membership`
     }
+    // Remove the automatic "No active membership" addition since backend now handles this
 
     setNotification({ show: true, message: fullMessage, type })
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 5000)
@@ -155,21 +154,21 @@ const App = () => {
         staff_id: userId,
       })
 
-      if (response.data.success) {
-        const actionType = response.data.action
-        let notificationMessage = response.data.message
-        
-        // Add plan info to notification if available
-        if (response.data.plan_info) {
-          const planInfo = response.data.plan_info
-          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
-        }
-        
-        if (actionType === "auto_checkout_and_checkin") {
-          showNotification(notificationMessage, "warning", response.data.membership)
-        } else {
-          showNotification(notificationMessage, "success", response.data.membership)
-        }
+          if (response.data.success) {
+            const actionType = response.data.action
+            let notificationMessage = response.data.message
+
+            // Add plan info to notification if available
+            if (response.data.plan_info) {
+              const planInfo = response.data.plan_info
+              notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+            }
+
+            if (actionType === "auto_checkout_and_checkin") {
+              showNotification(notificationMessage, "warning")
+            } else {
+              showNotification(notificationMessage, "success")
+            }
 
         // Trigger custom event for other components
         window.dispatchEvent(
