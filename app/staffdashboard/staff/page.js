@@ -19,7 +19,7 @@ import CoachAssignments from "./coachassignments";
 import Sales from "./sales";
 import GuestManagement from "./guestmanagement";
 import { Button } from "@/components/ui/button";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, Menu } from "lucide-react";
 
 
 export default function StaffDashboard() {
@@ -118,7 +118,15 @@ export default function StaffDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900`}>
+    <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 relative`}>
+      {/* Mobile backdrop overlay */}
+      {!sidebarCollapsed && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      )}
+      
       <Sidebar 
         activeSection={currentSection} 
         setActiveSection={setCurrentSection} 
@@ -132,11 +140,11 @@ export default function StaffDashboard() {
           <div className="flex items-center gap-2 sm:gap-4">
             <Button 
               variant="ghost" 
-              size="icon"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="lg:hidden"
+              size="icon" 
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)} 
+              className="hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              <PanelLeft className="h-4 w-4" />
+              {sidebarCollapsed ? <Menu className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </Button>
             <div className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm text-gray-500 dark:text-gray-300">
               <span className="hidden sm:inline">Dashboard</span>
