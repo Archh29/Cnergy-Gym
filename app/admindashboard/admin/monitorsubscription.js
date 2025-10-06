@@ -336,6 +336,8 @@ const SubscriptionMonitor = ({ userId }) => {
       console.log("Amount received:", amountReceived);
       console.log("Current subscription ID:", currentSubscriptionId);
       console.log("Current user ID:", userId);
+      console.log("User ID type:", typeof userId);
+      console.log("User ID is null/undefined:", userId === null || userId === undefined);
 
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(amountReceived) || totalAmount
@@ -378,7 +380,7 @@ const SubscriptionMonitor = ({ userId }) => {
       const minute = String(now.getMinutes()).padStart(2, '0');
       const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
 
-      const response = await axios.post(`${API_URL}?action=create_manual`, {
+      const requestData = {
         user_id: subscriptionForm.user_id,
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
@@ -390,7 +392,12 @@ const SubscriptionMonitor = ({ userId }) => {
         notes: transactionNotes,
         created_by: "Admin",
         staff_id: userId // Use current user ID - no fallback
-      });
+      };
+      
+      console.log("Sending request data:", requestData);
+      console.log("staff_id being sent:", requestData.staff_id);
+      
+      const response = await axios.post(`${API_URL}?action=create_manual`, requestData);
 
       if (response.data.success) {
         const confirmationData = {
