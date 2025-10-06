@@ -152,6 +152,7 @@ const App = () => {
       const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: cleanedData.trim(),
+        staff_id: userId,
       })
 
       if (response.data.success) {
