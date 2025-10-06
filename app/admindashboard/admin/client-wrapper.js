@@ -139,7 +139,7 @@ export default function AdminDashboardClient() {
       case "MonitorSubscriptions":
         return <MonitorSubscriptions userId={userId} />
       case "Sales":
-        return <Sales />
+        return <Sales userId={userId} />
       case "CoachAssignments":
         return <CoachAssignments />
       case "Exercises":

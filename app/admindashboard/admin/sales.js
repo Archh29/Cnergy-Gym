@@ -34,7 +34,7 @@ import {
 // API Configuration
 const API_BASE_URL = "https://api.cnergy.site/sales.php"
 
-const Sales = () => {
+const Sales = ({ userId }) => {
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState(1)
   const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "", category: "Uncategorized" })
@@ -276,7 +276,7 @@ const Sales = () => {
         })),
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=sale`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId}`, saleData)
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
@@ -322,7 +322,7 @@ const Sales = () => {
         notes: transactionNotes
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=pos_sale`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
       if (response.data.success) {
         setLastTransaction({
           ...response.data,
@@ -375,7 +375,7 @@ const Sales = () => {
 
     setLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=product`, {
+      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
