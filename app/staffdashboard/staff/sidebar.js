@@ -8,11 +8,9 @@ import {
   FaUserTie,
   FaIdCard,
   FaBullhorn,
-  FaDumbbell,
   FaClipboardList,
   FaTasks,
   FaCheckCircle,
-  FaChalkboardTeacher,
   FaMoon,
   FaSignOutAlt,
   FaSun,
@@ -71,8 +69,6 @@ const Sidebar = ({
     { name: "AttendanceTracking", icon: <FaCheckCircle className="mr-2 h-4 w-4" /> },
     { name: "GuestManagement", icon: <FaUserFriends className="mr-2 h-4 w-4" /> },
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
-    { name: "Exercises", icon: <FaDumbbell className="mr-2 h-4 w-4" /> },
-    { name: "FreePrograms", icon: <FaChalkboardTeacher className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
   ]
 
