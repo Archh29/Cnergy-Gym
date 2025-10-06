@@ -76,7 +76,6 @@ const SubscriptionMonitor = () => {
   const [lastTransaction, setLastTransaction] = useState(null)
 
   useEffect(() => {
-    console.log("=== COMPONENT INITIALIZATION ===");
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
@@ -118,12 +117,9 @@ const SubscriptionMonitor = () => {
 
   const fetchPendingSubscriptions = async () => {
     try {
-      console.log("=== FETCHING PENDING SUBSCRIPTIONS ===");
       const response = await axios.get(`${API_URL}?action=pending`)
-      console.log("Pending subscriptions response:", response.data);
       if (response.data.success) {
         setPendingSubscriptions(response.data.data)
-        console.log("Set pending subscriptions:", response.data.data);
       }
     } catch (error) {
       console.error("Error fetching pending subscriptions:", error)
@@ -342,11 +338,75 @@ const SubscriptionMonitor = () => {
         return
       }
 
-      // Call the confirmation function directly
-      await confirmSubscriptionTransaction()
+      if (currentSubscriptionId) {
+        // Approve existing subscription
+        await confirmSubscriptionTransaction()
+      } else {
+        // Create new manual subscription
+        await createNewManualSubscription()
+      }
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to create subscription"
       setMessage({ type: "error", text: errorMessage })
+    }
+  }
+
+  const createNewManualSubscription = async () => {
+    setActionLoading("create")
+    setMessage(null)
+    try {
+      const totalAmount = parseFloat(subscriptionForm.amount_paid)
+      const receivedAmount = parseFloat(amountReceived) || totalAmount
+      const change = Math.max(0, receivedAmount - totalAmount)
+
+      // Auto-generate receipt number
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hour = String(now.getHours()).padStart(2, '0');
+      const minute = String(now.getMinutes()).padStart(2, '0');
+      const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
+
+      const response = await axios.post(`${API_URL}?action=create_manual`, {
+        user_id: subscriptionForm.user_id,
+        plan_id: subscriptionForm.plan_id,
+        start_date: subscriptionForm.start_date,
+        amount_paid: totalAmount,
+        payment_method: paymentMethod,
+        amount_received: receivedAmount,
+        change_given: change,
+        receipt_number: autoReceiptNumber,
+        notes: transactionNotes,
+        created_by: "Admin"
+      });
+
+      if (response.data.success) {
+        setLastTransaction({
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: paymentMethod,
+          amount_received: receivedAmount
+        });
+        setReceiptNumber(response.data.data.receipt_number);
+        setChangeGiven(change);
+        setShowReceipt(true);
+        
+        setMessage({ type: "success", text: "Manual subscription created and payment processed successfully!" });
+      } else {
+        throw new Error(response.data.message || "Failed to create manual subscription");
+      }
+      
+      setIsCreateSubscriptionDialogOpen(false)
+      resetSubscriptionForm()
+      await fetchAllData()
+      
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create manual subscription"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -644,29 +704,11 @@ const SubscriptionMonitor = () => {
                 Refresh
               </Button>
               <Button onClick={() => {
-                console.log("=== MANUAL DEBUG TEST ===");
-                console.log("Pending subscriptions:", pendingSubscriptions);
-                console.log("Subscription plans:", subscriptionPlans);
-                console.log("Available users:", availableUsers);
-              }} variant="outline" size="sm">
-                Debug Data
-              </Button>
-              <Button onClick={async () => {
-                console.log("=== API TEST ===");
-                try {
-                  const response = await axios.get(`${API_URL}?action=pending`);
-                  console.log("Pending API response:", response.data);
-                } catch (error) {
-                  console.error("Pending API error:", error);
-                }
-                try {
-                  const response = await axios.get(`${API_URL}?action=plans`);
-                  console.log("Plans API response:", response.data);
-                } catch (error) {
-                  console.error("Plans API error:", error);
-                }
-              }} variant="outline" size="sm">
-                Test API
+                resetSubscriptionForm()
+                setIsCreateSubscriptionDialogOpen(true)
+              }} size="sm" className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Manual Subscription
               </Button>
             </div>
           </div>
@@ -886,12 +928,12 @@ const SubscriptionMonitor = () => {
         </CardContent>
       </Card>
 
-      {/* POS Dialog */}
+      {/* Manual Subscription Creation Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
         <DialogContent 
           className="max-w-2xl" 
           onOpenAutoFocus={async (e) => {
-            // Fetch subscription details when modal opens
+            // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
               e.preventDefault();
               await fetchSubscriptionDetails(currentSubscriptionId);
@@ -899,9 +941,14 @@ const SubscriptionMonitor = () => {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Process Payment & Approve Subscription</DialogTitle>
+            <DialogTitle>
+              {currentSubscriptionId ? "Process Payment & Approve Subscription" : "Create Manual Subscription"}
+            </DialogTitle>
             <DialogDescription>
-              Process payment to approve this subscription request
+              {currentSubscriptionId 
+                ? "Process payment to approve this subscription request"
+                : "Create a new subscription manually and process payment through POS system"
+              }
             </DialogDescription>
           </DialogHeader>
           
@@ -909,19 +956,49 @@ const SubscriptionMonitor = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Member Name *</Label>
-                <Input
-                  value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
-                  disabled
-                  placeholder="Loading member details..."
-                />
+                {currentSubscriptionId ? (
+                  <Input
+                    value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
+                    disabled
+                    placeholder="Loading member details..."
+                  />
+                ) : (
+                  <Select value={subscriptionForm.user_id} onValueChange={handleUserSelection}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a member" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {`${user.fname} ${user.lname} (${user.email})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
-                <Label>Plan Name</Label>
-                <Input
-                  value={subscriptionForm.plan_name || 'Loading...'}
-                  disabled
-                  placeholder="Loading plan details..."
-                />
+                <Label>Plan Name *</Label>
+                {currentSubscriptionId ? (
+                  <Input
+                    value={subscriptionForm.plan_name || 'Loading...'}
+                    disabled
+                    placeholder="Loading plan details..."
+                  />
+                ) : (
+                  <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a plan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subscriptionPlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id.toString()}>
+                          {`${plan.plan_name} - ₱${plan.price}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Amount to Pay (â‚±) *</Label>
@@ -985,11 +1062,13 @@ const SubscriptionMonitor = () => {
               disabled={
                 actionLoading === "create" ||
                 !subscriptionForm.amount_paid ||
+                !subscriptionForm.user_id ||
+                !subscriptionForm.plan_id ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Process Payment & Approve
+              {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

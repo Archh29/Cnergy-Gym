@@ -76,7 +76,6 @@ const SubscriptionMonitor = () => {
   const [lastTransaction, setLastTransaction] = useState(null)
 
   useEffect(() => {
-    console.log("=== COMPONENT INITIALIZATION ===");
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
@@ -649,29 +648,11 @@ const SubscriptionMonitor = () => {
                 Refresh
               </Button>
               <Button onClick={() => {
-                console.log("=== MANUAL DEBUG TEST ===");
-                console.log("Pending subscriptions:", pendingSubscriptions);
-                console.log("Subscription plans:", subscriptionPlans);
-                console.log("Available users:", availableUsers);
-              }} variant="outline" size="sm">
-                Debug Data
-              </Button>
-              <Button onClick={async () => {
-                console.log("=== API TEST ===");
-                try {
-                  const response = await axios.get(`${API_URL}?action=pending`);
-                  console.log("Pending API response:", response.data);
-                } catch (error) {
-                  console.error("Pending API error:", error);
-                }
-                try {
-                  const response = await axios.get(`${API_URL}?action=plans`);
-                  console.log("Plans API response:", response.data);
-                } catch (error) {
-                  console.error("Plans API error:", error);
-                }
-              }} variant="outline" size="sm">
-                Test API
+                resetSubscriptionForm()
+                setIsCreateSubscriptionDialogOpen(true)
+              }} size="sm" className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Manual Subscription
               </Button>
             </div>
           </div>
