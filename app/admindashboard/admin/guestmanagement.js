@@ -33,7 +33,7 @@ import axios from 'axios';
 
 const API_URL = 'https://api.cnergy.site/guest_session_admin.php';
 
-export default function GuestManagement() {
+export default function GuestManagement({ userId }) {
     const [guestSessions, setGuestSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedSession, setSelectedSession] = useState(null);
@@ -127,7 +127,7 @@ export default function GuestManagement() {
     const handleReject = async (sessionId) => {
         try {
             setActionLoading(true);
-            const response = await axios.post(API_URL, {
+            const response = await axios.post(`${API_URL}`, {
                 action: 'reject_session',
                 session_id: sessionId,
                 staff_id: userId
@@ -209,13 +209,13 @@ export default function GuestManagement() {
 
             if (pendingSession) {
                 // Process payment and approve the existing session
-                const response = await axios.post(API_URL, {
+                const response = await axios.post(`${API_URL}`, {
                     action: 'approve_session_with_payment',
                     session_id: pendingSession.id,
                     payment_method: newGuestData.payment_method,
+                    staff_id: userId,
                     amount_received: receivedAmount,
-                    notes: newGuestData.notes,
-                    staff_id: userId
+                    notes: newGuestData.notes
                 }, {
                     headers: {
                         'Accept': 'application/json',
@@ -243,15 +243,15 @@ export default function GuestManagement() {
                 }
             } else {
                 // Fallback: create new session if no pending session found
-                const response = await axios.post(API_URL, {
+                const response = await axios.post(`${API_URL}`, {
                     action: 'create_guest_session',
                     guest_name: newGuestData.guest_name,
                     guest_type: newGuestData.guest_type,
+                    staff_id: userId,
                     amount_paid: totalAmount,
                     payment_method: newGuestData.payment_method,
                     amount_received: receivedAmount,
-                    notes: newGuestData.notes,
-                    staff_id: userId
+                    notes: newGuestData.notes
                 }, {
                     headers: {
                         'Accept': 'application/json',
