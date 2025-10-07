@@ -124,15 +124,15 @@ const GymDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Active Subscriptions */}
+            {/* Active Monthly Subscriptions */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+                <CardTitle className="text-sm font-medium">Active Monthly Subscriptions</CardTitle>
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{summaryStats.activeSubscriptions}</div>
-                <p className="text-xs text-muted-foreground">Current subscribers</p>
+                <p className="text-xs text-muted-foreground">Monthly plan subscribers</p>
               </CardContent>
             </Card>
 
