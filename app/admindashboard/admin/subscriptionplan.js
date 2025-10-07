@@ -544,6 +544,7 @@ const SubscriptionPlans = () => {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className={`font-medium ${
+                              subscription.expiry_status === 'expired' ? 'text-red-600' :
                               subscription.days_until_expiry < 0 ? 'text-red-600' :
                               subscription.expiry_status === 'critical' ? 'text-red-600' :
                               subscription.expiry_status === 'warning' ? 'text-orange-600' :
@@ -551,10 +552,13 @@ const SubscriptionPlans = () => {
                               'text-green-600'
                             }`}>
                               {subscription.days_until_expiry < 0 ? 
-                                `Expired ${Math.abs(subscription.days_until_expiry)} days ago` :
+                                `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
                                 `${subscription.days_until_expiry} days`
                               }
                             </span>
+                            {subscription.expiry_status === 'expired' && (
+                              <Badge variant="destructive" className="text-xs">Expired</Badge>
+                            )}
                             {subscription.expiry_status === 'critical' && (
                               <Badge variant="destructive" className="text-xs">Critical</Badge>
                             )}
@@ -568,12 +572,13 @@ const SubscriptionPlans = () => {
                         </TableCell>
                         <TableCell>
                           <Badge variant={
-                            subscription.status_name === 'approved' ? 'default' :
-                            subscription.status_name === 'pending_approval' ? 'secondary' :
-                            subscription.status_name === 'rejected' ? 'destructive' :
+                            (subscription.computed_status || subscription.status_name) === 'approved' ? 'default' :
+                            (subscription.computed_status || subscription.status_name) === 'pending_approval' ? 'secondary' :
+                            (subscription.computed_status || subscription.status_name) === 'rejected' ? 'destructive' :
+                            (subscription.computed_status || subscription.status_name) === 'expired' ? 'destructive' :
                             'outline'
                           }>
-                            {subscription.status_name.replace('_', ' ').toUpperCase()}
+                            {(subscription.computed_status || subscription.status_name).replace('_', ' ').toUpperCase()}
                           </Badge>
                         </TableCell>
                         <TableCell className="font-medium">
