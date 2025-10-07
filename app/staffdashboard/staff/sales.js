@@ -42,7 +42,6 @@ const Sales = ({ userId }) => {
   const [loading, setLoading] = useState(false)
 
   // Filter states
-  const [analyticsFilter, setAnalyticsFilter] = useState("today")
   const [saleTypeFilter, setSaleTypeFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
@@ -72,26 +71,12 @@ const Sales = ({ userId }) => {
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
-  const [analytics, setAnalytics] = useState({
-    todaysSales: 0,
-    productsSoldToday: 0,
-    lowStockItems: 0,
-    monthlyRevenue: 0,
-    productSales: 0,
-    subscriptionSales: 0,
-    totalProductSales: 0,
-    totalSubscriptionSales: 0,
-  })
+  const [lowStockItems, setLowStockItems] = useState(0)
 
   // Load initial data
   useEffect(() => {
     loadInitialData()
   }, [])
-
-  // Reload analytics when filter changes
-  useEffect(() => {
-    loadAnalytics()
-  }, [analyticsFilter, saleTypeFilter])
 
   // Reload sales when filters change
   useEffect(() => {
@@ -101,7 +86,7 @@ const Sales = ({ userId }) => {
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+      await Promise.all([loadProducts(), loadSales(), loadLowStockItems()])
     } catch (error) {
       console.error("Error loading initial data:", error)
       alert("Error loading data. Please refresh the page.")
@@ -138,31 +123,22 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const loadAnalytics = async () => {
+  const loadLowStockItems = async () => {
     try {
-      const params = new URLSearchParams()
-      params.append("period", analyticsFilter)
-      if (saleTypeFilter !== "all") {
-        params.append("sale_type", saleTypeFilter)
-      }
-      
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
-      setAnalytics(
-        response.data.analytics || {
-          todaysSales: 0,
-          productsSoldToday: 0,
-          lowStockItems: 0,
-          monthlyRevenue: 0,
-          productSales: 0,
-          subscriptionSales: 0,
-          totalProductSales: 0,
-          totalSubscriptionSales: 0,
-        },
-      )
+      // Count products with low stock (less than 10 items)
+      const lowStockCount = products.filter(product => product.stock < 10).length
+      setLowStockItems(lowStockCount)
     } catch (error) {
-      console.error("Error loading analytics:", error)
+      console.error("Error loading low stock items:", error)
     }
   }
+
+  // Update low stock count when products change
+  useEffect(() => {
+    if (products.length > 0) {
+      loadLowStockItems()
+    }
+  }, [products])
 
   const addToCart = () => {
     if (!selectedProduct) {
@@ -577,76 +553,21 @@ const Sales = ({ userId }) => {
         </CardContent>
       </Card>
 
-      {/* Quick Stats with Filter */}
+      {/* Inventory Overview - Staff Only */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Analytics Overview</CardTitle>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="analytics-filter">Period:</Label>
-              <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <CardTitle>Inventory Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-                <span className="text-muted-foreground">₱</span>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {saleTypeFilter === "all" ? "All sales" : 
-                   saleTypeFilter === "Product" ? "Product sales only" :
-                   saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
-                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.productSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {analytics.productsSoldToday || 0} items sold
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">Membership revenue</p>
-              </CardContent>
-            </Card>
-
+          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
                 <Package className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
-                <p className="text-xs text-muted-foreground">Need restocking</p>
+                <div className="text-2xl font-bold">{lowStockItems}</div>
+                <p className="text-xs text-muted-foreground">Items need restocking</p>
               </CardContent>
             </Card>
           </div>
