@@ -282,9 +282,10 @@ const GymDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Charts */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1">
-        <Card>
+      {/* Charts and Operational Info */}
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
+        {/* Membership Growth Chart - Takes 2 columns */}
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Annual Membership Growth</CardTitle>
             <CardDescription>Annual membership growth trend (Plan ID 1)</CardDescription>
@@ -336,6 +337,119 @@ const GymDashboard = () => {
             </ChartContainer>
           </CardContent>
         </Card>
+
+        {/* Quick Stats Panel - Takes 1 column */}
+        <div className="space-y-4">
+          {/* Today's Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Today's Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <UserCheck className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium">Check-ins</span>
+                </div>
+                <span className="text-lg font-bold text-green-600">
+                  {summaryStats.checkinsToday.value || 0}
+                </span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                  <span className="text-sm font-medium">Expiring Soon</span>
+                </div>
+                <span className="text-lg font-bold text-orange-600">
+                  {summaryStats.upcomingExpirations.value || 0}
+                </span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium">Active Members</span>
+                </div>
+                <span className="text-lg font-bold text-blue-600">
+                  {summaryStats.members.active.value || 0}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
+                <div className="flex items-center space-x-3">
+                  <UserCheck className="h-5 w-5 text-blue-600" />
+                  <div>
+                    <p className="font-medium text-sm">Member Check-in</p>
+                    <p className="text-xs text-gray-500">Process gym check-ins</p>
+                  </div>
+                </div>
+              </button>
+              
+              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
+                <div className="flex items-center space-x-3">
+                  <Users className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="font-medium text-sm">New Member</p>
+                    <p className="text-xs text-gray-500">Register new members</p>
+                  </div>
+                </div>
+              </button>
+              
+              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
+                <div className="flex items-center space-x-3">
+                  <AlertTriangle className="h-5 w-5 text-orange-600" />
+                  <div>
+                    <p className="font-medium text-sm">Expiring Memberships</p>
+                    <p className="text-xs text-gray-500">Review expiring members</p>
+                  </div>
+                </div>
+              </button>
+            </CardContent>
+          </Card>
+
+          {/* Recent Activity */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">John Doe checked in</p>
+                    <p className="text-xs text-gray-500">2 minutes ago</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">New member registered</p>
+                    <p className="text-xs text-gray-500">15 minutes ago</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Membership expiring</p>
+                    <p className="text-xs text-gray-500">1 hour ago</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
