@@ -108,7 +108,7 @@ const GymDashboard = () => {
                 <div className="text-2xl font-bold">
                   {summaryStats.totalUsers.active}/{summaryStats.totalUsers.total}
                 </div>
-                <p className="text-xs text-muted-foreground">Active / Total (Type 4)</p>
+                <p className="text-xs text-muted-foreground">Active / Total</p>
               </CardContent>
             </Card>
 
