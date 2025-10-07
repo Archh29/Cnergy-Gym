@@ -6,7 +6,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 const Home = () => {
   // Sample data for charts
   const membershipData = [
-    { name: "Jan", members: 400 },
+    { name: "Jan", members: 200 },
     { name: "Feb", members: 300 },
     { name: "Mar", members: 500 },
     { name: "Apr", members: 700 },
