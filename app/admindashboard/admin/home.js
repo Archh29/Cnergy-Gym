@@ -12,6 +12,7 @@ const GymDashboard = () => {
   const [revenueData, setRevenueData] = useState([])
   const [summaryStats, setSummaryStats] = useState({
     members: { active: 0, total: 0 },
+    totalUsers: { active: 0, total: 0 },
     salesToday: 0,
     activeSubscriptions: 0,
     checkinsToday: 0,
@@ -82,11 +83,11 @@ const GymDashboard = () => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
-            {/* Members */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
+            {/* Annual Members */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Members</CardTitle>
+                <CardTitle className="text-sm font-medium">Annual Members</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -94,6 +95,20 @@ const GymDashboard = () => {
                   {summaryStats.members.active}/{summaryStats.members.total}
                 </div>
                 <p className="text-xs text-muted-foreground">Active / Total</p>
+              </CardContent>
+            </Card>
+
+            {/* Total Users */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {summaryStats.totalUsers.active}/{summaryStats.totalUsers.total}
+                </div>
+                <p className="text-xs text-muted-foreground">Active / Total (Type 4)</p>
               </CardContent>
             </Card>
 
@@ -152,8 +167,8 @@ const GymDashboard = () => {
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Membership Growth</CardTitle>
-            <CardDescription>Monthly membership growth trend</CardDescription>
+            <CardTitle>Annual Membership Growth</CardTitle>
+            <CardDescription>Annual membership growth trend (Plan ID 1)</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
