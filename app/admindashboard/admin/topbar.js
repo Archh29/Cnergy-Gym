@@ -29,16 +29,47 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
+  const [userData, setUserData] = useState({ firstName: 'Admin', role: 'Administrator' })
 
   const { toast } = useToast()
 
   useEffect(() => {
     if (userId) {
+      fetchUserData()
       fetchNotifications()
       const interval = setInterval(fetchNotifications, 30000)
       return () => clearInterval(interval)
     }
   }, [userId])
+
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch("https://api.cnergy.site/session.php", {
+        credentials: "include"
+      })
+      const data = await response.json()
+      
+      if (data.authenticated && data.user_id) {
+        // Fetch user details from the database
+        const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${data.user_id}`, {
+          credentials: "include"
+        })
+        
+        if (userResponse.ok) {
+          const userInfo = await userResponse.json()
+          if (userInfo.success) {
+            setUserData({
+              firstName: userInfo.user.fname || 'Admin',
+              role: userInfo.user.user_type_name || 'Administrator'
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error)
+      // Keep default values on error
+    }
+  }
 
   const fetchNotifications = async () => {
     try {
@@ -359,12 +390,12 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
       {/* User Avatar */}
       <div className="flex items-center gap-3">
         <div className="text-right">
-          <p className="text-sm font-medium text-gray-900 dark:text-white">{userRole}</p>
-          <p className="text-xs text-gray-500">Online</p>
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{userData.firstName}</p>
+          <p className="text-xs text-gray-500">{userData.role}</p>
         </div>
         <div className="relative">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-md">
-            <span className="text-white font-semibold">{userRole?.charAt(0) || "U"}</span>
+            <span className="text-white font-semibold">{userData.firstName?.charAt(0) || "A"}</span>
           </div>
           <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
         </div>
