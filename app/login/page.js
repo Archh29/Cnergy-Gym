@@ -149,7 +149,7 @@ export default function Login() {
                 />
                 <span>Remember me</span>
               </label>
-              <a href="#" className="text-orange-400 hover:text-orange-300">
+              <a href="/forgot-password" className="text-orange-400 hover:text-orange-300">
                 Forgot Password?
               </a>
             </div>
