@@ -192,7 +192,7 @@ const GymDashboard = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {summaryStats.members.active.value || summaryStats.members.active}/{summaryStats.members.total.value || summaryStats.members.total}
+                      {summaryStats.members.active.value || 0}/{summaryStats.members.total.value || 0}
                     </div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Active / Total</p>
@@ -214,7 +214,7 @@ const GymDashboard = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
-                      {summaryStats.totalUsers.active.value || summaryStats.totalUsers.active}/{summaryStats.totalUsers.total.value || summaryStats.totalUsers.total}
+                      {summaryStats.totalUsers.active.value || 0}/{summaryStats.totalUsers.total.value || 0}
                     </div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Active / Total</p>
@@ -235,7 +235,7 @@ const GymDashboard = () => {
                     <span className="text-muted-foreground">₱</span>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">₱{(summaryStats.salesToday.value || summaryStats.salesToday).toLocaleString()}</div>
+                    <div className="text-2xl font-bold">₱{(summaryStats.salesToday.value || 0).toLocaleString()}</div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Today's revenue</p>
                       {summaryStats.salesToday.trend !== undefined && (
@@ -255,7 +255,7 @@ const GymDashboard = () => {
                     <CreditCard className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.activeSubscriptions.value || summaryStats.activeSubscriptions}</div>
+                    <div className="text-2xl font-bold">{summaryStats.activeSubscriptions.value || 0}</div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Monthly plan subscribers</p>
                       {summaryStats.activeSubscriptions.trend !== undefined && (
@@ -275,7 +275,7 @@ const GymDashboard = () => {
                     <UserCheck className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.checkinsToday.value || summaryStats.checkinsToday}</div>
+                    <div className="text-2xl font-bold">{summaryStats.checkinsToday.value || 0}</div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Today's visits</p>
                       {summaryStats.checkinsToday.trend !== undefined && (
@@ -295,7 +295,7 @@ const GymDashboard = () => {
                     <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.upcomingExpirations.value || summaryStats.upcomingExpirations}</div>
+                    <div className="text-2xl font-bold">{summaryStats.upcomingExpirations.value || 0}</div>
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Next 7 days</p>
                       {summaryStats.upcomingExpirations.trend !== undefined && (
