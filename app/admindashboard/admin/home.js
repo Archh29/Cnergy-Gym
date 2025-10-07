@@ -85,11 +85,7 @@ const GymDashboard = () => {
     
     try {
       const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
-        timeout: 10000, // 10 second timeout
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+        timeout: 10000 // 10 second timeout
       })
       
       if (response.data.success) {
