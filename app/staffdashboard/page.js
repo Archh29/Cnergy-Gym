@@ -170,7 +170,7 @@ const App = () => {
             if (actionType === "auto_checkout") {
               showNotification(notificationMessage, "info")
             } else if (actionType === "auto_checkout_and_checkin") {
-              showNotification(notificationMessage, "warning")
+              showNotification(notificationMessage, "info")
             } else {
               showNotification(notificationMessage, "success")
             }

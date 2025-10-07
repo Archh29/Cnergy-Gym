@@ -459,12 +459,12 @@ const SubscriptionPlans = () => {
               {/* Filters */}
               <div className="flex items-center gap-4 mt-4">
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="status-filter" className="text-sm font-medium">Status:</Label>
+                  <Label htmlFor="status-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Status:</Label>
                   <select
                     id="status-filter"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm"
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
                   >
                     <option value="all">All Status</option>
                     <option value="approved">Approved</option>
@@ -475,12 +475,12 @@ const SubscriptionPlans = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="expiring-filter" className="text-sm font-medium">Expiring:</Label>
+                  <Label htmlFor="expiring-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Expiring:</Label>
                   <select
                     id="expiring-filter"
                     value={expiringFilter}
                     onChange={(e) => setExpiringFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm"
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
                   >
                     <option value="all">All</option>
                     <option value="active">Active Only</option>
@@ -497,7 +497,7 @@ const SubscriptionPlans = () => {
                     id="plan-filter"
                     value={planFilter}
                     onChange={(e) => setPlanFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm"
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
                   >
                     <option value="all">All Plans</option>
                     {availablePlans.map((plan) => (
