@@ -610,7 +610,7 @@ const CoachAssignments = ({ userId }) => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="h-64 overflow-y-auto space-y-4 pr-2">
                 {activityLog.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No recent activity</p>
                 ) : (
