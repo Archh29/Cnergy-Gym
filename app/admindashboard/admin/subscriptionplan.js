@@ -543,31 +543,76 @@ const SubscriptionPlans = () => {
                         <TableCell>{new Date(subscription.end_date).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <span className={`font-medium ${
-                              subscription.expiry_status === 'expired' ? 'text-red-600' :
-                              subscription.days_until_expiry < 0 ? 'text-red-600' :
-                              subscription.expiry_status === 'critical' ? 'text-red-600' :
-                              subscription.expiry_status === 'warning' ? 'text-orange-600' :
-                              subscription.expiry_status === 'notice' ? 'text-yellow-600' :
-                              'text-green-600'
-                            }`}>
-                              {subscription.days_until_expiry < 0 ? 
-                                `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
-                                `${subscription.days_until_expiry} days`
+                            {(() => {
+                              const status = subscription.computed_status || subscription.status_name
+                              
+                              // For cancelled, rejected, or expired subscriptions, show appropriate status
+                              if (status === 'cancelled') {
+                                return (
+                                  <span className="font-medium text-gray-600">
+                                    Cancelled
+                                  </span>
+                                )
                               }
-                            </span>
-                            {subscription.expiry_status === 'expired' && (
-                              <Badge variant="destructive" className="text-xs">Expired</Badge>
-                            )}
-                            {subscription.expiry_status === 'critical' && (
-                              <Badge variant="destructive" className="text-xs">Critical</Badge>
-                            )}
-                            {subscription.expiry_status === 'warning' && (
-                              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Warning</Badge>
-                            )}
-                            {subscription.expiry_status === 'notice' && (
-                              <Badge variant="outline" className="text-xs">Notice</Badge>
-                            )}
+                              
+                              if (status === 'rejected') {
+                                return (
+                                  <span className="font-medium text-red-600">
+                                    Rejected
+                                  </span>
+                                )
+                              }
+                              
+                              if (status === 'expired') {
+                                return (
+                                  <span className="font-medium text-red-600">
+                                    Expired
+                                  </span>
+                                )
+                              }
+                              
+                              // For active subscriptions, show days until expiry
+                              return (
+                                <span className={`font-medium ${
+                                  subscription.expiry_status === 'expired' ? 'text-red-600' :
+                                  subscription.days_until_expiry < 0 ? 'text-red-600' :
+                                  subscription.expiry_status === 'critical' ? 'text-red-600' :
+                                  subscription.expiry_status === 'warning' ? 'text-orange-600' :
+                                  subscription.expiry_status === 'notice' ? 'text-yellow-600' :
+                                  'text-green-600'
+                                }`}>
+                                  {subscription.days_until_expiry < 0 ? 
+                                    `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
+                                    `${subscription.days_until_expiry} days`
+                                  }
+                                </span>
+                              )
+                            })()}
+                            
+                            {/* Status badges for active subscriptions only */}
+                            {(() => {
+                              const status = subscription.computed_status || subscription.status_name
+                              if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
+                                return null
+                              }
+                              
+                              return (
+                                <>
+                                  {subscription.expiry_status === 'expired' && (
+                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'critical' && (
+                                    <Badge variant="destructive" className="text-xs">Critical</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'warning' && (
+                                    <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Warning</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'notice' && (
+                                    <Badge variant="outline" className="text-xs">Notice</Badge>
+                                  )}
+                                </>
+                              )
+                            })()}
                           </div>
                         </TableCell>
                         <TableCell>
