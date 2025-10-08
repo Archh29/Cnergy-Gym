@@ -76,32 +76,45 @@ const FreePrograms = () => {
 
   const fetchExercises = async () => {
     try {
+      console.log("=== FETCHING EXERCISES ===")
+      console.log("API URL:", EXERCISES_API)
+      
       const response = await axios.get(EXERCISES_API)
+      console.log("Exercises response:", response.data)
+      
       if (response.data.success && Array.isArray(response.data.data)) {
+        console.log("✅ Fetched exercises successfully:", response.data.data.length, "exercises")
+        console.log("Sample exercise:", response.data.data[0])
         setExercises(response.data.data)
       } else {
+        console.log("❌ No exercises data or invalid format:", response.data)
         setExercises([])
       }
     } catch (error) {
       setExercises([])
-      console.error("Error fetching exercises:", error)
+      console.error("❌ Error fetching exercises:", error)
     }
   }
 
   const fetchMuscleGroups = async () => {
     setLoadingState("fetchingMuscleGroups", true)
     try {
+      console.log("=== FETCHING MUSCLE GROUPS ===")
+      console.log("API URL:", MUSCLE_GROUPS_API)
+      
       const response = await axios.get(MUSCLE_GROUPS_API)
+      console.log("Muscle groups response:", response.data)
+      
       if (response.data.success && Array.isArray(response.data.data)) {
-        console.log("Fetched muscle groups:", response.data.data)
+        console.log("✅ Fetched muscle groups successfully:", response.data.data)
         setMuscleGroups(response.data.data)
       } else {
-        console.log("No muscle groups data or invalid format:", response.data)
+        console.log("❌ No muscle groups data or invalid format:", response.data)
         setMuscleGroups([])
       }
     } catch (error) {
       setMuscleGroups([])
-      console.error("Error fetching muscle groups:", error)
+      console.error("❌ Error fetching muscle groups:", error)
     } finally {
       setLoadingState("fetchingMuscleGroups", false)
     }
@@ -356,13 +369,30 @@ const FreePrograms = () => {
       return exercises
     }
     
-    console.log("Filtering exercises for muscle group:", selectedMuscleGroup)
+    console.log("=== MUSCLE FILTER DEBUG ===")
+    console.log("Selected muscle group ID:", selectedMuscleGroup, "Type:", typeof selectedMuscleGroup)
     console.log("Total exercises:", exercises.length)
-    console.log("Sample exercise target muscles:", exercises[0]?.target_muscles)
+    console.log("Available muscle groups:", muscleGroups)
+    
+    // Debug first few exercises
+    exercises.slice(0, 3).forEach((exercise, index) => {
+      console.log(`Exercise ${index + 1}: ${exercise.name}`)
+      console.log("  Target muscles:", exercise.target_muscles)
+      if (exercise.target_muscles && Array.isArray(exercise.target_muscles)) {
+        exercise.target_muscles.forEach((muscle, muscleIndex) => {
+          console.log(`    Muscle ${muscleIndex + 1}:`, {
+            id: muscle.id,
+            name: muscle.name,
+            parent_id: muscle.parent_id,
+            role: muscle.role
+          })
+        })
+      }
+    })
     
     const filtered = exercises.filter((exercise) => {
       if (!exercise.target_muscles || !Array.isArray(exercise.target_muscles)) {
-        console.log(`Exercise ${exercise.name} has no target_muscles or not an array:`, exercise.target_muscles)
+        console.log(`❌ Exercise ${exercise.name} has no target_muscles or not an array:`, exercise.target_muscles)
         return false
       }
       
@@ -372,7 +402,7 @@ const FreePrograms = () => {
         const parentIdMatch = muscle.parent_id && muscle.parent_id === parseInt(selectedMuscleGroup)
         
         if (muscleIdMatch || parentIdMatch) {
-          console.log(`Exercise ${exercise.name} matches muscle group ${selectedMuscleGroup}:`, {
+          console.log(`✅ Exercise ${exercise.name} matches muscle group ${selectedMuscleGroup}:`, {
             muscleId: muscle.id,
             muscleName: muscle.name,
             parentId: muscle.parent_id,
@@ -384,10 +414,17 @@ const FreePrograms = () => {
         return muscleIdMatch || parentIdMatch
       })
       
+      if (!matches) {
+        console.log(`❌ Exercise ${exercise.name} does NOT match muscle group ${selectedMuscleGroup}`)
+      }
+      
       return matches
     })
     
     console.log("Filtered exercises count:", filtered.length)
+    console.log("Filtered exercise names:", filtered.map(ex => ex.name))
+    console.log("=== END MUSCLE FILTER DEBUG ===")
+    
     return filtered
   }
 
