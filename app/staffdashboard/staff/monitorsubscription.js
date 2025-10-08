@@ -370,6 +370,23 @@ const SubscriptionMonitor = ({ userId }) => {
       const receivedAmount = parseFloat(amountReceived) || totalAmount
       const change = Math.max(0, receivedAmount - totalAmount)
 
+      // CRITICAL: Validate payment before creating subscription
+      if (totalAmount <= 0) {
+        setMessage({ 
+          type: "error", 
+          text: "Invalid payment amount. Amount must be greater than 0." 
+        })
+        return
+      }
+
+      if (paymentMethod === "cash" && receivedAmount < totalAmount) {
+        setMessage({ 
+          type: "error", 
+          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        })
+        return
+      }
+
       // Auto-generate receipt number
       const now = new Date();
       const year = now.getFullYear();
@@ -390,7 +407,8 @@ const SubscriptionMonitor = ({ userId }) => {
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
         created_by: "Staff",
-        staff_id: userId // Use current user ID - no fallback
+        staff_id: userId, // Use current user ID - no fallback
+        transaction_status: "confirmed" // CRITICAL: Mark transaction as confirmed
       });
 
       if (response.data.success) {
@@ -438,6 +456,23 @@ const SubscriptionMonitor = ({ userId }) => {
         return;
       }
 
+      // CRITICAL: Validate payment before approving subscription
+      if (totalAmount <= 0) {
+        setMessage({ 
+          type: "error", 
+          text: "Invalid payment amount. Amount must be greater than 0." 
+        })
+        return
+      }
+
+      if (paymentMethod === "cash" && receivedAmount < totalAmount) {
+        setMessage({ 
+          type: "error", 
+          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        })
+        return
+      }
+
       // Process payment and approve the existing subscription
       const response = await axios.post(`${API_URL}?action=approve_with_payment`, {
         subscription_id: currentSubscriptionId,
@@ -445,8 +480,9 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_received: receivedAmount,
         notes: transactionNotes,
         receipt_number: receiptNumber || undefined,
-        approved_by: "Admin",
-        staff_id: userId
+        approved_by: "Staff",
+        staff_id: userId,
+        transaction_status: "confirmed" // CRITICAL: Mark transaction as confirmed
       });
 
       if (response.data.success) {
