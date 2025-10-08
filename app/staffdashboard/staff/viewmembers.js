@@ -380,10 +380,16 @@ const ViewMembers = ({ userId }) => {
     } catch (error) {
       console.error("Error adding member:", error)
       console.error("Error message:", error.message)
+      console.error("Full error object:", error)
       
       // Check if it's an email-related error
       const errorMessage = error.message || "Failed to add member. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
+      
+      console.log("Error message to check:", errorMessage)
+      console.log("Is email error:", isEmailError)
+      console.log("Contains email:", errorMessage.toLowerCase().includes("email"))
+      console.log("Contains already exists:", errorMessage.toLowerCase().includes("already exists"))
       
       toast({
         title: isEmailError ? "Email Already Exists" : "Error",

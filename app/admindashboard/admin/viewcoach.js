@@ -436,12 +436,19 @@ const ViewCoach = () => {
     } catch (error) {
       console.error("Error adding coach:", error.response?.data || error.message)
       console.error("Error response data:", error.response?.data)
+      console.error("Error response status:", error.response?.status)
+      console.error("Full error object:", error)
       
       // Check if it's an email-related error (case insensitive)
       const errorText = (error.response?.data?.error || "").toLowerCase()
+      console.log("Error text to check:", errorText)
+      console.log("Contains email:", errorText.includes("email"))
+      console.log("Contains already exists:", errorText.includes("already exists"))
+      
       if (errorText.includes("email") || errorText.includes("already exists")) {
         // Show the detailed error message from backend
         const errorMessage = error.response?.data?.message || error.response?.data?.error || "Email address already exists"
+        console.log("Showing email error message:", errorMessage)
         setValidationErrors({ email: errorMessage })
         toast({
           title: "Email Already Exists",
@@ -449,6 +456,7 @@ const ViewCoach = () => {
           variant: "destructive",
         })
       } else {
+        console.log("Showing generic error message")
         toast({
           title: "Error",
           description: error.response?.data?.message || error.response?.data?.error || "Failed to add coach.",
