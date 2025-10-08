@@ -582,7 +582,14 @@ const SubscriptionPlans = () => {
                           </Badge>
                         </TableCell>
                         <TableCell className="font-medium">
-                          {formatCurrency(subscription.amount_paid)}
+                          {(() => {
+                            const status = subscription.computed_status || subscription.status_name
+                            // Show 0 for cancelled, rejected, or expired subscriptions
+                            if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
+                              return formatCurrency(0)
+                            }
+                            return formatCurrency(subscription.amount_paid)
+                          })()}
                           {subscription.discount_type !== 'none' && (
                             <div className="text-xs text-muted-foreground">
                               {subscription.discount_type} discount
