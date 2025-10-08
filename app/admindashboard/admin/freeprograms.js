@@ -93,8 +93,10 @@ const FreePrograms = () => {
     try {
       const response = await axios.get(MUSCLE_GROUPS_API)
       if (response.data.success && Array.isArray(response.data.data)) {
+        console.log("Fetched muscle groups:", response.data.data)
         setMuscleGroups(response.data.data)
       } else {
+        console.log("No muscle groups data or invalid format:", response.data)
         setMuscleGroups([])
       }
     } catch (error) {
@@ -143,12 +145,15 @@ const FreePrograms = () => {
       const exercisesData = selectedExercises.map((exerciseId) => {
         const exercise = exercises.find((ex) => ex.id === exerciseId)
         const details = exerciseDetails[exerciseId] || {}
+        const numSets = parseInt(details.sets || 0)
+        
         return {
           exercise_id: exerciseId,
           exercise_name: exercise ? exercise.name : "Unknown Exercise",
           weight: details.weight || "",
-          reps: details.reps || "",
+          reps: details.reps || "", // Keep for backward compatibility
           sets: details.sets || "",
+          repsPerSet: numSets > 1 ? (details.repsPerSet || []) : [], // Array of reps for each set
           color: details.color || "#3B82F6"
         }
       })
@@ -223,10 +228,12 @@ const FreePrograms = () => {
       const details = {}
       program.exercises.forEach((ex) => {
         if (ex.exercise_id) {
+          const numSets = parseInt(ex.sets || 0)
           details[ex.exercise_id] = {
             weight: ex.weight || "",
             reps: ex.reps || "",
             sets: ex.sets || "",
+            repsPerSet: ex.repsPerSet || (numSets > 1 ? Array(numSets).fill(ex.reps || "") : []),
             color: ex.color || "#3B82F6"
           }
         }
@@ -282,8 +289,9 @@ const FreePrograms = () => {
           ...details,
           [exerciseId]: {
             weight: "",
-            reps: "",
+            reps: "", // Default reps (for backward compatibility)
             sets: "",
+            repsPerSet: [], // Array to store reps for each set
             color: "#3B82F6"
           }
         }))
@@ -293,13 +301,46 @@ const FreePrograms = () => {
   }
 
   const handleExerciseDetailChange = (exerciseId, field, value) => {
-    setExerciseDetails((prev) => ({
-      ...prev,
-      [exerciseId]: {
-        ...prev[exerciseId],
-        [field]: value
+    setExerciseDetails((prev) => {
+      const currentDetails = prev[exerciseId] || {}
+      const newDetails = { ...currentDetails, [field]: value }
+      
+      // If sets is being changed, initialize repsPerSet array
+      if (field === 'sets') {
+        const numSets = parseInt(value) || 0
+        const currentRepsPerSet = currentDetails.repsPerSet || []
+        
+        // Initialize or resize repsPerSet array
+        if (numSets > 0) {
+          newDetails.repsPerSet = Array.from({ length: numSets }, (_, index) => 
+            currentRepsPerSet[index] || currentDetails.reps || ""
+          )
+        } else {
+          newDetails.repsPerSet = []
+        }
       }
-    }))
+      
+      return {
+        ...prev,
+        [exerciseId]: newDetails
+      }
+    })
+  }
+
+  const handleSetRepsChange = (exerciseId, setIndex, reps) => {
+    setExerciseDetails((prev) => {
+      const currentDetails = prev[exerciseId] || {}
+      const repsPerSet = [...(currentDetails.repsPerSet || [])]
+      repsPerSet[setIndex] = reps
+      
+      return {
+        ...prev,
+        [exerciseId]: {
+          ...currentDetails,
+          repsPerSet
+        }
+      }
+    })
   }
 
   const getProgramExerciseCount = (program) => {
@@ -315,17 +356,39 @@ const FreePrograms = () => {
       return exercises
     }
     
-    return exercises.filter((exercise) => {
+    console.log("Filtering exercises for muscle group:", selectedMuscleGroup)
+    console.log("Total exercises:", exercises.length)
+    console.log("Sample exercise target muscles:", exercises[0]?.target_muscles)
+    
+    const filtered = exercises.filter((exercise) => {
       if (!exercise.target_muscles || !Array.isArray(exercise.target_muscles)) {
+        console.log(`Exercise ${exercise.name} has no target_muscles or not an array:`, exercise.target_muscles)
         return false
       }
       
-      return exercise.target_muscles.some((muscle) => {
+      const matches = exercise.target_muscles.some((muscle) => {
         // Check if any target muscle belongs to the selected muscle group
-        return muscle.id === parseInt(selectedMuscleGroup) || 
-               (muscle.parent_id && muscle.parent_id === parseInt(selectedMuscleGroup))
+        const muscleIdMatch = muscle.id === parseInt(selectedMuscleGroup)
+        const parentIdMatch = muscle.parent_id && muscle.parent_id === parseInt(selectedMuscleGroup)
+        
+        if (muscleIdMatch || parentIdMatch) {
+          console.log(`Exercise ${exercise.name} matches muscle group ${selectedMuscleGroup}:`, {
+            muscleId: muscle.id,
+            muscleName: muscle.name,
+            parentId: muscle.parent_id,
+            muscleIdMatch,
+            parentIdMatch
+          })
+        }
+        
+        return muscleIdMatch || parentIdMatch
       })
+      
+      return matches
     })
+    
+    console.log("Filtered exercises count:", filtered.length)
+    return filtered
   }
 
   const filteredPrograms = (programs || []).filter((program) =>
@@ -535,46 +598,90 @@ const FreePrograms = () => {
                       
                       {/* Exercise Details - only show if exercise is selected */}
                       {selectedExercises.includes(exercise.id) && (
-                        <div className="ml-6 grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg">
-                          <div>
-                            <Label htmlFor={`weight-${exercise.id}`} className="text-xs">Weight (kg)</Label>
-                            <Input
-                              id={`weight-${exercise.id}`}
-                              type="number"
-                              placeholder="0"
-                              value={exerciseDetails[exercise.id]?.weight || ""}
-                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'weight', e.target.value)}
-                              disabled={loadingStates.savingProgram}
-                              className="h-8 text-xs"
-                            />
+                        <div className="ml-6 p-3 bg-gray-50 rounded-lg space-y-3">
+                          {/* Basic Details */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label htmlFor={`weight-${exercise.id}`} className="text-xs">Weight (kg)</Label>
+                              <Input
+                                id={`weight-${exercise.id}`}
+                                type="number"
+                                placeholder="0"
+                                value={exerciseDetails[exercise.id]?.weight || ""}
+                                onChange={(e) => handleExerciseDetailChange(exercise.id, 'weight', e.target.value)}
+                                disabled={loadingStates.savingProgram}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor={`sets-${exercise.id}`} className="text-xs">Sets</Label>
+                              <Input
+                                id={`sets-${exercise.id}`}
+                                type="number"
+                                placeholder="0"
+                                min="1"
+                                max="10"
+                                value={exerciseDetails[exercise.id]?.sets || ""}
+                                onChange={(e) => handleExerciseDetailChange(exercise.id, 'sets', e.target.value)}
+                                disabled={loadingStates.savingProgram}
+                                className="h-8 text-xs"
+                              />
+                            </div>
                           </div>
-                          <div>
-                            <Label htmlFor={`reps-${exercise.id}`} className="text-xs">Reps</Label>
-                            <Input
-                              id={`reps-${exercise.id}`}
-                              type="number"
-                              placeholder="0"
-                              value={exerciseDetails[exercise.id]?.reps || ""}
-                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'reps', e.target.value)}
-                              disabled={loadingStates.savingProgram}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor={`sets-${exercise.id}`} className="text-xs">Sets</Label>
-                            <Input
-                              id={`sets-${exercise.id}`}
-                              type="number"
-                              placeholder="0"
-                              value={exerciseDetails[exercise.id]?.sets || ""}
-                              onChange={(e) => handleExerciseDetailChange(exercise.id, 'sets', e.target.value)}
-                              disabled={loadingStates.savingProgram}
-                              className="h-8 text-xs"
-                            />
-                          </div>
+
+                          {/* Reps Configuration */}
+                          {(() => {
+                            const numSets = parseInt(exerciseDetails[exercise.id]?.sets || 0)
+                            const repsPerSet = exerciseDetails[exercise.id]?.repsPerSet || []
+                            
+                            if (numSets <= 1) {
+                              // Single set - show simple reps input
+                              return (
+                                <div>
+                                  <Label htmlFor={`reps-${exercise.id}`} className="text-xs">Reps</Label>
+                                  <Input
+                                    id={`reps-${exercise.id}`}
+                                    type="number"
+                                    placeholder="0"
+                                    value={exerciseDetails[exercise.id]?.reps || ""}
+                                    onChange={(e) => handleExerciseDetailChange(exercise.id, 'reps', e.target.value)}
+                                    disabled={loadingStates.savingProgram}
+                                    className="h-8 text-xs"
+                                  />
+                                </div>
+                              )
+                            } else {
+                              // Multiple sets - show individual set inputs
+                              return (
+                                <div>
+                                  <Label className="text-xs">Reps per Set</Label>
+                                  <div className="grid grid-cols-2 gap-2 mt-1">
+                                    {Array.from({ length: numSets }, (_, index) => (
+                                      <div key={index} className="flex items-center space-x-2">
+                                        <Label htmlFor={`set-${exercise.id}-${index}`} className="text-xs w-8">
+                                          Set {index + 1}:
+                                        </Label>
+                                        <Input
+                                          id={`set-${exercise.id}-${index}`}
+                                          type="number"
+                                          placeholder="0"
+                                          value={repsPerSet[index] || ""}
+                                          onChange={(e) => handleSetRepsChange(exercise.id, index, e.target.value)}
+                                          disabled={loadingStates.savingProgram}
+                                          className="h-7 text-xs"
+                                        />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            }
+                          })()}
+
+                          {/* Color Selection */}
                           <div>
                             <Label htmlFor={`color-${exercise.id}`} className="text-xs">Color</Label>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 mt-1">
                               <Input
                                 id={`color-${exercise.id}`}
                                 type="color"
@@ -664,12 +771,27 @@ const FreePrograms = () => {
                           <span className="font-medium">{exercise.weight || "N/A"} kg</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-muted-foreground">Reps:</span>
-                          <span className="font-medium">{exercise.reps || "N/A"}</span>
-                        </div>
-                        <div className="flex justify-between">
                           <span className="text-muted-foreground">Sets:</span>
                           <span className="font-medium">{exercise.sets || "N/A"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Reps:</span>
+                          <span className="font-medium">
+                            {(() => {
+                              const numSets = parseInt(exercise.sets || 0)
+                              const repsPerSet = exercise.repsPerSet || []
+                              
+                              if (numSets > 1 && repsPerSet.length > 0) {
+                                // Show custom reps per set
+                                return repsPerSet.map((reps, index) => 
+                                  `Set ${index + 1}: ${reps || "N/A"}`
+                                ).join(", ")
+                              } else {
+                                // Show single reps value
+                                return exercise.reps || "N/A"
+                              }
+                            })()}
+                          </span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-muted-foreground">Color:</span>
