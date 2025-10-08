@@ -435,9 +435,13 @@ const ViewCoach = () => {
       }
     } catch (error) {
       console.error("Error adding coach:", error.response?.data || error.message)
-      if (error.response?.data?.error?.includes("email")) {
+      console.error("Error response data:", error.response?.data)
+      
+      // Check if it's an email-related error (case insensitive)
+      const errorText = (error.response?.data?.error || "").toLowerCase()
+      if (errorText.includes("email") || errorText.includes("already exists")) {
         // Show the detailed error message from backend
-        const errorMessage = error.response?.data?.message || "Email address already exists"
+        const errorMessage = error.response?.data?.message || error.response?.data?.error || "Email address already exists"
         setValidationErrors({ email: errorMessage })
         toast({
           title: "Email Already Exists",

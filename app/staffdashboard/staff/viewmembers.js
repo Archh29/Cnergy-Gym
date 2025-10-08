@@ -379,9 +379,15 @@ const ViewMembers = ({ userId }) => {
       }
     } catch (error) {
       console.error("Error adding member:", error)
+      console.error("Error message:", error.message)
+      
+      // Check if it's an email-related error
+      const errorMessage = error.message || "Failed to add member. Please try again."
+      const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
+      
       toast({
-        title: "Error",
-        description: error.message || "Failed to add member. Please try again.",
+        title: isEmailError ? "Email Already Exists" : "Error",
+        description: errorMessage,
         variant: "destructive",
       })
     }
