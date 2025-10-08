@@ -427,11 +427,34 @@ const ViewCoach = ({ userId }) => {
         toast({ title: "Success", description: "Coach added successfully!" })
         resetForm()
       } else {
-        toast({
-          title: "Error",
-          description: response.data.error || "Failed to add coach.",
-          variant: "destructive",
-        })
+        // Handle API error response (like email already exists)
+        console.error("Coach creation failed:", response.data)
+        console.error("Error response data:", response.data)
+        
+        // Check if it's an email-related error (case insensitive)
+        const errorText = (response.data.error || "").toLowerCase()
+        console.log("Error text to check:", errorText)
+        console.log("Contains email:", errorText.includes("email"))
+        console.log("Contains already exists:", errorText.includes("already exists"))
+        
+        if (errorText.includes("email") || errorText.includes("already exists")) {
+          // Show the detailed error message from backend
+          const errorMessage = response.data.message || response.data.error || "Email address already exists"
+          console.log("Showing email error message:", errorMessage)
+          setValidationErrors({ email: errorMessage })
+          toast({
+            title: "Email Already Exists",
+            description: errorMessage,
+            variant: "destructive",
+          })
+        } else {
+          console.log("Showing generic error message")
+          toast({
+            title: "Error",
+            description: response.data.message || response.data.error || "Failed to add coach.",
+            variant: "destructive",
+          })
+        }
       }
     } catch (error) {
       console.error("Error adding coach:", error.response?.data || error.message)

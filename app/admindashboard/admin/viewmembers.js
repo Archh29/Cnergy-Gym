@@ -329,17 +329,9 @@ const ViewMembers = ({ userId }) => {
   const handleAddMember = async (data) => {
     setIsLoading(true)
     try {
-      const isEmailValid = await validateEmail(data.email)
-      if (!isEmailValid) {
-        toast({
-          title: "Error",
-          description: "Email address already exists. Please use a different email.",
-          variant: "destructive",
-        })
-        setIsLoading(false)
-        return
-      }
-
+      // Remove client-side email validation - let backend handle it
+      console.log("Creating member with data:", data)
+      
       const formattedData = {
         fname: data.fname.trim(),
         mname: data.mname.trim(),
@@ -354,6 +346,8 @@ const ViewMembers = ({ userId }) => {
         staff_id: userId,
       }
 
+      console.log("Sending request to backend with data:", formattedData)
+      
       const response = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
         headers: {
@@ -362,7 +356,12 @@ const ViewMembers = ({ userId }) => {
         body: JSON.stringify(formattedData),
       })
 
+      console.log("Response status:", response.status)
+      console.log("Response ok:", response.ok)
+      
       const result = await response.json()
+      console.log("Response result:", result)
+      
       if (response.ok) {
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
