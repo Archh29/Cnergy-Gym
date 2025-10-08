@@ -374,7 +374,8 @@ const ViewMembers = ({ userId }) => {
           description: "Member added successfully!",
         })
       } else {
-        throw new Error(result.error || result.message || "Failed to add member")
+        // Prioritize the detailed message over the generic error
+        throw new Error(result.message || result.error || "Failed to add member")
       }
     } catch (error) {
       console.error("Error adding member:", error)
@@ -385,16 +386,8 @@ const ViewMembers = ({ userId }) => {
       const errorMessage = error.message || "Failed to add member. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
       
-      console.log("Error message to check:", errorMessage)
-      console.log("Is email error:", isEmailError)
-      console.log("Contains email:", errorMessage.toLowerCase().includes("email"))
-      console.log("Contains already exists:", errorMessage.toLowerCase().includes("already exists"))
-      
-      toast({
-        title: isEmailError ? "Email Already Exists" : "Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      // Show error message in alert (simple approach)
+      alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     }
     setIsLoading(false)
   }
