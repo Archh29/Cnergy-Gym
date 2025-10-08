@@ -87,6 +87,8 @@ const ViewCoach = () => {
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
+  const [selectedSpecialties, setSelectedSpecialties] = useState([])
+  const [customSpecialty, setCustomSpecialty] = useState("")
 
   const coachesPerPage = 5
   const indexOfLastCoach = currentPage * coachesPerPage
@@ -178,7 +180,7 @@ const ViewCoach = () => {
     if (data.gender_id && ![1, 2].includes(Number.parseInt(data.gender_id))) {
       errors.gender_id = "Please select a valid gender"
     }
-    if (!data.specialty) errors.specialty = "Please specify a specialty"
+    if (!data.specialty && selectedSpecialties.length === 0) errors.specialty = "Please specify at least one specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
     if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
     
@@ -232,6 +234,27 @@ const ViewCoach = () => {
     setFormData((prev) => ({ ...prev, [name]: checked }))
   }
 
+  const handleSpecialtyToggle = (specialty) => {
+    setSelectedSpecialties(prev => {
+      if (prev.includes(specialty)) {
+        return prev.filter(s => s !== specialty)
+      } else {
+        return [...prev, specialty]
+      }
+    })
+  }
+
+  const handleAddCustomSpecialty = () => {
+    if (customSpecialty.trim() && !selectedSpecialties.includes(customSpecialty.trim())) {
+      setSelectedSpecialties(prev => [...prev, customSpecialty.trim()])
+      setCustomSpecialty("")
+    }
+  }
+
+  const handleRemoveSpecialty = (specialty) => {
+    setSelectedSpecialties(prev => prev.filter(s => s !== specialty))
+  }
+
   const resetForm = () => {
     setFormData({
       fname: "",
@@ -254,6 +277,8 @@ const ViewCoach = () => {
       image_url: "",
     })
     setValidationErrors({})
+    setSelectedSpecialties([])
+    setCustomSpecialty("")
   }
 
   // Fetch activity logs from backend
@@ -386,7 +411,7 @@ const ViewCoach = () => {
 
         // Coaches table data
         bio: formData.bio || "",
-        specialty: formData.specialty,
+        specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
         per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
         package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
@@ -499,7 +524,7 @@ const ViewCoach = () => {
 
         // Coaches table data
         bio: formData.bio || "",
-        specialty: formData.specialty,
+        specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
         per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
         package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
@@ -634,6 +659,15 @@ const ViewCoach = () => {
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
     })
+    
+    // Parse existing specialties for editing
+    if (coach.specialty) {
+      const specialties = coach.specialty.split(',').map(s => s.trim()).filter(s => s)
+      setSelectedSpecialties(specialties)
+    } else {
+      setSelectedSpecialties([])
+    }
+    setCustomSpecialty("")
     setValidationErrors({})
     setIsEditDialogOpen(true)
   }
@@ -1117,19 +1151,62 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="specialty">Specialty*</Label>
-                  <Select value={formData.specialty} onValueChange={(value) => handleSelectChange("specialty", value)}>
-                    <SelectTrigger className={validationErrors.specialty ? "border-red-500" : ""}>
-                      <SelectValue placeholder="Select specialty" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {specialtyOptions.map((specialty) => (
-                        <SelectItem key={specialty} value={specialty}>
+                  <Label htmlFor="specialty">Specialties*</Label>
+                  
+                  {/* Selected Specialties Display */}
+                  {selectedSpecialties.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {selectedSpecialties.map((specialty) => (
+                        <Badge key={specialty} variant="secondary" className="flex items-center gap-1">
                           {specialty}
-                        </SelectItem>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSpecialty(specialty)}
+                            className="ml-1 hover:text-red-500"
+                          >
+                            ×
+                          </button>
+                        </Badge>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  )}
+                  
+                  {/* Predefined Specialty Options */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {specialtyOptions.map((specialty) => (
+                      <button
+                        key={specialty}
+                        type="button"
+                        onClick={() => handleSpecialtyToggle(specialty)}
+                        className={`p-2 text-sm border rounded-md text-left transition-colors ${
+                          selectedSpecialties.includes(specialty)
+                            ? 'bg-blue-100 border-blue-300 text-blue-800'
+                            : 'bg-white border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {specialty}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Custom Specialty Input */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add custom specialty..."
+                      value={customSpecialty}
+                      onChange={(e) => setCustomSpecialty(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSpecialty())}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddCustomSpecialty}
+                      disabled={!customSpecialty.trim()}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
@@ -1411,19 +1488,62 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-specialty">Specialty*</Label>
-                  <Select value={formData.specialty} onValueChange={(value) => handleSelectChange("specialty", value)}>
-                    <SelectTrigger className={validationErrors.specialty ? "border-red-500" : ""}>
-                      <SelectValue placeholder="Select specialty" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {specialtyOptions.map((specialty) => (
-                        <SelectItem key={specialty} value={specialty}>
+                  <Label htmlFor="edit-specialty">Specialties*</Label>
+                  
+                  {/* Selected Specialties Display */}
+                  {selectedSpecialties.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {selectedSpecialties.map((specialty) => (
+                        <Badge key={specialty} variant="secondary" className="flex items-center gap-1">
                           {specialty}
-                        </SelectItem>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSpecialty(specialty)}
+                            className="ml-1 hover:text-red-500"
+                          >
+                            ×
+                          </button>
+                        </Badge>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  )}
+                  
+                  {/* Predefined Specialty Options */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {specialtyOptions.map((specialty) => (
+                      <button
+                        key={specialty}
+                        type="button"
+                        onClick={() => handleSpecialtyToggle(specialty)}
+                        className={`p-2 text-sm border rounded-md text-left transition-colors ${
+                          selectedSpecialties.includes(specialty)
+                            ? 'bg-blue-100 border-blue-300 text-blue-800'
+                            : 'bg-white border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {specialty}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Custom Specialty Input */}
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Add custom specialty..."
+                      value={customSpecialty}
+                      onChange={(e) => setCustomSpecialty(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCustomSpecialty())}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddCustomSpecialty}
+                      disabled={!customSpecialty.trim()}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                  
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
