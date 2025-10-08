@@ -22,6 +22,8 @@ const FreePrograms = () => {
   const [searchQuery, setSearchQuery] = useState("")
   const [programs, setPrograms] = useState([])
   const [exercises, setExercises] = useState([])
+  const [muscleGroups, setMuscleGroups] = useState([])
+  const [selectedMuscleGroup, setSelectedMuscleGroup] = useState("")
   const [programWorkouts, setProgramWorkouts] = useState([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
@@ -35,6 +37,7 @@ const FreePrograms = () => {
     fetchingPrograms: false,
     savingProgram: false,
     deletingProgram: false,
+    fetchingMuscleGroups: false,
   })
 
   const setLoadingState = (key, value) => {
@@ -44,10 +47,12 @@ const FreePrograms = () => {
   // API URLs - using your existing file structure
   const PROGRAMS_API = "https://api.cnergy.site/programs.php"
   const EXERCISES_API = "https://api.cnergy.site/exercises.php?action=get_exercises"
+  const MUSCLE_GROUPS_API = "https://api.cnergy.site/exercises.php?action=get_muscle_groups"
 
   useEffect(() => {
     fetchPrograms()
     fetchExercises()
+    fetchMuscleGroups()
   }, [])
 
   const fetchPrograms = async () => {
@@ -80,6 +85,23 @@ const FreePrograms = () => {
     } catch (error) {
       setExercises([])
       console.error("Error fetching exercises:", error)
+    }
+  }
+
+  const fetchMuscleGroups = async () => {
+    setLoadingState("fetchingMuscleGroups", true)
+    try {
+      const response = await axios.get(MUSCLE_GROUPS_API)
+      if (response.data.success && Array.isArray(response.data.data)) {
+        setMuscleGroups(response.data.data)
+      } else {
+        setMuscleGroups([])
+      }
+    } catch (error) {
+      setMuscleGroups([])
+      console.error("Error fetching muscle groups:", error)
+    } finally {
+      setLoadingState("fetchingMuscleGroups", false)
     }
   }
 
@@ -224,6 +246,7 @@ const FreePrograms = () => {
     setProgramDescription("")
     setSelectedExercises([])
     setExerciseDetails({})
+    setSelectedMuscleGroup("")
     setDialogOpen(true)
   }
 
@@ -234,6 +257,7 @@ const FreePrograms = () => {
     setProgramDescription("")
     setSelectedExercises([])
     setExerciseDetails({})
+    setSelectedMuscleGroup("")
     setError("")
   }
 
@@ -283,6 +307,25 @@ const FreePrograms = () => {
       return program.exercises.length
     }
     return 0
+  }
+
+  // Filter exercises based on selected muscle group
+  const getFilteredExercises = () => {
+    if (!selectedMuscleGroup) {
+      return exercises
+    }
+    
+    return exercises.filter((exercise) => {
+      if (!exercise.target_muscles || !Array.isArray(exercise.target_muscles)) {
+        return false
+      }
+      
+      return exercise.target_muscles.some((muscle) => {
+        // Check if any target muscle belongs to the selected muscle group
+        return muscle.id === parseInt(selectedMuscleGroup) || 
+               (muscle.parent_id && muscle.parent_id === parseInt(selectedMuscleGroup))
+      })
+    })
   }
 
   const filteredPrograms = (programs || []).filter((program) =>
@@ -438,6 +481,28 @@ const FreePrograms = () => {
 
             <div className="space-y-4">
               <Label>Select Exercises *</Label>
+              
+              {/* Muscle Group Filter */}
+              {muscleGroups.length > 0 && (
+                <div className="space-y-2">
+                  <Label htmlFor="muscle-group-filter">Filter by Muscle Group</Label>
+                  <select
+                    id="muscle-group-filter"
+                    value={selectedMuscleGroup}
+                    onChange={(e) => setSelectedMuscleGroup(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    disabled={loadingStates.savingProgram || loadingStates.fetchingMuscleGroups}
+                  >
+                    <option value="">All Muscle Groups</option>
+                    {muscleGroups.map((muscleGroup) => (
+                      <option key={muscleGroup.id} value={muscleGroup.id}>
+                        {muscleGroup.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {exercises.length === 0 ? (
                 <Alert>
                   <AlertDescription>
@@ -446,7 +511,7 @@ const FreePrograms = () => {
                 </Alert>
               ) : (
                 <div className="grid grid-cols-1 gap-3 max-h-60 overflow-y-auto border rounded-lg p-4">
-                  {exercises.map((exercise) => (
+                  {getFilteredExercises().map((exercise) => (
                     <div key={exercise.id} className="space-y-3">
                       <div className="flex items-start space-x-3">
                         <Checkbox
@@ -532,6 +597,11 @@ const FreePrograms = () => {
               {selectedExercises.length > 0 && (
                 <div className="text-sm text-muted-foreground">
                   {selectedExercises.length} exercise{selectedExercises.length > 1 ? "s" : ""} selected
+                  {selectedMuscleGroup && (
+                    <span className="ml-2">
+                      (showing {getFilteredExercises().length} of {exercises.length} exercises)
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -552,7 +622,7 @@ const FreePrograms = () => {
                 !programName.trim() ||
                 selectedExercises.length === 0 ||
                 loadingStates.savingProgram ||
-                exercises.length === 0
+                getFilteredExercises().length === 0
               }
             >
               {loadingStates.savingProgram ? (

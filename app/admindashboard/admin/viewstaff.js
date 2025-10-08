@@ -186,29 +186,12 @@ const ViewStaff = () => {
       console.error("Error response data:", error.response?.data)
       console.error("Error response status:", error.response?.status)
       
-      // Check if it's an email-related error (case insensitive)
-      const errorText = (error.response?.data?.error || "").toLowerCase()
-      if (errorText.includes("email") || errorText.includes("already exists")) {
-        // Show the detailed error message from backend
-        const errorMessage = error.response?.data?.message || error.response?.data?.error || "Email address already exists"
-        setValidationErrors({ email: errorMessage })
-        toast({
-          title: "Email Already Exists",
-          description: errorMessage,
-          variant: "destructive",
-        })
-      } else {
-        // Try to get the error message from different possible locations
-        const errorMessage = error.response?.data?.message || 
-                           error.response?.data?.error || 
-                           error.message || 
-                           "Failed to add staff member"
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        })
-      }
+      // Check if it's an email-related error
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || "Failed to add staff member. Please try again."
+      const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
+      
+      // Show error message in alert (simple approach)
+      alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     } finally {
       setSubmitting(false)
     }

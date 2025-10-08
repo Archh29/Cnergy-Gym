@@ -462,18 +462,12 @@ const ViewCoach = ({ userId }) => {
       console.error("Error response status:", error.response?.status)
       console.error("Full error object:", error)
       
-      // Check if it's an email-related error (case insensitive)
-      const errorText = (error.response?.data?.error || "").toLowerCase()
+      // Check if it's an email-related error
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to add coach. Please try again."
+      const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
       
-      if (errorText.includes("email") || errorText.includes("already exists")) {
-        // Show the detailed error message from backend in form field
-        const errorMessage = error.response?.data?.message || error.response?.data?.error || "Email address already exists"
-        setValidationErrors({ email: errorMessage })
-      } else {
-        // Show generic error in form field
-        const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to add coach."
-        setValidationErrors({ email: errorMessage })
-      }
+      // Show error message in alert (simple approach)
+      alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     } finally {
       setIsLoading(false)
     }
