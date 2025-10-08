@@ -436,11 +436,18 @@ const ViewCoach = () => {
     } catch (error) {
       console.error("Error adding coach:", error.response?.data || error.message)
       if (error.response?.data?.error?.includes("email")) {
-        setValidationErrors({ email: "Email address already exists" })
+        // Show the detailed error message from backend
+        const errorMessage = error.response?.data?.message || "Email address already exists"
+        setValidationErrors({ email: errorMessage })
+        toast({
+          title: "Email Already Exists",
+          description: errorMessage,
+          variant: "destructive",
+        })
       } else {
         toast({
           title: "Error",
-          description: error.response?.data?.error || "Failed to add coach.",
+          description: error.response?.data?.message || error.response?.data?.error || "Failed to add coach.",
           variant: "destructive",
         })
       }
@@ -529,11 +536,18 @@ const ViewCoach = () => {
     } catch (error) {
       console.error("Error updating coach:", error.response?.data || error.message)
       if (error.response?.data?.error?.includes("email")) {
-        setValidationErrors({ email: "Email address already exists" })
+        // Show the detailed error message from backend
+        const errorMessage = error.response?.data?.message || "Email address already exists"
+        setValidationErrors({ email: errorMessage })
+        toast({
+          title: "Email Already Exists",
+          description: errorMessage,
+          variant: "destructive",
+        })
       } else {
         toast({
           title: "Error",
-          description: error.response?.data?.error || "Failed to update coach.",
+          description: error.response?.data?.message || error.response?.data?.error || "Failed to update coach.",
           variant: "destructive",
         })
       }
