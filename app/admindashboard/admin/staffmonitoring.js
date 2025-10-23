@@ -29,7 +29,7 @@ import {
 
 // API Configuration
 const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
-const FALLBACK_API_URL = "https://api.cnergy.site/sales.php"
+const STAFF_MONITORING_API_URL = "https://api.cnergy.site/staff_monitoring.php"
 
 const StaffMonitoring = () => {
   const [loading, setLoading] = useState(false)
@@ -96,24 +96,17 @@ const StaffMonitoring = () => {
 
   const loadStaffActivities = async () => {
     try {
-      // Try to get sales data as activity source
-      const response = await axios.get(`${FALLBACK_API_URL}?action=sales`)
-      if (response.data && response.data.sales) {
-        // Convert sales data to activity format
-        const activities = response.data.sales.map((sale, index) => ({
-          id: sale.id || index + 1,
-          user_id: sale.cashier_id || 1,
-          activity: `Sale completed: ${sale.receipt_number || 'Receipt #' + sale.id} - Total: ₱${sale.total_amount || 0}`,
-          timestamp: sale.sale_date || new Date().toISOString(),
-          fname: "Staff",
-          lname: "Member",
-          email: "staff@cnergy.com",
-          user_type: "staff",
-          activity_category: "Sales"
-        }))
-        setActivities(activities)
+      // Use the dedicated staff monitoring API
+      const params = new URLSearchParams()
+      if (staffFilter !== "all") params.append("staff_id", staffFilter)
+      if (dateFilter !== "all") params.append("date_filter", dateFilter)
+      if (activityTypeFilter !== "all") params.append("activity_type", activityTypeFilter)
+      params.append("limit", "100")
+
+      const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
+      if (response.data.activities) {
+        setActivities(response.data.activities)
       } else {
-        // No activities available
         setActivities([])
       }
     } catch (error) {
@@ -207,18 +200,9 @@ const StaffMonitoring = () => {
 
   const loadStaffPerformance = async () => {
     try {
-      // Use sales data since activity-log doesn't exist
-      const response = await axios.get(`${FALLBACK_API_URL}?action=sales`)
-      // Create mock performance data based on sales
-      const sales = response.data.sales || []
-      const performance = sales.map((sale, index) => ({
-        id: index + 1,
-        staff_name: "Staff Member",
-        activities_count: Math.floor(Math.random() * 20) + 1,
-        efficiency_score: Math.floor(Math.random() * 40) + 60,
-        last_activity: sale.sale_date || new Date().toISOString()
-      }))
-      setPerformance(performance)
+      // Use the dedicated staff monitoring API
+      const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_performance&period=${dateFilter}`)
+      setPerformance(response.data.performance || [])
     } catch (error) {
       console.error("Error loading staff performance:", error)
       setPerformance([])
@@ -227,34 +211,23 @@ const StaffMonitoring = () => {
 
   const loadStaffSummary = async () => {
     try {
-      // Get staff count from addstaff.php and sales data from sales.php
-      const [staffResponse, salesResponse] = await Promise.all([
-        axios.get(`${API_BASE_URL}`),
-        axios.get(`${FALLBACK_API_URL}?action=sales`)
-      ])
-
-      const staffCount = staffResponse.data && staffResponse.data.staff ? staffResponse.data.staff.length : 0
-      const sales = salesResponse.data.sales || []
-
-      // Calculate summary from actual data
-      const today = new Date().toISOString().split('T')[0]
-      const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      const thisMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
-      const salesToday = sales.filter(s => s.sale_date && s.sale_date.startsWith(today)).length
-      const salesThisWeek = sales.filter(s => s.sale_date && s.sale_date >= thisWeek).length
-      const salesThisMonth = sales.filter(s => s.sale_date && s.sale_date >= thisMonth).length
-
-      setSummary({
-        total_staff: staffCount,
-        total_admins: 1, // Assuming 1 admin
-        total_staff_members: staffCount,
-        activities_today: salesToday,
-        activities_this_week: salesThisWeek,
-        activities_this_month: salesThisMonth,
-        most_active_staff_today: salesToday > 0 ? "Staff Active" : "No activities today",
-        most_active_count: salesToday
-      })
+      // Use the dedicated staff monitoring API for summary
+      const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_summary`)
+      if (response.data.summary) {
+        setSummary(response.data.summary)
+      } else {
+        // Fallback to default values
+        setSummary({
+          total_staff: 0,
+          total_admins: 0,
+          total_staff_members: 0,
+          activities_today: 0,
+          activities_this_week: 0,
+          activities_this_month: 0,
+          most_active_staff_today: "N/A",
+          most_active_count: 0
+        })
+      }
     } catch (error) {
       console.error("Error loading staff summary:", error)
       // Set default empty summary
@@ -273,8 +246,8 @@ const StaffMonitoring = () => {
 
   const loadStaffList = async () => {
     try {
-      // Get staff list from addstaff.php API
-      const response = await axios.get(`${API_BASE_URL}`)
+      // Get staff list from staff monitoring API
+      const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_list`)
 
       if (response.data && response.data.staff && Array.isArray(response.data.staff)) {
         const staff = response.data.staff.map(staff => ({
