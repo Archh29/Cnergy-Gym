@@ -98,7 +98,7 @@ const StaffMonitoring = () => {
     try {
       // Get activity log data from existing APIs
       const response = await axios.get(`${FALLBACK_API_URL}?action=activity-log&limit=100`)
-      if (response.data.activities && response.data.activities.length > 0) {
+      if (response.data.activities) {
         setActivities(response.data.activities)
       } else {
         // No hardcoded activities - only show real data
