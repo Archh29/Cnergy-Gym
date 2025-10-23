@@ -111,8 +111,6 @@ const ViewCoach = () => {
     specialty: "",
     experience: "",
     per_session_rate: "",
-    package_rate: "",
-    package_sessions: "",
     monthly_rate: "",
     certifications: "",
     is_available: true,
@@ -726,7 +724,6 @@ const ViewCoach = () => {
         </Card>
         <Card>
           <CardContent className="flex items-center p-6">
-            <span className="text-green-600 text-2xl">₱</span>
             <div className="ml-4">
               <p className="text-sm font-medium text-muted-foreground">Avg Per Session</p>
               <p className="text-2xl font-bold">₱{coachStats.averagePerSessionRate}</p>
@@ -1178,8 +1175,8 @@ const ViewCoach = () => {
                         type="button"
                         onClick={() => handleSpecialtyToggle(specialty)}
                         className={`p-2 text-sm border rounded-md text-left transition-colors ${selectedSpecialties.includes(specialty)
-                            ? 'bg-blue-100 border-blue-300 text-blue-800'
-                            : 'bg-white border-gray-300 hover:bg-gray-50'
+                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          : 'bg-white border-gray-300 hover:bg-gray-50'
                           }`}
                       >
                         {specialty}
@@ -1259,40 +1256,6 @@ const ViewCoach = () => {
                   <p className="text-xs text-gray-500">18 sessions per month</p>
                   {validationErrors.monthly_rate && (
                     <p className="text-sm text-red-500">{validationErrors.monthly_rate}</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="package_rate">Package Rate (₱)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    id="package_rate"
-                    name="package_rate"
-                    placeholder="2000.00"
-                    value={formData.package_rate}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_rate ? "border-red-500" : ""}
-                  />
-                  {validationErrors.package_rate && (
-                    <p className="text-sm text-red-500">{validationErrors.package_rate}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="package_sessions">Package Sessions</Label>
-                  <Input
-                    type="number"
-                    id="package_sessions"
-                    name="package_sessions"
-                    placeholder="18"
-                    value={formData.package_sessions}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_sessions ? "border-red-500" : ""}
-                  />
-                  <p className="text-xs text-gray-500">Default: 18 sessions</p>
-                  {validationErrors.package_sessions && (
-                    <p className="text-sm text-red-500">{validationErrors.package_sessions}</p>
                   )}
                 </div>
               </div>
@@ -1514,8 +1477,8 @@ const ViewCoach = () => {
                         type="button"
                         onClick={() => handleSpecialtyToggle(specialty)}
                         className={`p-2 text-sm border rounded-md text-left transition-colors ${selectedSpecialties.includes(specialty)
-                            ? 'bg-blue-100 border-blue-300 text-blue-800'
-                            : 'bg-white border-gray-300 hover:bg-gray-50'
+                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          : 'bg-white border-gray-300 hover:bg-gray-50'
                           }`}
                       >
                         {specialty}
