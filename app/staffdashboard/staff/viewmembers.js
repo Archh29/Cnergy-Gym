@@ -199,7 +199,7 @@ const ViewMembers = ({ userId }) => {
     }
 
     // Filter by month/year
-    if (monthFilter && yearFilter) {
+    if (monthFilter && monthFilter !== "all" && yearFilter && yearFilter !== "all") {
       filtered = filtered.filter((member) => {
         if (!member.created_at) return false
         const createdDate = safeDate(member.created_at)
@@ -209,6 +209,26 @@ const ViewMembers = ({ userId }) => {
         const memberYear = createdDate.getFullYear()
 
         return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
+      })
+    } else if (monthFilter && monthFilter !== "all") {
+      // Filter by month only
+      filtered = filtered.filter((member) => {
+        if (!member.created_at) return false
+        const createdDate = safeDate(member.created_at)
+        if (!createdDate) return false
+
+        const memberMonth = createdDate.getMonth() + 1
+        return memberMonth === parseInt(monthFilter)
+      })
+    } else if (yearFilter && yearFilter !== "all") {
+      // Filter by year only
+      filtered = filtered.filter((member) => {
+        if (!member.created_at) return false
+        const createdDate = safeDate(member.created_at)
+        if (!createdDate) return false
+
+        const memberYear = createdDate.getFullYear()
+        return memberYear === parseInt(yearFilter)
       })
     }
 
@@ -538,7 +558,7 @@ const ViewMembers = ({ userId }) => {
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Months</SelectItem>
+                <SelectItem value="all">All Months</SelectItem>
                 <SelectItem value="1">January</SelectItem>
                 <SelectItem value="2">February</SelectItem>
                 <SelectItem value="3">March</SelectItem>
@@ -558,7 +578,7 @@ const ViewMembers = ({ userId }) => {
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Years</SelectItem>
+                <SelectItem value="all">All Years</SelectItem>
                 <SelectItem value="2024">2024</SelectItem>
                 <SelectItem value="2023">2023</SelectItem>
                 <SelectItem value="2022">2022</SelectItem>
