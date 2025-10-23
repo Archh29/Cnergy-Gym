@@ -96,12 +96,24 @@ const StaffMonitoring = () => {
 
   const loadStaffActivities = async () => {
     try {
-      // Get activity log data from existing APIs
-      const response = await axios.get(`${FALLBACK_API_URL}?action=activity-log&limit=100`)
-      if (response.data.activities) {
-        setActivities(response.data.activities)
+      // Try to get sales data as activity source
+      const response = await axios.get(`${FALLBACK_API_URL}?action=sales`)
+      if (response.data && response.data.sales) {
+        // Convert sales data to activity format
+        const activities = response.data.sales.map((sale, index) => ({
+          id: sale.id || index + 1,
+          user_id: sale.cashier_id || 1,
+          activity: `Sale completed: ${sale.receipt_number || 'Receipt #' + sale.id} - Total: ₱${sale.total_amount || 0}`,
+          timestamp: sale.sale_date || new Date().toISOString(),
+          fname: "Staff",
+          lname: "Member",
+          email: "staff@cnergy.com",
+          user_type: "staff",
+          activity_category: "Sales"
+        }))
+        setActivities(activities)
       } else {
-        // No hardcoded activities - only show real data
+        // No activities available
         setActivities([])
       }
     } catch (error) {
@@ -195,54 +207,53 @@ const StaffMonitoring = () => {
 
   const loadStaffPerformance = async () => {
     try {
-      // Use fallback data since staff_monitoring.php doesn't exist
-      const response = await axios.get(`${FALLBACK_API_URL}?action=activity-log&limit=50`)
-      // Create mock performance data based on activities
-      const activities = response.data.activities || []
-      const performance = activities.map((activity, index) => ({
+      // Use sales data since activity-log doesn't exist
+      const response = await axios.get(`${FALLBACK_API_URL}?action=sales`)
+      // Create mock performance data based on sales
+      const sales = response.data.sales || []
+      const performance = sales.map((sale, index) => ({
         id: index + 1,
-        staff_name: activity.fname ? `${activity.fname} ${activity.lname}` : 'Unknown Staff',
+        staff_name: "Staff Member",
         activities_count: Math.floor(Math.random() * 20) + 1,
         efficiency_score: Math.floor(Math.random() * 40) + 60,
-        last_activity: activity.timestamp || new Date().toISOString()
+        last_activity: sale.sale_date || new Date().toISOString()
       }))
       setPerformance(performance)
     } catch (error) {
       console.error("Error loading staff performance:", error)
-      // Set empty array instead of mock data to prevent confusion
       setPerformance([])
     }
   }
 
   const loadStaffSummary = async () => {
     try {
-      // Get staff count from addstaff.php and activity data from sales.php
-      const [staffResponse, activityResponse] = await Promise.all([
+      // Get staff count from addstaff.php and sales data from sales.php
+      const [staffResponse, salesResponse] = await Promise.all([
         axios.get(`${API_BASE_URL}`),
-        axios.get(`${FALLBACK_API_URL}?action=activity-log&limit=100`)
+        axios.get(`${FALLBACK_API_URL}?action=sales`)
       ])
 
       const staffCount = staffResponse.data && staffResponse.data.staff ? staffResponse.data.staff.length : 0
-      const activities = activityResponse.data.activities || []
+      const sales = salesResponse.data.sales || []
 
       // Calculate summary from actual data
       const today = new Date().toISOString().split('T')[0]
       const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       const thisMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
-      const activitiesToday = activities.filter(a => a.timestamp && a.timestamp.startsWith(today)).length
-      const activitiesThisWeek = activities.filter(a => a.timestamp && a.timestamp >= thisWeek).length
-      const activitiesThisMonth = activities.filter(a => a.timestamp && a.timestamp >= thisMonth).length
+      const salesToday = sales.filter(s => s.sale_date && s.sale_date.startsWith(today)).length
+      const salesThisWeek = sales.filter(s => s.sale_date && s.sale_date >= thisWeek).length
+      const salesThisMonth = sales.filter(s => s.sale_date && s.sale_date >= thisMonth).length
 
       setSummary({
         total_staff: staffCount,
         total_admins: 1, // Assuming 1 admin
         total_staff_members: staffCount,
-        activities_today: activitiesToday,
-        activities_this_week: activitiesThisWeek,
-        activities_this_month: activitiesThisMonth,
-        most_active_staff_today: activitiesToday > 0 ? "Staff Active" : "No activities today",
-        most_active_count: activitiesToday
+        activities_today: salesToday,
+        activities_this_week: salesThisWeek,
+        activities_this_month: salesThisMonth,
+        most_active_staff_today: salesToday > 0 ? "Staff Active" : "No activities today",
+        most_active_count: salesToday
       })
     } catch (error) {
       console.error("Error loading staff summary:", error)
