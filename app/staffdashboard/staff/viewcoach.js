@@ -514,6 +514,7 @@ const ViewCoach = ({ userId }) => {
 
       console.log("Updating coach with data:", updateData)
       console.log("Account status being sent:", formData.account_status)
+      console.log("Full formData being sent:", formData)
 
       if (formData.password && formData.password.trim() !== "") {
         updateData.password = formData.password
@@ -533,6 +534,7 @@ const ViewCoach = ({ userId }) => {
         const updatedCoaches = getResponse.data.coaches || []
         console.log("Fetched updated coaches:", updatedCoaches)
         console.log("Looking for coach ID 25:", updatedCoaches.find(c => c.id == 25))
+        console.log("Coach ID 25 account_status:", updatedCoaches.find(c => c.id == 25)?.account_status)
 
         const enhancedCoaches = updatedCoaches.map((coach) => ({
           ...coach,
