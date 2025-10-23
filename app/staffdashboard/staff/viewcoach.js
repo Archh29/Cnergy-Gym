@@ -537,15 +537,13 @@ const ViewCoach = ({ userId }) => {
         console.log("Coach ID 25 account_status:", updatedCoaches.find(c => c.id == 25)?.account_status)
 
         const enhancedCoaches = updatedCoaches.map((coach) => {
-          // Frontend workaround: If we just updated this coach and the API doesn't return account_status,
-          // use the account_status from our form data
+          // Enhanced frontend workaround: Always use form data for the coach we just updated
           let accountStatus = coach.account_status || "approved"
 
-          // If this is the coach we just updated and account_status is undefined,
-          // use the account_status from the form data
-          if (coach.id == formData.id && !coach.account_status && formData.account_status) {
+          // If this is the coach we just updated, always use the form data account_status
+          if (coach.id == formData.id && formData.account_status) {
             accountStatus = formData.account_status
-            console.log(`Frontend workaround: Setting account_status for coach ${coach.id} to ${accountStatus}`)
+            console.log(`🔧 Frontend workaround: Setting account_status for coach ${coach.id} to ${accountStatus}`)
           }
 
           return {
