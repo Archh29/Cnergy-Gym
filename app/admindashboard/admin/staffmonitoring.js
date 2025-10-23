@@ -225,7 +225,7 @@ const StaffMonitoring = () => {
         axios.get(`${FALLBACK_API_URL}?action=activity-log&limit=100`)
       ])
 
-      const staffCount = staffResponse.data ? staffResponse.data.length : 0
+      const staffCount = staffResponse.data && staffResponse.data.staff ? staffResponse.data.staff.length : 0
       const activities = activityResponse.data.activities || []
 
       // Calculate summary from actual data
@@ -268,8 +268,8 @@ const StaffMonitoring = () => {
       // Get staff list from addstaff.php API
       const response = await axios.get(`${API_BASE_URL}`)
 
-      if (response.data && Array.isArray(response.data)) {
-        const staff = response.data.map(staff => ({
+      if (response.data && response.data.staff && Array.isArray(response.data.staff)) {
+        const staff = response.data.staff.map(staff => ({
           id: staff.id,
           name: `${staff.fname || ''} ${staff.lname || ''}`.trim() || 'Unknown Staff',
           email: staff.email || 'No email',
