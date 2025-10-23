@@ -82,6 +82,8 @@ const ViewMembers = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("approved")
   const [sortBy, setSortBy] = useState("newest")
+  const [monthFilter, setMonthFilter] = useState("")
+  const [yearFilter, setYearFilter] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -198,6 +200,20 @@ const ViewMembers = ({ userId }) => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
+    // Filter by month/year
+    if (monthFilter && yearFilter) {
+      filtered = filtered.filter((member) => {
+        if (!member.created_at) return false
+        const createdDate = safeDate(member.created_at)
+        if (!createdDate) return false
+
+        const memberMonth = createdDate.getMonth() + 1 // getMonth() returns 0-11
+        const memberYear = createdDate.getFullYear()
+
+        return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
+      })
+    }
+
     // Sort the filtered results
     filtered.sort((a, b) => {
       switch (sortBy) {
@@ -220,7 +236,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, members])
+  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -540,8 +556,8 @@ const ViewMembers = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-4">
-            <div className="relative flex-1">
+          <div className="flex gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
@@ -560,6 +576,40 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="deactivated">Deactivated</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Months</SelectItem>
+                <SelectItem value="1">January</SelectItem>
+                <SelectItem value="2">February</SelectItem>
+                <SelectItem value="3">March</SelectItem>
+                <SelectItem value="4">April</SelectItem>
+                <SelectItem value="5">May</SelectItem>
+                <SelectItem value="6">June</SelectItem>
+                <SelectItem value="7">July</SelectItem>
+                <SelectItem value="8">August</SelectItem>
+                <SelectItem value="9">September</SelectItem>
+                <SelectItem value="10">October</SelectItem>
+                <SelectItem value="11">November</SelectItem>
+                <SelectItem value="12">December</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="w-24">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All Years</SelectItem>
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2023">2023</SelectItem>
+                <SelectItem value="2022">2022</SelectItem>
+                <SelectItem value="2021">2021</SelectItem>
+                <SelectItem value="2020">2020</SelectItem>
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
