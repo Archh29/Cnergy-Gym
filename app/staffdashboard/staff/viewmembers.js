@@ -506,7 +506,7 @@ const ViewMembers = ({ userId }) => {
       gender_id: "",
       bday: "",
       user_type_id: 4,
-      account_status: "pending",
+      account_status: "approved",
     })
     setShowPassword(false)
     setIsAddDialogOpen(true)
