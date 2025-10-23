@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { formatDateToISO } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -265,7 +266,7 @@ const ViewMembers = ({ userId }) => {
       email: member.email || "",
       password: "",
       gender_id: member.gender_id?.toString() || "",
-      bday: member.bday ? new Date(member.bday).toISOString().split("T")[0] : "",
+      bday: formatDateToISO(member.bday),
       user_type_id: member.user_type_id || 4,
       account_status: member.account_status || "pending",
     })
@@ -331,7 +332,7 @@ const ViewMembers = ({ userId }) => {
     try {
       // Remove client-side email validation - let backend handle it
       console.log("Creating member with data:", data)
-      
+
       const formattedData = {
         fname: data.fname.trim(),
         mname: data.mname.trim(),
@@ -347,7 +348,7 @@ const ViewMembers = ({ userId }) => {
       }
 
       console.log("Sending request to backend with data:", formattedData)
-      
+
       const response = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
         headers: {
@@ -358,10 +359,10 @@ const ViewMembers = ({ userId }) => {
 
       console.log("Response status:", response.status)
       console.log("Response ok:", response.ok)
-      
+
       const result = await response.json()
       console.log("Response result:", result)
-      
+
       if (response.ok) {
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
@@ -381,11 +382,11 @@ const ViewMembers = ({ userId }) => {
       console.error("Error adding member:", error)
       console.error("Error message:", error.message)
       console.error("Full error object:", error)
-      
+
       // Check if it's an email-related error
       const errorMessage = error.message || "Failed to add member. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
-      
+
       // Show error message in alert (simple approach)
       alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     }
@@ -469,7 +470,7 @@ const ViewMembers = ({ userId }) => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           id: selectedMember.id,
           staff_id: userId,
         }),
@@ -698,7 +699,7 @@ const ViewMembers = ({ userId }) => {
               </div>
               <div className="text-sm text-muted-foreground">Rejected</div>
             </div>
-            
+
           </div>
         </CardContent>
       </Card>
