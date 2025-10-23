@@ -87,6 +87,7 @@ const ViewMembers = ({ userId }) => {
   const [sortBy, setSortBy] = useState("newest")
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
+  const [currentView, setCurrentView] = useState("active") // "active" or "archive"
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -187,6 +188,18 @@ const ViewMembers = ({ userId }) => {
   useEffect(() => {
     let filtered = members
 
+    console.log("Filtering members - currentView:", currentView)
+    console.log("All members before filtering:", members.map(m => ({ id: m.id, name: `${m.fname} ${m.lname}`, account_status: m.account_status })))
+
+    // Filter by current view (active vs archive)
+    if (currentView === "active") {
+      filtered = filtered.filter((member) => member.account_status !== "deactivated")
+      console.log("Active members after filtering:", filtered.map(m => ({ id: m.id, name: `${m.fname} ${m.lname}`, account_status: m.account_status })))
+    } else if (currentView === "archive") {
+      filtered = filtered.filter((member) => member.account_status === "deactivated")
+      console.log("Archived members after filtering:", filtered.map(m => ({ id: m.id, name: `${m.fname} ${m.lname}`, account_status: m.account_status })))
+    }
+
     // Filter by search query
     if (searchQuery.trim() !== "") {
       const lowercaseQuery = searchQuery.toLowerCase()
@@ -197,8 +210,8 @@ const ViewMembers = ({ userId }) => {
       )
     }
 
-    // Filter by status
-    if (statusFilter !== "all") {
+    // Filter by status (only apply if not using archive view)
+    if (statusFilter !== "all" && currentView === "active") {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
@@ -258,7 +271,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members])
+  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -592,9 +605,17 @@ const ViewMembers = ({ userId }) => {
               </CardTitle>
               <CardDescription>Manage and verify user accounts</CardDescription>
             </div>
-            <Button onClick={handleOpenAddDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Add User
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleOpenAddDialog}>
+                <Plus className="mr-2 h-4 w-4" /> Add User
+              </Button>
+              <Button
+                variant={currentView === "archive" ? "default" : "outline"}
+                onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
+              >
+                {currentView === "active" ? "Archive" : "Active Users"}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

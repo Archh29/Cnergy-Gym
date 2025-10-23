@@ -694,8 +694,12 @@ const ViewCoach = () => {
   }
 
   const handleEditCoach = (coach) => {
+    console.log("Editing coach:", coach)
+    console.log("Coach account_status:", coach.account_status)
+
     setSelectedCoach(coach)
     setFormData({
+      id: coach.id,
       fname: coach.fname,
       mname: coach.mname,
       lname: coach.lname,
