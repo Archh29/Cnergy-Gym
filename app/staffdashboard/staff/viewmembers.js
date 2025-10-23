@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { formatDateToISO } from "@/lib/dateUtils"
+import { formatDateToISO, safeDate } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,6 @@ import {
   Search,
   Plus,
   Edit,
-  Trash2,
   User,
   Mail,
   Calendar,
@@ -84,7 +83,6 @@ const ViewMembers = ({ userId }) => {
   const [sortBy, setSortBy] = useState("newest")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
@@ -249,7 +247,8 @@ const ViewMembers = ({ userId }) => {
 
   const isNewMember = (member) => {
     if (!member.created_at) return false
-    const createdDate = new Date(member.created_at)
+    const createdDate = safeDate(member.created_at)
+    if (!createdDate) return false
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     return createdDate > sevenDaysAgo
@@ -276,10 +275,6 @@ const ViewMembers = ({ userId }) => {
     setIsEditDialogOpen(true)
   }
 
-  const handleDeleteMember = (member) => {
-    setSelectedMember(member)
-    setIsDeleteDialogOpen(true)
-  }
 
   const handleVerifyMember = (member) => {
     setSelectedMember(member)
@@ -464,46 +459,6 @@ const ViewMembers = ({ userId }) => {
     setIsLoading(false)
   }
 
-  const handleConfirmDelete = async () => {
-    if (!selectedMember) return
-    setIsLoading(true)
-    try {
-      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: selectedMember.id,
-          staff_id: userId,
-        }),
-      })
-
-      const result = await response.json()
-      if (response.ok) {
-        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
-        const updatedMembers = await getResponse.json()
-        setMembers(updatedMembers)
-        setFilteredMembers(updatedMembers)
-        setIsDeleteDialogOpen(false)
-        setSelectedMember(null)
-        toast({
-          title: "Success",
-          description: "Member deleted successfully!",
-        })
-      } else {
-        throw new Error(result.message || "Failed to delete member")
-      }
-    } catch (error) {
-      console.error("Error deleting member:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete member. Please try again.",
-        variant: "destructive",
-      })
-    }
-    setIsLoading(false)
-  }
 
   const handleOpenAddDialog = () => {
     form.reset({
@@ -631,9 +586,6 @@ const ViewMembers = ({ userId }) => {
                     )}
                     <Button variant="ghost" size="icon" onClick={() => handleEditMember(member)}>
                       <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteMember(member)}>
-                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -1166,38 +1118,6 @@ const ViewMembers = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Member Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete Member</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this member? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedMember && (
-            <div className="border rounded-md p-4 mb-4">
-              <p className="font-medium">
-                {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
-              </p>
-              <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-              <div className="mt-2 flex gap-2">
-                {getStatusBadge(selectedMember.account_status)}
-                <Badge variant="outline">{getGenderName(selectedMember.gender_id)}</Badge>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

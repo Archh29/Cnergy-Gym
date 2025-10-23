@@ -12,11 +12,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { 
-    Users, 
-    Clock, 
-    CheckCircle, 
-    XCircle, 
+import {
+    Users,
+    Clock,
+    CheckCircle,
+    XCircle,
     AlertCircle,
     RefreshCw,
     Eye,
@@ -119,7 +119,7 @@ export default function GuestManagement({ userId }) {
             amount_received: "",
             notes: ""
         });
-        
+
         // Show payment dialog
         setShowPOSDialog(true);
     };
@@ -192,17 +192,17 @@ export default function GuestManagement({ userId }) {
 
     const confirmGuestTransaction = async () => {
         setShowConfirmDialog(false);
-        
+
         const totalAmount = parseFloat(newGuestData.amount_paid);
         const receivedAmount = parseFloat(newGuestData.amount_received) || totalAmount;
         const change = Math.max(0, receivedAmount - totalAmount);
 
         try {
             setActionLoading(true);
-            
+
             // First, find the pending session to approve
-            const pendingSession = guestSessions?.find(s => 
-                s.guest_name === newGuestData.guest_name && 
+            const pendingSession = guestSessions?.find(s =>
+                s.guest_name === newGuestData.guest_name &&
                 s.amount_paid == newGuestData.amount_paid &&
                 (s.computed_status || getComputedStatus(s)) === 'pending'
             );
@@ -233,7 +233,7 @@ export default function GuestManagement({ userId }) {
                     setReceiptNumber(response.data.receipt_number);
                     setChangeGiven(change);
                     setShowReceipt(true);
-                    
+
                     toast({
                         title: "Success",
                         description: "Guest session approved and payment processed successfully",
@@ -269,7 +269,7 @@ export default function GuestManagement({ userId }) {
                     setReceiptNumber(response.data.receipt_number);
                     setChangeGiven(change);
                     setShowReceipt(true);
-                    
+
                     toast({
                         title: "Success",
                         description: "Guest session created and payment processed successfully",
@@ -278,7 +278,7 @@ export default function GuestManagement({ userId }) {
                     throw new Error(response.data.message || "Failed to create guest session");
                 }
             }
-            
+
             // Reset form and close dialogs
             setNewGuestData({
                 guest_name: "",
@@ -291,7 +291,7 @@ export default function GuestManagement({ userId }) {
             setShowPOSDialog(false);
             setShowDetailsDialog(false);
             fetchGuestSessions();
-            
+
         } catch (error) {
             console.error('Error processing guest payment:', error);
             toast({
@@ -321,7 +321,7 @@ export default function GuestManagement({ userId }) {
 
     const getStatusBadge = (session) => {
         const computedStatus = session.computed_status || getComputedStatus(session);
-        
+
         switch (computedStatus) {
             case 'pending':
                 return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending</Badge>;
@@ -343,9 +343,9 @@ export default function GuestManagement({ userId }) {
         if (!session || !session.valid_until) {
             return session?.status || 'unknown';
         }
-        
+
         const isExpired = new Date(session.valid_until) < new Date();
-        
+
         if (session.status === 'pending') {
             return 'pending';
         } else if (session.status === 'approved' && session.paid == 0) {
@@ -355,7 +355,7 @@ export default function GuestManagement({ userId }) {
         } else if (session.status === 'rejected') {
             return 'rejected';
         }
-        
+
         return session.status;
     };
 
@@ -370,12 +370,16 @@ export default function GuestManagement({ userId }) {
 
     const isSessionExpired = (validUntil) => {
         if (!validUntil) return false;
-        return new Date(validUntil) < new Date();
+        const date = new Date(validUntil);
+        if (isNaN(date.getTime())) return false;
+        return date < new Date();
     };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleString('en-US', {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleString('en-US', {
             year: 'numeric',
             month: 'short',
             day: 'numeric',
@@ -387,16 +391,16 @@ export default function GuestManagement({ userId }) {
     const filteredSessions = (guestSessions || []).filter(session => {
         // Add null check for session
         if (!session) return false;
-        
+
         // Search filter
         if (searchQuery) {
             const searchLower = searchQuery.toLowerCase();
-            const matchesSearch = 
+            const matchesSearch =
                 (session.guest_name || '').toLowerCase().includes(searchLower) ||
                 (session.guest_type || '').toLowerCase().includes(searchLower) ||
                 (session.qr_token || '').toLowerCase().includes(searchLower) ||
                 (session.amount_paid || '').toString().includes(searchLower);
-            
+
             if (!matchesSearch) return false;
         }
 
@@ -419,7 +423,7 @@ export default function GuestManagement({ userId }) {
         if (activeTab === 'active') return computedStatus === 'active';
         if (activeTab === 'expired') return computedStatus === 'expired';
         if (activeTab === 'rejected') return computedStatus === 'rejected';
-        
+
         return true;
     });
 
@@ -571,7 +575,7 @@ export default function GuestManagement({ userId }) {
                             <TabsTrigger value="expired">Expired ({stats.expired})</TabsTrigger>
                             <TabsTrigger value="rejected">Rejected ({stats.rejected})</TabsTrigger>
                         </TabsList>
-                        
+
                         <TabsContent value={activeTab} className="mt-6">
                             <div className="rounded-md border overflow-hidden">
                                 <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
@@ -599,44 +603,44 @@ export default function GuestManagement({ userId }) {
                                             ) : (
                                                 filteredSessions.map((session) => (
                                                     <TableRow key={session.id}>
-                                                <TableCell className="font-medium">
-                                                    {session.guest_name || 'N/A'}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {getGuestTypeBadge(session.guest_type || 'unknown')}
-                                                </TableCell>
-                                                <TableCell>₱{session.amount_paid || '0.00'}</TableCell>
-                                                <TableCell>
-                                                    <div className="space-y-1">
-                                                        <Badge variant="outline" className="text-xs">
-                                                            {session.payment_method || "N/A"}
-                                                        </Badge>
-                                                        {session.change_given > 0 && (
-                                                            <div className="text-xs text-muted-foreground">
-                                                                Change: ₱{session.change_given}
+                                                        <TableCell className="font-medium">
+                                                            {session.guest_name || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {getGuestTypeBadge(session.guest_type || 'unknown')}
+                                                        </TableCell>
+                                                        <TableCell>₱{session.amount_paid || '0.00'}</TableCell>
+                                                        <TableCell>
+                                                            <div className="space-y-1">
+                                                                <Badge variant="outline" className="text-xs">
+                                                                    {session.payment_method || "N/A"}
+                                                                </Badge>
+                                                                {session.change_given > 0 && (
+                                                                    <div className="text-xs text-muted-foreground">
+                                                                        Change: ₱{session.change_given}
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="text-xs font-mono">
-                                                        {session.receipt_number || "N/A"}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    {getStatusBadge(session)}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {formatDate(session.created_at)}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center space-x-2">
-                                                        <span>{formatDate(session.valid_until)}</span>
-                                                        {(session.computed_status || getComputedStatus(session)) === 'expired' && (
-                                                            <Badge variant="destructive" className="text-xs">Expired</Badge>
-                                                        )}
-                                                    </div>
-                                                </TableCell>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="text-xs font-mono">
+                                                                {session.receipt_number || "N/A"}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {getStatusBadge(session)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {formatDate(session.created_at)}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex items-center space-x-2">
+                                                                <span>{formatDate(session.valid_until)}</span>
+                                                                {(session.computed_status || getComputedStatus(session)) === 'expired' && (
+                                                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
                                                         <TableCell>
                                                             <Button
                                                                 variant="outline"
@@ -671,7 +675,7 @@ export default function GuestManagement({ userId }) {
                             Review guest session information and take action
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     {selectedSession && (
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
@@ -712,7 +716,7 @@ export default function GuestManagement({ userId }) {
 
                             {(() => {
                                 const computedStatus = selectedSession.computed_status || getComputedStatus(selectedSession);
-                                
+
                                 switch (computedStatus) {
                                     case 'pending':
                                         return (
@@ -764,7 +768,7 @@ export default function GuestManagement({ userId }) {
                         <div className="flex space-x-2">
                             {(() => {
                                 const computedStatus = selectedSession?.computed_status || getComputedStatus(selectedSession);
-                                
+
                                 switch (computedStatus) {
                                     case 'pending':
                                         return (
@@ -804,20 +808,20 @@ export default function GuestManagement({ userId }) {
                             Process payment to approve this guest session
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     <div className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label>Guest Name *</Label>
                                 <Input
                                     value={newGuestData.guest_name}
-                                    onChange={(e) => setNewGuestData({...newGuestData, guest_name: e.target.value})}
+                                    onChange={(e) => setNewGuestData({ ...newGuestData, guest_name: e.target.value })}
                                     placeholder="Enter guest name"
                                 />
                             </div>
                             <div className="space-y-2">
                                 <Label>Guest Type</Label>
-                                <Select value={newGuestData.guest_type} onValueChange={(value) => setNewGuestData({...newGuestData, guest_type: value})}>
+                                <Select value={newGuestData.guest_type} onValueChange={(value) => setNewGuestData({ ...newGuestData, guest_type: value })}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
@@ -834,13 +838,13 @@ export default function GuestManagement({ userId }) {
                                     type="number"
                                     step="0.01"
                                     value={newGuestData.amount_paid}
-                                    onChange={(e) => setNewGuestData({...newGuestData, amount_paid: e.target.value})}
+                                    onChange={(e) => setNewGuestData({ ...newGuestData, amount_paid: e.target.value })}
                                     placeholder="Enter amount"
                                 />
                             </div>
                             <div className="space-y-2">
                                 <Label>Payment Method</Label>
-                                <Select value={newGuestData.payment_method} onValueChange={(value) => setNewGuestData({...newGuestData, payment_method: value})}>
+                                <Select value={newGuestData.payment_method} onValueChange={(value) => setNewGuestData({ ...newGuestData, payment_method: value })}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
@@ -860,7 +864,7 @@ export default function GuestManagement({ userId }) {
                                     type="number"
                                     step="0.01"
                                     value={newGuestData.amount_received}
-                                    onChange={(e) => setNewGuestData({...newGuestData, amount_received: e.target.value})}
+                                    onChange={(e) => setNewGuestData({ ...newGuestData, amount_received: e.target.value })}
                                     placeholder="Enter amount received"
                                 />
                                 {newGuestData.amount_received && (
@@ -875,7 +879,7 @@ export default function GuestManagement({ userId }) {
                             <Label>Notes (Optional)</Label>
                             <Input
                                 value={newGuestData.notes}
-                                onChange={(e) => setNewGuestData({...newGuestData, notes: e.target.value})}
+                                onChange={(e) => setNewGuestData({ ...newGuestData, notes: e.target.value })}
                                 placeholder="Add notes for this transaction"
                             />
                         </div>
@@ -913,7 +917,7 @@ export default function GuestManagement({ userId }) {
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div className="border-t pt-2 space-y-2">
                             <div className="flex justify-between font-medium">
                                 <span>Total Amount:</span>

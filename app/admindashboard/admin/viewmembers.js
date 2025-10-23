@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { formatDateToISO } from "@/lib/dateUtils"
+import { formatDateToISO, safeDate } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -249,7 +249,8 @@ const ViewMembers = ({ userId }) => {
 
   const isNewMember = (member) => {
     if (!member.created_at) return false
-    const createdDate = new Date(member.created_at)
+    const createdDate = safeDate(member.created_at)
+    if (!createdDate) return false
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     return createdDate > sevenDaysAgo
