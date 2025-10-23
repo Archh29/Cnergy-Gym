@@ -562,21 +562,34 @@ const ViewCoach = () => {
         console.log("Looking for coach ID 25:", updatedCoaches.find(c => c.id == 25))
         console.log("Coach ID 25 account_status:", updatedCoaches.find(c => c.id == 25)?.account_status)
 
-        const enhancedCoaches = updatedCoaches.map((coach) => ({
-          ...coach,
-          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
-          bio: coach.bio || "",
-          specialty: coach.specialty || "General Training",
-          experience: coach.experience || "Not specified",
-          rating: coach.rating || 0.0,
-          total_clients: coach.total_clients || 0,
-          per_session_rate: coach.per_session_rate || 0.0,
-          monthly_rate: coach.monthly_rate || 0.0,
-          certifications: coach.certifications || "",
-          is_available: coach.is_available !== undefined ? coach.is_available : true,
-          image_url: coach.image_url || "",
-          account_status: coach.account_status || "approved",
-        }))
+        const enhancedCoaches = updatedCoaches.map((coach) => {
+          // Frontend workaround: If we just updated this coach and the API doesn't return account_status,
+          // use the account_status from our form data
+          let accountStatus = coach.account_status || "approved"
+
+          // If this is the coach we just updated and account_status is undefined,
+          // use the account_status from the form data
+          if (coach.id == formData.id && !coach.account_status && formData.account_status) {
+            accountStatus = formData.account_status
+            console.log(`Frontend workaround: Setting account_status for coach ${coach.id} to ${accountStatus}`)
+          }
+
+          return {
+            ...coach,
+            fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+            bio: coach.bio || "",
+            specialty: coach.specialty || "General Training",
+            experience: coach.experience || "Not specified",
+            rating: coach.rating || 0.0,
+            total_clients: coach.total_clients || 0,
+            per_session_rate: coach.per_session_rate || 0.0,
+            monthly_rate: coach.monthly_rate || 0.0,
+            certifications: coach.certifications || "",
+            is_available: coach.is_available !== undefined ? coach.is_available : true,
+            image_url: coach.image_url || "",
+            account_status: accountStatus,
+          }
+        })
 
         console.log("Enhanced coaches with account_status:", enhancedCoaches.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
         console.log("Coach ID 25 after enhancement:", enhancedCoaches.find(c => c.id == 25))
