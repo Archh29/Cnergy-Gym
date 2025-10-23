@@ -108,8 +108,8 @@ const StaffMonitoring = () => {
       setActivities(response.data.activities || [])
     } catch (error) {
       console.error("Error loading staff activities:", error)
-      // Set empty array instead of calling fallback to prevent infinite loops
-      setActivities([])
+      // Use fallback activities when API fails
+      await loadFallbackActivities()
     }
   }
 
