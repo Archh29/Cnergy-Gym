@@ -103,10 +103,18 @@ const StaffMonitoring = () => {
       if (activityTypeFilter !== "all") params.append("activity_type", activityTypeFilter)
       params.append("limit", "100")
 
+      console.log("Fetching activities from:", `${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
+
       const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
+
+      console.log("API Response:", response.data)
+      console.log("Activities count:", response.data.activities ? response.data.activities.length : 0)
+
       if (response.data.activities) {
         setActivities(response.data.activities)
+        console.log("Activities set successfully:", response.data.activities.length)
       } else {
+        console.log("No activities in response")
         setActivities([])
       }
     } catch (error) {
@@ -326,6 +334,11 @@ const StaffMonitoring = () => {
       activity.activity_category?.toLowerCase().includes(searchQuery.toLowerCase())
     )
   })
+
+  console.log("Activities state:", activities.length)
+  console.log("Filtered activities:", filteredActivities.length)
+  console.log("Search query:", searchQuery)
+  console.log("First activity:", activities[0])
 
   // Add error state
   const [hasError, setHasError] = useState(false)
