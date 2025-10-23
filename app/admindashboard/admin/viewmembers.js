@@ -38,6 +38,7 @@ import {
   Shield,
   Eye,
   EyeOff,
+  Ban,
 } from "lucide-react"
 
 const memberSchema = z.object({
@@ -54,7 +55,7 @@ const memberSchema = z.object({
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
   user_type_id: z.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("pending"),
 })
 
 const editMemberSchema = z.object({
@@ -72,7 +73,7 @@ const editMemberSchema = z.object({
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
   user_type_id: z.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("pending"),
 })
 
 const ViewMembers = ({ userId }) => {
@@ -135,6 +136,7 @@ const ViewMembers = ({ userId }) => {
     { value: "pending", label: "Pending", color: "bg-yellow-100 text-yellow-800" },
     { value: "approved", label: "Approved", color: "bg-green-100 text-green-800" },
     { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-800" },
+    { value: "deactivated", label: "Deactivated", color: "bg-gray-100 text-gray-800" },
   ]
 
   const validateEmail = async (email, excludeId = null) => {
@@ -239,6 +241,7 @@ const ViewMembers = ({ userId }) => {
         {status === "pending" && <Clock className="w-3 h-3 mr-1" />}
         {status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
         {status === "rejected" && <XCircle className="w-3 h-3 mr-1" />}
+        {status === "deactivated" && <Ban className="w-3 h-3 mr-1" />}
         {statusOption.label}
       </Badge>
     )
