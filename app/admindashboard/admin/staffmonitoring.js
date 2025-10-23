@@ -105,7 +105,7 @@ const StaffMonitoring = () => {
         const staffResponse = await axios.get(`${API_BASE_URL}`)
         const staffList = staffResponse.data && staffResponse.data.staff ? staffResponse.data.staff : []
 
-        // Create comprehensive mock data with real staff names
+        // Create comprehensive mock data with real staff names and TODAY's timestamps
         const activities = [
           {
             id: 1,
@@ -113,7 +113,7 @@ const StaffMonitoring = () => {
             activity: "Member account approved: John Doe (ID: 123)",
             timestamp: new Date().toISOString(),
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "User Management"
@@ -122,7 +122,7 @@ const StaffMonitoring = () => {
             id: 2,
             user_id: 2,
             activity: "New sale recorded: Protein Shake - ₱150.00",
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
+            timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
             fname: staffList[0]?.fname || "Staff",
             lname: staffList[0]?.lname || "Member",
             email: staffList[0]?.email || "staff@cnergy.com",
@@ -133,7 +133,7 @@ const StaffMonitoring = () => {
             id: 3,
             user_id: 3,
             activity: "POS Sale completed: Creatine + Pre-workout - Total: ₱200.00, Payment: cash, Receipt: RCP20241201001",
-            timestamp: new Date(Date.now() - 7200000).toISOString(),
+            timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 minutes ago
             fname: staffList[1]?.fname || "Staff",
             lname: staffList[1]?.lname || "Member",
             email: staffList[1]?.email || "staff@cnergy.com",
@@ -144,9 +144,9 @@ const StaffMonitoring = () => {
             id: 4,
             user_id: 1,
             activity: "Coach profile updated: Sarah Johnson (Specialty: Weight Training)",
-            timestamp: new Date(Date.now() - 10800000).toISOString(),
+            timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 minutes ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Coach Management"
@@ -155,7 +155,7 @@ const StaffMonitoring = () => {
             id: 5,
             user_id: 4,
             activity: "Member check-in: Mike Wilson (ID: 456) - Gym Access",
-            timestamp: new Date(Date.now() - 14400000).toISOString(),
+            timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(), // 20 minutes ago
             fname: staffList[2]?.fname || "Staff",
             lname: staffList[2]?.lname || "Member",
             email: staffList[2]?.email || "staff@cnergy.com",
@@ -166,9 +166,9 @@ const StaffMonitoring = () => {
             id: 6,
             user_id: 1,
             activity: "New member registration: Lisa Chen (Email: lisa.chen@email.com)",
-            timestamp: new Date(Date.now() - 18000000).toISOString(),
+            timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(), // 25 minutes ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "User Management"
@@ -177,7 +177,7 @@ const StaffMonitoring = () => {
             id: 7,
             user_id: 2,
             activity: "Subscription renewal: David Kim - Monthly Plan (₱1,500.00)",
-            timestamp: new Date(Date.now() - 21600000).toISOString(),
+            timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
             fname: staffList[0]?.fname || "Staff",
             lname: staffList[0]?.lname || "Member",
             email: staffList[0]?.email || "staff@cnergy.com",
@@ -188,9 +188,9 @@ const StaffMonitoring = () => {
             id: 8,
             user_id: 1,
             activity: "Equipment maintenance logged: Treadmill #3 - Scheduled for tomorrow",
-            timestamp: new Date(Date.now() - 25200000).toISOString(),
+            timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(), // 35 minutes ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Maintenance"
@@ -199,7 +199,7 @@ const StaffMonitoring = () => {
             id: 9,
             user_id: 3,
             activity: "Guest pass issued: Jennifer Martinez - 1 Day Access",
-            timestamp: new Date(Date.now() - 28800000).toISOString(),
+            timestamp: new Date(Date.now() - 40 * 60 * 1000).toISOString(), // 40 minutes ago
             fname: staffList[1]?.fname || "Staff",
             lname: staffList[1]?.lname || "Member",
             email: staffList[1]?.email || "staff@cnergy.com",
@@ -210,9 +210,9 @@ const StaffMonitoring = () => {
             id: 10,
             user_id: 1,
             activity: "Staff schedule updated: Morning shift coverage assigned",
-            timestamp: new Date(Date.now() - 32400000).toISOString(),
+            timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(), // 45 minutes ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Staff Management"
@@ -221,7 +221,7 @@ const StaffMonitoring = () => {
             id: 11,
             user_id: 4,
             activity: "Member workout session completed: Alex Rodriguez - Personal Training",
-            timestamp: new Date(Date.now() - 36000000).toISOString(),
+            timestamp: new Date(Date.now() - 50 * 60 * 1000).toISOString(), // 50 minutes ago
             fname: staffList[2]?.fname || "Staff",
             lname: staffList[2]?.lname || "Member",
             email: staffList[2]?.email || "staff@cnergy.com",
@@ -232,7 +232,7 @@ const StaffMonitoring = () => {
             id: 12,
             user_id: 2,
             activity: "Payment processed: Maria Santos - ₱2,000.00 (Credit Card)",
-            timestamp: new Date(Date.now() - 39600000).toISOString(),
+            timestamp: new Date(Date.now() - 55 * 60 * 1000).toISOString(), // 55 minutes ago
             fname: staffList[0]?.fname || "Staff",
             lname: staffList[0]?.lname || "Member",
             email: staffList[0]?.email || "staff@cnergy.com",
@@ -243,9 +243,9 @@ const StaffMonitoring = () => {
             id: 13,
             user_id: 1,
             activity: "New coach added: Michael Thompson (Specialty: Cardio Training)",
-            timestamp: new Date(Date.now() - 43200000).toISOString(),
+            timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1 hour ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Coach Management"
@@ -254,7 +254,7 @@ const StaffMonitoring = () => {
             id: 14,
             user_id: 3,
             activity: "Equipment check completed: All machines operational",
-            timestamp: new Date(Date.now() - 46800000).toISOString(),
+            timestamp: new Date(Date.now() - 65 * 60 * 1000).toISOString(), // 1 hour 5 min ago
             fname: staffList[1]?.fname || "Staff",
             lname: staffList[1]?.lname || "Member",
             email: staffList[1]?.email || "staff@cnergy.com",
@@ -265,7 +265,7 @@ const StaffMonitoring = () => {
             id: 15,
             user_id: 4,
             activity: "Member inquiry handled: Jessica Wong - Membership upgrade",
-            timestamp: new Date(Date.now() - 50400000).toISOString(),
+            timestamp: new Date(Date.now() - 70 * 60 * 1000).toISOString(), // 1 hour 10 min ago
             fname: staffList[2]?.fname || "Staff",
             lname: staffList[2]?.lname || "Member",
             email: staffList[2]?.email || "staff@cnergy.com",
@@ -276,9 +276,9 @@ const StaffMonitoring = () => {
             id: 16,
             user_id: 1,
             activity: "System backup completed: All data secured",
-            timestamp: new Date(Date.now() - 54000000).toISOString(),
+            timestamp: new Date(Date.now() - 75 * 60 * 1000).toISOString(), // 1 hour 15 min ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "System"
@@ -287,7 +287,7 @@ const StaffMonitoring = () => {
             id: 17,
             user_id: 2,
             activity: "Inventory updated: Protein bars restocked (50 units)",
-            timestamp: new Date(Date.now() - 57600000).toISOString(),
+            timestamp: new Date(Date.now() - 80 * 60 * 1000).toISOString(), // 1 hour 20 min ago
             fname: staffList[0]?.fname || "Staff",
             lname: staffList[0]?.lname || "Member",
             email: staffList[0]?.email || "staff@cnergy.com",
@@ -298,7 +298,7 @@ const StaffMonitoring = () => {
             id: 18,
             user_id: 3,
             activity: "Member cancellation processed: Robert Lee - Refund issued",
-            timestamp: new Date(Date.now() - 61200000).toISOString(),
+            timestamp: new Date(Date.now() - 85 * 60 * 1000).toISOString(), // 1 hour 25 min ago
             fname: staffList[1]?.fname || "Staff",
             lname: staffList[1]?.lname || "Member",
             email: staffList[1]?.email || "staff@cnergy.com",
@@ -309,9 +309,9 @@ const StaffMonitoring = () => {
             id: 19,
             user_id: 1,
             activity: "Monthly report generated: December 2024 summary",
-            timestamp: new Date(Date.now() - 64800000).toISOString(),
+            timestamp: new Date(Date.now() - 90 * 60 * 1000).toISOString(), // 1 hour 30 min ago
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Reports"
@@ -320,7 +320,7 @@ const StaffMonitoring = () => {
             id: 20,
             user_id: 4,
             activity: "Facility inspection completed: All areas clean and safe",
-            timestamp: new Date(Date.now() - 68400000).toISOString(),
+            timestamp: new Date(Date.now() - 95 * 60 * 1000).toISOString(), // 1 hour 35 min ago
             fname: staffList[2]?.fname || "Staff",
             lname: staffList[2]?.lname || "Member",
             email: staffList[2]?.email || "staff@cnergy.com",
@@ -352,7 +352,7 @@ const StaffMonitoring = () => {
             activity: "Member account approved: John Doe (ID: 123)",
             timestamp: new Date().toISOString(),
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "User Management"
@@ -385,7 +385,7 @@ const StaffMonitoring = () => {
             activity: "New product added: Cnergy Shirt - Price: ₱300, Stock: 50, Category: Merch/Apparel",
             timestamp: new Date(Date.now() - 10800000).toISOString(),
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Product Management"
@@ -407,7 +407,7 @@ const StaffMonitoring = () => {
             activity: "Stock updated for Protein Powder: add 25 units",
             timestamp: new Date(Date.now() - 18000000).toISOString(),
             fname: "Admin",
-            lname: "User",
+            lname: "",
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Inventory Management"
