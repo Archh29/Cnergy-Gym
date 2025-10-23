@@ -522,19 +522,21 @@ const ViewCoach = () => {
         gender_id: Number.parseInt(formData.gender_id),
         bday: formData.bday,
         user_type_id: Number.parseInt(formData.user_type_id),
+        account_status: formData.account_status,
 
         // Coaches table data
         bio: formData.bio || "",
         specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
         per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
-        package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
-        package_sessions: formData.package_sessions ? Number.parseInt(formData.package_sessions) : null,
         monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
         certifications: formData.certifications || "",
         is_available: formData.is_available,
         image_url: formData.image_url || "",
       }
+
+      console.log("Updating coach with data:", updateData)
+      console.log("Account status being sent:", formData.account_status)
 
       if (formData.password && formData.password.trim() !== "") {
         updateData.password = formData.password
@@ -890,7 +892,7 @@ const ViewCoach = () => {
                       </TableCell>
                       <TableCell>
                         <Badge variant={coach.is_available ? "default" : "secondary"} className="text-xs">
-                          {coach.is_available ? "Active" : "Inactive"}
+                          {coach.is_available ? "Available" : "Unavailable"}
                         </Badge>
                       </TableCell>
                       <TableCell>
