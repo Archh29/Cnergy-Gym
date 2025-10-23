@@ -355,7 +355,7 @@ const ViewCoach = () => {
       const response = await axios.get(API_URL)
       const coachesData = response.data.coaches || []
       console.log("Fetched coaches from API:", coachesData)
-      
+
       const enhancedCoaches = coachesData.map((coach) => ({
         ...coach,
         fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
@@ -558,7 +558,8 @@ const ViewCoach = () => {
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
         console.log("Fetched updated coaches:", updatedCoaches)
-        
+        console.log("Looking for coach ID 25:", updatedCoaches.find(c => c.id == 25))
+
         const enhancedCoaches = updatedCoaches.map((coach) => ({
           ...coach,
           fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
@@ -576,6 +577,7 @@ const ViewCoach = () => {
         }))
 
         console.log("Enhanced coaches with account_status:", enhancedCoaches.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
+        console.log("Coach ID 25 after enhancement:", enhancedCoaches.find(c => c.id == 25))
 
         setCoaches(enhancedCoaches)
         setFilteredCoaches(enhancedCoaches)
@@ -720,11 +722,16 @@ const ViewCoach = () => {
   useEffect(() => {
     let filtered = coaches
 
+    console.log("Filtering coaches - currentView:", currentView)
+    console.log("All coaches before filtering:", coaches.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
+
     // Filter by current view (active vs archive)
     if (currentView === "active") {
       filtered = filtered.filter((coach) => coach.account_status !== "deactivated")
+      console.log("Active coaches after filtering:", filtered.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
     } else if (currentView === "archive") {
       filtered = filtered.filter((coach) => coach.account_status === "deactivated")
+      console.log("Archived coaches after filtering:", filtered.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
     }
 
     // Filter by search query
@@ -737,6 +744,8 @@ const ViewCoach = () => {
         coach.experience.toLowerCase().includes(searchLower)
       ))
     }
+
+    console.log("Final filtered coaches:", filtered.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
 
     setFilteredCoaches(filtered)
     setCurrentPage(1)
