@@ -71,6 +71,8 @@ const ViewCoach = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
+  const [currentView, setCurrentView] = useState("active") // "active" or "archive"
   const [currentPage, setCurrentPage] = useState(1)
   const [activities, setActivities] = useState([])
   const [activityLogs, setActivityLogs] = useState([])
@@ -115,6 +117,7 @@ const ViewCoach = () => {
     certifications: "",
     is_available: true,
     image_url: "",
+    account_status: "approved",
   })
 
   const genderOptions = [
@@ -601,14 +604,41 @@ const ViewCoach = () => {
 
     try {
       setIsLoading(true)
-      const response = await axios.delete(API_URL, {
-        data: { id: selectedCoach.id },
+      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${selectedCoach.id}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: selectedCoach.id,
+        }),
       })
 
-      if (response.data.success) {
-        setCoaches(coaches.filter((coach) => coach.id !== selectedCoach.id))
-        setFilteredCoaches(filteredCoaches.filter((coach) => coach.id !== selectedCoach.id))
+      const result = await response.json()
+      if (response.ok) {
+        // Refresh the coaches list
+        const getResponse = await fetch("https://api.cnergy.site/addcoach.php")
+        const updatedCoaches = await getResponse.json()
+        const coachesData = updatedCoaches.coaches || []
+        const enhancedCoaches = coachesData.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          per_session_rate: coach.per_session_rate || 0.0,
+          monthly_rate: coach.monthly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+        }))
+
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
         setIsDeleteDialogOpen(false)
+        setSelectedCoach(null)
 
         // Refresh statistics and activity logs
         await fetchCoachStats()
@@ -616,13 +646,13 @@ const ViewCoach = () => {
 
         toast({ title: "Success", description: "Coach deleted successfully!" })
       } else {
-        throw new Error(response.data.error || "Failed to delete coach.")
+        throw new Error(result.error || result.message || "Failed to delete coach.")
       }
     } catch (error) {
-      console.error("Error deleting coach:", error.response?.data || error.message)
+      console.error("Error deleting coach:", error)
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to delete coach.",
+        description: error.message || "Failed to delete coach. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -633,6 +663,74 @@ const ViewCoach = () => {
   const handleOpenAddDialog = () => {
     resetForm()
     setIsAddDialogOpen(true)
+  }
+
+  const handleDeactivateCoach = async (coach) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${coach.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: coach.id,
+          account_status: "deactivated",
+        }),
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        // Refresh the coaches list
+        await fetchCoaches()
+        toast({ title: "Success", description: "Coach deactivated successfully!" })
+      } else {
+        throw new Error(result.error || result.message || "Failed to deactivate coach.")
+      }
+    } catch (error) {
+      console.error("Error deactivating coach:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to deactivate coach. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleActivateCoach = async (coach) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${coach.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: coach.id,
+          account_status: "approved",
+        }),
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        // Refresh the coaches list
+        await fetchCoaches()
+        toast({ title: "Success", description: "Coach activated successfully!" })
+      } else {
+        throw new Error(result.error || result.message || "Failed to activate coach.")
+      }
+    } catch (error) {
+      console.error("Error activating coach:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to activate coach. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleEditCoach = (coach) => {
@@ -650,12 +748,11 @@ const ViewCoach = () => {
       specialty: coach.specialty || "",
       experience: coach.experience || "",
       per_session_rate: coach.per_session_rate?.toString() || "",
-      package_rate: coach.package_rate?.toString() || "",
-      package_sessions: coach.package_sessions?.toString() || "",
       monthly_rate: coach.monthly_rate?.toString() || "",
       certifications: coach.certifications || "",
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
+      account_status: coach.account_status || "approved",
     })
 
     // Parse existing specialties for editing
@@ -676,18 +773,29 @@ const ViewCoach = () => {
   }
 
   useEffect(() => {
-    const filtered = coaches.filter((coach) => {
+    let filtered = coaches
+
+    // Filter by current view (active vs archive)
+    if (currentView === "active") {
+      filtered = filtered.filter((coach) => coach.account_status !== "deactivated")
+    } else if (currentView === "archive") {
+      filtered = filtered.filter((coach) => coach.account_status === "deactivated")
+    }
+
+    // Filter by search query
+    if (searchQuery.trim() !== "") {
       const searchLower = searchQuery.toLowerCase()
-      return (
+      filtered = filtered.filter((coach) => (
         coach.fullName.toLowerCase().includes(searchLower) ||
         coach.email.toLowerCase().includes(searchLower) ||
         coach.specialty.toLowerCase().includes(searchLower) ||
         coach.experience.toLowerCase().includes(searchLower)
-      )
-    })
+      ))
+    }
+
     setFilteredCoaches(filtered)
     setCurrentPage(1)
-  }, [searchQuery, coaches])
+  }, [searchQuery, coaches, currentView])
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber)
 
@@ -740,10 +848,20 @@ const ViewCoach = () => {
               <CardTitle>Coaches List</CardTitle>
               <CardDescription>View and manage all registered coaches</CardDescription>
             </div>
-            <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Add New Coach
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={currentView === "archive" ? "default" : "outline"}
+                onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
+                className="flex items-center gap-2"
+              >
+                <Activity className="h-4 w-4" />
+                {currentView === "active" ? "Archive" : "Active"}
+              </Button>
+              <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Add New Coach
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -769,7 +887,6 @@ const ViewCoach = () => {
                   <TableHead className="min-w-[120px]">Specialty</TableHead>
                   <TableHead className="min-w-[100px]">Experience</TableHead>
                   <TableHead className="min-w-[100px]">Per Session</TableHead>
-                  <TableHead className="min-w-[120px]">Package</TableHead>
                   <TableHead className="min-w-[120px]">Monthly Plan</TableHead>
                   <TableHead className="min-w-[80px]">Rating</TableHead>
                   <TableHead className="min-w-[100px]">Status</TableHead>
@@ -826,16 +943,6 @@ const ViewCoach = () => {
                       <TableCell className="text-sm">{coach.experience}</TableCell>
                       <TableCell className="text-sm font-medium">₱{coach.per_session_rate}</TableCell>
                       <TableCell className="text-sm">
-                        {coach.package_rate && coach.package_sessions
-                          ? (
-                            <div>
-                              <div>₱{coach.package_rate}</div>
-                              <div className="text-xs text-muted-foreground">({coach.package_sessions} sessions)</div>
-                            </div>
-                          )
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-sm">
                         {coach.monthly_rate ? (
                           <div>
                             <div>₱{coach.monthly_rate}</div>
@@ -860,10 +967,23 @@ const ViewCoach = () => {
                             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                             <span className="hidden sm:inline ml-1">Edit</span>
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                            <span className="hidden sm:inline ml-1">Delete</span>
-                          </Button>
+                          {currentView === "active" ? (
+                            <Button variant="outline" size="sm" onClick={() => handleDeactivateCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
+                              <Activity className="h-3 w-3 sm:h-4 sm:w-4" />
+                              <span className="hidden sm:inline ml-1">Deactivate</span>
+                            </Button>
+                          ) : (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => handleActivateCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
+                                <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+                                <span className="hidden sm:inline ml-1">Activate</span>
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => handleDeleteCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
+                                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                                <span className="hidden sm:inline ml-1">Delete</span>
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1582,6 +1702,22 @@ const ViewCoach = () => {
                   value={formData.certifications}
                   onChange={handleInputChange}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-account_status">Account Status</Label>
+                <Select
+                  value={formData.account_status}
+                  onValueChange={(value) => handleSelectChange("account_status", value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select account status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="approved">Active</SelectItem>
+                    <SelectItem value="deactivated">Deactivated</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">Deactivated coaches will be moved to archive</p>
               </div>
               <div className="flex flex-row items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
