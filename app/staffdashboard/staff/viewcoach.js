@@ -578,74 +578,6 @@ const ViewCoach = ({ userId }) => {
     setIsAddDialogOpen(true)
   }
 
-  const handleDeactivateCoach = async (coach) => {
-    try {
-      setIsLoading(true)
-      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${coach.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: coach.id,
-          account_status: "deactivated",
-        }),
-      })
-
-      const result = await response.json()
-      if (response.ok) {
-        // Refresh the coaches list
-        await fetchCoaches()
-        toast({ title: "Success", description: "Coach deactivated successfully!" })
-      } else {
-        throw new Error(result.error || result.message || "Failed to deactivate coach.")
-      }
-    } catch (error) {
-      console.error("Error deactivating coach:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to deactivate coach. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleActivateCoach = async (coach) => {
-    try {
-      setIsLoading(true)
-      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${coach.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: coach.id,
-          account_status: "approved",
-        }),
-      })
-
-      const result = await response.json()
-      if (response.ok) {
-        // Refresh the coaches list
-        await fetchCoaches()
-        toast({ title: "Success", description: "Coach activated successfully!" })
-      } else {
-        throw new Error(result.error || result.message || "Failed to activate coach.")
-      }
-    } catch (error) {
-      console.error("Error activating coach:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to activate coach. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleEditCoach = (coach) => {
     setSelectedCoach(coach)
     setFormData({
@@ -857,7 +789,7 @@ const ViewCoach = ({ userId }) => {
                       </TableCell>
                       <TableCell>
                         <Badge variant={coach.is_available ? "default" : "secondary"} className="text-xs">
-                          {coach.is_available ? "Available" : "Unavailable"}
+                          {coach.is_available ? "Active" : "Inactive"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -866,17 +798,6 @@ const ViewCoach = ({ userId }) => {
                             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                             <span className="hidden sm:inline ml-1">Edit</span>
                           </Button>
-                          {currentView === "active" ? (
-                            <Button variant="outline" size="sm" onClick={() => handleDeactivateCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                              <Activity className="h-3 w-3 sm:h-4 sm:w-4" />
-                              <span className="hidden sm:inline ml-1">Deactivate</span>
-                            </Button>
-                          ) : (
-                            <Button variant="outline" size="sm" onClick={() => handleActivateCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                              <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
-                              <span className="hidden sm:inline ml-1">Activate</span>
-                            </Button>
-                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1526,7 +1447,7 @@ const ViewCoach = ({ userId }) => {
                     <SelectItem value="deactivated">Deactivated</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500">Deactivated coaches will be moved to archive</p>
+                <p className="text-xs text-gray-500">Deactivated coaches will be moved to archive and cannot be assigned to members</p>
               </div>
               <div className="flex flex-row items-center justify-between rounded-lg border p-4">
                 <div className="space-y-0.5">
