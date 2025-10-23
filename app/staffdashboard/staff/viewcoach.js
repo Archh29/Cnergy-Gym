@@ -328,6 +328,8 @@ const ViewCoach = ({ userId }) => {
     try {
       const response = await axios.get(API_URL)
       const coachesData = response.data.coaches || []
+      console.log("Fetched coaches from API:", coachesData)
+      
       const enhancedCoaches = coachesData.map((coach) => ({
         ...coach,
         fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
@@ -337,13 +339,14 @@ const ViewCoach = ({ userId }) => {
         rating: coach.rating || 0.0,
         total_clients: coach.total_clients || 0,
         per_session_rate: coach.per_session_rate || 0.0,
-        package_rate: coach.package_rate || 0.0,
-        package_sessions: coach.package_sessions || 0,
         monthly_rate: coach.monthly_rate || 0.0,
         certifications: coach.certifications || "",
         is_available: coach.is_available !== undefined ? coach.is_available : true,
         image_url: coach.image_url || "",
+        account_status: coach.account_status || "approved",
       }))
+
+      console.log("Enhanced coaches with account_status:", enhancedCoaches.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
 
       setCoaches(enhancedCoaches)
       setFilteredCoaches(enhancedCoaches)
@@ -522,10 +525,14 @@ const ViewCoach = ({ userId }) => {
         },
       })
 
+      console.log("API Response:", response.data)
+
       if (response.data.success) {
         // Refresh coaches list
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
+        console.log("Fetched updated coaches:", updatedCoaches)
+        
         const enhancedCoaches = updatedCoaches.map((coach) => ({
           ...coach,
           fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
@@ -534,11 +541,15 @@ const ViewCoach = ({ userId }) => {
           experience: coach.experience || "Not specified",
           rating: coach.rating || 0.0,
           total_clients: coach.total_clients || 0,
-          hourly_rate: coach.hourly_rate || 0.0,
+          per_session_rate: coach.per_session_rate || 0.0,
+          monthly_rate: coach.monthly_rate || 0.0,
           certifications: coach.certifications || "",
           is_available: coach.is_available !== undefined ? coach.is_available : true,
           image_url: coach.image_url || "",
+          account_status: coach.account_status || "approved",
         }))
+
+        console.log("Enhanced coaches with account_status:", enhancedCoaches.map(c => ({ id: c.id, name: c.fullName, account_status: c.account_status })))
 
         setCoaches(enhancedCoaches)
         setFilteredCoaches(enhancedCoaches)
