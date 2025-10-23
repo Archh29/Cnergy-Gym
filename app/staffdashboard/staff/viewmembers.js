@@ -79,7 +79,7 @@ const ViewMembers = ({ userId }) => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("approved")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
@@ -514,6 +514,48 @@ const ViewMembers = ({ userId }) => {
 
   return (
     <div className="space-y-6">
+      {/* Statistics Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Users className="mr-2 h-5 w-5" />
+            User Statistics
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">{members.length}</div>
+              <div className="text-sm text-muted-foreground">Total Users</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-600">
+                {members.filter((m) => m.account_status === "pending").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Pending</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {members.filter((m) => m.account_status === "approved").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Approved</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {members.filter((m) => m.account_status === "rejected").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Rejected</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-600">
+                {members.filter((m) => m.account_status === "deactivated").length}
+              </div>
+              <div className="text-sm text-muted-foreground">Deactivated</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -689,43 +731,6 @@ const ViewMembers = ({ userId }) => {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Statistics Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Users className="mr-2 h-5 w-5" />
-            Member Statistics
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">{members.length}</div>
-              <div className="text-sm text-muted-foreground">Total Members</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {members.filter((m) => m.account_status === "pending").length}
-              </div>
-              <div className="text-sm text-muted-foreground">Pending</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {members.filter((m) => m.account_status === "approved").length}
-              </div>
-              <div className="text-sm text-muted-foreground">Approved</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
-                {members.filter((m) => m.account_status === "rejected").length}
-              </div>
-              <div className="text-sm text-muted-foreground">Rejected</div>
-            </div>
-
-          </div>
         </CardContent>
       </Card>
 
