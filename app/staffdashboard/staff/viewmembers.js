@@ -428,7 +428,14 @@ const ViewMembers = ({ userId }) => {
   }
 
   const handleUpdateMember = async (data) => {
-    if (!selectedMember) return
+    console.log("handleUpdateMember called with data:", data)
+    console.log("selectedMember:", selectedMember)
+
+    if (!selectedMember) {
+      console.error("No selected member")
+      return
+    }
+
     setIsLoading(true)
     try {
       if (data.email.toLowerCase() !== selectedMember.email.toLowerCase()) {
@@ -461,6 +468,8 @@ const ViewMembers = ({ userId }) => {
         updateData.password = data.password
       }
 
+      console.log("Sending update request with data:", updateData)
+
       const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
         method: "PUT",
         headers: {
@@ -469,7 +478,10 @@ const ViewMembers = ({ userId }) => {
         body: JSON.stringify(updateData),
       })
 
+      console.log("Update response status:", response.status)
       const result = await response.json()
+      console.log("Update response result:", result)
+
       if (response.ok) {
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
@@ -1185,7 +1197,7 @@ const ViewMembers = ({ userId }) => {
                 </Button>
                 <Button type="submit" disabled={isLoading}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update Member
+                  Update
                 </Button>
               </DialogFooter>
             </form>
