@@ -54,7 +54,7 @@ const memberSchema = z.object({
     .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
-  user_type_id: z.number().default(4),
+  user_type_id: z.coerce.number().default(4),
   account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
 })
 
@@ -76,7 +76,7 @@ const editMemberSchema = z.object({
     const date = new Date(val)
     return !isNaN(date.getTime()) && date.getFullYear() > 1900
   }, "Please enter a valid date of birth"),
-  user_type_id: z.number().default(4),
+  user_type_id: z.coerce.number().default(4),
   account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
 })
 
