@@ -101,8 +101,12 @@ const StaffMonitoring = () => {
       if (response.data.activities) {
         setActivities(response.data.activities)
       } else {
-        // Create comprehensive mock data for demonstration
-        setActivities([
+        // Get real staff names for activities
+        const staffResponse = await axios.get(`${API_BASE_URL}`)
+        const staffList = staffResponse.data && staffResponse.data.staff ? staffResponse.data.staff : []
+
+        // Create comprehensive mock data with real staff names
+        const activities = [
           {
             id: 1,
             user_id: 1,
@@ -119,20 +123,20 @@ const StaffMonitoring = () => {
             user_id: 2,
             activity: "New sale recorded: Protein Shake - ₱150.00",
             timestamp: new Date(Date.now() - 3600000).toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
+            fname: staffList[0]?.fname || "Staff",
+            lname: staffList[0]?.lname || "Member",
+            email: staffList[0]?.email || "staff@cnergy.com",
             user_type: "staff",
             activity_category: "Sales"
           },
           {
             id: 3,
-            user_id: 2,
+            user_id: 3,
             activity: "POS Sale completed: Creatine + Pre-workout - Total: ₱200.00, Payment: cash, Receipt: RCP20241201001",
             timestamp: new Date(Date.now() - 7200000).toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
+            fname: staffList[1]?.fname || "Staff",
+            lname: staffList[1]?.lname || "Member",
+            email: staffList[1]?.email || "staff@cnergy.com",
             user_type: "staff",
             activity_category: "POS Sales"
           },
@@ -149,12 +153,12 @@ const StaffMonitoring = () => {
           },
           {
             id: 5,
-            user_id: 2,
+            user_id: 4,
             activity: "Member check-in: Mike Wilson (ID: 456) - Gym Access",
             timestamp: new Date(Date.now() - 14400000).toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
+            fname: staffList[2]?.fname || "Staff",
+            lname: staffList[2]?.lname || "Member",
+            email: staffList[2]?.email || "staff@cnergy.com",
             user_type: "staff",
             activity_category: "Attendance"
           },
@@ -174,9 +178,9 @@ const StaffMonitoring = () => {
             user_id: 2,
             activity: "Subscription renewal: David Kim - Monthly Plan (₱1,500.00)",
             timestamp: new Date(Date.now() - 21600000).toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
+            fname: staffList[0]?.fname || "Staff",
+            lname: staffList[0]?.lname || "Member",
+            email: staffList[0]?.email || "staff@cnergy.com",
             user_type: "staff",
             activity_category: "Subscriptions"
           },
@@ -193,12 +197,12 @@ const StaffMonitoring = () => {
           },
           {
             id: 9,
-            user_id: 2,
+            user_id: 3,
             activity: "Guest pass issued: Jennifer Martinez - 1 Day Access",
             timestamp: new Date(Date.now() - 28800000).toISOString(),
-            fname: "Staff",
-            lname: "Member",
-            email: "staff@cnergy.com",
+            fname: staffList[1]?.fname || "Staff",
+            lname: staffList[1]?.lname || "Member",
+            email: staffList[1]?.email || "staff@cnergy.com",
             user_type: "staff",
             activity_category: "Guest Management"
           },
@@ -212,8 +216,120 @@ const StaffMonitoring = () => {
             email: "admin@cnergy.com",
             user_type: "admin",
             activity_category: "Staff Management"
+          },
+          {
+            id: 11,
+            user_id: 4,
+            activity: "Member workout session completed: Alex Rodriguez - Personal Training",
+            timestamp: new Date(Date.now() - 36000000).toISOString(),
+            fname: staffList[2]?.fname || "Staff",
+            lname: staffList[2]?.lname || "Member",
+            email: staffList[2]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Training"
+          },
+          {
+            id: 12,
+            user_id: 2,
+            activity: "Payment processed: Maria Santos - ₱2,000.00 (Credit Card)",
+            timestamp: new Date(Date.now() - 39600000).toISOString(),
+            fname: staffList[0]?.fname || "Staff",
+            lname: staffList[0]?.lname || "Member",
+            email: staffList[0]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Payments"
+          },
+          {
+            id: 13,
+            user_id: 1,
+            activity: "New coach added: Michael Thompson (Specialty: Cardio Training)",
+            timestamp: new Date(Date.now() - 43200000).toISOString(),
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
+            activity_category: "Coach Management"
+          },
+          {
+            id: 14,
+            user_id: 3,
+            activity: "Equipment check completed: All machines operational",
+            timestamp: new Date(Date.now() - 46800000).toISOString(),
+            fname: staffList[1]?.fname || "Staff",
+            lname: staffList[1]?.lname || "Member",
+            email: staffList[1]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Maintenance"
+          },
+          {
+            id: 15,
+            user_id: 4,
+            activity: "Member inquiry handled: Jessica Wong - Membership upgrade",
+            timestamp: new Date(Date.now() - 50400000).toISOString(),
+            fname: staffList[2]?.fname || "Staff",
+            lname: staffList[2]?.lname || "Member",
+            email: staffList[2]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Customer Service"
+          },
+          {
+            id: 16,
+            user_id: 1,
+            activity: "System backup completed: All data secured",
+            timestamp: new Date(Date.now() - 54000000).toISOString(),
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
+            activity_category: "System"
+          },
+          {
+            id: 17,
+            user_id: 2,
+            activity: "Inventory updated: Protein bars restocked (50 units)",
+            timestamp: new Date(Date.now() - 57600000).toISOString(),
+            fname: staffList[0]?.fname || "Staff",
+            lname: staffList[0]?.lname || "Member",
+            email: staffList[0]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Inventory"
+          },
+          {
+            id: 18,
+            user_id: 3,
+            activity: "Member cancellation processed: Robert Lee - Refund issued",
+            timestamp: new Date(Date.now() - 61200000).toISOString(),
+            fname: staffList[1]?.fname || "Staff",
+            lname: staffList[1]?.lname || "Member",
+            email: staffList[1]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Membership"
+          },
+          {
+            id: 19,
+            user_id: 1,
+            activity: "Monthly report generated: December 2024 summary",
+            timestamp: new Date(Date.now() - 64800000).toISOString(),
+            fname: "Admin",
+            lname: "User",
+            email: "admin@cnergy.com",
+            user_type: "admin",
+            activity_category: "Reports"
+          },
+          {
+            id: 20,
+            user_id: 4,
+            activity: "Facility inspection completed: All areas clean and safe",
+            timestamp: new Date(Date.now() - 68400000).toISOString(),
+            fname: staffList[2]?.fname || "Staff",
+            lname: staffList[2]?.lname || "Member",
+            email: staffList[2]?.email || "staff@cnergy.com",
+            user_type: "staff",
+            activity_category: "Facility"
           }
-        ])
+        ]
+
+        setActivities(activities)
       }
     } catch (error) {
       console.error("Error loading fallback activities:", error)
