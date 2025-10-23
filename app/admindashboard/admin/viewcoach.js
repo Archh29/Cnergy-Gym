@@ -183,12 +183,12 @@ const ViewCoach = () => {
     if (!data.specialty && selectedSpecialties.length === 0) errors.specialty = "Please specify at least one specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
     if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
-    
+
     // Package sessions validation
     if (data.package_sessions && (isNaN(data.package_sessions) || data.package_sessions < 1)) {
       errors.package_sessions = "Package sessions must be a positive number"
     }
-    
+
     // Rate validations
     if (data.package_rate && (isNaN(data.package_rate) || data.package_rate < 0)) {
       errors.package_rate = "Package rate must be a positive number"
@@ -310,10 +310,10 @@ const ViewCoach = () => {
   // Filter activities based on time period
   const getFilteredActivities = () => {
     if (activityFilter === 'all') return coachStats.recentActivities
-    
+
     const now = new Date()
     const filterDate = new Date()
-    
+
     switch (activityFilter) {
       case 'today':
         filterDate.setHours(0, 0, 0, 0)
@@ -330,7 +330,7 @@ const ViewCoach = () => {
       default:
         return coachStats.recentActivities
     }
-    
+
     return coachStats.recentActivities.filter(activity => {
       const activityDate = new Date(activity.timestamp)
       return activityDate >= filterDate
@@ -455,13 +455,13 @@ const ViewCoach = () => {
         // Handle API error response (like email already exists)
         console.error("Coach creation failed:", response.data)
         console.error("Error response data:", response.data)
-        
+
         // Check if it's an email-related error (case insensitive)
         const errorText = (response.data.error || "").toLowerCase()
         console.log("Error text to check:", errorText)
         console.log("Contains email:", errorText.includes("email"))
         console.log("Contains already exists:", errorText.includes("already exists"))
-        
+
         if (errorText.includes("email") || errorText.includes("already exists")) {
           // Show the detailed error message from backend
           const errorMessage = response.data.message || response.data.error || "Email address already exists"
@@ -486,11 +486,11 @@ const ViewCoach = () => {
       console.error("Error response data:", error.response?.data)
       console.error("Error response status:", error.response?.status)
       console.error("Full error object:", error)
-      
+
       // Check if it's an email-related error
       const errorMessage = error.response?.data?.message || error.response?.data?.error || "Failed to add coach. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
-      
+
       // Show error message in alert (simple approach)
       alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     } finally {
@@ -659,7 +659,7 @@ const ViewCoach = () => {
       is_available: coach.is_available !== undefined ? coach.is_available : true,
       image_url: coach.image_url || "",
     })
-    
+
     // Parse existing specialties for editing
     if (coach.specialty) {
       const specialties = coach.specialty.split(',').map(s => s.trim()).filter(s => s)
@@ -695,15 +695,6 @@ const ViewCoach = () => {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        
-        <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          Add New Coach
-        </Button>
-      </div>
-
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -747,8 +738,16 @@ const ViewCoach = () => {
       {/* Search and Filters */}
       <Card>
         <CardHeader>
-          <CardTitle>Coaches List</CardTitle>
-          <CardDescription>View and manage all registered coaches</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Coaches List</CardTitle>
+              <CardDescription>View and manage all registered coaches</CardDescription>
+            </div>
+            <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Add New Coach
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-center space-x-2 mb-4">
@@ -830,7 +829,7 @@ const ViewCoach = () => {
                       <TableCell className="text-sm">{coach.experience}</TableCell>
                       <TableCell className="text-sm font-medium">₱{coach.per_session_rate}</TableCell>
                       <TableCell className="text-sm">
-                        {coach.package_rate && coach.package_sessions 
+                        {coach.package_rate && coach.package_sessions
                           ? (
                             <div>
                               <div>₱{coach.package_rate}</div>
@@ -1152,7 +1151,7 @@ const ViewCoach = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="specialty">Specialties*</Label>
-                  
+
                   {/* Selected Specialties Display */}
                   {selectedSpecialties.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -1170,7 +1169,7 @@ const ViewCoach = () => {
                       ))}
                     </div>
                   )}
-                  
+
                   {/* Predefined Specialty Options */}
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {specialtyOptions.map((specialty) => (
@@ -1178,17 +1177,16 @@ const ViewCoach = () => {
                         key={specialty}
                         type="button"
                         onClick={() => handleSpecialtyToggle(specialty)}
-                        className={`p-2 text-sm border rounded-md text-left transition-colors ${
-                          selectedSpecialties.includes(specialty)
+                        className={`p-2 text-sm border rounded-md text-left transition-colors ${selectedSpecialties.includes(specialty)
                             ? 'bg-blue-100 border-blue-300 text-blue-800'
                             : 'bg-white border-gray-300 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {specialty}
                       </button>
                     ))}
                   </div>
-                  
+
                   {/* Custom Specialty Input */}
                   <div className="flex gap-2">
                     <Input
@@ -1206,7 +1204,7 @@ const ViewCoach = () => {
                       Add
                     </Button>
                   </div>
-                  
+
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
@@ -1489,7 +1487,7 @@ const ViewCoach = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-specialty">Specialties*</Label>
-                  
+
                   {/* Selected Specialties Display */}
                   {selectedSpecialties.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -1507,7 +1505,7 @@ const ViewCoach = () => {
                       ))}
                     </div>
                   )}
-                  
+
                   {/* Predefined Specialty Options */}
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     {specialtyOptions.map((specialty) => (
@@ -1515,17 +1513,16 @@ const ViewCoach = () => {
                         key={specialty}
                         type="button"
                         onClick={() => handleSpecialtyToggle(specialty)}
-                        className={`p-2 text-sm border rounded-md text-left transition-colors ${
-                          selectedSpecialties.includes(specialty)
+                        className={`p-2 text-sm border rounded-md text-left transition-colors ${selectedSpecialties.includes(specialty)
                             ? 'bg-blue-100 border-blue-300 text-blue-800'
                             : 'bg-white border-gray-300 hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         {specialty}
                       </button>
                     ))}
                   </div>
-                  
+
                   {/* Custom Specialty Input */}
                   <div className="flex gap-2">
                     <Input
@@ -1543,7 +1540,7 @@ const ViewCoach = () => {
                       Add
                     </Button>
                   </div>
-                  
+
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
