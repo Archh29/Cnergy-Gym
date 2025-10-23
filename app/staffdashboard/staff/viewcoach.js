@@ -68,7 +68,6 @@ const ViewCoach = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedCoach, setSelectedCoach] = useState(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -571,40 +570,6 @@ const ViewCoach = ({ userId }) => {
     }
   }
 
-  const handleConfirmDelete = async () => {
-    if (!selectedCoach) return
-
-    try {
-      setIsLoading(true)
-      const response = await axios.delete(`${API_URL}?staff_id=${userId}`, {
-        data: { id: selectedCoach.id },
-      })
-
-      if (response.data.success) {
-        setCoaches(coaches.filter((coach) => coach.id !== selectedCoach.id))
-        setFilteredCoaches(filteredCoaches.filter((coach) => coach.id !== selectedCoach.id))
-        setIsDeleteDialogOpen(false)
-
-        // Refresh statistics and activity logs
-        await fetchCoachStats()
-        await fetchActivityLogs()
-
-        toast({ title: "Success", description: "Coach deleted successfully!" })
-      } else {
-        throw new Error(response.data.error || "Failed to delete coach.")
-      }
-    } catch (error) {
-      console.error("Error deleting coach:", error.response?.data || error.message)
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || "Failed to delete coach.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleOpenAddDialog = () => {
     resetForm()
     setIsAddDialogOpen(true)
@@ -625,8 +590,6 @@ const ViewCoach = ({ userId }) => {
       specialty: coach.specialty || "",
       experience: coach.experience || "",
       per_session_rate: coach.per_session_rate?.toString() || "",
-      package_rate: coach.package_rate?.toString() || "",
-      package_sessions: coach.package_sessions?.toString() || "",
       monthly_rate: coach.monthly_rate?.toString() || "",
       certifications: coach.certifications || "",
       is_available: coach.is_available !== undefined ? coach.is_available : true,
@@ -634,11 +597,6 @@ const ViewCoach = ({ userId }) => {
     })
     setValidationErrors({})
     setIsEditDialogOpen(true)
-  }
-
-  const handleDeleteCoach = (coach) => {
-    setSelectedCoach(coach)
-    setIsDeleteDialogOpen(true)
   }
 
   useEffect(() => {
@@ -825,10 +783,6 @@ const ViewCoach = ({ userId }) => {
                           <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
                             <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                             <span className="hidden sm:inline ml-1">Edit</span>
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleDeleteCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                            <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                            <span className="hidden sm:inline ml-1">Delete</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -1445,40 +1399,6 @@ const ViewCoach = ({ userId }) => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-package_rate">Package Rate (₱)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    id="edit-package_rate"
-                    name="package_rate"
-                    placeholder="2000.00"
-                    value={formData.package_rate}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_rate ? "border-red-500" : ""}
-                  />
-                  {validationErrors.package_rate && (
-                    <p className="text-sm text-red-500">{validationErrors.package_rate}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-package_sessions">Package Sessions</Label>
-                  <Input
-                    type="number"
-                    id="edit-package_sessions"
-                    name="package_sessions"
-                    placeholder="18"
-                    value={formData.package_sessions}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_sessions ? "border-red-500" : ""}
-                  />
-                  <p className="text-xs text-gray-500">Default: 18 sessions</p>
-                  {validationErrors.package_sessions && (
-                    <p className="text-sm text-red-500">{validationErrors.package_sessions}</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
                     id="edit-image_url"
@@ -1523,55 +1443,6 @@ const ViewCoach = ({ userId }) => {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Delete Coach</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this coach? This will remove entries from both User and Coaches tables.
-              This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedCoach && (
-            <div className="border rounded-md p-4 mb-4">
-              <div className="flex items-center space-x-3 mb-2">
-                {selectedCoach.image_url ? (
-                  <img
-                    className="h-12 w-12 rounded-full object-cover"
-                    src={selectedCoach.image_url || "/placeholder.svg"}
-                    alt={selectedCoach.fullName}
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-full bg-gray-300 flex items-center justify-center">
-                    <User className="h-6 w-6 text-gray-600" />
-                  </div>
-                )}
-                <div>
-                  <p className="font-medium">{selectedCoach.fullName}</p>
-                  <p className="text-sm text-muted-foreground">{selectedCoach.email}</p>
-                </div>
-              </div>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <p>Specialty: {selectedCoach.specialty}</p>
-                <p>Experience: {selectedCoach.experience}</p>
-                <p>Clients: {selectedCoach.total_clients}</p>
-                <p>Rating: {selectedCoach.rating.toFixed(1)}/5.0</p>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete Coach
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

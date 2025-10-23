@@ -1563,40 +1563,6 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-package_rate">Package Rate (₱)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    id="edit-package_rate"
-                    name="package_rate"
-                    placeholder="2000.00"
-                    value={formData.package_rate}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_rate ? "border-red-500" : ""}
-                  />
-                  {validationErrors.package_rate && (
-                    <p className="text-sm text-red-500">{validationErrors.package_rate}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-package_sessions">Package Sessions</Label>
-                  <Input
-                    type="number"
-                    id="edit-package_sessions"
-                    name="package_sessions"
-                    placeholder="18"
-                    value={formData.package_sessions}
-                    onChange={handleInputChange}
-                    className={validationErrors.package_sessions ? "border-red-500" : ""}
-                  />
-                  <p className="text-xs text-gray-500">Default: 18 sessions</p>
-                  {validationErrors.package_sessions && (
-                    <p className="text-sm text-red-500">{validationErrors.package_sessions}</p>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
                   <Label htmlFor="edit-image_url">Profile Image URL</Label>
                   <Input
                     id="edit-image_url"
