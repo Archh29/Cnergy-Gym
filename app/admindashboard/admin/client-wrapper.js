@@ -57,7 +57,7 @@ export default function AdminDashboardClient() {
 
     const role = sessionStorage.getItem("role") || "Admin"
     setUserRole(role)
-    
+
     // Get user ID from session storage or API
     const storedUserId = sessionStorage.getItem("user_id")
     if (storedUserId) {
@@ -120,7 +120,7 @@ export default function AdminDashboardClient() {
     switch (currentSection) {
       case "Home":
         return <Home />
-      case "ViewMembers":
+      case "ViewUsers":
         return <ViewMembers userId={userId} />
       case "ViewStaff":
         return <ViewStaff />
@@ -129,7 +129,7 @@ export default function AdminDashboardClient() {
       case "StaffMonitoring":
         return <StaffMonitoring />
       case "SubscriptionPlans":
-          return <SubscriptionPlans />
+        return <SubscriptionPlans />
       case "Announcement":
         return <Announcement />
       case "AttendanceTracking":
@@ -163,16 +163,16 @@ export default function AdminDashboardClient() {
     <div className={`flex h-screen bg-gray-50 dark:bg-gray-900 relative`}>
       {/* Mobile backdrop overlay */}
       {!sidebarCollapsed && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={toggleSidebar}
         />
       )}
-      
-      <Sidebar 
-        activeSection={currentSection} 
-        setActiveSection={setCurrentSection} 
-        toggleDarkMode={toggleDarkMode} 
+
+      <Sidebar
+        activeSection={currentSection}
+        setActiveSection={setCurrentSection}
+        toggleDarkMode={toggleDarkMode}
         darkMode={darkMode}
         collapsed={sidebarCollapsed}
         onToggle={toggleSidebar}
@@ -181,10 +181,10 @@ export default function AdminDashboardClient() {
         {/* ✅ Top bar now supports dark mode */}
         <header className="flex items-center justify-between border-b bg-white dark:bg-gray-800 px-3 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center gap-2 sm:gap-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleSidebar} 
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
               className="hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               {sidebarCollapsed ? <Menu className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
@@ -220,8 +220,8 @@ export default function AdminDashboardClient() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setGlobalModal({ ...globalModal, show: false })}
             >
               Close

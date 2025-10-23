@@ -54,7 +54,7 @@ const memberSchema = z.object({
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
   user_type_id: z.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("pending"),
+  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
 })
 
 const editMemberSchema = z.object({
@@ -72,14 +72,14 @@ const editMemberSchema = z.object({
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
   user_type_id: z.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("pending"),
+  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
 })
 
 const ViewMembers = ({ userId }) => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("approved")
   const [sortBy, setSortBy] = useState("newest")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
@@ -104,7 +104,7 @@ const ViewMembers = ({ userId }) => {
       gender_id: "",
       bday: "",
       user_type_id: 4,
-      account_status: "pending",
+      account_status: "approved",
     },
   })
 

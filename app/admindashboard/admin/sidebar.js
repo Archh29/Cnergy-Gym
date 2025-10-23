@@ -25,13 +25,13 @@ import {
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
 
-const Sidebar = ({ 
-  activeSection = "Home", 
-  setActiveSection = () => {}, 
-  toggleDarkMode = () => {}, 
-  darkMode = false, 
-  collapsed = false, 
-  onToggle = () => {} 
+const Sidebar = ({
+  activeSection = "Home",
+  setActiveSection = () => { },
+  toggleDarkMode = () => { },
+  darkMode = false,
+  collapsed = false,
+  onToggle = () => { }
 }) => {
   const router = useRouter()
 
@@ -64,7 +64,7 @@ const Sidebar = ({
 
   const sections = [
     { name: "Home", icon: <FaHome className="mr-2 h-4 w-4" /> },
-    { name: "ViewMembers", icon: <FaUsers className="mr-2 h-4 w-4" /> },
+    { name: "ViewUsers", icon: <FaUsers className="mr-2 h-4 w-4" /> },
     { name: "ViewStaff", icon: <FaUserTie className="mr-2 h-4 w-4" /> },
     { name: "ViewCoach", icon: <GiWhistle className="mr-2 h-4 w-4" /> },
     { name: "StaffMonitoring", icon: <FaUserTie className="mr-2 h-4 w-4" /> },
@@ -82,9 +82,8 @@ const Sidebar = ({
   ]
 
   return (
-    <aside className={`bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col transition-all duration-300 ease-in-out fixed lg:relative z-50 ${
-      collapsed ? 'w-0 -translate-x-full lg:w-16 lg:translate-x-0' : 'w-64 translate-x-0'
-    }`}>
+    <aside className={`bg-white dark:bg-gray-900 border-r dark:border-gray-800 flex flex-col transition-all duration-300 ease-in-out fixed lg:relative z-50 ${collapsed ? 'w-0 -translate-x-full lg:w-16 lg:translate-x-0' : 'w-64 translate-x-0'
+      }`}>
       <div className={`p-4 border-b dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0 lg:opacity-100' : 'opacity-100'}`}>
         <div className="flex items-center justify-between">
           <Button variant="outline" className={`flex-1 justify-start p-2 ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}>
@@ -94,9 +93,9 @@ const Sidebar = ({
             </span>
           </Button>
           {/* Mobile close button */}
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onToggle}
             className="lg:hidden ml-2 h-8 w-8"
           >
@@ -123,9 +122,9 @@ const Sidebar = ({
         </div>
       </nav>
       <div className={`p-4 border-t dark:border-gray-800 transition-all duration-300 ${collapsed ? 'opacity-0 lg:opacity-100' : 'opacity-100'}`}>
-        <Button 
-          variant="outline" 
-          className={`w-full mb-2 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`} 
+        <Button
+          variant="outline"
+          className={`w-full mb-2 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
           onClick={toggleDarkMode}
           title={collapsed ? (darkMode ? "Light Mode" : "Dark Mode") : ""}
         >
@@ -138,9 +137,9 @@ const Sidebar = ({
             {darkMode ? "Light Mode" : "Dark Mode"}
           </span>
         </Button>
-        <Button 
-          variant="destructive" 
-          className={`w-full ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`} 
+        <Button
+          variant="destructive"
+          className={`w-full ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
           onClick={handleLogout}
           title={collapsed ? "Logout" : ""}
         >
