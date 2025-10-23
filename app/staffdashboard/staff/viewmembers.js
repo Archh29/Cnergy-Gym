@@ -606,14 +606,14 @@ const ViewMembers = ({ userId }) => {
               <CardDescription>Manage and verify user accounts</CardDescription>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleOpenAddDialog}>
-                <Plus className="mr-2 h-4 w-4" /> Add User
-              </Button>
               <Button
                 variant={currentView === "archive" ? "default" : "outline"}
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
               >
                 {currentView === "active" ? "Archive" : "Active Users"}
+              </Button>
+              <Button onClick={handleOpenAddDialog}>
+                <Plus className="mr-2 h-4 w-4" /> Add User
               </Button>
             </div>
           </div>
@@ -639,7 +639,6 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
                 <SelectItem value="rejected">Rejected</SelectItem>
-                <SelectItem value="deactivated">Deactivated</SelectItem>
               </SelectContent>
             </Select>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
