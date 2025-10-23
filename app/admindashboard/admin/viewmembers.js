@@ -1094,7 +1094,10 @@ const ViewMembers = ({ userId }) => {
             <DialogDescription>Update the member's information and account status.</DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
-            <form onSubmit={editForm.handleSubmit(handleUpdateMember)} className="space-y-4">
+            <form onSubmit={editForm.handleSubmit(handleUpdateMember, (errors) => {
+              console.log("Form validation errors:", errors)
+              console.log("Form values:", editForm.getValues())
+            })} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={editForm.control}
@@ -1244,7 +1247,24 @@ const ViewMembers = ({ userId }) => {
                 <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isLoading}>
+                <Button type="button" disabled={isLoading} onClick={async () => {
+                  console.log("Update button clicked - manual submission")
+                  console.log("Form is valid:", editForm.formState.isValid)
+                  console.log("Form errors:", editForm.formState.errors)
+                  console.log("Form values:", editForm.getValues())
+
+                  // Try manual form submission
+                  const isValid = await editForm.trigger()
+                  console.log("Form validation result:", isValid)
+
+                  if (isValid) {
+                    const formData = editForm.getValues()
+                    console.log("Submitting form data:", formData)
+                    await handleUpdateMember(formData)
+                  } else {
+                    console.log("Form validation failed, errors:", editForm.formState.errors)
+                  }
+                }}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Update
                 </Button>
