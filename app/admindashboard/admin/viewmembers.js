@@ -71,7 +71,11 @@ const editMemberSchema = z.object({
       return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
     }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
   gender_id: z.string().min(1, "Gender is required"),
-  bday: z.string().min(1, "Date of birth is required"),
+  bday: z.string().min(1, "Date of birth is required").refine((val) => {
+    if (!val || val === "" || val === "0000-00-00") return false
+    const date = new Date(val)
+    return !isNaN(date.getTime()) && date.getFullYear() > 1900
+  }, "Please enter a valid date of birth"),
   user_type_id: z.number().default(4),
   account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
 })
@@ -299,6 +303,16 @@ const ViewMembers = ({ userId }) => {
 
   const handleEditMember = (member) => {
     setSelectedMember(member)
+
+    // Handle invalid dates properly
+    let safeBday = ""
+    if (member.bday && member.bday !== "0000-00-00") {
+      const date = safeDate(member.bday)
+      if (date) {
+        safeBday = formatDateToISO(date)
+      }
+    }
+
     editForm.reset({
       fname: member.fname || "",
       mname: member.mname || "",
@@ -306,9 +320,9 @@ const ViewMembers = ({ userId }) => {
       email: member.email || "",
       password: "",
       gender_id: member.gender_id?.toString() || "",
-      bday: formatDateToISO(member.bday),
+      bday: safeBday,
       user_type_id: member.user_type_id || 4,
-      account_status: member.account_status || "pending",
+      account_status: member.account_status || "approved",
     })
     setIsEditDialogOpen(true)
   }
@@ -1250,8 +1264,8 @@ const ViewMembers = ({ userId }) => {
                 <Button type="button" disabled={isLoading} onClick={async () => {
                   console.log("Update button clicked - manual submission")
                   console.log("Form is valid:", editForm.formState.isValid)
-                  console.log("Form errors:", editForm.formState.errors)
-                  console.log("Form values:", editForm.getValues())
+                  console.log("Form errors:", JSON.stringify(editForm.formState.errors, null, 2))
+                  console.log("Form values:", JSON.stringify(editForm.getValues(), null, 2))
 
                   // Try manual form submission
                   const isValid = await editForm.trigger()
@@ -1262,7 +1276,13 @@ const ViewMembers = ({ userId }) => {
                     console.log("Submitting form data:", formData)
                     await handleUpdateMember(formData)
                   } else {
-                    console.log("Form validation failed, errors:", editForm.formState.errors)
+                    console.log("Form validation failed, errors:", JSON.stringify(editForm.formState.errors, null, 2))
+                    // Show user-friendly error message
+                    toast({
+                      title: "Validation Error",
+                      description: "Please check all fields and try again. Check console for details.",
+                      variant: "destructive",
+                    })
                   }
                 }}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
