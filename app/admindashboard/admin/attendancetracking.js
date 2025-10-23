@@ -24,7 +24,7 @@ const AttendanceTracking = ({ userId }) => {
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedDate, setSelectedDate] = useState("") // Date filter
 
-  // Show notification with different types
+  // Show notification with different typesz
   const showNotification = (message, type = "success") => {
     setNotification({ show: true, message, type })
     setTimeout(() => setNotification({ show: false, message: "", type: "" }), 6000)
