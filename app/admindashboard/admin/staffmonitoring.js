@@ -434,9 +434,9 @@ const StaffMonitoring = () => {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.total_staff}</div>
+            <div className="text-2xl font-bold">{summary.total_staff_members}</div>
             <p className="text-xs text-muted-foreground">
-              {summary.total_admins} admins, {summary.total_staff_members} staff
+              {summary.total_staff_members} staff members
             </p>
           </CardContent>
         </Card>
