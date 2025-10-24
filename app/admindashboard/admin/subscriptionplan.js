@@ -29,7 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Trash2, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X } from "lucide-react"
+import { Plus, Trash2, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X, Percent } from "lucide-react"
 import { Label } from "@/components/ui/label"
 
 const API_URL = "https://api.cnergy.site/membership.php"
@@ -38,8 +38,17 @@ const SubscriptionPlans = () => {
   const [plans, setPlans] = useState([])
   const [subscriptions, setSubscriptions] = useState([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
+  const [discountForm, setDiscountForm] = useState({
+    name: "",
+    amount: ""
+  })
+  const [discounts, setDiscounts] = useState([
+    { name: "Regular Rate", amount: 0 },
+    { name: "Student Discount", amount: 150 },
+    { name: "Senior Discount", amount: 200 }
+  ])
   const [currentPlan, setCurrentPlan] = useState({
     id: null,
     plan_name: "",
@@ -49,64 +58,37 @@ const SubscriptionPlans = () => {
     duration_days: 0,
     features: [],
   })
-
-  // Discount management state
-  const [discounts, setDiscounts] = useState({
-    student: { name: "Student Discount", amount: 150, enabled: true },
-    senior: { name: "Senior Discount", amount: 200, enabled: true }
-  })
-
   const [selectedPlanId, setSelectedPlanId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [expiringFilter, setExpiringFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
+  const [availablePlans, setAvailablePlans] = useState([])
+  const [warnings, setWarnings] = useState({
+    critical_count: 0,
+    warning_count: 0,
+    notice_count: 0
+  })
   const [analytics, setAnalytics] = useState({
     totalPlans: 0,
-    totalSubscriptions: 0,
     activeSubscriptions: 0,
     monthlyRevenue: 0,
+    averagePlanPrice: 0,
   })
 
   useEffect(() => {
     loadInitialData()
-    loadDiscounts()
   }, [])
 
   useEffect(() => {
     fetchSubscriptions()
   }, [statusFilter, expiringFilter, planFilter])
 
-  // Discount management functions
-  const handleDiscountChange = (discountType, field, value) => {
-    setDiscounts(prev => ({
-      ...prev,
-      [discountType]: {
-        ...prev[discountType],
-        [field]: value
-      }
-    }))
-  }
-
-  const saveDiscounts = () => {
-    // Save discounts to localStorage (no database needed)
-    localStorage.setItem('subscription_discounts', JSON.stringify(discounts))
-    setIsDiscountDialogOpen(false)
-  }
-
-  const loadDiscounts = () => {
-    // Load discounts from localStorage
-    const savedDiscounts = localStorage.getItem('subscription_discounts')
-    if (savedDiscounts) {
-      setDiscounts(JSON.parse(savedDiscounts))
-    }
-  }
-
   const loadInitialData = async () => {
     setIsLoading(true)
     try {
-      await Promise.all([fetchPlans(), fetchSubscriptions(), fetchAnalytics()])
+      await Promise.all([fetchPlans(), fetchSubscriptions()])
     } catch (error) {
       console.error("Error loading initial data:", error)
     } finally {
@@ -117,80 +99,43 @@ const SubscriptionPlans = () => {
   const fetchPlans = async () => {
     try {
       const response = await axios.get(API_URL)
-      setPlans(response.data)
+      if (Array.isArray(response.data.plans)) {
+        setPlans(response.data.plans)
+        // Update analytics if provided
+        if (response.data.analytics) {
+          setAnalytics(response.data.analytics)
+        }
+      } else {
+        setPlans([])
+        console.error("Unexpected API response format:", response.data)
+      }
     } catch (error) {
       console.error("Error fetching plans:", error)
+      setPlans([])
     }
   }
 
   const fetchSubscriptions = async () => {
     try {
-      // Try to fetch from monitor_subscription.php instead
-      const response = await axios.get("https://api.cnergy.site/monitor_subscription.php")
-      let filteredSubscriptions = response.data
+      const params = new URLSearchParams({
+        action: 'subscriptions',
+        status: statusFilter,
+        expiring: expiringFilter,
+        plan: planFilter
+      })
 
-      // Apply filters
-      if (statusFilter !== "all") {
-        filteredSubscriptions = filteredSubscriptions.filter(
-          (sub) => sub.status === statusFilter
-        )
+      const response = await axios.get(`${API_URL}?${params}`)
+      if (response.data.subscriptions) {
+        setSubscriptions(response.data.subscriptions)
+        setWarnings(response.data.warnings || { critical_count: 0, warning_count: 0, notice_count: 0 })
+        setAvailablePlans(response.data.availablePlans || [])
       }
-
-      if (expiringFilter !== "all") {
-        const today = new Date()
-        const daysFromNow = parseInt(expiringFilter)
-        filteredSubscriptions = filteredSubscriptions.filter((sub) => {
-          const endDate = new Date(sub.end_date)
-          const diffTime = endDate - today
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-          return diffDays <= daysFromNow && diffDays >= 0
-        })
-      }
-
-      if (planFilter !== "all") {
-        filteredSubscriptions = filteredSubscriptions.filter(
-          (sub) => sub.plan_id == planFilter
-        )
-      }
-
-      setSubscriptions(filteredSubscriptions)
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
-      // Set empty array if API fails
       setSubscriptions([])
     }
   }
 
-  const fetchAnalytics = async () => {
-    try {
-      const [plansResponse, subscriptionsResponse] = await Promise.all([
-        axios.get(API_URL),
-        axios.get("https://api.cnergy.site/monitor_subscription.php").catch(() => ({ data: [] }))
-      ])
-
-      const totalPlans = plansResponse.data.length
-      const totalSubscriptions = subscriptionsResponse.data.length
-      const activeSubscriptions = subscriptionsResponse.data.filter(
-        (sub) => sub.status === "active"
-      ).length
-
-      const monthlyRevenue = subscriptionsResponse.data
-        .filter((sub) => sub.status === "active")
-        .reduce((sum, sub) => {
-          const plan = plansResponse.data.find((p) => p.id === sub.plan_id)
-          return sum + (plan ? parseFloat(plan.price) : 0)
-        }, 0)
-
-      setAnalytics({
-        totalPlans,
-        totalSubscriptions,
-        activeSubscriptions,
-        monthlyRevenue,
-      })
-    } catch (error) {
-      console.error("Error fetching analytics:", error)
-    }
-  }
 
   const handleAdd = () => {
     setCurrentPlan({
@@ -208,45 +153,50 @@ const SubscriptionPlans = () => {
   const handleEdit = (plan) => {
     setCurrentPlan({
       id: plan.id,
-      plan_name: plan.plan_name,
-      price: plan.price,
+      plan_name: plan.name,
+      price: plan.price.toString(),
       is_member_only: plan.is_member_only,
-      duration_months: plan.duration_months,
-      duration_days: plan.duration_days,
+      duration_months: plan.duration_months || 1,
+      duration_days: plan.duration_days || 0,
       features: plan.features || [],
     })
     setIsDialogOpen(true)
   }
 
-  const handleDelete = (planId) => {
-    setSelectedPlanId(planId)
+  const handleDeleteConfirm = (id) => {
+    setSelectedPlanId(id)
     setIsDeleteDialogOpen(true)
   }
 
-  const confirmDelete = async () => {
-    if (!selectedPlanId) return
-
+  const handleDelete = async () => {
+    setIsLoading(true)
     try {
-      setIsLoading(true)
-      await axios.delete(`${API_URL}?id=${selectedPlanId}`)
-      await fetchPlans()
+      await axios.delete(API_URL, { data: { id: selectedPlanId } })
+      setPlans(plans.filter((plan) => plan.id !== selectedPlanId))
+      setIsDeleteDialogOpen(false)
       await fetchAnalytics()
     } catch (error) {
       console.error("Error deleting plan:", error)
     } finally {
       setIsLoading(false)
-      setIsDeleteDialogOpen(false)
-      setSelectedPlanId(null)
     }
   }
 
   const handleSave = async () => {
-    try {
-      setIsLoading(true)
+    if (!currentPlan.plan_name || !currentPlan.price) return
 
+    // Validate that at least one duration is set
+    if (currentPlan.duration_months === 0 && currentPlan.duration_days === 0) {
+      alert("Please set either duration in months or days")
+      return
+    }
+
+    setIsLoading(true)
+    try {
       const planData = {
-        plan_name: currentPlan.plan_name,
-        price: parseFloat(currentPlan.price),
+        id: currentPlan.id,
+        name: currentPlan.plan_name,
+        price: Number.parseFloat(currentPlan.price),
         is_member_only: currentPlan.is_member_only,
         duration_months: currentPlan.duration_months,
         duration_days: currentPlan.duration_days,
@@ -285,11 +235,8 @@ const SubscriptionPlans = () => {
 
   const updateFeature = (index, field, value) => {
     const updatedFeatures = [...currentPlan.features]
-    updatedFeatures[index][field] = value
-    setCurrentPlan({
-      ...currentPlan,
-      features: updatedFeatures,
-    })
+    updatedFeatures[index] = { ...updatedFeatures[index], [field]: value }
+    setCurrentPlan({ ...currentPlan, features: updatedFeatures })
   }
 
   const formatCurrency = (amount) => {
@@ -299,17 +246,34 @@ const SubscriptionPlans = () => {
     }).format(amount)
   }
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-PH")
+  const filteredPlans = plans.filter((plan) => {
+    const planName = (plan.name || "").toLowerCase()
+    return planName.includes(searchQuery.toLowerCase())
+  })
+
+  if (isLoading && plans.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="mt-4 text-lg">Loading subscription plans...</p>
+        </div>
+      </div>
+    )
   }
 
-  const filteredPlans = plans.filter((plan) =>
-    plan.plan_name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
   return (
-    <div className="space-y-6">
-      {/* Analytics Cards */}
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Subscription Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-l font-semibold">Manage membership plans and subscriptions for CNERGY Gym</p>
+        </CardContent>
+      </Card>
+
+      {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -318,46 +282,43 @@ const SubscriptionPlans = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{analytics.totalPlans}</div>
-            <p className="text-xs text-muted-foreground">Active membership plans</p>
+            <p className="text-xs text-muted-foreground">Available membership plans</p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Subscriptions</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.totalSubscriptions}</div>
-            <p className="text-xs text-muted-foreground">All subscriptions</p>
-          </CardContent>
-        </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{analytics.activeSubscriptions}</div>
-            <p className="text-xs text-muted-foreground">Currently active</p>
+            <p className="text-xs text-muted-foreground">Current active members</p>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <span className="text-muted-foreground">₱</span>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
-            <p className="text-xs text-muted-foreground">From active subscriptions</p>
+            <p className="text-xs text-muted-foreground">From subscriptions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Average Plan Price</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(analytics.averagePlanPrice)}</div>
+            <p className="text-xs text-muted-foreground">Across all plans</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="plans" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+      <Tabs defaultValue="plans" className="space-y-4">
+        <TabsList>
           <TabsTrigger value="plans">Membership Plans</TabsTrigger>
           <TabsTrigger value="subscriptions">Active Subscriptions</TabsTrigger>
         </TabsList>
@@ -378,22 +339,20 @@ const SubscriptionPlans = () => {
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
-                  <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button onClick={handleAdd} disabled={isLoading}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add Plan
-                      </Button>
-                    </DialogTrigger>
-                  </Dialog>
-                  <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" disabled={isLoading}>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Discount Settings
-                      </Button>
-                    </DialogTrigger>
-                  </Dialog>
+                  <div className="flex gap-2">
+                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button onClick={handleAdd} disabled={isLoading}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Plan
+                        </Button>
+                      </DialogTrigger>
+                    </Dialog>
+                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline">
+                      <Percent className="mr-2 h-4 w-4" />
+                      Discount
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -420,60 +379,58 @@ const SubscriptionPlans = () => {
                   ) : (
                     filteredPlans.map((plan) => (
                       <TableRow key={plan.id}>
-                        <TableCell className="font-medium">{plan.plan_name}</TableCell>
+                        <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
                         <TableCell>
                           {plan.duration_days > 0 ? (
-                            `${plan.duration_days} days`
+                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                              {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
+                            </Badge>
+                          ) : plan.duration_months > 0 ? (
+                            <Badge variant="outline">
+                              {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
+                            </Badge>
                           ) : (
-                            `${plan.duration_months} month${plan.duration_months > 1 ? "s" : ""}`
+                            <Badge variant="outline">1 Month</Badge>
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={plan.is_member_only ? "default" : "secondary"}>
-                            {plan.is_member_only ? "Yes" : "No"}
-                          </Badge>
+                          {plan.is_member_only ? (
+                            <Badge variant="secondary">Members Only</Badge>
+                          ) : (
+                            <Badge variant="outline">Public</Badge>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <div className="max-w-xs">
-                            {plan.features && plan.features.length > 0 ? (
-                              <div className="space-y-1">
-                                {plan.features.slice(0, 2).map((feature, index) => (
-                                  <div key={index} className="text-sm text-muted-foreground">
-                                    • {feature.feature_name}
-                                  </div>
-                                ))}
-                                {plan.features.length > 2 && (
-                                  <div className="text-sm text-muted-foreground">
-                                    +{plan.features.length - 2} more
-                                  </div>
-                                )}
+                          <div className="space-y-1">
+                            {plan.features?.slice(0, 2).map((feature, index) => (
+                              <div key={index} className="text-sm text-muted-foreground">
+                                • {feature.feature_name}
                               </div>
-                            ) : (
-                              <span className="text-muted-foreground">No features</span>
+                            ))}
+                            {plan.features?.length > 2 && (
+                              <div className="text-sm text-muted-foreground">+{plan.features.length - 2} more</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="default">Active</Badge>
+                          <Badge variant="outline">Active</Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEdit(plan)}
-                              disabled={isLoading}
-                            >
-                              <Edit className="h-4 w-4" />
+                            <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} disabled={isLoading}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleDelete(plan.id)}
+                              onClick={() => handleDeleteConfirm(plan.id)}
                               disabled={isLoading}
+                              className="text-destructive hover:text-destructive"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -492,50 +449,79 @@ const SubscriptionPlans = () => {
               <div className="flex items-center justify-between">
                 <CardTitle>Active Subscriptions</CardTitle>
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="status-filter">Status:</Label>
-                    <select
-                      id="status-filter"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="px-3 py-1 border rounded-md"
-                    >
-                      <option value="all">All</option>
-                      <option value="active">Active</option>
-                      <option value="expired">Expired</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="expiring-filter">Expiring:</Label>
-                    <select
-                      id="expiring-filter"
-                      value={expiringFilter}
-                      onChange={(e) => setExpiringFilter(e.target.value)}
-                      className="px-3 py-1 border rounded-md"
-                    >
-                      <option value="all">All</option>
-                      <option value="7">Within 7 days</option>
-                      <option value="30">Within 30 days</option>
-                      <option value="90">Within 90 days</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="plan-filter">Plan:</Label>
-                    <select
-                      id="plan-filter"
-                      value={planFilter}
-                      onChange={(e) => setPlanFilter(e.target.value)}
-                      className="px-3 py-1 border rounded-md"
-                    >
-                      <option value="all">All Plans</option>
-                      {plans.map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {plan.plan_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Expiration Warnings */}
+                  {(warnings.critical_count > 0 || warnings.warning_count > 0 || warnings.notice_count > 0) && (
+                    <div className="flex items-center gap-2">
+                      {warnings.critical_count > 0 && (
+                        <Badge variant="destructive" className="text-xs">
+                          {warnings.critical_count} Expiring in 3 days
+                        </Badge>
+                      )}
+                      {warnings.warning_count > 0 && (
+                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                          {warnings.warning_count} Expiring in 7 days
+                        </Badge>
+                      )}
+                      {warnings.notice_count > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {warnings.notice_count} Expiring in 14 days
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="status-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Status:</Label>
+                  <select
+                    id="status-filter"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="approved">Approved</option>
+                    <option value="pending_approval">Pending</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="expiring-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Expiring:</Label>
+                  <select
+                    id="expiring-filter"
+                    value={expiringFilter}
+                    onChange={(e) => setExpiringFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All</option>
+                    <option value="active">Active Only</option>
+                    <option value="critical">Critical (3 days)</option>
+                    <option value="warning">Warning (7 days)</option>
+                    <option value="notice">Notice (14 days)</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="plan-filter" className="text-sm font-medium">Plan:</Label>
+                  <select
+                    id="plan-filter"
+                    value={planFilter}
+                    onChange={(e) => setPlanFilter(e.target.value)}
+                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="all">All Plans</option>
+                    {availablePlans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.plan_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </CardHeader>
@@ -547,40 +533,129 @@ const SubscriptionPlans = () => {
                     <TableHead>Plan</TableHead>
                     <TableHead>Start Date</TableHead>
                     <TableHead>End Date</TableHead>
+                    <TableHead>Days Left</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Amount</TableHead>
+                    <TableHead>Amount Paid</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {subscriptions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         No subscriptions found
                       </TableCell>
                     </TableRow>
                   ) : (
                     subscriptions.map((subscription) => (
                       <TableRow key={subscription.id}>
-                        <TableCell className="font-medium">
-                          {subscription.member_name}
-                        </TableCell>
-                        <TableCell>{subscription.plan_name}</TableCell>
-                        <TableCell>{formatDate(subscription.start_date)}</TableCell>
-                        <TableCell>{formatDate(subscription.end_date)}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant={
-                              subscription.status === "active"
-                                ? "default"
-                                : subscription.status === "expired"
-                                  ? "destructive"
-                                  : "secondary"
-                            }
-                          >
-                            {subscription.status}
+                          <div>
+                            <div className="font-medium">{subscription.member_name}</div>
+                            <div className="text-sm text-muted-foreground">{subscription.member_email}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{subscription.plan_name}</TableCell>
+                        <TableCell>{new Date(subscription.start_date).toLocaleDateString()}</TableCell>
+                        <TableCell>{new Date(subscription.end_date).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {(() => {
+                              const status = subscription.computed_status || subscription.status_name
+
+                              // For cancelled, rejected, or expired subscriptions, show appropriate status
+                              if (status === 'cancelled') {
+                                return (
+                                  <span className="font-medium text-gray-600">
+                                    Cancelled
+                                  </span>
+                                )
+                              }
+
+                              if (status === 'rejected') {
+                                return (
+                                  <span className="font-medium text-red-600">
+                                    Rejected
+                                  </span>
+                                )
+                              }
+
+                              if (status === 'expired') {
+                                return (
+                                  <span className="font-medium text-red-600">
+                                    Expired
+                                  </span>
+                                )
+                              }
+
+                              // For active subscriptions, show days until expiry
+                              return (
+                                <span className={`font-medium ${subscription.expiry_status === 'expired' ? 'text-red-600' :
+                                    subscription.days_until_expiry < 0 ? 'text-red-600' :
+                                      subscription.expiry_status === 'critical' ? 'text-red-600' :
+                                        subscription.expiry_status === 'warning' ? 'text-orange-600' :
+                                          subscription.expiry_status === 'notice' ? 'text-yellow-600' :
+                                            'text-green-600'
+                                  }`}>
+                                  {subscription.days_until_expiry < 0 ?
+                                    `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
+                                    `${subscription.days_until_expiry} days`
+                                  }
+                                </span>
+                              )
+                            })()}
+
+                            {/* Status badges for active subscriptions only */}
+                            {(() => {
+                              const status = subscription.computed_status || subscription.status_name
+                              if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
+                                return null
+                              }
+
+                              return (
+                                <>
+                                  {subscription.expiry_status === 'expired' && (
+                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'critical' && (
+                                    <Badge variant="destructive" className="text-xs">Critical</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'warning' && (
+                                    <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Warning</Badge>
+                                  )}
+                                  {subscription.expiry_status === 'notice' && (
+                                    <Badge variant="outline" className="text-xs">Notice</Badge>
+                                  )}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={
+                            (subscription.computed_status || subscription.status_name) === 'approved' ? 'default' :
+                              (subscription.computed_status || subscription.status_name) === 'pending_approval' ? 'secondary' :
+                                (subscription.computed_status || subscription.status_name) === 'rejected' ? 'destructive' :
+                                  (subscription.computed_status || subscription.status_name) === 'expired' ? 'destructive' :
+                                    'outline'
+                          }>
+                            {(subscription.computed_status || subscription.status_name).replace('_', ' ').toUpperCase()}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatCurrency(subscription.amount_paid)}</TableCell>
+                        <TableCell className="font-medium">
+                          {(() => {
+                            const status = subscription.computed_status || subscription.status_name
+                            // Show 0 for cancelled, rejected, or expired subscriptions
+                            if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
+                              return formatCurrency(0)
+                            }
+                            return formatCurrency(subscription.amount_paid)
+                          })()}
+                          {subscription.discount_type !== 'none' && (
+                            <div className="text-xs text-muted-foreground">
+                              {subscription.discount_type} discount
+                            </div>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -591,31 +666,24 @@ const SubscriptionPlans = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Plan Dialog */}
+      {/* Add/Edit Plan Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {currentPlan.id ? "Edit Plan" : "Add New Plan"}
-            </DialogTitle>
+            <DialogTitle>{currentPlan.id ? "Edit Plan" : "Add Plan"}</DialogTitle>
             <DialogDescription>
-              {currentPlan.id
-                ? "Update the membership plan details"
-                : "Create a new membership plan"}
+              {currentPlan.id ? "Update the details of your membership plan." : "Add a new membership plan."}
             </DialogDescription>
           </DialogHeader>
-
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="plan-name">Plan Name</Label>
+                <Label htmlFor="plan_name">Plan Name</Label>
                 <Input
-                  id="plan-name"
+                  id="plan_name"
                   value={currentPlan.plan_name}
-                  onChange={(e) =>
-                    setCurrentPlan({ ...currentPlan, plan_name: e.target.value })
-                  }
-                  placeholder="Enter plan name"
+                  onChange={(e) => setCurrentPlan({ ...currentPlan, plan_name: e.target.value })}
+                  placeholder="e.g. Basic Plan"
                 />
               </div>
               <div className="space-y-2">
@@ -625,169 +693,140 @@ const SubscriptionPlans = () => {
                   type="number"
                   step="0.01"
                   value={currentPlan.price}
-                  onChange={(e) =>
-                    setCurrentPlan({ ...currentPlan, price: e.target.value })
-                  }
+                  onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
                   placeholder="Enter price"
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="duration-months">Duration (Months)</Label>
-                <Input
-                  id="duration-months"
-                  type="number"
-                  min="1"
-                  value={currentPlan.duration_months}
-                  onChange={(e) =>
-                    setCurrentPlan({
-                      ...currentPlan,
-                      duration_months: parseInt(e.target.value) || 1,
-                    })
-                  }
-                />
+            {/* Duration Fields */}
+            <div className="space-y-4">
+              <Label className="text-base font-medium">Plan Duration</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="duration_months">Duration (Months)</Label>
+                  <Input
+                    id="duration_months"
+                    type="number"
+                    min="0"
+                    value={currentPlan.duration_months}
+                    onChange={(e) => {
+                      const months = parseInt(e.target.value) || 0;
+                      setCurrentPlan({
+                        ...currentPlan,
+                        duration_months: months,
+                        duration_days: months > 0 ? 0 : currentPlan.duration_days
+                      });
+                    }}
+                    placeholder="0 for day pass plans"
+                    className={currentPlan.duration_months > 0 ? "border-green-500 bg-green-50" : ""}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave as 0 for day pass plans</p>
+                  {currentPlan.duration_months > 0 && (
+                    <p className="text-xs text-green-600 font-medium">✓ Monthly Plan</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duration_days">Duration (Days)</Label>
+                  <Input
+                    id="duration_days"
+                    type="number"
+                    min="0"
+                    value={currentPlan.duration_days}
+                    onChange={(e) => {
+                      const days = parseInt(e.target.value) || 0;
+                      setCurrentPlan({
+                        ...currentPlan,
+                        duration_days: days,
+                        duration_months: days > 0 ? 0 : currentPlan.duration_months
+                      });
+                    }}
+                    placeholder="0 for monthly plans"
+                    className={currentPlan.duration_days > 0 ? "border-blue-500 bg-blue-50" : ""}
+                  />
+                  <p className="text-xs text-muted-foreground">Leave as 0 for monthly plans</p>
+                  {currentPlan.duration_days > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">✓ Day Pass Plan</p>
+                  )}
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="duration-days">Duration (Days)</Label>
-                <Input
-                  id="duration-days"
-                  type="number"
-                  min="0"
-                  value={currentPlan.duration_days}
-                  onChange={(e) =>
-                    setCurrentPlan({
-                      ...currentPlan,
-                      duration_days: parseInt(e.target.value) || 0,
-                    })
-                  }
-                />
+              <div className="text-sm text-muted-foreground">
+                <strong>Note:</strong> Use either months OR days, not both. Set one to 0 when using the other.
               </div>
             </div>
 
             <div className="flex items-center space-x-2">
               <Checkbox
-                id="member-only"
+                id="is_member_only"
                 checked={currentPlan.is_member_only}
-                onCheckedChange={(checked) =>
-                  setCurrentPlan({ ...currentPlan, is_member_only: checked })
-                }
+                onCheckedChange={(checked) => setCurrentPlan({ ...currentPlan, is_member_only: checked })}
               />
-              <Label htmlFor="member-only">Member Only Plan</Label>
+              <Label htmlFor="is_member_only">Members Only Plan</Label>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label>Features</Label>
+                <Label className="text-base font-medium">Plan Features</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addFeature}>
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="mr-2 h-4 w-4" />
                   Add Feature
                 </Button>
               </div>
-              <div className="space-y-2">
+
+              <div className="space-y-3 max-h-60 overflow-y-auto">
                 {currentPlan.features.map((feature, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      placeholder="Feature name"
-                      value={feature.feature_name}
-                      onChange={(e) =>
-                        updateFeature(index, "feature_name", e.target.value)
-                      }
-                    />
-                    <Textarea
-                      placeholder="Description"
-                      value={feature.description}
-                      onChange={(e) =>
-                        updateFeature(index, "description", e.target.value)
-                      }
-                      className="flex-1"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeFeature(index)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
+                  <div key={index} className="border rounded-lg p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">Feature {index + 1}</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFeature(index)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Feature name"
+                        value={feature.feature_name}
+                        onChange={(e) => updateFeature(index, "feature_name", e.target.value)}
+                      />
+                      <Textarea
+                        placeholder="Feature description (optional)"
+                        value={feature.description}
+                        onChange={(e) => updateFeature(index, "description", e.target.value)}
+                        rows={2}
+                      />
+                    </div>
                   </div>
                 ))}
+
+                {currentPlan.features.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No features added yet. Click "Add Feature" to get started.
+                  </div>
+                )}
               </div>
             </div>
           </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isLoading}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {currentPlan.id ? "Update Plan" : "Create Plan"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Discount Settings Dialog */}
-      <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Discount Settings</DialogTitle>
-            <DialogDescription>
-              Configure discount amounts for different customer types. These settings will be used when assigning subscriptions.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6">
-            {Object.entries(discounts).map(([key, discount]) => (
-              <div key={key} className="p-4 border rounded-lg">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">{discount.name}</h3>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      checked={discount.enabled}
-                      onCheckedChange={(checked) =>
-                        handleDiscountChange(key, "enabled", checked)
-                      }
-                    />
-                    <Label>Enabled</Label>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`${key}-name`}>Discount Name</Label>
-                  <Input
-                    id={`${key}-name`}
-                    value={discount.name}
-                    onChange={(e) =>
-                      handleDiscountChange(key, "name", e.target.value)
-                    }
-                    placeholder="Enter discount name"
-                  />
-                </div>
-                <div className="space-y-2 mt-4">
-                  <Label htmlFor={`${key}-amount`}>Discount Amount (₱)</Label>
-                  <Input
-                    id={`${key}-amount`}
-                    type="number"
-                    step="0.01"
-                    value={discount.amount}
-                    onChange={(e) =>
-                      handleDiscountChange(key, "amount", parseFloat(e.target.value) || 0)
-                    }
-                    placeholder="Enter discount amount"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDiscountDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={saveDiscounts}>
-              Save Discount Settings
+            <Button onClick={handleSave} disabled={!currentPlan.plan_name || !currentPlan.price || isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : currentPlan.id ? (
+                "Update Plan"
+              ) : (
+                "Create Plan"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -799,18 +838,98 @@ const SubscriptionPlans = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the
-              membership plan and remove it from our servers.
+              This action cannot be undone. This will permanently delete the selected membership plan and all its
+              features.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
-              Delete Plan
+            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Discount Dialog */}
+      <Dialog open={discountDialogOpen} onOpenChange={setDiscountDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Discounts</DialogTitle>
+            <DialogDescription>
+              Add or edit discount options for subscription plans
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Discount Name</Label>
+              <Input
+                value={discountForm.name}
+                onChange={(e) => setDiscountForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g., Student Discount"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Discount Amount (₱)</Label>
+              <Input
+                type="number"
+                value={discountForm.amount}
+                onChange={(e) => setDiscountForm(prev => ({ ...prev, amount: e.target.value }))}
+                placeholder="e.g., 150"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Current Discounts</Label>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {discounts.map((discount, index) => (
+                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                    <span className="text-sm">{discount.name} - ₱{discount.amount}</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setDiscounts(discounts.filter((_, i) => i !== index))
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDiscountDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (discountForm.name && discountForm.amount !== "") {
+                  setDiscounts([...discounts, { name: discountForm.name, amount: parseInt(discountForm.amount) }])
+                  setDiscountForm({ name: "", amount: "" })
+                }
+              }}
+              disabled={!discountForm.name || discountForm.amount === ""}
+            >
+              Add Discount
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
