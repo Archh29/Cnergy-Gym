@@ -458,7 +458,8 @@ const SubscriptionMonitor = ({ userId }) => {
         notes: transactionNotes,
         created_by: "Admin",
         staff_id: userId, // Use current user ID - no fallback
-        transaction_status: "confirmed" // CRITICAL: Mark transaction as confirmed
+        transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
+        discount_type: subscriptionForm.discount_type // Include discount type
       };
 
       console.log("Sending request data:", requestData);
