@@ -213,7 +213,7 @@ const StaffMonitoring = () => {
             lname: "Member",
             email: "staff@cnergy.com",
             user_type: "staff",
-            activity_category: "Guest Management"
+            activity_category: "Day Pass Access"
           },
           {
             id: 6,
@@ -319,7 +319,7 @@ const StaffMonitoring = () => {
         return <UserCheck className="h-4 w-4" />
       case 'Subscription Management':
         return <Package className="h-4 w-4" />
-      case 'Guest Management':
+      case 'Day Pass Access':
         return <UserPlus className="h-4 w-4" />
       case 'Coach Assignment':
         return <Users className="h-4 w-4" />
@@ -339,7 +339,7 @@ const StaffMonitoring = () => {
         return "default"
       case 'Subscription Management':
         return "secondary"
-      case 'Guest Management':
+      case 'Day Pass Access':
         return "outline"
       case 'Coach Assignment':
         return "destructive"
@@ -615,7 +615,7 @@ const StaffMonitoring = () => {
                           <SelectItem value="all">All Types</SelectItem>
                           <SelectItem value="Coach Management">Coach Management</SelectItem>
                           <SelectItem value="Subscription Management">Subscription Management</SelectItem>
-                          <SelectItem value="Guest Management">Guest Management</SelectItem>
+                          <SelectItem value="Day Pass Access">Day Pass Access</SelectItem>
                           <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
                           <SelectItem value="Sales">Sales</SelectItem>
                           <SelectItem value="Product Management">Product Management</SelectItem>

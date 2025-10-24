@@ -92,12 +92,8 @@ const SubscriptionMonitor = ({ userId }) => {
         }
       }
     }
-    // Fallback to default discounts with original keys
-    return {
-      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
-    }
+    // Return empty config if no discounts are saved - admin must set them first
+    return {}
   })
 
   // Decline dialog state
@@ -124,6 +120,52 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
+  }, [])
+
+  // Reload discount config when localStorage changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const saved = localStorage.getItem('gym-discounts')
+      if (saved) {
+        try {
+          const discounts = JSON.parse(saved)
+          const config = {}
+          discounts.forEach((discount, index) => {
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
+
+            config[key] = {
+              name: discount.name,
+              discount: discount.amount,
+              description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
+            }
+          })
+          setDiscountConfig(config)
+        } catch (e) {
+          console.error('Error parsing saved discounts:', e)
+        }
+      } else {
+        setDiscountConfig({})
+      }
+    }
+
+    // Listen for storage changes
+    window.addEventListener('storage', handleStorageChange)
+
+    // Also check on component mount
+    handleStorageChange()
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+    }
   }, [])
 
   // Calculate change when amount received changes
@@ -1156,57 +1198,13 @@ const SubscriptionMonitor = ({ userId }) => {
                     </Button>
                   </div>
                 )) : (
-                  // Fallback when discountConfig is empty
-                  <>
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Regular Rate</Label>
-                      <Button
-                        variant={subscriptionForm.discount_type === 'regular' ? "default" : "outline"}
-                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'regular'
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                          }`}
-                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'regular' }))}
-                      >
-                        <div className="text-center">
-                          <div className="font-semibold">Regular Rate</div>
-                          <div className="text-xs opacity-80">No discount</div>
-                        </div>
-                      </Button>
+                  <div className="col-span-3 text-center py-8">
+                    <div className="text-gray-500 mb-2">
+                      <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+                      <p className="font-medium">No Discount Options Available</p>
+                      <p className="text-sm">Please ask an administrator to configure discount options in the Subscription Plans section.</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Student Discount</Label>
-                      <Button
-                        variant={subscriptionForm.discount_type === 'student' ? "default" : "outline"}
-                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'student'
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                          }`}
-                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'student' }))}
-                      >
-                        <div className="text-center">
-                          <div className="font-semibold">Student Discount</div>
-                          <div className="text-xs opacity-80">₱150 off</div>
-                        </div>
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Senior Discount</Label>
-                      <Button
-                        variant={subscriptionForm.discount_type === 'senior' ? "default" : "outline"}
-                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'senior'
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                          }`}
-                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'senior' }))}
-                      >
-                        <div className="text-center">
-                          <div className="font-semibold">Senior Discount</div>
-                          <div className="text-xs opacity-80">₱200 off</div>
-                        </div>
-                      </Button>
-                    </div>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -1221,12 +1219,8 @@ const SubscriptionMonitor = ({ userId }) => {
                     <span>₱{subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)?.price || 0}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name ||
-                      (subscriptionForm.discount_type === 'student' ? 'Student Discount' :
-                        subscriptionForm.discount_type === 'senior' ? 'Senior Discount' : 'Discount')}):</span>
-                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount ||
-                      (subscriptionForm.discount_type === 'student' ? 150 :
-                        subscriptionForm.discount_type === 'senior' ? 200 : 0)}</span>
+                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name || 'Discount'}):</span>
+                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount || 0}</span>
                   </div>
                   <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
                     <span>Final Price:</span>

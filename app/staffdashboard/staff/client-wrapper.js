@@ -121,7 +121,7 @@ export default function StaffDashboardClient() {
         return <Announcement userId={userId} />
       case "AttendanceTracking":
         return <AttendanceTracking userId={userId} />
-      case "GuestManagement":
+      case "DayPassAccess":
         return <GuestManagement userId={userId} />
       case "MonitorSubscriptions":
         return <MonitorSubscriptions userId={userId} />
