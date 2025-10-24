@@ -102,7 +102,7 @@ const Sales = ({ userId }) => {
   // Reload analytics when filter changes
   useEffect(() => {
     loadAnalytics()
-  }, [analyticsFilter, saleTypeFilter])
+  }, [analyticsFilter, saleTypeFilter, monthFilter, yearFilter, useCustomDate, customDate])
 
   // Reload sales when filters change
   useEffect(() => {
@@ -173,9 +173,24 @@ const Sales = ({ userId }) => {
   const loadAnalytics = async () => {
     try {
       const params = new URLSearchParams()
-      params.append("period", analyticsFilter)
+
+      // Handle custom date first (highest priority)
+      if (useCustomDate && customDate) {
+        params.append("period", "custom")
+        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+      } else {
+        params.append("period", analyticsFilter)
+      }
+
       if (saleTypeFilter !== "all") {
         params.append("sale_type", saleTypeFilter)
+      }
+
+      if (monthFilter && monthFilter !== "all") {
+        params.append("month", monthFilter)
+      }
+      if (yearFilter && yearFilter !== "all") {
+        params.append("year", yearFilter)
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
@@ -615,6 +630,75 @@ const Sales = ({ userId }) => {
                   <SelectItem value="year">This Year</SelectItem>
                 </SelectContent>
               </Select>
+
+              {/* Month Filter */}
+              <Label htmlFor="month-filter">Month:</Label>
+              <Select value={monthFilter} onValueChange={setMonthFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  <SelectItem value="1">January</SelectItem>
+                  <SelectItem value="2">February</SelectItem>
+                  <SelectItem value="3">March</SelectItem>
+                  <SelectItem value="4">April</SelectItem>
+                  <SelectItem value="5">May</SelectItem>
+                  <SelectItem value="6">June</SelectItem>
+                  <SelectItem value="7">July</SelectItem>
+                  <SelectItem value="8">August</SelectItem>
+                  <SelectItem value="9">September</SelectItem>
+                  <SelectItem value="10">October</SelectItem>
+                  <SelectItem value="11">November</SelectItem>
+                  <SelectItem value="12">December</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Year Filter */}
+              <Label htmlFor="year-filter">Year:</Label>
+              <Select value={yearFilter} onValueChange={setYearFilter}>
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  <SelectItem value="2024">2024</SelectItem>
+                  <SelectItem value="2023">2023</SelectItem>
+                  <SelectItem value="2022">2022</SelectItem>
+                  <SelectItem value="2021">2021</SelectItem>
+                  <SelectItem value="2020">2020</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Custom Date Picker */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={useCustomDate ? "default" : "outline"}
+                    className={cn(
+                      "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                      useCustomDate
+                        ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customDate}
+                    onSelect={(date) => {
+                      setCustomDate(date)
+                      setUseCustomDate(true)
+                      setAnalyticsFilter("custom")
+                    }}
+                    className="rounded-md border"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
         </CardHeader>

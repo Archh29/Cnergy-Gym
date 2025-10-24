@@ -270,29 +270,53 @@ function getAnalyticsData($pdo)
 {
 	$period = $_GET['period'] ?? 'today';
 	$saleType = $_GET['sale_type'] ?? 'all';
+	$month = $_GET['month'] ?? '';
+	$year = $_GET['year'] ?? '';
+	$customDate = $_GET['custom_date'] ?? '';
 
-	// Build date condition based on period
+	// Build date condition based on period and filters
 	$dateCondition = "";
-	switch ($period) {
-		case 'today':
-			$dateCondition = "DATE(sale_date) = CURDATE()";
-			break;
-		case 'week':
-			$dateCondition = "sale_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
-			break;
-		case 'month':
-			$dateCondition = "MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE())";
-			break;
-		case 'year':
-			$dateCondition = "YEAR(sale_date) = YEAR(CURDATE())";
-			break;
-		default:
-			$dateCondition = "DATE(sale_date) = CURDATE()";
+	$params = [];
+
+	// Handle custom date first (highest priority)
+	if ($customDate) {
+		$dateCondition = "DATE(sale_date) = ?";
+		$params[] = $customDate;
+	} elseif ($month && $month !== 'all' && $year && $year !== 'all') {
+		// Specific month and year
+		$dateCondition = "MONTH(sale_date) = ? AND YEAR(sale_date) = ?";
+		$params[] = $month;
+		$params[] = $year;
+	} elseif ($month && $month !== 'all') {
+		// Specific month (current year)
+		$dateCondition = "MONTH(sale_date) = ? AND YEAR(sale_date) = YEAR(CURDATE())";
+		$params[] = $month;
+	} elseif ($year && $year !== 'all') {
+		// Specific year
+		$dateCondition = "YEAR(sale_date) = ?";
+		$params[] = $year;
+	} else {
+		// Default period filters
+		switch ($period) {
+			case 'today':
+				$dateCondition = "DATE(sale_date) = CURDATE()";
+				break;
+			case 'week':
+				$dateCondition = "sale_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
+				break;
+			case 'month':
+				$dateCondition = "MONTH(sale_date) = MONTH(CURDATE()) AND YEAR(sale_date) = YEAR(CURDATE())";
+				break;
+			case 'year':
+				$dateCondition = "YEAR(sale_date) = YEAR(CURDATE())";
+				break;
+			default:
+				$dateCondition = "DATE(sale_date) = CURDATE()";
+		}
 	}
 
 	// Build sale type condition
 	$saleTypeCondition = "";
-	$params = [];
 	if ($saleType !== 'all') {
 		$saleTypeCondition = " AND sale_type = ?";
 		$params[] = $saleType;

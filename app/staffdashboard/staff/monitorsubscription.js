@@ -67,18 +67,8 @@ const SubscriptionMonitor = ({ userId }) => {
           const discounts = JSON.parse(saved)
           const config = {}
           discounts.forEach((discount, index) => {
-            // Use original keys for compatibility
-            let key
-            if (discount.name.toLowerCase().includes('regular')) {
-              key = 'regular'
-            } else if (discount.name.toLowerCase().includes('student')) {
-              key = 'student'
-            } else if (discount.name.toLowerCase().includes('senior')) {
-              key = 'senior'
-            } else {
-              // For custom discounts, create a safe key
-              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-            }
+            // Create a safe key from the discount name
+            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
 
             config[key] = {
               name: discount.name,
@@ -131,16 +121,8 @@ const SubscriptionMonitor = ({ userId }) => {
           const discounts = JSON.parse(saved)
           const config = {}
           discounts.forEach((discount, index) => {
-            let key
-            if (discount.name.toLowerCase().includes('regular')) {
-              key = 'regular'
-            } else if (discount.name.toLowerCase().includes('student')) {
-              key = 'student'
-            } else if (discount.name.toLowerCase().includes('senior')) {
-              key = 'senior'
-            } else {
-              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-            }
+            // Create a safe key from the discount name
+            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
 
             config[key] = {
               name: discount.name,
