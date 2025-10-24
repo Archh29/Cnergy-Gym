@@ -30,13 +30,13 @@ function Calendar({
                 nav_button_previous: "absolute left-1",
                 nav_button_next: "absolute right-1",
                 table: "w-full border-collapse",
-                head_row: "flex mb-2",
-                head_cell: "text-gray-500 font-medium text-sm w-10 h-8 flex items-center justify-center",
+                head_row: "flex w-full mb-2",
+                head_cell: "text-gray-500 font-medium text-sm w-10 h-8 flex items-center justify-center flex-shrink-0",
                 row: "flex w-full mb-1",
-                cell: "h-10 w-10 text-center text-sm p-0 relative rounded-md transition-colors hover:bg-gray-100 [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-gray-50 [&:has([aria-selected])]:bg-blue-500 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                cell: "h-10 w-10 text-center text-sm p-0 relative rounded-md transition-colors hover:bg-gray-100 flex-shrink-0 [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-gray-50 [&:has([aria-selected])]:bg-blue-500 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
                 day: cn(
                     buttonVariants({ variant: "ghost" }),
-                    "h-10 w-10 p-0 font-normal text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-md transition-colors aria-selected:opacity-100"
+                    "h-10 w-10 p-0 font-normal text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-md transition-colors aria-selected:opacity-100 flex-shrink-0"
                 ),
                 day_range_end: "day-range-end",
                 day_selected:
