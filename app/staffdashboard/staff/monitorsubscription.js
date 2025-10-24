@@ -1005,12 +1005,12 @@ const SubscriptionMonitor = ({ userId }) => {
         >
           <DialogHeader>
             <DialogTitle>
-              {currentSubscriptionId ? "Process Payment & Approve Subscription" : "Create Manual Subscription"}
+              {currentSubscriptionId ? "Process Payment & Approve Subscription" : "Assign Subscription"}
             </DialogTitle>
             <DialogDescription>
               {currentSubscriptionId
                 ? "Process payment to approve this subscription request"
-                : "Create a new subscription manually and process payment through POS system"
+                : "Assign a subscription to a member with discount options"
               }
             </DialogDescription>
           </DialogHeader>
@@ -1087,6 +1087,62 @@ const SubscriptionMonitor = ({ userId }) => {
                 </Select>
               </div>
             </div>
+
+            {/* Discount Section */}
+            <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
+              <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
+              <div className="grid grid-cols-3 gap-4">
+                {Object.entries(discountConfig).map(([key, config]) => (
+                  <div key={key} className="space-y-2">
+                    <Label className="text-sm font-medium">{config.name}</Label>
+                    <Button
+                      variant={subscriptionForm.discount_type === key ? "default" : "outline"}
+                      className={`w-full h-12 text-sm ${subscriptionForm.discount_type === key
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+                        }`}
+                      onClick={() => {
+                        setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
+                        // Auto-calculate amount when discount changes
+                        if (subscriptionForm.plan_id) {
+                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+                          if (selectedPlan) {
+                            const discountedPrice = calculateDiscountedPrice(selectedPlan.price, key)
+                            setSubscriptionForm(prev => ({ ...prev, amount_paid: discountedPrice.toString() }))
+                          }
+                        }
+                      }}
+                    >
+                      <div className="text-center">
+                        <div className="font-semibold">{config.name}</div>
+                        <div className="text-xs opacity-80">{config.description}</div>
+                      </div>
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Price Breakdown */}
+            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular' && (
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                <h4 className="font-semibold text-green-800 mb-2">Price Breakdown</h4>
+                <div className="text-sm text-green-700 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Original Price:</span>
+                    <span>₱{subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)?.price || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
+                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount || 0}</span>
+                  </div>
+                  <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
+                    <span>Final Price:</span>
+                    <span>₱{subscriptionForm.amount_paid || 0}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {paymentMethod === "cash" && (
               <div className="space-y-2">

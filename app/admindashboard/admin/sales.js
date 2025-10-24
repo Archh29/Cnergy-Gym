@@ -20,6 +20,10 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 import {
   Plus,
   ShoppingCart,
@@ -29,6 +33,7 @@ import {
   Edit,
   Trash2,
   Minus,
+  Calendar as CalendarIcon,
 } from "lucide-react"
 
 // API Configuration
@@ -46,6 +51,12 @@ const Sales = ({ userId }) => {
   const [saleTypeFilter, setSaleTypeFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
+
+  // Calendar states
+  const [customDate, setCustomDate] = useState(null)
+  const [useCustomDate, setUseCustomDate] = useState(false)
+  const [monthFilter, setMonthFilter] = useState("")
+  const [yearFilter, setYearFilter] = useState("")
 
   // Cart for multiple products
   const [cart, setCart] = useState([])
@@ -130,7 +141,7 @@ const Sales = ({ userId }) => {
       if (dateFilter !== "all") {
         params.append("date_filter", dateFilter)
       }
-      
+
       const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
       setSales(response.data.sales || [])
     } catch (error) {
@@ -145,7 +156,7 @@ const Sales = ({ userId }) => {
       if (saleTypeFilter !== "all") {
         params.append("sale_type", saleTypeFilter)
       }
-      
+
       const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
       setAnalytics(
         response.data.analytics || {
@@ -333,13 +344,13 @@ const Sales = ({ userId }) => {
         setReceiptNumber(response.data.receipt_number)
         setChangeGiven(change)
         setShowReceipt(true)
-        
+
         // Reset form and cart
         setCart([])
         setAmountReceived("")
         setTransactionNotes("")
         setPaymentMethod("cash")
-        
+
         // Reload data
         await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
       }
@@ -530,15 +541,15 @@ const Sales = ({ userId }) => {
 
   const filteredSales = sales.filter((sale) => {
     // Filter by search query
-    const matchesSearch = searchQuery === "" || 
+    const matchesSearch = searchQuery === "" ||
       sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sale.sales_details.some(detail => 
+      sale.sales_details.some(detail =>
         detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    
+
     // Filter by sale type (this should already be handled by the API, but keeping as backup)
     const matchesSaleType = saleTypeFilter === "all" || sale.sale_type === saleTypeFilter
-    
+
     return matchesSearch && matchesSaleType
   })
 
@@ -596,9 +607,9 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
                 <p className="text-xs text-muted-foreground">
-                  {saleTypeFilter === "all" ? "All sales" : 
-                   saleTypeFilter === "Product" ? "Product sales only" :
-                   saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
+                  {saleTypeFilter === "all" ? "All sales" :
+                    saleTypeFilter === "Product" ? "Product sales only" :
+                      saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
                 </p>
               </CardContent>
             </Card>
@@ -869,20 +880,92 @@ const Sales = ({ userId }) => {
                     </Select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="date-filter">Date Range:</Label>
-                    <Select value={dateFilter} onValueChange={setDateFilter}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
+                    <Label htmlFor="month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue placeholder="Month" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Time</SelectItem>
-                        <SelectItem value="today">Today</SelectItem>
-                        <SelectItem value="week">This Week</SelectItem>
-                        <SelectItem value="month">This Month</SelectItem>
-                        <SelectItem value="year">This Year</SelectItem>
+                        <SelectItem value="">All Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-24">
+                        <SelectValue placeholder="Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">All Years</SelectItem>
+                        <SelectItem value="2024">2024</SelectItem>
+                        <SelectItem value="2023">2023</SelectItem>
+                        <SelectItem value="2022">2022</SelectItem>
+                        <SelectItem value="2021">2021</SelectItem>
+                        <SelectItem value="2020">2020</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Custom Date Picker */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant={useCustomDate ? "default" : "outline"}
+                        className={cn(
+                          "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                          useCustomDate
+                            ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                            : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={customDate}
+                        onSelect={(date) => {
+                          setCustomDate(date)
+                          setUseCustomDate(!!date)
+                          // Clear month/year filters when custom date is selected
+                          if (date) {
+                            setMonthFilter("")
+                            setYearFilter("")
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {useCustomDate && customDate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCustomDate(null)
+                        setUseCustomDate(false)
+                      }}
+                      className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
+                    >
+                      ✕ Clear Date
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -920,9 +1003,9 @@ const Sales = ({ userId }) => {
                         </TableCell>
                         <TableCell>
                           <Badge variant={
-                            sale.sale_type === "Product" ? "outline" : 
-                            sale.sale_type === "Guest" ? "default" : 
-                            "secondary"
+                            sale.sale_type === "Product" ? "outline" :
+                              sale.sale_type === "Guest" ? "default" :
+                                "secondary"
                           }>
                             {sale.sale_type}
                           </Badge>
@@ -1242,7 +1325,7 @@ const Sales = ({ userId }) => {
                 ))}
               </div>
             </div>
-            
+
             <div className="border-t pt-2 space-y-2">
               <div className="flex justify-between font-medium">
                 <span>Total Amount:</span>
