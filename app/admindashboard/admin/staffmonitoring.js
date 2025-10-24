@@ -37,7 +37,7 @@ const StaffMonitoring = () => {
 
   // Filter states
   const [staffFilter, setStaffFilter] = useState("all")
-  const [dateFilter, setDateFilter] = useState("today")
+  const [dateFilter, setDateFilter] = useState("all")
   const [activityTypeFilter, setActivityTypeFilter] = useState("all")
 
   // Data states
@@ -104,11 +104,13 @@ const StaffMonitoring = () => {
       params.append("limit", "100")
 
       console.log("Fetching activities from:", `${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
+      console.log("Current filters:", { staffFilter, dateFilter, activityTypeFilter })
 
       const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
 
       console.log("API Response:", response.data)
       console.log("Activities count:", response.data.activities ? response.data.activities.length : 0)
+      console.log("Debug info:", response.data.debug)
 
       if (response.data.activities) {
         setActivities(response.data.activities)
