@@ -175,10 +175,8 @@ const ViewMembers = ({ userId }) => {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
         const data = await response.json()
-        // Filter to only show members (user_type_id = 4), exclude admins and staff
-        const membersOnly = Array.isArray(data) ? data.filter(member => member.user_type_id === 4) : []
-        setMembers(membersOnly)
-        setFilteredMembers(membersOnly)
+        setMembers(Array.isArray(data) ? data : [])
+        setFilteredMembers(Array.isArray(data) ? data : [])
       } catch (error) {
         console.error("Error fetching members:", error)
         toast({
