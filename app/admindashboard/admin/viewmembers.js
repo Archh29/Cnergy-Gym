@@ -90,6 +90,7 @@ const ViewMembers = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
+  const [dateFilter, setDateFilter] = useState("all")
   const [selectedDate, setSelectedDate] = useState(null)
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
   const [isLoading, setIsLoading] = useState(true)
@@ -220,18 +221,47 @@ const ViewMembers = ({ userId }) => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
-    // Filter by selected date
-    if (selectedDate) {
+    // Filter by date (preset filters or custom calendar date)
+    if (dateFilter !== "all" || selectedDate) {
       filtered = filtered.filter((member) => {
         if (!member.created_at) return false
         const createdDate = safeDate(member.created_at)
         if (!createdDate) return false
 
-        // Compare dates (ignore time)
+        const today = new Date()
         const memberDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
-        const filterDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
-        
-        return memberDate.getTime() === filterDate.getTime()
+
+        // If custom date is selected, use that
+        if (selectedDate) {
+          const filterDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
+          return memberDate.getTime() === filterDate.getTime()
+        }
+
+        // Otherwise use preset filters
+        const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+
+        switch (dateFilter) {
+          case 'today':
+            return memberDate.getTime() === todayDate.getTime()
+          case 'yesterday':
+            const yesterday = new Date(todayDate)
+            yesterday.setDate(yesterday.getDate() - 1)
+            return memberDate.getTime() === yesterday.getTime()
+          case 'last_week':
+            const weekAgo = new Date(todayDate)
+            weekAgo.setDate(weekAgo.getDate() - 7)
+            return memberDate >= weekAgo && memberDate <= todayDate
+          case 'last_month':
+            const monthAgo = new Date(todayDate)
+            monthAgo.setMonth(monthAgo.getMonth() - 1)
+            return memberDate >= monthAgo && memberDate <= todayDate
+          case 'last_year':
+            const yearAgo = new Date(todayDate)
+            yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+            return memberDate >= yearAgo && memberDate <= todayDate
+          default:
+            return true
+        }
       })
     }
 
@@ -257,7 +287,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, selectedDate, members, currentView])
+  }, [searchQuery, statusFilter, sortBy, dateFilter, selectedDate, members, currentView])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -660,51 +690,90 @@ const ViewMembers = ({ userId }) => {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            {/* Calendar Date Picker */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-[240px] justify-start text-left font-normal",
-                    !selectedDate && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={setSelectedDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            
-            {selectedDate && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedDate(null)}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Status Filter */}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Date Filter Dropdown */}
+              <Select
+                value={selectedDate ? "custom" : dateFilter}
+                onValueChange={(value) => {
+                  if (value === "custom") {
+                    // Don't change anything, just show calendar
+                  } else {
+                    setSelectedDate(null)
+                    setDateFilter(value)
+                  }
+                }}
               >
-                Clear Date
-              </Button>
-            )}
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Date filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="yesterday">Yesterday</SelectItem>
+                  <SelectItem value="last_week">Last Week</SelectItem>
+                  <SelectItem value="last_month">Last Month</SelectItem>
+                  <SelectItem value="last_year">Last Year</SelectItem>
+                  <SelectItem value="custom">Custom Date</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Calendar Date Picker - Only show when custom is selected */}
+              {(selectedDate || dateFilter === "custom") && (
+                <div className="flex items-center gap-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-[200px] justify-start text-left font-normal",
+                          !selectedDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {selectedDate ? format(selectedDate, "MMM dd, yyyy") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={(date) => {
+                          setSelectedDate(date)
+                          setDateFilter("custom")
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+
+                  {selectedDate && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedDate(null)
+                        setDateFilter("all")
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Sort by" />
