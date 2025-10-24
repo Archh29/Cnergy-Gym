@@ -709,7 +709,7 @@ const ViewMembers = ({ userId }) => {
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
-                  {customDate ? format(customDate, "MMM dd, yyyy") : "📅 Pick specific date"}
+                  {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0 shadow-2xl" align="start">

@@ -570,7 +570,7 @@ const StaffMonitoring = () => {
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {customDate ? format(customDate, "MMM dd, yyyy") : "📅 Pick Date"}
+                          {customDate ? format(customDate, "MMM dd, yyyy") : "Pick Date"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
