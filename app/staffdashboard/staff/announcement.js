@@ -37,9 +37,10 @@ const Announcement = ({ userId }) => {
     setIsLoading(true)
     try {
       const response = await axios.get(API_URL)
-      setAnnouncements(response.data.announcements)
+      setAnnouncements(response.data.announcements || [])
     } catch (error) {
       console.error("Error fetching announcements:", error)
+      setAnnouncements([]) // Set empty array on error
       toast({
         title: "Error",
         description: "Failed to fetch announcements. Please try again.",
@@ -140,7 +141,7 @@ const Announcement = ({ userId }) => {
           {["all", "active", "scheduled", "archived"].map((tabValue) => (
             <TabsContent key={tabValue} value={tabValue}>
               <ScrollArea className="h-[400px]">
-                {announcements
+                {(announcements || [])
                   .filter((a) => tabValue === "all" || a.status === tabValue)
                   .map((announcement) => (
                     <Card key={announcement.id} className="mb-4 last:mb-0">

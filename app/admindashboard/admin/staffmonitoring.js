@@ -520,7 +520,7 @@ const StaffMonitoring = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Staff</SelectItem>
-                          {staffList.filter(staff => staff.id && staff.name).map((staff) => (
+                          {(staffList || []).filter(staff => staff.id && staff.name).map((staff) => (
                             <SelectItem key={staff.id} value={staff.id.toString()}>
                               {staff.name}
                             </SelectItem>
