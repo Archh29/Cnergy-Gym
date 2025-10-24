@@ -100,7 +100,7 @@ const StaffMonitoring = () => {
       const params = new URLSearchParams()
       if (staffFilter !== "all") params.append("staff_id", staffFilter)
       if (dateFilter !== "all") params.append("date_filter", dateFilter)
-      if (activityTypeFilter !== "all") params.append("activity_type", activityTypeFilter)
+      if (activityTypeFilter !== "all") params.append("category", activityTypeFilter)
       params.append("limit", "100")
 
       console.log("Fetching activities from:", `${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
@@ -119,7 +119,12 @@ const StaffMonitoring = () => {
       }
     } catch (error) {
       console.error("Error loading staff activities:", error)
+      console.error("Error details:", error.response?.data || error.message)
       setActivities([])
+      // Show error in UI if needed
+      if (error.response?.data?.error) {
+        console.error("API Error:", error.response.data.error)
+      }
     }
   }
 
@@ -338,7 +343,9 @@ const StaffMonitoring = () => {
   console.log("Activities state:", activities.length)
   console.log("Filtered activities:", filteredActivities.length)
   console.log("Search query:", searchQuery)
+  console.log("Current filters:", { staffFilter, dateFilter, activityTypeFilter })
   console.log("First activity:", activities[0])
+  console.log("All activities sample:", activities.slice(0, 3))
 
   // Add error state
   const [hasError, setHasError] = useState(false)
@@ -523,11 +530,15 @@ const StaffMonitoring = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Types</SelectItem>
-                          <SelectItem value="Coach">Coach Management</SelectItem>
-                          <SelectItem value="subscription">Subscription</SelectItem>
-                          <SelectItem value="Guest">Guest Session</SelectItem>
-                          <SelectItem value="sale">Sales</SelectItem>
-                          <SelectItem value="product">Product</SelectItem>
+                          <SelectItem value="Coach Management">Coach Management</SelectItem>
+                          <SelectItem value="Subscription Management">Subscription Management</SelectItem>
+                          <SelectItem value="Guest Management">Guest Management</SelectItem>
+                          <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
+                          <SelectItem value="Sales">Sales</SelectItem>
+                          <SelectItem value="Product Management">Product Management</SelectItem>
+                          <SelectItem value="Inventory Management">Inventory Management</SelectItem>
+                          <SelectItem value="Member Management">Member Management</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
