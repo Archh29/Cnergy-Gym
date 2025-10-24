@@ -2,24 +2,9 @@
 session_start();
 require 'activity_logger.php';
 
-// CORS headers - allow specific origins
-$allowed_origins = [
-    'https://www.cnergy.site',
-    'https://cnergy.site',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000'
-];
-
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowed_origins)) {
-    header("Access-Control-Allow-Origin: $origin");
-} else {
-    header("Access-Control-Allow-Origin: *");
-}
-
+header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -42,6 +27,8 @@ try {
 			PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
 		]
 	);
+	// Ensure proper UTF-8 encoding for special characters like peso sign
+	$pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
 } catch (PDOException $e) {
 	http_response_code(500);
 	echo json_encode(["error" => "Database connection failed"]);
@@ -51,6 +38,12 @@ try {
 $method = $_SERVER['REQUEST_METHOD'];
 $data = json_decode(file_get_contents("php://input"), true);
 $action = $_GET['action'] ?? '';
+
+// Debug logging for staff_id
+error_log("DEBUG Sales API - Method: $method, Action: $action");
+error_log("DEBUG Sales API - GET staff_id: " . ($_GET['staff_id'] ?? 'NULL'));
+error_log("DEBUG Sales API - POST data: " . json_encode($data));
+error_log("DEBUG Sales API - data[staff_id]: " . ($data['staff_id'] ?? 'NULL'));
 
 try {
 	switch ($method) {
@@ -76,7 +69,8 @@ try {
 	echo json_encode(["error" => "Database error occurred: " . $e->getMessage()]);
 }
 
-function handleGetRequest($pdo, $action) {
+function handleGetRequest($pdo, $action)
+{
 	switch ($action) {
 		case 'products':
 			getProductsData($pdo);
@@ -93,7 +87,8 @@ function handleGetRequest($pdo, $action) {
 	}
 }
 
-function handlePostRequest($pdo, $action, $data) {
+function handlePostRequest($pdo, $action, $data)
+{
 	switch ($action) {
 		case 'sale':
 			createSale($pdo, $data);
@@ -117,7 +112,8 @@ function handlePostRequest($pdo, $action, $data) {
 	}
 }
 
-function handlePutRequest($pdo, $action, $data) {
+function handlePutRequest($pdo, $action, $data)
+{
 	switch ($action) {
 		case 'stock':
 			updateProductStock($pdo, $data);
@@ -132,7 +128,8 @@ function handlePutRequest($pdo, $action, $data) {
 	}
 }
 
-function handleDeleteRequest($pdo, $action, $data) {
+function handleDeleteRequest($pdo, $action, $data)
+{
 	switch ($action) {
 		case 'product':
 			deleteProduct($pdo, $data);
@@ -145,26 +142,49 @@ function handleDeleteRequest($pdo, $action, $data) {
 }
 
 
-function getProductsData($pdo) {
+function getProductsData($pdo)
+{
 	$stmt = $pdo->query("SELECT * FROM `product` ORDER BY category, name");
 	$products = $stmt->fetchAll();
 	echo json_encode(["products" => $products ?: []]);
 }
 
-function getSalesData($pdo) {
+function getSalesData($pdo)
+{
 	$saleType = $_GET['sale_type'] ?? '';
 	$dateFilter = $_GET['date_filter'] ?? '';
-	
+	$month = $_GET['month'] ?? '';
+	$year = $_GET['year'] ?? '';
+	$customDate = $_GET['custom_date'] ?? '';
+
 	// Build WHERE conditions
 	$whereConditions = [];
 	$params = [];
-	
+
 	if ($saleType && $saleType !== 'all') {
 		$whereConditions[] = "s.sale_type = ?";
 		$params[] = $saleType;
 	}
-	
-	if ($dateFilter && $dateFilter !== 'all') {
+
+	// Handle custom date first (highest priority)
+	if ($customDate) {
+		$whereConditions[] = "DATE(s.sale_date) = ?";
+		$params[] = $customDate;
+	} elseif ($month && $month !== 'all' && $year && $year !== 'all') {
+		// Specific month and year
+		$whereConditions[] = "MONTH(s.sale_date) = ? AND YEAR(s.sale_date) = ?";
+		$params[] = $month;
+		$params[] = $year;
+	} elseif ($month && $month !== 'all') {
+		// Specific month (current year)
+		$whereConditions[] = "MONTH(s.sale_date) = ? AND YEAR(s.sale_date) = YEAR(CURDATE())";
+		$params[] = $month;
+	} elseif ($year && $year !== 'all') {
+		// Specific year
+		$whereConditions[] = "YEAR(s.sale_date) = ?";
+		$params[] = $year;
+	} elseif ($dateFilter && $dateFilter !== 'all') {
+		// Default date filters
 		switch ($dateFilter) {
 			case 'today':
 				$whereConditions[] = "DATE(s.sale_date) = CURDATE()";
@@ -180,9 +200,9 @@ function getSalesData($pdo) {
 				break;
 		}
 	}
-	
+
 	$whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
-	
+
 	$stmt = $pdo->prepare("
 		SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type,
 		       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
@@ -194,7 +214,7 @@ function getSalesData($pdo) {
 		$whereClause
 		ORDER BY s.sale_date DESC
 	");
-	
+
 	$stmt->execute($params);
 
 	$salesData = $stmt->fetchAll();
@@ -206,14 +226,14 @@ function getSalesData($pdo) {
 		if (!isset($salesGrouped[$saleId])) {
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
-				'total_amount' => (float)$row['total_amount'],
+				'total_amount' => (float) $row['total_amount'],
 				'sale_date' => $row['sale_date'],
 				'sale_type' => $row['sale_type'],
 				'payment_method' => $row['payment_method'],
 				'transaction_status' => $row['transaction_status'],
 				'receipt_number' => $row['receipt_number'],
 				'cashier_id' => $row['cashier_id'],
-				'change_given' => (float)$row['change_given'],
+				'change_given' => (float) $row['change_given'],
 				'notes' => $row['notes'],
 				'sales_details' => []
 			];
@@ -223,14 +243,14 @@ function getSalesData($pdo) {
 			$detail = [
 				'id' => $row['detail_id'],
 				'quantity' => $row['quantity'],
-				'price' => (float)$row['detail_price']
+				'price' => (float) $row['detail_price']
 			];
 
 			if ($row['product_id']) {
 				$detail['product'] = [
 					'id' => $row['product_id'],
 					'name' => $row['product_name'],
-					'price' => (float)$row['product_price'],
+					'price' => (float) $row['product_price'],
 					'category' => $row['product_category']
 				];
 			}
@@ -246,10 +266,11 @@ function getSalesData($pdo) {
 	echo json_encode(["sales" => array_values($salesGrouped)]);
 }
 
-function getAnalyticsData($pdo) {
+function getAnalyticsData($pdo)
+{
 	$period = $_GET['period'] ?? 'today';
 	$saleType = $_GET['sale_type'] ?? 'all';
-	
+
 	// Build date condition based on period
 	$dateCondition = "";
 	switch ($period) {
@@ -335,17 +356,18 @@ function getAnalyticsData($pdo) {
 
 	echo json_encode([
 		"analytics" => [
-			"todaysSales" => (float)$periodSales,
-			"productsSoldToday" => (int)$productsSoldPeriod,
-			"lowStockItems" => (int)$lowStockItems,
-			"monthlyRevenue" => (float)$totalRevenue,
-			"productSales" => (float)$salesBreakdown['product_sales'],
-			"subscriptionSales" => (float)$salesBreakdown['subscription_sales']
+			"todaysSales" => (float) $periodSales,
+			"productsSoldToday" => (int) $productsSoldPeriod,
+			"lowStockItems" => (int) $lowStockItems,
+			"monthlyRevenue" => (float) $totalRevenue,
+			"productSales" => (float) $salesBreakdown['product_sales'],
+			"subscriptionSales" => (float) $salesBreakdown['subscription_sales']
 		]
 	]);
 }
 
-function getAllData($pdo) {
+function getAllData($pdo)
+{
 	$products = [];
 
 	$stmt = $pdo->query("SELECT * FROM `product` ORDER BY category, name");
@@ -356,7 +378,8 @@ function getAllData($pdo) {
 	]);
 }
 
-function createSale($pdo, $data) {
+function createSale($pdo, $data)
+{
 	if (!isset($data['total_amount'], $data['sale_type'], $data['sales_details'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Missing required fields"]);
@@ -367,12 +390,12 @@ function createSale($pdo, $data) {
 	$paymentMethod = $data['payment_method'] ?? 'cash';
 	$transactionStatus = $data['transaction_status'] ?? 'confirmed';
 	$receiptNumber = $data['receipt_number'] ?? generateReceiptNumber($pdo);
-	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? 1; // Use 1 as default admin ID
+	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$changeGiven = $data['change_given'] ?? 0.00;
 	$notes = $data['notes'] ?? '';
-	
+
 	// Debug logging for cashier_id
-	error_log("Sales API - Cashier ID: $cashierId, Data cashier_id: " . ($data['cashier_id'] ?? 'null') . ", Data staff_id: " . ($data['staff_id'] ?? 'null') . ", GET staff_id: " . ($_GET['staff_id'] ?? 'null'));
+	error_log("Sales API - Cashier ID: $cashierId, Data cashier_id: " . ($data['cashier_id'] ?? 'null') . ", Data staff_id: " . ($data['staff_id'] ?? 'null') . ", GET staff_id: " . ($_GET['staff_id'] ?? 'null') . ", Session user_id: " . ($_SESSION['user_id'] ?? 'null'));
 
 	$pdo->beginTransaction();
 
@@ -427,9 +450,8 @@ function createSale($pdo, $data) {
 		}
 
 		$pdo->commit();
-		
-		// Log the activity using centralized logger
-		$staffId = $_GET['staff_id'] ?? null;
+
+		// Get product names for logging
 		$productNames = [];
 		foreach ($data['sales_details'] as $detail) {
 			if (isset($detail['product_id'])) {
@@ -442,18 +464,16 @@ function createSale($pdo, $data) {
 			}
 		}
 		$productList = !empty($productNames) ? implode(", ", $productNames) : "Subscription/Service";
-		
-		// Log activity using dedicated logging file
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Process%20POS%20Sale&details=" . urlencode("POS Sale completed: {$productList} - Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
-		}
-		file_get_contents($logUrl);
-		
+
+		// Log activity using centralized logger (same as monitor_subscription.php)
+		$staffId = $data['staff_id'] ?? null;
+		error_log("DEBUG Sales - staffId: " . ($staffId ?? 'NULL') . " from request data");
+		error_log("DEBUG Sales - Full request data: " . json_encode($data));
+		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: {$productList} - Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}", "Sales");
+
 		http_response_code(201);
 		echo json_encode([
-			"success" => "Sale created successfully", 
+			"success" => "Sale created successfully",
 			"sale_id" => $saleId,
 			"receipt_number" => $receiptNumber,
 			"payment_method" => $paymentMethod,
@@ -467,7 +487,8 @@ function createSale($pdo, $data) {
 	}
 }
 
-function addProduct($pdo, $data) {
+function addProduct($pdo, $data)
+{
 	if (!isset($data['name'], $data['price'], $data['stock'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Missing required fields"]);
@@ -484,7 +505,7 @@ function addProduct($pdo, $data) {
 	]);
 
 	$productId = $pdo->lastInsertId();
-	
+
 	// Log activity using dedicated logging file
 	$userId = $_SESSION['user_id'] ?? null;
 	$logUrl = "https://api.cnergy.site/log_activity.php?action=Add%20Product&details=" . urlencode("New product added: {$data['name']} - Price: ₱{$data['price']}, Stock: {$data['stock']}, Category: {$category}");
@@ -492,20 +513,21 @@ function addProduct($pdo, $data) {
 		$logUrl .= "&user_id=" . $userId;
 	}
 	file_get_contents($logUrl);
-	
+
 	http_response_code(201);
 	echo json_encode(["success" => "Product added successfully", "product_id" => $productId]);
 }
 
-function updateProductStock($pdo, $data) {
+function updateProductStock($pdo, $data)
+{
 	if (!isset($data['product_id'], $data['quantity'], $data['type'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Missing required fields"]);
 		return;
 	}
 
-	$quantity = (int)$data['quantity'];
-	$productId = (int)$data['product_id'];
+	$quantity = (int) $data['quantity'];
+	$productId = (int) $data['product_id'];
 	$type = $data['type']; // 'add' or 'remove'
 
 	if ($type === 'add') {
@@ -522,14 +544,14 @@ function updateProductStock($pdo, $data) {
 		$productStmt->execute([$productId]);
 		$product = $productStmt->fetch();
 		$productName = $product ? $product['name'] : "Product ID: {$productId}";
-		
+
 		$userId = $_SESSION['user_id'] ?? null;
 		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode("Stock updated for {$productName}: {$type} {$quantity} units");
 		if ($userId) {
 			$logUrl .= "&user_id=" . $userId;
 		}
 		file_get_contents($logUrl);
-		
+
 		echo json_encode(["success" => "Stock updated successfully"]);
 	} else {
 		http_response_code(404);
@@ -537,7 +559,8 @@ function updateProductStock($pdo, $data) {
 	}
 }
 
-function updateProduct($pdo, $data) {
+function updateProduct($pdo, $data)
+{
 	if (!isset($data['id'], $data['name'], $data['price'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Missing required fields"]);
@@ -561,7 +584,7 @@ function updateProduct($pdo, $data) {
 			$logUrl .= "&user_id=" . $userId;
 		}
 		file_get_contents($logUrl);
-		
+
 		echo json_encode(["success" => "Product updated successfully"]);
 	} else {
 		http_response_code(404);
@@ -569,7 +592,8 @@ function updateProduct($pdo, $data) {
 	}
 }
 
-function deleteProduct($pdo, $data) {
+function deleteProduct($pdo, $data)
+{
 	if (!isset($data['id']) || !is_numeric($data['id'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Invalid product ID"]);
@@ -580,7 +604,7 @@ function deleteProduct($pdo, $data) {
 	$productStmt = $pdo->prepare("SELECT name, price, category FROM product WHERE id = ?");
 	$productStmt->execute([$data['id']]);
 	$product = $productStmt->fetch();
-	
+
 	$stmt = $pdo->prepare("DELETE FROM `product` WHERE id = ?");
 	$stmt->execute([$data['id']]);
 
@@ -593,7 +617,7 @@ function deleteProduct($pdo, $data) {
 			$logUrl .= "&user_id=" . $userId;
 		}
 		file_get_contents($logUrl);
-		
+
 		echo json_encode(["success" => "Product deleted successfully"]);
 	} else {
 		http_response_code(404);
@@ -602,19 +626,21 @@ function deleteProduct($pdo, $data) {
 }
 
 // POS Functions
-function generateReceiptNumber($pdo) {
+function generateReceiptNumber($pdo)
+{
 	do {
 		$receiptNumber = 'RCP' . date('Ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-		
+
 		$stmt = $pdo->prepare("SELECT COUNT(*) FROM sales WHERE receipt_number = ?");
 		$stmt->execute([$receiptNumber]);
 		$count = $stmt->fetchColumn();
 	} while ($count > 0);
-	
+
 	return $receiptNumber;
 }
 
-function createPOSSale($pdo, $data) {
+function createPOSSale($pdo, $data)
+{
 	// Enhanced POS sale with transaction confirmation
 	if (!isset($data['total_amount'], $data['sale_type'], $data['sales_details'], $data['payment_method'])) {
 		http_response_code(400);
@@ -626,7 +652,7 @@ function createPOSSale($pdo, $data) {
 	$amountReceived = $data['amount_received'] ?? $data['total_amount'];
 	$changeGiven = max(0, $amountReceived - $data['total_amount']);
 	$receiptNumber = generateReceiptNumber($pdo);
-	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? 1; // Use 1 as default admin ID
+	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$notes = $data['notes'] ?? '';
 
 	$pdo->beginTransaction();
@@ -681,18 +707,16 @@ function createPOSSale($pdo, $data) {
 		}
 
 		$pdo->commit();
-		
-		// Log activity
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=POS%20Transaction&details=" . urlencode("POS Sale completed - Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}, Change: ₱{$changeGiven}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
-		}
-		file_get_contents($logUrl);
-		
+
+		// Log activity using centralized logger (same as monitor_subscription.php)
+		$staffId = $data['staff_id'] ?? null;
+		error_log("DEBUG Sales POS - staffId: " . ($staffId ?? 'NULL') . " from request data");
+		error_log("DEBUG Sales POS - Full request data: " . json_encode($data));
+		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}, Change: ₱{$changeGiven}", "Sales");
+
 		http_response_code(201);
 		echo json_encode([
-			"success" => "POS transaction completed successfully", 
+			"success" => "POS transaction completed successfully",
 			"sale_id" => $saleId,
 			"receipt_number" => $receiptNumber,
 			"payment_method" => $paymentMethod,
@@ -707,7 +731,8 @@ function createPOSSale($pdo, $data) {
 	}
 }
 
-function confirmTransaction($pdo, $data) {
+function confirmTransaction($pdo, $data)
+{
 	if (!isset($data['sale_id'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Sale ID is required"]);
@@ -761,7 +786,8 @@ function confirmTransaction($pdo, $data) {
 	}
 }
 
-function editTransaction($pdo, $data) {
+function editTransaction($pdo, $data)
+{
 	if (!isset($data['sale_id'])) {
 		http_response_code(400);
 		echo json_encode(["error" => "Sale ID is required"]);
@@ -785,7 +811,7 @@ function editTransaction($pdo, $data) {
 			$stmt = $pdo->prepare("SELECT total_amount FROM sales WHERE id = ?");
 			$stmt->execute([$saleId]);
 			$sale = $stmt->fetch();
-			
+
 			if ($sale) {
 				$changeGiven = max(0, $data['amount_received'] - $sale['total_amount']);
 				$updateFields[] = "change_given = ?";
@@ -825,3 +851,4 @@ function editTransaction($pdo, $data) {
 		echo json_encode(["error" => $e->getMessage()]);
 	}
 }
+?>

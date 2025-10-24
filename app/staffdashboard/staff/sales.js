@@ -808,7 +808,7 @@ const Sales = ({ userId }) => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="Product">Product</SelectItem>
                         <SelectItem value="Subscription">Subscription</SelectItem>
-                        <SelectItem value="Guest">Guest</SelectItem>
+                        <SelectItem value="Guest">Day Pass Access</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -1128,7 +1128,7 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
               <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
               <div className="grid grid-cols-3 gap-4">
-                {Object.entries(discountConfig).map(([key, config]) => (
+                {Object.entries(discountConfig).length > 0 ? Object.entries(discountConfig).map(([key, config]) => (
                   <div key={key} className="space-y-2">
                     <Label className="text-sm font-medium">{config.name}</Label>
                     <Button
@@ -1155,7 +1155,59 @@ const SubscriptionMonitor = ({ userId }) => {
                       </div>
                     </Button>
                   </div>
-                ))}
+                )) : (
+                  // Fallback when discountConfig is empty
+                  <>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Regular Rate</Label>
+                      <Button
+                        variant={subscriptionForm.discount_type === 'regular' ? "default" : "outline"}
+                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'regular'
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+                          }`}
+                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'regular' }))}
+                      >
+                        <div className="text-center">
+                          <div className="font-semibold">Regular Rate</div>
+                          <div className="text-xs opacity-80">No discount</div>
+                        </div>
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Student Discount</Label>
+                      <Button
+                        variant={subscriptionForm.discount_type === 'student' ? "default" : "outline"}
+                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'student'
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+                          }`}
+                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'student' }))}
+                      >
+                        <div className="text-center">
+                          <div className="font-semibold">Student Discount</div>
+                          <div className="text-xs opacity-80">₱150 off</div>
+                        </div>
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Senior Discount</Label>
+                      <Button
+                        variant={subscriptionForm.discount_type === 'senior' ? "default" : "outline"}
+                        className={`w-full h-12 text-sm ${subscriptionForm.discount_type === 'senior'
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+                          }`}
+                        onClick={() => setSubscriptionForm(prev => ({ ...prev, discount_type: 'senior' }))}
+                      >
+                        <div className="text-center">
+                          <div className="font-semibold">Senior Discount</div>
+                          <div className="text-xs opacity-80">₱200 off</div>
+                        </div>
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1169,8 +1221,12 @@ const SubscriptionMonitor = ({ userId }) => {
                     <span>₱{subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)?.price || 0}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount || 0}</span>
+                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name ||
+                      (subscriptionForm.discount_type === 'student' ? 'Student Discount' :
+                        subscriptionForm.discount_type === 'senior' ? 'Senior Discount' : 'Discount')}):</span>
+                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount ||
+                      (subscriptionForm.discount_type === 'student' ? 150 :
+                        subscriptionForm.discount_type === 'senior' ? 200 : 0)}</span>
                   </div>
                   <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
                     <span>Final Price:</span>

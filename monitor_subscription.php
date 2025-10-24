@@ -165,13 +165,7 @@ function getAllSubscriptions($pdo)
             SELECT 1 FROM payment pay 
             WHERE pay.subscription_id = s.id
         )  -- CRITICAL: Only show subscriptions with payment records
-        ORDER BY 
-            CASE 
-                WHEN st.status_name = 'pending_approval' THEN 1
-                WHEN st.status_name = 'approved' THEN 2
-                ELSE 3
-            END,
-            s.start_date DESC
+        ORDER BY s.id DESC
     ");
 
     $subscriptions = $stmt->fetchAll();
@@ -493,7 +487,7 @@ function createManualSubscription($pdo, $data)
     $plan_id = $data['plan_id'];
     $start_date = $data['start_date'];
     $payment_amount = floatval($data['amount_paid']); // Frontend sends 'amount_paid'
-    $discount_type = $data['discount_type'] ?? 'regular'; // Use original discount keys
+    $discount_type = $data['discount_type'] ?? 'none';
     $created_by = $data['created_by'] ?? 'admin';
 
     // CRITICAL: Validate payment details before creating subscription
@@ -842,11 +836,12 @@ function approveSubscription($pdo, $data)
             $paymentStmt->execute([$subscriptionId, $paymentAmount]);
 
             // Also create sales record
+            $receiptNumber = generateSubscriptionReceiptNumber($pdo);
             $salesStmt = $pdo->prepare("
-                INSERT INTO sales (user_id, total_amount, sale_date, sale_type) 
-                VALUES (?, ?, NOW(), 'Subscription')
+                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
+                VALUES (?, ?, NOW(), 'Subscription', 'cash', 'confirmed', ?, ?, 0.00)
             ");
-            $salesStmt->execute([$subscription['user_id'], $paymentAmount]);
+            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $receiptNumber, $data['staff_id'] ?? null]);
 
         } catch (Exception $e) {
             // If payment table doesn't exist or has issues, continue without creating payment
@@ -1084,12 +1079,12 @@ function approveSubscriptionWithPayment($pdo, $data)
                         ");
                         $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
                     } else {
-                        // Fallback to basic sales record
+                        // Fallback to basic sales record with receipt number
                         $salesStmt = $pdo->prepare("
-                            INSERT INTO sales (user_id, total_amount, sale_date, sale_type) 
-                            VALUES (?, ?, NOW(), 'Subscription')
+                            INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
+                            VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?)
                         ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount]);
+                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
                     }
                 }
             } catch (Exception $e) {
@@ -1307,7 +1302,7 @@ function generateSubscriptionReceiptNumber($pdo)
     do {
         $receiptNumber = 'SUB' . date('Ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
 
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM subscription WHERE receipt_number = ?");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM sales WHERE receipt_number = ?");
         $stmt->execute([$receiptNumber]);
         $count = $stmt->fetchColumn();
     } while ($count > 0);

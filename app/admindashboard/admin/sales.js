@@ -107,7 +107,7 @@ const Sales = ({ userId }) => {
   // Reload sales when filters change
   useEffect(() => {
     loadSales()
-  }, [saleTypeFilter, dateFilter])
+  }, [saleTypeFilter, dateFilter, monthFilter, yearFilter, useCustomDate, customDate])
 
   // Calculate total sales with discount consideration
   const calculateTotalSales = (salesData) => {
@@ -152,6 +152,15 @@ const Sales = ({ userId }) => {
       }
       if (dateFilter !== "all") {
         params.append("date_filter", dateFilter)
+      }
+      if (monthFilter && monthFilter !== "all") {
+        params.append("month", monthFilter)
+      }
+      if (yearFilter && yearFilter !== "all") {
+        params.append("year", yearFilter)
+      }
+      if (useCustomDate && customDate) {
+        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
@@ -887,7 +896,7 @@ const Sales = ({ userId }) => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="Product">Product</SelectItem>
                         <SelectItem value="Subscription">Subscription</SelectItem>
-                        <SelectItem value="Guest">Guest</SelectItem>
+                        <SelectItem value="Guest">Day Pass Access</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

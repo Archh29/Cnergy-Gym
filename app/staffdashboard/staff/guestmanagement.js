@@ -448,9 +448,9 @@ export default function GuestManagement({ userId }) {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Guest Management</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Day Pass Access</h1>
                     <p className="text-muted-foreground">
-                        Manage guest session requests and payments
+                        Manage day pass access requests and payments
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
