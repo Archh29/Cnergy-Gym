@@ -58,19 +58,27 @@ const SubscriptionMonitor = ({ userId }) => {
     notes: ""
   })
 
-  // Discount configuration - load from localStorage
+  // Discount configuration - load from localStorage (exact copy from admin)
   const [discountConfig, setDiscountConfig] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gym-discounts')
-      console.log('Staff dashboard - Loading discounts from localStorage:', saved)
       if (saved) {
         try {
           const discounts = JSON.parse(saved)
-          console.log('Staff dashboard - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
-            // Create a safe key from the discount name
-            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            // Use original keys for compatibility
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              // For custom discounts, create a safe key
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
 
             config[key] = {
               name: discount.name,
@@ -78,16 +86,18 @@ const SubscriptionMonitor = ({ userId }) => {
               description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
             }
           })
-          console.log('Staff dashboard - Generated config:', config)
           return config
         } catch (e) {
           console.error('Error parsing saved discounts:', e)
         }
       }
     }
-    console.log('Staff dashboard - No discounts found, returning empty config')
-    // Return empty config if no discounts are saved - admin must set them first
-    return {}
+    // Fallback to default discounts with original keys
+    return {
+      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+    }
   })
 
   // Decline dialog state
@@ -114,49 +124,6 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
-  }, [])
-
-  // Reload discount config when localStorage changes
-  useEffect(() => {
-    const handleStorageChange = () => {
-      console.log('Staff dashboard - Storage change detected, reloading discounts...')
-      const saved = localStorage.getItem('gym-discounts')
-      console.log('Staff dashboard - Storage change - Loading discounts:', saved)
-      if (saved) {
-        try {
-          const discounts = JSON.parse(saved)
-          console.log('Staff dashboard - Storage change - Parsed discounts:', discounts)
-          const config = {}
-          discounts.forEach((discount, index) => {
-            // Create a safe key from the discount name
-            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-
-            config[key] = {
-              name: discount.name,
-              discount: discount.amount,
-              description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
-            }
-          })
-          console.log('Staff dashboard - Storage change - Generated config:', config)
-          setDiscountConfig(config)
-        } catch (e) {
-          console.error('Error parsing saved discounts:', e)
-        }
-      } else {
-        console.log('Staff dashboard - Storage change - No discounts found, setting empty config')
-        setDiscountConfig({})
-      }
-    }
-
-    // Listen for storage changes
-    window.addEventListener('storage', handleStorageChange)
-
-    // Also check on component mount
-    handleStorageChange()
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-    }
   }, [])
 
   // Calculate change when amount received changes
@@ -1165,30 +1132,41 @@ const SubscriptionMonitor = ({ userId }) => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    console.log('Manual refresh - Checking localStorage...')
                     const saved = localStorage.getItem('gym-discounts')
-                    console.log('Manual refresh - Found in localStorage:', saved)
                     if (saved) {
                       try {
                         const discounts = JSON.parse(saved)
-                        console.log('Manual refresh - Parsed discounts:', discounts)
                         const config = {}
                         discounts.forEach((discount, index) => {
-                          const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+                          // Use original keys for compatibility
+                          let key
+                          if (discount.name.toLowerCase().includes('regular')) {
+                            key = 'regular'
+                          } else if (discount.name.toLowerCase().includes('student')) {
+                            key = 'student'
+                          } else if (discount.name.toLowerCase().includes('senior')) {
+                            key = 'senior'
+                          } else {
+                            // For custom discounts, create a safe key
+                            key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+                          }
+
                           config[key] = {
                             name: discount.name,
                             discount: discount.amount,
                             description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
                           }
                         })
-                        console.log('Manual refresh - Setting config:', config)
                         setDiscountConfig(config)
                       } catch (e) {
-                        console.error('Manual refresh - Error parsing discounts:', e)
+                        console.error('Error parsing saved discounts:', e)
                       }
                     } else {
-                      console.log('Manual refresh - No discounts found in localStorage')
-                      setDiscountConfig({})
+                      setDiscountConfig({
+                        regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+                        student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+                        senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+                      })
                     }
                   }}
                   className="text-xs"
@@ -1301,7 +1279,7 @@ const SubscriptionMonitor = ({ userId }) => {
               }
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
+              {currentSubscriptionId ? "Process Payment & Approve" : "Process Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
