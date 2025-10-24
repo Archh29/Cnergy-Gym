@@ -175,8 +175,10 @@ const ViewMembers = ({ userId }) => {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
         const data = await response.json()
-        setMembers(Array.isArray(data) ? data : [])
-        setFilteredMembers(Array.isArray(data) ? data : [])
+        // Filter to only show members (user_type_id = 4), exclude admins and staff
+        const membersOnly = Array.isArray(data) ? data.filter(member => member.user_type_id === 4) : []
+        setMembers(membersOnly)
+        setFilteredMembers(membersOnly)
       } catch (error) {
         console.error("Error fetching members:", error)
         toast({
@@ -585,30 +587,30 @@ const ViewMembers = ({ userId }) => {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-primary">{members.length}</div>
+              <div className="text-2xl font-bold text-primary">{filteredMembers.length}</div>
               <div className="text-sm text-muted-foreground">Total Users</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-yellow-600">
-                {members.filter((m) => m.account_status === "pending").length}
+                {filteredMembers.filter((m) => m.account_status === "pending").length}
               </div>
               <div className="text-sm text-muted-foreground">Pending</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
-                {members.filter((m) => m.account_status === "approved").length}
+                {filteredMembers.filter((m) => m.account_status === "approved").length}
               </div>
               <div className="text-sm text-muted-foreground">Approved</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-600">
-                {members.filter((m) => m.account_status === "rejected").length}
+                {filteredMembers.filter((m) => m.account_status === "rejected").length}
               </div>
               <div className="text-sm text-muted-foreground">Rejected</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-gray-600">
-                {members.filter((m) => m.account_status === "deactivated").length}
+                {filteredMembers.filter((m) => m.account_status === "deactivated").length}
               </div>
               <div className="text-sm text-muted-foreground">Deactivated</div>
             </div>
