@@ -51,12 +51,19 @@ const SubscriptionMonitor = ({ userId }) => {
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    discount_type: "none",
+    discount_type: "regular",
     amount_paid: "",
     payment_method: "cash",
     amount_received: "",
     notes: ""
   })
+
+  // Discount configuration
+  const discountConfig = {
+    regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+    student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+    senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+  }
 
   // Decline dialog state
   const [declineDialog, setDeclineDialog] = useState({
@@ -94,6 +101,12 @@ const SubscriptionMonitor = ({ userId }) => {
       setChangeGiven(0);
     }
   }, [amountReceived, subscriptionForm.amount_paid]);
+
+  // Calculate discounted price
+  const calculateDiscountedPrice = (originalPrice, discountType) => {
+    const discount = discountConfig[discountType]?.discount || 0;
+    return Math.max(0, originalPrice - discount);
+  }
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -163,15 +176,15 @@ const SubscriptionMonitor = ({ userId }) => {
       const apiUrl = `${API_URL}?action=available-plans&user_id=${userId}`
       console.log("Making API call to:", apiUrl)
       console.log("API_URL constant:", API_URL)
-      
+
       const response = await axios.get(apiUrl)
-      
+
       console.log("=== FULL API RESPONSE ===")
       console.log("Response status:", response.status)
       console.log("Response data:", response.data)
       console.log("Response data type:", typeof response.data)
       console.log("Response data keys:", Object.keys(response.data || {}))
-      
+
       // Check if response.data exists and has the expected structure
       if (response.data && response.data.success) {
         console.log("âœ… API call successful")
@@ -179,7 +192,7 @@ const SubscriptionMonitor = ({ userId }) => {
         console.log("Active subscriptions:", response.data.active_subscriptions)
         console.log("Has active member fee:", response.data.has_active_member_fee)
         console.log("Active plan IDs:", response.data.active_plan_ids)
-        
+
         setSubscriptionPlans(response.data.plans || [])
         return {
           availablePlans: response.data.plans || [],
@@ -215,10 +228,10 @@ const SubscriptionMonitor = ({ userId }) => {
   const handleApprove = async (subscriptionId) => {
     console.log("=== HANDLE APPROVE DEBUG ===");
     console.log("Subscription ID:", subscriptionId);
-    
+
     // Store the subscription ID for later use
     setCurrentSubscriptionId(subscriptionId);
-    
+
     // Auto-generate receipt number with format SUB202509284924
     const now = new Date();
     const year = now.getFullYear();
@@ -227,14 +240,14 @@ const SubscriptionMonitor = ({ userId }) => {
     const hour = String(now.getHours()).padStart(2, '0');
     const minute = String(now.getMinutes()).padStart(2, '0');
     const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
-    
+
     // Reset POS fields
     setPaymentMethod("cash");
     setAmountReceived("");
     setChangeGiven(0);
     setReceiptNumber(autoReceiptNumber);
     setTransactionNotes("");
-    
+
     // Set up basic form data - we'll fetch the full details when the modal opens
     setSubscriptionForm({
       user_id: "",
@@ -246,7 +259,7 @@ const SubscriptionMonitor = ({ userId }) => {
       amount_received: "",
       notes: ""
     });
-    
+
     // Show POS dialog immediately - let the modal handle fetching the data
     setIsCreateSubscriptionDialogOpen(true);
   }
@@ -256,11 +269,11 @@ const SubscriptionMonitor = ({ userId }) => {
     try {
       console.log("Fetching subscription details for ID:", subscriptionId);
       const response = await axios.get(`${API_URL}?action=get-subscription&id=${subscriptionId}`);
-      
+
       if (response.data.success && response.data.subscription) {
         const sub = response.data.subscription;
         console.log("Fetched subscription details:", sub);
-        
+
         // Update the form with the fetched data
         setSubscriptionForm(prev => ({
           ...prev,
@@ -269,21 +282,21 @@ const SubscriptionMonitor = ({ userId }) => {
           plan_name: sub.plan_name,
           amount_paid: sub.amount_paid || sub.price || "0"
         }));
-        
+
         console.log("Updated subscription form:", {
           user_id: sub.user_id,
           plan_id: sub.plan_id,
           plan_name: sub.plan_name,
           amount_paid: sub.amount_paid || sub.price || "0"
         });
-        
+
         // Set user info for display
         setSelectedUserInfo({
           fname: sub.fname,
           lname: sub.lname,
           email: sub.email
         });
-        
+
         return sub;
       } else {
         console.error("Failed to fetch subscription details:", response.data);
@@ -324,12 +337,12 @@ const SubscriptionMonitor = ({ userId }) => {
 
   const handleCreateManualSubscription = async () => {
     setMessage(null)
-    
+
     if (!userId) {
       setMessage({ type: "error", text: "User session not found. Please log in again." })
       return
     }
-    
+
     try {
       console.log("=== PROCESS PAYMENT BUTTON CLICKED ===");
       console.log("Current subscription form:", subscriptionForm);
@@ -342,9 +355,9 @@ const SubscriptionMonitor = ({ userId }) => {
       const receivedAmount = parseFloat(amountReceived) || totalAmount
 
       if (paymentMethod === "cash" && receivedAmount < totalAmount) {
-        setMessage({ 
-          type: "error", 
-          text: `Insufficient Payment: Amount received (â‚±${receivedAmount.toFixed(2)}) is less than required amount (â‚±${totalAmount.toFixed(2)}). Please collect â‚±${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        setMessage({
+          type: "error",
+          text: `Insufficient Payment: Amount received (â‚±${receivedAmount.toFixed(2)}) is less than required amount (â‚±${totalAmount.toFixed(2)}). Please collect â‚±${(totalAmount - receivedAmount).toFixed(2)} more.`
         })
         return
       }
@@ -372,17 +385,17 @@ const SubscriptionMonitor = ({ userId }) => {
 
       // CRITICAL: Validate payment before creating subscription
       if (totalAmount <= 0) {
-        setMessage({ 
-          type: "error", 
-          text: "Invalid payment amount. Amount must be greater than 0." 
+        setMessage({
+          type: "error",
+          text: "Invalid payment amount. Amount must be greater than 0."
         })
         return
       }
 
       if (paymentMethod === "cash" && receivedAmount < totalAmount) {
-        setMessage({ 
-          type: "error", 
-          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        setMessage({
+          type: "error",
+          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`
         })
         return
       }
@@ -420,18 +433,18 @@ const SubscriptionMonitor = ({ userId }) => {
           amount_received: receivedAmount,
           receipt_number: response.data.data.receipt_number
         };
-        
+
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
         setMessage({ type: "success", text: "Manual subscription created and payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to create manual subscription");
       }
-      
+
       setIsCreateSubscriptionDialogOpen(false)
       resetSubscriptionForm()
       await fetchAllData()
-      
+
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to create manual subscription"
       setMessage({ type: "error", text: errorMessage })
@@ -458,17 +471,17 @@ const SubscriptionMonitor = ({ userId }) => {
 
       // CRITICAL: Validate payment before approving subscription
       if (totalAmount <= 0) {
-        setMessage({ 
-          type: "error", 
-          text: "Invalid payment amount. Amount must be greater than 0." 
+        setMessage({
+          type: "error",
+          text: "Invalid payment amount. Amount must be greater than 0."
         })
         return
       }
 
       if (paymentMethod === "cash" && receivedAmount < totalAmount) {
-        setMessage({ 
-          type: "error", 
-          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.` 
+        setMessage({
+          type: "error",
+          text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`
         })
         return
       }
@@ -495,18 +508,18 @@ const SubscriptionMonitor = ({ userId }) => {
           receipt_number: response.data.receipt_number,
           is_approval: true
         };
-        
+
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
         setMessage({ type: "success", text: "Subscription approved and POS payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to approve subscription with payment");
       }
-      
+
       setIsCreateSubscriptionDialogOpen(false)
       resetSubscriptionForm()
       await fetchAllData()
-      
+
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to process subscription payment"
       setMessage({ type: "error", text: errorMessage })
@@ -544,7 +557,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const handleDiscountTypeChange = (discountType) => {
     const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
     const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
-    
+
     setSubscriptionForm((prev) => ({
       ...prev,
       discount_type: discountType,
@@ -559,7 +572,7 @@ const SubscriptionMonitor = ({ userId }) => {
         user_id: userId,
         plan_id: "", // Reset plan selection
       }))
-      
+
       if (userId) {
         const userInfo = await fetchAvailablePlansForUser(userId)
         setSelectedUserInfo(userInfo)
@@ -758,7 +771,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 setIsCreateSubscriptionDialogOpen(true)
               }} size="sm" className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="h-4 w-4 mr-2" />
-                Create Manual Subscription
+                Assign Subscription
               </Button>
             </div>
           </div>
@@ -792,70 +805,70 @@ const SubscriptionMonitor = ({ userId }) => {
                       {pendingSubscriptions.map((subscription) => {
                         console.log("Rendering subscription row:", subscription);
                         return (
-                        <TableRow key={subscription.subscription_id}>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarFallback>
-                                  {subscription.fname[0]}
-                                  {subscription.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">
-                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                          <TableRow key={subscription.subscription_id}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-10 w-10">
+                                  <AvatarFallback>
+                                    {subscription.fname[0]}
+                                    {subscription.lname[0]}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <div className="font-medium">
+                                    {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">{subscription.email}</div>
                                 </div>
-                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{subscription.plan_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatCurrency(subscription.price)}/month
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{subscription.plan_name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {formatCurrency(subscription.price)}/month
+                                </div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{formatDateTime(subscription.created_at)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                              <Clock className="h-3 w-3" />
-                              {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  console.log("Approve button clicked for subscription:", subscription);
-                                  handleApprove(subscription.subscription_id);
-                                }}
-                                disabled={actionLoading === subscription.subscription_id}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                {actionLoading === subscription.subscription_id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <CheckCircle className="h-4 w-4" />
-                                )}
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => setDeclineDialog({ open: true, subscription })}
-                                disabled={actionLoading === subscription.subscription_id}
-                              >
-                                <XCircle className="h-4 w-4" />
-                                Decline
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">{formatDateTime(subscription.created_at)}</div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                                <Clock className="h-3 w-3" />
+                                {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    console.log("Approve button clicked for subscription:", subscription);
+                                    handleApprove(subscription.subscription_id);
+                                  }}
+                                  disabled={actionLoading === subscription.subscription_id}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  {actionLoading === subscription.subscription_id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4" />
+                                  )}
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => setDeclineDialog({ open: true, subscription })}
+                                  disabled={actionLoading === subscription.subscription_id}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                  Decline
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
                         );
                       })}
                     </TableBody>
@@ -980,8 +993,8 @@ const SubscriptionMonitor = ({ userId }) => {
 
       {/* Manual Subscription Creation Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
-        <DialogContent 
-          className="max-w-2xl" 
+        <DialogContent
+          className="max-w-2xl"
           onOpenAutoFocus={async (e) => {
             // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
@@ -995,13 +1008,13 @@ const SubscriptionMonitor = ({ userId }) => {
               {currentSubscriptionId ? "Process Payment & Approve Subscription" : "Create Manual Subscription"}
             </DialogTitle>
             <DialogDescription>
-              {currentSubscriptionId 
+              {currentSubscriptionId
                 ? "Process payment to approve this subscription request"
                 : "Create a new subscription manually and process payment through POS system"
               }
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1107,8 +1120,8 @@ const SubscriptionMonitor = ({ userId }) => {
             <Button variant="outline" onClick={() => setIsCreateSubscriptionDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleCreateManualSubscription} 
+            <Button
+              onClick={handleCreateManualSubscription}
               disabled={
                 actionLoading === "create" ||
                 !subscriptionForm.amount_paid ||
@@ -1133,13 +1146,13 @@ const SubscriptionMonitor = ({ userId }) => {
               Transaction Successful
             </DialogTitle>
             <DialogDescription>
-              {confirmationData?.is_approval 
+              {confirmationData?.is_approval
                 ? "Subscription has been approved and payment processed successfully"
                 : "Manual subscription has been created and payment processed successfully"
               }
             </DialogDescription>
           </DialogHeader>
-          
+
           {confirmationData && (
             <div className="space-y-4">
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -1187,7 +1200,7 @@ const SubscriptionMonitor = ({ userId }) => {
                   </div>
                 </div>
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-800">
                   <strong>Note:</strong> This subscription is now active and the member can start using the gym facilities immediately.
@@ -1197,11 +1210,11 @@ const SubscriptionMonitor = ({ userId }) => {
           )}
 
           <DialogFooter>
-            <Button 
+            <Button
               onClick={() => {
                 setShowConfirmationModal(false)
                 setConfirmationData(null)
-              }} 
+              }}
               className="w-full"
             >
               Close
