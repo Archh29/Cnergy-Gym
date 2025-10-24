@@ -539,6 +539,7 @@ const StaffMonitoring = () => {
                           } else {
                             setUseCustomDate(false)
                             setDateFilter(value)
+                            setCustomDate(null)
                           }
                         }}
                       >
@@ -556,43 +557,50 @@ const StaffMonitoring = () => {
                       </Select>
                     </div>
 
-                    {/* Custom Date Picker */}
-                    {useCustomDate && (
-                      <div className="flex items-center gap-2">
-                        <Label>Custom Date:</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-[240px] justify-start text-left font-normal",
-                                !customDate && "text-muted-foreground"
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {customDate ? format(customDate, "PPP") : "Pick a date"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={customDate}
-                              onSelect={setCustomDate}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                    {/* Calendar Date Picker Button */}
+                    <Popover>
+                      <PopoverTrigger asChild>
                         <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setCustomDate(null)
-                            setUseCustomDate(false)
-                          }}
+                          variant={useCustomDate ? "default" : "outline"}
+                          className={cn(
+                            "w-[200px] justify-start text-left font-normal",
+                            !customDate && !useCustomDate && "text-muted-foreground"
+                          )}
                         >
-                          Clear
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customDate ? format(customDate, "PPP") : "📅 Pick Date"}
                         </Button>
-                      </div>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={customDate}
+                          onSelect={(date) => {
+                            setCustomDate(date)
+                            setUseCustomDate(!!date)
+                            if (date) {
+                              setDateFilter("custom")
+                            }
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+
+                    {/* Clear Date Button */}
+                    {useCustomDate && customDate && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setCustomDate(null)
+                          setUseCustomDate(false)
+                          setDateFilter("all")
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        ✕ Clear Date
+                      </Button>
                     )}
 
                     <div className="flex items-center gap-2">

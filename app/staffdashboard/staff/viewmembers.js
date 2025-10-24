@@ -612,9 +612,9 @@ const ViewMembers = ({ userId }) => {
               >
                 {currentView === "active" ? "Archive" : "Active Users"}
               </Button>
-              <Button onClick={handleOpenAddDialog}>
-                <Plus className="mr-2 h-4 w-4" /> Add User
-              </Button>
+            <Button onClick={handleOpenAddDialog}>
+              <Plus className="mr-2 h-4 w-4" /> Add User
+            </Button>
             </div>
           </div>
         </CardHeader>

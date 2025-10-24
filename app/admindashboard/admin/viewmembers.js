@@ -17,6 +17,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -40,10 +44,6 @@ import {
   EyeOff,
   Ban,
 } from "lucide-react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
-import { format } from "date-fns"
 
 const memberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
@@ -90,9 +90,13 @@ const ViewMembers = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
-  const [dateFilter, setDateFilter] = useState("all")
-  const [selectedDate, setSelectedDate] = useState(null)
+  const [monthFilter, setMonthFilter] = useState("")
+  const [yearFilter, setYearFilter] = useState("")
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
+
+  // Custom date picker states
+  const [customDate, setCustomDate] = useState(null)
+  const [useCustomDate, setUseCustomDate] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -221,48 +225,51 @@ const ViewMembers = ({ userId }) => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
-    // Filter by date (preset filters or custom calendar date)
-    if (dateFilter !== "all" || selectedDate) {
+    // Filter by custom date (takes priority over month/year filters)
+    if (useCustomDate && customDate) {
+      const customDateStr = format(customDate, "yyyy-MM-dd")
       filtered = filtered.filter((member) => {
         if (!member.created_at) return false
         const createdDate = safeDate(member.created_at)
         if (!createdDate) return false
 
-        const today = new Date()
-        const memberDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
-
-        // If custom date is selected, use that
-        if (selectedDate) {
-          const filterDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
-          return memberDate.getTime() === filterDate.getTime()
-        }
-
-        // Otherwise use preset filters
-        const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-
-        switch (dateFilter) {
-          case 'today':
-            return memberDate.getTime() === todayDate.getTime()
-          case 'yesterday':
-            const yesterday = new Date(todayDate)
-            yesterday.setDate(yesterday.getDate() - 1)
-            return memberDate.getTime() === yesterday.getTime()
-          case 'last_week':
-            const weekAgo = new Date(todayDate)
-            weekAgo.setDate(weekAgo.getDate() - 7)
-            return memberDate >= weekAgo && memberDate <= todayDate
-          case 'last_month':
-            const monthAgo = new Date(todayDate)
-            monthAgo.setMonth(monthAgo.getMonth() - 1)
-            return memberDate >= monthAgo && memberDate <= todayDate
-          case 'last_year':
-            const yearAgo = new Date(todayDate)
-            yearAgo.setFullYear(yearAgo.getFullYear() - 1)
-            return memberDate >= yearAgo && memberDate <= todayDate
-          default:
-            return true
-        }
+        const memberDateStr = format(createdDate, "yyyy-MM-dd")
+        return memberDateStr === customDateStr
       })
+    } else {
+      // Filter by month/year (only if custom date is not used)
+      if (monthFilter && monthFilter !== "all" && yearFilter && yearFilter !== "all") {
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
+
+          const memberMonth = createdDate.getMonth() + 1 // getMonth() returns 0-11
+          const memberYear = createdDate.getFullYear()
+
+          return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
+        })
+      } else if (monthFilter && monthFilter !== "all") {
+        // Filter by month only
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
+
+          const memberMonth = createdDate.getMonth() + 1
+          return memberMonth === parseInt(monthFilter)
+        })
+      } else if (yearFilter && yearFilter !== "all") {
+        // Filter by year only
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
+
+          const memberYear = createdDate.getFullYear()
+          return memberYear === parseInt(yearFilter)
+        })
+      }
     }
 
     // Sort the filtered results
@@ -287,7 +294,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, dateFilter, selectedDate, members, currentView])
+  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView, customDate, useCustomDate])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -690,90 +697,96 @@ const ViewMembers = ({ userId }) => {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Status Filter */}
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                <SelectItem value="1">January</SelectItem>
+                <SelectItem value="2">February</SelectItem>
+                <SelectItem value="3">March</SelectItem>
+                <SelectItem value="4">April</SelectItem>
+                <SelectItem value="5">May</SelectItem>
+                <SelectItem value="6">June</SelectItem>
+                <SelectItem value="7">July</SelectItem>
+                <SelectItem value="8">August</SelectItem>
+                <SelectItem value="9">September</SelectItem>
+                <SelectItem value="10">October</SelectItem>
+                <SelectItem value="11">November</SelectItem>
+                <SelectItem value="12">December</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="w-24">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2023">2023</SelectItem>
+                <SelectItem value="2022">2022</SelectItem>
+                <SelectItem value="2021">2021</SelectItem>
+                <SelectItem value="2020">2020</SelectItem>
+              </SelectContent>
+            </Select>
 
-              {/* Date Filter Dropdown */}
-              <Select
-                value={selectedDate ? "custom" : dateFilter}
-                onValueChange={(value) => {
-                  if (value === "custom") {
-                    // Don't change anything, just show calendar
-                  } else {
-                    setSelectedDate(null)
-                    setDateFilter(value)
-                  }
-                }}
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Date filter" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Time</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="yesterday">Yesterday</SelectItem>
-                  <SelectItem value="last_week">Last Week</SelectItem>
-                  <SelectItem value="last_month">Last Month</SelectItem>
-                  <SelectItem value="last_year">Last Year</SelectItem>
-                  <SelectItem value="custom">Custom Date</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Calendar Date Picker - Only show when custom is selected */}
-              {(selectedDate || dateFilter === "custom") && (
-                <div className="flex items-center gap-2">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-[200px] justify-start text-left font-normal",
-                          !selectedDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDate ? format(selectedDate, "MMM dd, yyyy") : "Pick a date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={selectedDate}
-                        onSelect={(date) => {
-                          setSelectedDate(date)
-                          setDateFilter("custom")
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-
-                  {selectedDate && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedDate(null)
-                        setDateFilter("all")
-                      }}
-                    >
-                      Clear
-                    </Button>
+            {/* Custom Date Picker */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-[200px] justify-start text-left font-normal",
+                    !customDate && "text-muted-foreground"
                   )}
-                </div>
-              )}
-            </div>
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {customDate ? format(customDate, "PPP") : "Pick specific date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={customDate}
+                  onSelect={(date) => {
+                    setCustomDate(date)
+                    setUseCustomDate(!!date)
+                    // Clear month/year filters when custom date is selected
+                    if (date) {
+                      setMonthFilter("")
+                      setYearFilter("")
+                    }
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
+            {useCustomDate && customDate && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCustomDate(null)
+                  setUseCustomDate(false)
+                }}
+                className="text-red-600 hover:text-red-700"
+              >
+                Clear Date
+              </Button>
+            )}
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Sort by" />
