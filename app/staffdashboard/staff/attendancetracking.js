@@ -13,9 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 const AttendanceTracking = ({ userId }) => {
   const [manualOpen, setManualOpen] = useState(false)
-  const [manualScanOpen, setManualScanOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [manualQrInput, setManualQrInput] = useState("")
   const [attendance, setAttendance] = useState([])
   const [members, setMembers] = useState([])
   const [lastScanTime, setLastScanTime] = useState(0)
@@ -204,84 +202,6 @@ const AttendanceTracking = ({ userId }) => {
     setManualOpen(false)
   }
 
-  // Handle manual QR input
-  const handleManualQrScan = async () => {
-    if (!manualQrInput.trim()) {
-      showNotification("Please enter QR code data", "error")
-      return
-    }
-    try {
-      const response = await axios.post(`https://api.cnergy.site/attendance.php`, {
-        action: 'qr_scan',
-        qr_data: manualQrInput.trim(),
-        staff_id: userId
-      })
-      if (response.data.success) {
-        const actionType = response.data.action
-        let notificationMessage = response.data.message
-
-        // Add plan info to notification if available
-        if (response.data.plan_info) {
-          const planInfo = response.data.plan_info
-          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
-        }
-
-        if (actionType === "auto_checkout") {
-          showNotification(notificationMessage, "info")
-        } else if (actionType === "auto_checkout_and_checkin") {
-          showNotification(notificationMessage, "warning")
-        } else if (actionType === "guest_checkin" || actionType === "guest_checkout") {
-          showNotification(notificationMessage, "success")
-        } else {
-          showNotification(notificationMessage)
-        }
-        fetchData()
-        setManualQrInput("")
-      } else {
-        // Handle plan validation errors
-        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
-          showNotification(response.data.message, "error")
-        }
-        // Handle cooldown errors
-        else if (response.data.type === "cooldown") {
-          showNotification(response.data.message, "warning")
-        }
-        // Handle attendance limit errors
-        else if (response.data.type === "already_checked_in") {
-          showNotification(response.data.message, "warning")
-        }
-        else if (response.data.type === "already_attended_today") {
-          showNotification(response.data.message, "info")
-        }
-        // Handle session conflict errors
-        else if (response.data.type === "session_conflict") {
-          showNotification(response.data.message, "error")
-        }
-        // Handle guest session specific errors
-        else if (response.data.type === "guest_expired") {
-          showNotification(response.data.message, "error")
-          // Trigger global modal for expired guest sessions
-          window.dispatchEvent(new CustomEvent("guest-session-expired", {
-            detail: {
-              type: "guest_expired",
-              message: response.data.message,
-              guestName: response.data.guest_name,
-              expiredAt: response.data.expired_at
-            }
-          }))
-        } else if (response.data.type === "guest_error") {
-          showNotification(response.data.message, "error")
-        } else {
-          showNotification(response.data.message || "Failed to process QR code", "error")
-        }
-      }
-    } catch (err) {
-      console.error("Failed to process QR scan", err)
-      showNotification("Failed to process QR code", "error")
-    }
-    setManualScanOpen(false)
-  }
-
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-4">
       {/* Notification with different styles for different types */}
@@ -334,49 +254,6 @@ const AttendanceTracking = ({ userId }) => {
                 Refresh
               </Button>
 
-              {/* Manual QR Input */}
-              <Dialog open={manualScanOpen} onOpenChange={setManualScanOpen}>
-                <DialogTrigger asChild>
-
-                </DialogTrigger>
-                <DialogContent className="w-[95vw] max-w-[400px] mx-auto">
-                  <DialogHeader>
-                    <DialogTitle>Manual QR Code Entry</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Enter the QR code data manually:
-                    </p>
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">
-                        • Member QR: CNERGY_ATTENDANCE:7
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        • Guest QR: GUEST_C17E6DDEC09F
-                      </p>
-                    </div>
-                    <Input
-                      type="text"
-                      placeholder="CNERGY_ATTENDANCE:7 or GUEST_..."
-                      value={manualQrInput}
-                      onChange={(e) => setManualQrInput(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === "Enter") {
-                          handleManualQrScan()
-                        }
-                      }}
-                    />
-                  </div>
-                  <DialogFooter className="pt-4 flex-col sm:flex-row gap-2">
-                    <Button variant="outline" onClick={() => setManualScanOpen(false)} className="w-full sm:w-auto">
-                      Cancel
-                    </Button>
-                    <Button onClick={handleManualQrScan} className="w-full sm:w-auto">
-                      Process QR Code
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
 
               {/* Manual Member Entry */}
               <Dialog open={manualOpen} onOpenChange={setManualOpen}>

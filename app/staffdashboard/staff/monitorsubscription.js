@@ -69,8 +69,18 @@ const SubscriptionMonitor = ({ userId }) => {
           console.log('Staff dashboard - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
-            // Create a safe key from the discount name
-            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            // Use original keys for compatibility (same as admin)
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              // For custom discounts, create a safe key
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
 
             config[key] = {
               name: discount.name,
@@ -85,9 +95,13 @@ const SubscriptionMonitor = ({ userId }) => {
         }
       }
     }
-    console.log('Staff dashboard - No discounts found, returning empty config')
-    // Return empty config if no discounts are saved - admin must set them first
-    return {}
+    console.log('Staff dashboard - No discounts found, using fallback defaults')
+    // Fallback to default discounts with original keys (same as admin)
+    return {
+      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+    }
   })
 
   // Decline dialog state
@@ -128,8 +142,18 @@ const SubscriptionMonitor = ({ userId }) => {
           console.log('Staff dashboard - Storage change - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
-            // Create a safe key from the discount name
-            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            // Use original keys for compatibility (same as admin)
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              // For custom discounts, create a safe key
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
 
             config[key] = {
               name: discount.name,
@@ -143,8 +167,12 @@ const SubscriptionMonitor = ({ userId }) => {
           console.error('Error parsing saved discounts:', e)
         }
       } else {
-        console.log('Staff dashboard - Storage change - No discounts found, setting empty config')
-        setDiscountConfig({})
+        console.log('Staff dashboard - Storage change - No discounts found, using fallback defaults')
+        setDiscountConfig({
+          regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+          student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+          senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+        })
       }
     }
 
@@ -1187,8 +1215,12 @@ const SubscriptionMonitor = ({ userId }) => {
                         console.error('Manual refresh - Error parsing discounts:', e)
                       }
                     } else {
-                      console.log('Manual refresh - No discounts found in localStorage')
-                      setDiscountConfig({})
+                      console.log('Manual refresh - No discounts found in localStorage, using fallback defaults')
+                      setDiscountConfig({
+                        regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+                        student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+                        senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+                      })
                     }
                   }}
                   className="text-xs"
