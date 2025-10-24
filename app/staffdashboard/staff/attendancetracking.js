@@ -32,17 +32,17 @@ const AttendanceTracking = ({ userId }) => {
 
   // Filter attendance based on type (date filtering is done server-side)
   const getFilteredAttendance = () => {
-    let filtered = attendance.filter((entry) => 
+    let filtered = attendance.filter((entry) =>
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
-    
+
     // Filter by user type
     if (filterType === "members") {
       filtered = filtered.filter(entry => entry.user_type === "member")
     } else if (filterType === "guests") {
       filtered = filtered.filter(entry => entry.user_type === "guest")
     }
-    
+
     return filtered
   }
 
@@ -50,10 +50,10 @@ const AttendanceTracking = ({ userId }) => {
   const fetchData = async (dateFilter = null) => {
     setLoading(true)
     try {
-      const attendanceUrl = dateFilter 
+      const attendanceUrl = dateFilter
         ? `https://api.cnergy.site/attendance.php?action=attendance&date=${dateFilter}`
         : "https://api.cnergy.site/attendance.php?action=attendance"
-        
+
       const [membersRes, attendanceRes] = await Promise.all([
         axios.get("https://api.cnergy.site/attendance.php?action=members"),
         axios.get(attendanceUrl),
@@ -101,7 +101,7 @@ const AttendanceTracking = ({ userId }) => {
   useEffect(() => {
     const handleGlobalModal = (event) => {
       const { type, message, guestName, expiredAt } = event.detail
-      
+
       if (type === "guest_expired") {
         // Show global modal for expired guest sessions
         window.dispatchEvent(new CustomEvent("show-global-modal", {
@@ -142,13 +142,13 @@ const AttendanceTracking = ({ userId }) => {
         // Handle different action types
         const actionType = response.data.action
         let notificationMessage = response.data.message
-        
+
         // Add plan info to notification if available
         if (response.data.plan_info) {
           const planInfo = response.data.plan_info
           notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
         }
-        
+
         if (actionType === "auto_checkout") {
           showNotification(notificationMessage, "info")
         } else if (actionType === "auto_checkout_and_checkin") {
@@ -219,13 +219,13 @@ const AttendanceTracking = ({ userId }) => {
       if (response.data.success) {
         const actionType = response.data.action
         let notificationMessage = response.data.message
-        
+
         // Add plan info to notification if available
         if (response.data.plan_info) {
           const planInfo = response.data.plan_info
           notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
         }
-        
+
         if (actionType === "auto_checkout") {
           showNotification(notificationMessage, "info")
         } else if (actionType === "auto_checkout_and_checkin") {
@@ -288,12 +288,11 @@ const AttendanceTracking = ({ userId }) => {
       {notification.show && (
         <Alert
           className={`
-            ${
-              notification.type === "error"
-                ? "border-red-500 bg-red-50"
-                : notification.type === "warning"
-                  ? "border-orange-500 bg-orange-50"
-                  : "border-green-500 bg-green-50"
+            ${notification.type === "error"
+              ? "border-red-500 bg-red-50"
+              : notification.type === "warning"
+                ? "border-orange-500 bg-orange-50"
+                : "border-green-500 bg-green-50"
             }
           `}
         >
@@ -338,7 +337,7 @@ const AttendanceTracking = ({ userId }) => {
               {/* Manual QR Input */}
               <Dialog open={manualScanOpen} onOpenChange={setManualScanOpen}>
                 <DialogTrigger asChild>
-                 
+
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-[400px] mx-auto">
                   <DialogHeader>
@@ -481,7 +480,7 @@ const AttendanceTracking = ({ userId }) => {
                   <SelectItem value="guests">
                     <div className="flex items-center gap-2">
                       <Users className="h-4 w-4" />
-                      Guests Only
+                      Day Pass Only
                     </div>
                   </SelectItem>
                 </SelectContent>
@@ -509,13 +508,12 @@ const AttendanceTracking = ({ userId }) => {
                       <TableCell className="font-medium">{entry.name}</TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
-                            entry.user_type === "guest" 
-                              ? "bg-blue-100 text-blue-800" 
-                              : "bg-green-100 text-green-800"
-                          }`}
+                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.user_type === "guest"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-green-100 text-green-800"
+                            }`}
                         >
-                          {entry.user_type === "guest" ? "Guest" : "Member"}
+                          {entry.user_type === "guest" ? "Day Pass" : "Member"}
                         </span>
                       </TableCell>
                       <TableCell className="text-sm">{entry.check_in}</TableCell>
@@ -523,11 +521,10 @@ const AttendanceTracking = ({ userId }) => {
                       <TableCell className="text-sm">{entry.duration || "-"}</TableCell>
                       <TableCell>
                         <span
-                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
-                            entry.check_out && !entry.check_out.includes("Still in gym") 
-                              ? "bg-gray-100 text-gray-800" 
-                              : "bg-green-100 text-green-800"
-                          }`}
+                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.check_out && !entry.check_out.includes("Still in gym")
+                            ? "bg-gray-100 text-gray-800"
+                            : "bg-green-100 text-green-800"
+                            }`}
                         >
                           {entry.check_out && !entry.check_out.includes("Still in gym") ? "Completed" : "Active"}
                         </span>

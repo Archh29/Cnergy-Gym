@@ -62,9 +62,11 @@ const SubscriptionMonitor = ({ userId }) => {
   const [discountConfig, setDiscountConfig] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gym-discounts')
+      console.log('Staff dashboard - Loading discounts from localStorage:', saved)
       if (saved) {
         try {
           const discounts = JSON.parse(saved)
+          console.log('Staff dashboard - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
             // Create a safe key from the discount name
@@ -76,12 +78,14 @@ const SubscriptionMonitor = ({ userId }) => {
               description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
             }
           })
+          console.log('Staff dashboard - Generated config:', config)
           return config
         } catch (e) {
           console.error('Error parsing saved discounts:', e)
         }
       }
     }
+    console.log('Staff dashboard - No discounts found, returning empty config')
     // Return empty config if no discounts are saved - admin must set them first
     return {}
   })
@@ -115,10 +119,13 @@ const SubscriptionMonitor = ({ userId }) => {
   // Reload discount config when localStorage changes
   useEffect(() => {
     const handleStorageChange = () => {
+      console.log('Staff dashboard - Storage change detected, reloading discounts...')
       const saved = localStorage.getItem('gym-discounts')
+      console.log('Staff dashboard - Storage change - Loading discounts:', saved)
       if (saved) {
         try {
           const discounts = JSON.parse(saved)
+          console.log('Staff dashboard - Storage change - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
             // Create a safe key from the discount name
@@ -130,11 +137,13 @@ const SubscriptionMonitor = ({ userId }) => {
               description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
             }
           })
+          console.log('Staff dashboard - Storage change - Generated config:', config)
           setDiscountConfig(config)
         } catch (e) {
           console.error('Error parsing saved discounts:', e)
         }
       } else {
+        console.log('Staff dashboard - Storage change - No discounts found, setting empty config')
         setDiscountConfig({})
       }
     }
@@ -1150,7 +1159,44 @@ const SubscriptionMonitor = ({ userId }) => {
 
             {/* Discount Section */}
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-              <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log('Manual refresh - Checking localStorage...')
+                    const saved = localStorage.getItem('gym-discounts')
+                    console.log('Manual refresh - Found in localStorage:', saved)
+                    if (saved) {
+                      try {
+                        const discounts = JSON.parse(saved)
+                        console.log('Manual refresh - Parsed discounts:', discounts)
+                        const config = {}
+                        discounts.forEach((discount, index) => {
+                          const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+                          config[key] = {
+                            name: discount.name,
+                            discount: discount.amount,
+                            description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
+                          }
+                        })
+                        console.log('Manual refresh - Setting config:', config)
+                        setDiscountConfig(config)
+                      } catch (e) {
+                        console.error('Manual refresh - Error parsing discounts:', e)
+                      }
+                    } else {
+                      console.log('Manual refresh - No discounts found in localStorage')
+                      setDiscountConfig({})
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Refresh
+                </Button>
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 {Object.entries(discountConfig).length > 0 ? Object.entries(discountConfig).map(([key, config]) => (
                   <div key={key} className="space-y-2">

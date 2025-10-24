@@ -365,7 +365,8 @@ export default function GuestManagement({ userId }) {
             'trial': 'bg-orange-100 text-orange-800',
             'guest': 'bg-gray-100 text-gray-800'
         };
-        return <Badge variant="secondary" className={colors[type] || 'bg-gray-100 text-gray-800'}>{type}</Badge>;
+        const displayText = type === 'guest' ? 'Day Pass' : type;
+        return <Badge variant="secondary" className={colors[type] || 'bg-gray-100 text-gray-800'}>{displayText}</Badge>;
     };
 
     const isSessionExpired = (validUntil) => {
@@ -828,7 +829,7 @@ export default function GuestManagement({ userId }) {
                                     <SelectContent>
                                         <SelectItem value="walkin">Walk-in</SelectItem>
                                         <SelectItem value="trial">Trial</SelectItem>
-                                        <SelectItem value="guest">Guest</SelectItem>
+                                        <SelectItem value="guest">Day Pass</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
