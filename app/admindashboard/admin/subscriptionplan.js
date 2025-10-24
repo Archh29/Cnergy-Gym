@@ -125,7 +125,8 @@ const SubscriptionPlans = () => {
 
   const fetchSubscriptions = async () => {
     try {
-      const response = await axios.get("https://api.cnergy.site/subscription.php")
+      // Try to fetch from monitor_subscription.php instead
+      const response = await axios.get("https://api.cnergy.site/monitor_subscription.php")
       let filteredSubscriptions = response.data
 
       // Apply filters
@@ -155,6 +156,8 @@ const SubscriptionPlans = () => {
       setSubscriptions(filteredSubscriptions)
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
+      // Set empty array if API fails
+      setSubscriptions([])
     }
   }
 
@@ -162,7 +165,7 @@ const SubscriptionPlans = () => {
     try {
       const [plansResponse, subscriptionsResponse] = await Promise.all([
         axios.get(API_URL),
-        axios.get("https://api.cnergy.site/subscription.php"),
+        axios.get("https://api.cnergy.site/monitor_subscription.php").catch(() => ({ data: [] }))
       ])
 
       const totalPlans = plansResponse.data.length
@@ -306,6 +309,53 @@ const SubscriptionPlans = () => {
 
   return (
     <div className="space-y-6">
+      {/* Analytics Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Plans</CardTitle>
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analytics.totalPlans}</div>
+            <p className="text-xs text-muted-foreground">Active membership plans</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Subscriptions</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analytics.totalSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">All subscriptions</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{analytics.activeSubscriptions}</div>
+            <p className="text-xs text-muted-foreground">Currently active</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
+            <p className="text-xs text-muted-foreground">From active subscriptions</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Tabs defaultValue="plans" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="plans">Membership Plans</TabsTrigger>
@@ -370,7 +420,7 @@ const SubscriptionPlans = () => {
                   ) : (
                     filteredPlans.map((plan) => (
                       <TableRow key={plan.id}>
-                        <TableCell className="font-medium">{plan.name}</TableCell>
+                        <TableCell className="font-medium">{plan.plan_name}</TableCell>
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
                         <TableCell>
                           {plan.duration_days > 0 ? (
@@ -523,8 +573,8 @@ const SubscriptionPlans = () => {
                               subscription.status === "active"
                                 ? "default"
                                 : subscription.status === "expired"
-                                ? "destructive"
-                                : "secondary"
+                                  ? "destructive"
+                                  : "secondary"
                             }
                           >
                             {subscription.status}
@@ -685,7 +735,7 @@ const SubscriptionPlans = () => {
           <DialogHeader>
             <DialogTitle>Discount Settings</DialogTitle>
             <DialogDescription>
-              Configure discount amounts for different customer types
+              Configure discount amounts for different customer types. These settings will be used when assigning subscriptions.
             </DialogDescription>
           </DialogHeader>
 
