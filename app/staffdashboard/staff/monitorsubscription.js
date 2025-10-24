@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useContext } from "react"
 import axios from "axios"
-// No UserContext available in staff dashboard - will get userId from props
+// No UserContext available - will get userId from props
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -58,15 +58,13 @@ const SubscriptionMonitor = ({ userId }) => {
     notes: ""
   })
 
-  // Discount configuration - load from localStorage (exact copy from admin)
+  // Discount configuration - load from localStorage
   const [discountConfig, setDiscountConfig] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gym-discounts')
-      console.log('Staff dashboard - Loading discounts from localStorage:', saved)
       if (saved) {
         try {
           const discounts = JSON.parse(saved)
-          console.log('Staff dashboard - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
             // Use original keys for compatibility
@@ -88,16 +86,18 @@ const SubscriptionMonitor = ({ userId }) => {
               description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
             }
           })
-          console.log('Staff dashboard - Generated config:', config)
           return config
         } catch (e) {
           console.error('Error parsing saved discounts:', e)
         }
       }
     }
-    console.log('Staff dashboard - No discounts found, returning empty config')
-    // Return empty config if no discounts are saved - admin must set them first
-    return {}
+    // Fallback to default discounts with original keys
+    return {
+      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+    }
   })
 
   // Decline dialog state
@@ -385,6 +385,8 @@ const SubscriptionMonitor = ({ userId }) => {
       console.log("Amount received:", amountReceived);
       console.log("Current subscription ID:", currentSubscriptionId);
       console.log("Current user ID:", userId);
+      console.log("User ID type:", typeof userId);
+      console.log("User ID is null/undefined:", userId === null || userId === undefined);
 
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(amountReceived) || totalAmount
@@ -444,7 +446,7 @@ const SubscriptionMonitor = ({ userId }) => {
       const minute = String(now.getMinutes()).padStart(2, '0');
       const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
 
-      const response = await axios.post(`${API_URL}?action=create_manual`, {
+      const requestData = {
         user_id: subscriptionForm.user_id,
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
@@ -454,11 +456,16 @@ const SubscriptionMonitor = ({ userId }) => {
         change_given: change,
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
-        created_by: "Staff",
+        created_by: "Admin",
         staff_id: userId, // Use current user ID - no fallback
         transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
         discount_type: subscriptionForm.discount_type // Include discount type
-      });
+      };
+
+      console.log("Sending request data:", requestData);
+      console.log("staff_id being sent:", requestData.staff_id);
+
+      const response = await axios.post(`${API_URL}?action=create_manual`, requestData);
 
       if (response.data.success) {
         const confirmationData = {
@@ -529,7 +536,7 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_received: receivedAmount,
         notes: transactionNotes,
         receipt_number: receiptNumber || undefined,
-        approved_by: "Staff",
+        approved_by: "Admin",
         staff_id: userId,
         transaction_status: "confirmed" // CRITICAL: Mark transaction as confirmed
       });
@@ -582,23 +589,31 @@ const SubscriptionMonitor = ({ userId }) => {
 
   const handlePlanChange = (planId) => {
     const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
-    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
-    setSubscriptionForm((prev) => ({
-      ...prev,
-      plan_id: planId,
-      amount_paid: prev.discount_type === "none" ? discountedPrice : prev.amount_paid,
-    }))
+    if (selectedPlan) {
+      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, subscriptionForm.discount_type)
+      setSubscriptionForm((prev) => ({
+        ...prev,
+        plan_id: planId,
+        amount_paid: discountedPrice.toString(),
+      }))
+    }
   }
 
   const handleDiscountTypeChange = (discountType) => {
     const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-    const discountedPrice = selectedPlan?.discounted_price || selectedPlan?.price || ""
-
-    setSubscriptionForm((prev) => ({
-      ...prev,
-      discount_type: discountType,
-      amount_paid: discountType === "none" ? discountedPrice : "",
-    }))
+    if (selectedPlan) {
+      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, discountType)
+      setSubscriptionForm((prev) => ({
+        ...prev,
+        discount_type: discountType,
+        amount_paid: discountedPrice.toString(),
+      }))
+    } else {
+      setSubscriptionForm((prev) => ({
+        ...prev,
+        discount_type: discountType,
+      }))
+    }
   }
 
   const handleUserSelection = async (userId) => {
@@ -1126,58 +1141,9 @@ const SubscriptionMonitor = ({ userId }) => {
 
             {/* Discount Section */}
             <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    console.log('Manual refresh - Checking localStorage...')
-                    const saved = localStorage.getItem('gym-discounts')
-                    console.log('Manual refresh - Found in localStorage:', saved)
-                    if (saved) {
-                      try {
-                        const discounts = JSON.parse(saved)
-                        console.log('Manual refresh - Parsed discounts:', discounts)
-                        const config = {}
-                        discounts.forEach((discount, index) => {
-                          // Use original keys for compatibility
-                          let key
-                          if (discount.name.toLowerCase().includes('regular')) {
-                            key = 'regular'
-                          } else if (discount.name.toLowerCase().includes('student')) {
-                            key = 'student'
-                          } else if (discount.name.toLowerCase().includes('senior')) {
-                            key = 'senior'
-                          } else {
-                            // For custom discounts, create a safe key
-                            key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-                          }
-
-                          config[key] = {
-                            name: discount.name,
-                            discount: discount.amount,
-                            description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
-                          }
-                        })
-                        console.log('Manual refresh - Setting config:', config)
-                        setDiscountConfig(config)
-                      } catch (e) {
-                        console.error('Manual refresh - Error parsing discounts:', e)
-                      }
-                    } else {
-                      console.log('Manual refresh - No discounts found in localStorage')
-                      setDiscountConfig({})
-                    }
-                  }}
-                  className="text-xs"
-                >
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  Refresh
-                </Button>
-              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
               <div className="grid grid-cols-3 gap-4">
-                {Object.entries(discountConfig).length > 0 ? Object.entries(discountConfig).map(([key, config]) => (
+                {Object.entries(discountConfig).map(([key, config]) => (
                   <div key={key} className="space-y-2">
                     <Label className="text-sm font-medium">{config.name}</Label>
                     <Button
@@ -1204,15 +1170,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       </div>
                     </Button>
                   </div>
-                )) : (
-                  <div className="col-span-3 text-center py-8">
-                    <div className="text-gray-500 mb-2">
-                      <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                      <p className="font-medium">No Discount Options Available</p>
-                      <p className="text-sm">Please ask an administrator to configure discount options in the Subscription Plans section.</p>
-                    </div>
-                  </div>
-                )}
+                ))}
               </div>
             </div>
 
@@ -1226,7 +1184,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     <span>₱{subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)?.price || 0}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name || 'Discount'}):</span>
+                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
                     <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount || 0}</span>
                   </div>
                   <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
@@ -1280,7 +1238,7 @@ const SubscriptionMonitor = ({ userId }) => {
               }
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {currentSubscriptionId ? "Process Payment & Approve" : "Process Payment"}
+              {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

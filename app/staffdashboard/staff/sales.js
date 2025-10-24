@@ -47,7 +47,6 @@ const Sales = ({ userId }) => {
   const [loading, setLoading] = useState(false)
 
   // Filter states
-  const [analyticsFilter, setAnalyticsFilter] = useState("today")
   const [saleTypeFilter, setSaleTypeFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
@@ -83,48 +82,22 @@ const Sales = ({ userId }) => {
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
-  const [analytics, setAnalytics] = useState({
-    todaysSales: 0,
-    productsSoldToday: 0,
-    lowStockItems: 0,
-    monthlyRevenue: 0,
-    productSales: 0,
-    subscriptionSales: 0,
-    totalProductSales: 0,
-    totalSubscriptionSales: 0,
-  })
+  const [lowStockItems, setLowStockItems] = useState(0)
 
   // Load initial data
   useEffect(() => {
     loadInitialData()
   }, [])
 
-  // Reload analytics when filter changes
-  useEffect(() => {
-    loadAnalytics()
-  }, [analyticsFilter, saleTypeFilter, monthFilter, yearFilter, useCustomDate, customDate])
-
   // Reload sales when filters change
   useEffect(() => {
     loadSales()
-  }, [saleTypeFilter, dateFilter, monthFilter, yearFilter, useCustomDate, customDate])
-
-  // Calculate total sales with discount consideration
-  const calculateTotalSales = (salesData) => {
-    return salesData.reduce((total, sale) => {
-      // If the sale has discount info, use the discounted amount
-      if (sale.discount_amount && sale.discount_amount > 0) {
-        return total + (sale.amount - sale.discount_amount);
-      }
-      // Otherwise use the regular amount
-      return total + sale.amount;
-    }, 0);
-  }
+  }, [saleTypeFilter, dateFilter])
 
   const loadInitialData = async () => {
     setLoading(true)
     try {
-      await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+      await Promise.all([loadProducts(), loadSales(), loadLowStockItems()])
     } catch (error) {
       console.error("Error loading initial data:", error)
       alert("Error loading data. Please refresh the page.")
@@ -153,15 +126,6 @@ const Sales = ({ userId }) => {
       if (dateFilter !== "all") {
         params.append("date_filter", dateFilter)
       }
-      if (monthFilter && monthFilter !== "all") {
-        params.append("month", monthFilter)
-      }
-      if (yearFilter && yearFilter !== "all") {
-        params.append("year", yearFilter)
-      }
-      if (useCustomDate && customDate) {
-        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
-      }
 
       const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
       setSales(response.data.sales || [])
@@ -170,46 +134,22 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const loadAnalytics = async () => {
+  const loadLowStockItems = async () => {
     try {
-      const params = new URLSearchParams()
-
-      // Handle custom date first (highest priority)
-      if (useCustomDate && customDate) {
-        params.append("period", "custom")
-        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
-      } else {
-        params.append("period", analyticsFilter)
-      }
-
-      if (saleTypeFilter !== "all") {
-        params.append("sale_type", saleTypeFilter)
-      }
-
-      if (monthFilter && monthFilter !== "all") {
-        params.append("month", monthFilter)
-      }
-      if (yearFilter && yearFilter !== "all") {
-        params.append("year", yearFilter)
-      }
-
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
-      setAnalytics(
-        response.data.analytics || {
-          todaysSales: 0,
-          productsSoldToday: 0,
-          lowStockItems: 0,
-          monthlyRevenue: 0,
-          productSales: 0,
-          subscriptionSales: 0,
-          totalProductSales: 0,
-          totalSubscriptionSales: 0,
-        },
-      )
+      // Count products with low stock (less than 10 items)
+      const lowStockCount = products.filter(product => product.stock < 10).length
+      setLowStockItems(lowStockCount)
     } catch (error) {
-      console.error("Error loading analytics:", error)
+      console.error("Error loading low stock items:", error)
     }
   }
+
+  // Update low stock count when products change
+  useEffect(() => {
+    if (products.length > 0) {
+      loadLowStockItems()
+    }
+  }, [products])
 
   const addToCart = () => {
     if (!selectedProduct) {
@@ -323,7 +263,10 @@ const Sales = ({ userId }) => {
         })),
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=sale`, {
+        ...saleData,
+        staff_id: userId
+      })
       if (response.data.success) {
         alert("Sale completed successfully!")
         // Reset form and cart
@@ -369,7 +312,10 @@ const Sales = ({ userId }) => {
         notes: transactionNotes
       }
 
-      const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
+      const response = await axios.post(`${API_BASE_URL}?action=pos_sale`, {
+        ...saleData,
+        staff_id: userId
+      })
       if (response.data.success) {
         setLastTransaction({
           ...response.data,
@@ -422,11 +368,12 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=product&staff_id=${userId}`, {
+      const response = await axios.post(`${API_BASE_URL}?action=product`, {
         name: newProduct.name,
         price: Number.parseFloat(newProduct.price),
         stock: Number.parseInt(newProduct.stock),
         category: newProduct.category,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -460,6 +407,7 @@ const Sales = ({ userId }) => {
         product_id: stockUpdateProduct.id,
         quantity: updateQuantity,
         type: stockUpdateType,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -490,6 +438,7 @@ const Sales = ({ userId }) => {
         name: editProductData.name,
         price: Number.parseFloat(editProductData.price),
         category: editProductData.category,
+        staff_id: userId
       })
 
       if (response.data.success) {
@@ -514,7 +463,10 @@ const Sales = ({ userId }) => {
     setLoading(true)
     try {
       const response = await axios.delete(`${API_BASE_URL}?action=product`, {
-        data: { id: product.id }
+        data: {
+          id: product.id,
+          staff_id: userId
+        }
       })
 
       if (response.data.success) {
@@ -612,145 +564,21 @@ const Sales = ({ userId }) => {
         </CardContent>
       </Card>
 
-      {/* Quick Stats with Filter */}
+      {/* Inventory Overview - Staff Only */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Analytics Overview</CardTitle>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="analytics-filter">Period:</Label>
-              <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Month Filter */}
-              <Label htmlFor="month-filter">Month:</Label>
-              <Select value={monthFilter} onValueChange={setMonthFilter}>
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="Month" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  <SelectItem value="1">January</SelectItem>
-                  <SelectItem value="2">February</SelectItem>
-                  <SelectItem value="3">March</SelectItem>
-                  <SelectItem value="4">April</SelectItem>
-                  <SelectItem value="5">May</SelectItem>
-                  <SelectItem value="6">June</SelectItem>
-                  <SelectItem value="7">July</SelectItem>
-                  <SelectItem value="8">August</SelectItem>
-                  <SelectItem value="9">September</SelectItem>
-                  <SelectItem value="10">October</SelectItem>
-                  <SelectItem value="11">November</SelectItem>
-                  <SelectItem value="12">December</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Year Filter */}
-              <Label htmlFor="year-filter">Year:</Label>
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-24">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  <SelectItem value="2024">2024</SelectItem>
-                  <SelectItem value="2023">2023</SelectItem>
-                  <SelectItem value="2022">2022</SelectItem>
-                  <SelectItem value="2021">2021</SelectItem>
-                  <SelectItem value="2020">2020</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Custom Date Picker */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={useCustomDate ? "default" : "outline"}
-                    className={cn(
-                      "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
-                      useCustomDate
-                        ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
-                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={customDate}
-                    onSelect={(date) => {
-                      setCustomDate(date)
-                      setUseCustomDate(true)
-                      setAnalyticsFilter("custom")
-                    }}
-                    className="rounded-md border"
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
+          <CardTitle>Inventory Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-                <span className="text-muted-foreground">₱</span>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {saleTypeFilter === "all" ? "All sales" :
-                    saleTypeFilter === "Product" ? "Product sales only" :
-                      saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
-                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.productSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {analytics.productsSoldToday || 0} items sold
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">Membership revenue</p>
-              </CardContent>
-            </Card>
-
+          <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
                 <Package className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
-                <p className="text-xs text-muted-foreground">Need restocking</p>
+                <div className="text-2xl font-bold">{lowStockItems}</div>
+                <p className="text-xs text-muted-foreground">Items need restocking</p>
               </CardContent>
             </Card>
           </div>
