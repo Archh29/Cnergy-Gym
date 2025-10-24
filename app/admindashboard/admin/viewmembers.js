@@ -27,7 +27,7 @@ import {
   Trash2,
   User,
   Mail,
-  Calendar,
+  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -40,6 +40,10 @@ import {
   EyeOff,
   Ban,
 } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 
 const memberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
@@ -86,8 +90,7 @@ const ViewMembers = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
-  const [monthFilter, setMonthFilter] = useState("")
-  const [yearFilter, setYearFilter] = useState("")
+  const [selectedDate, setSelectedDate] = useState(null)
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
@@ -217,37 +220,18 @@ const ViewMembers = ({ userId }) => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
-    // Filter by month/year
-    if (monthFilter && monthFilter !== "all" && yearFilter && yearFilter !== "all") {
+    // Filter by selected date
+    if (selectedDate) {
       filtered = filtered.filter((member) => {
         if (!member.created_at) return false
         const createdDate = safeDate(member.created_at)
         if (!createdDate) return false
 
-        const memberMonth = createdDate.getMonth() + 1 // getMonth() returns 0-11
-        const memberYear = createdDate.getFullYear()
-
-        return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
-      })
-    } else if (monthFilter && monthFilter !== "all") {
-      // Filter by month only
-      filtered = filtered.filter((member) => {
-        if (!member.created_at) return false
-        const createdDate = safeDate(member.created_at)
-        if (!createdDate) return false
-
-        const memberMonth = createdDate.getMonth() + 1
-        return memberMonth === parseInt(monthFilter)
-      })
-    } else if (yearFilter && yearFilter !== "all") {
-      // Filter by year only
-      filtered = filtered.filter((member) => {
-        if (!member.created_at) return false
-        const createdDate = safeDate(member.created_at)
-        if (!createdDate) return false
-
-        const memberYear = createdDate.getFullYear()
-        return memberYear === parseInt(yearFilter)
+        // Compare dates (ignore time)
+        const memberDate = new Date(createdDate.getFullYear(), createdDate.getMonth(), createdDate.getDate())
+        const filterDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
+        
+        return memberDate.getTime() === filterDate.getTime()
       })
     }
 
@@ -273,7 +257,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView])
+  }, [searchQuery, statusFilter, sortBy, selectedDate, members, currentView])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -687,39 +671,40 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Months</SelectItem>
-                <SelectItem value="1">January</SelectItem>
-                <SelectItem value="2">February</SelectItem>
-                <SelectItem value="3">March</SelectItem>
-                <SelectItem value="4">April</SelectItem>
-                <SelectItem value="5">May</SelectItem>
-                <SelectItem value="6">June</SelectItem>
-                <SelectItem value="7">July</SelectItem>
-                <SelectItem value="8">August</SelectItem>
-                <SelectItem value="9">September</SelectItem>
-                <SelectItem value="10">October</SelectItem>
-                <SelectItem value="11">November</SelectItem>
-                <SelectItem value="12">December</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={yearFilter} onValueChange={setYearFilter}>
-              <SelectTrigger className="w-24">
-                <SelectValue placeholder="Year" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                <SelectItem value="2024">2024</SelectItem>
-                <SelectItem value="2023">2023</SelectItem>
-                <SelectItem value="2022">2022</SelectItem>
-                <SelectItem value="2021">2021</SelectItem>
-                <SelectItem value="2020">2020</SelectItem>
-              </SelectContent>
-            </Select>
+            
+            {/* Calendar Date Picker */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-[240px] justify-start text-left font-normal",
+                    !selectedDate && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {selectedDate && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedDate(null)}
+              >
+                Clear Date
+              </Button>
+            )}
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Sort by" />
