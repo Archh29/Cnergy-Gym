@@ -10,6 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 import {
   Users,
   Activity,
@@ -40,6 +44,11 @@ const StaffMonitoring = () => {
   const [dateFilter, setDateFilter] = useState("all")
   const [activityTypeFilter, setActivityTypeFilter] = useState("all")
 
+  // Custom date picker states
+  const [customDate, setCustomDate] = useState(null)
+  const [useCustomDate, setUseCustomDate] = useState(false)
+  const [dateRange, setDateRange] = useState({ from: null, to: null })
+
   // Data states
   const [activities, setActivities] = useState([])
   const [performance, setPerformance] = useState([])
@@ -63,7 +72,7 @@ const StaffMonitoring = () => {
   // Reload data when filters change
   useEffect(() => {
     loadStaffActivities()
-  }, [staffFilter, dateFilter, activityTypeFilter])
+  }, [staffFilter, dateFilter, activityTypeFilter, customDate, useCustomDate, dateRange])
 
   const loadInitialData = async () => {
     setLoading(true)
@@ -99,12 +108,24 @@ const StaffMonitoring = () => {
       // Use the dedicated staff monitoring API
       const params = new URLSearchParams()
       if (staffFilter !== "all") params.append("staff_id", staffFilter)
-      if (dateFilter !== "all") params.append("date_filter", dateFilter)
+
+      // Handle date filtering - custom date takes priority
+      if (useCustomDate && customDate) {
+        params.append("date_filter", "custom")
+        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+      } else if (useCustomDate && dateRange.from && dateRange.to) {
+        params.append("date_filter", "range")
+        params.append("date_from", format(dateRange.from, "yyyy-MM-dd"))
+        params.append("date_to", format(dateRange.to, "yyyy-MM-dd"))
+      } else if (dateFilter !== "all") {
+        params.append("date_filter", dateFilter)
+      }
+
       if (activityTypeFilter !== "all") params.append("category", activityTypeFilter)
       params.append("limit", "100")
 
       console.log("Fetching activities from:", `${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
-      console.log("Current filters:", { staffFilter, dateFilter, activityTypeFilter })
+      console.log("Current filters:", { staffFilter, dateFilter, activityTypeFilter, customDate, useCustomDate, dateRange })
 
       const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_activities&${params.toString()}`)
 
@@ -490,7 +511,7 @@ const StaffMonitoring = () => {
                     />
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <div className="flex items-center gap-2">
                       <Label htmlFor="staff-filter">Staff:</Label>
                       <Select value={staffFilter} onValueChange={setStaffFilter}>
@@ -510,7 +531,17 @@ const StaffMonitoring = () => {
 
                     <div className="flex items-center gap-2">
                       <Label htmlFor="date-filter">Period:</Label>
-                      <Select value={dateFilter} onValueChange={setDateFilter}>
+                      <Select
+                        value={useCustomDate ? "custom" : dateFilter}
+                        onValueChange={(value) => {
+                          if (value === "custom") {
+                            setUseCustomDate(true)
+                          } else {
+                            setUseCustomDate(false)
+                            setDateFilter(value)
+                          }
+                        }}
+                      >
                         <SelectTrigger className="w-32">
                           <SelectValue />
                         </SelectTrigger>
@@ -519,10 +550,50 @@ const StaffMonitoring = () => {
                           <SelectItem value="week">This Week</SelectItem>
                           <SelectItem value="month">This Month</SelectItem>
                           <SelectItem value="year">This Year</SelectItem>
+                          <SelectItem value="custom">Custom Date</SelectItem>
                           <SelectItem value="all">All Time</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+
+                    {/* Custom Date Picker */}
+                    {useCustomDate && (
+                      <div className="flex items-center gap-2">
+                        <Label>Custom Date:</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-[240px] justify-start text-left font-normal",
+                                !customDate && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {customDate ? format(customDate, "PPP") : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={customDate}
+                              onSelect={setCustomDate}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setCustomDate(null)
+                            setUseCustomDate(false)
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2">
                       <Label htmlFor="activity-filter">Type:</Label>

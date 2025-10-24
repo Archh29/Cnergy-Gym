@@ -154,6 +154,25 @@ function getStaffActivitiesFromAPI($pdo)
                     $whereConditions[] = "YEAR(al.timestamp) = ?";
                     $params[] = $year;
                     break;
+                case 'custom':
+                    // Handle custom single date
+                    if (isset($_GET['custom_date']) && !empty($_GET['custom_date'])) {
+                        $customDate = $_GET['custom_date'];
+                        $whereConditions[] = "DATE(al.timestamp) = ?";
+                        $params[] = $customDate;
+                    }
+                    break;
+                case 'range':
+                    // Handle custom date range
+                    if (isset($_GET['date_from']) && !empty($_GET['date_from'])) {
+                        $whereConditions[] = "DATE(al.timestamp) >= ?";
+                        $params[] = $_GET['date_from'];
+                    }
+                    if (isset($_GET['date_to']) && !empty($_GET['date_to'])) {
+                        $whereConditions[] = "DATE(al.timestamp) <= ?";
+                        $params[] = $_GET['date_to'];
+                    }
+                    break;
             }
         }
 
