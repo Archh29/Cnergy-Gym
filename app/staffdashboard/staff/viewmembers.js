@@ -17,6 +17,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
+import { format } from "date-fns"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -26,7 +30,7 @@ import {
   Edit,
   User,
   Mail,
-  Calendar,
+  Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -88,6 +92,10 @@ const ViewMembers = ({ userId }) => {
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
+
+  // Custom date picker states
+  const [customDate, setCustomDate] = useState(null)
+  const [useCustomDate, setUseCustomDate] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -215,38 +223,51 @@ const ViewMembers = ({ userId }) => {
       filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
-    // Filter by month/year
-    if (monthFilter && monthFilter !== "all" && yearFilter && yearFilter !== "all") {
+    // Filter by custom date (takes priority over month/year filters)
+    if (useCustomDate && customDate) {
+      const customDateStr = format(customDate, "yyyy-MM-dd")
       filtered = filtered.filter((member) => {
         if (!member.created_at) return false
         const createdDate = safeDate(member.created_at)
         if (!createdDate) return false
 
-        const memberMonth = createdDate.getMonth() + 1 // getMonth() returns 0-11
-        const memberYear = createdDate.getFullYear()
-
-        return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
+        const memberDateStr = format(createdDate, "yyyy-MM-dd")
+        return memberDateStr === customDateStr
       })
-    } else if (monthFilter && monthFilter !== "all") {
-      // Filter by month only
-      filtered = filtered.filter((member) => {
-        if (!member.created_at) return false
-        const createdDate = safeDate(member.created_at)
-        if (!createdDate) return false
+    } else {
+      // Filter by month/year (only if custom date is not used)
+      if (monthFilter && monthFilter !== "all" && yearFilter && yearFilter !== "all") {
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
 
-        const memberMonth = createdDate.getMonth() + 1
-        return memberMonth === parseInt(monthFilter)
-      })
-    } else if (yearFilter && yearFilter !== "all") {
-      // Filter by year only
-      filtered = filtered.filter((member) => {
-        if (!member.created_at) return false
-        const createdDate = safeDate(member.created_at)
-        if (!createdDate) return false
+          const memberMonth = createdDate.getMonth() + 1 // getMonth() returns 0-11
+          const memberYear = createdDate.getFullYear()
 
-        const memberYear = createdDate.getFullYear()
-        return memberYear === parseInt(yearFilter)
-      })
+          return memberMonth === parseInt(monthFilter) && memberYear === parseInt(yearFilter)
+        })
+      } else if (monthFilter && monthFilter !== "all") {
+        // Filter by month only
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
+
+          const memberMonth = createdDate.getMonth() + 1
+          return memberMonth === parseInt(monthFilter)
+        })
+      } else if (yearFilter && yearFilter !== "all") {
+        // Filter by year only
+        filtered = filtered.filter((member) => {
+          if (!member.created_at) return false
+          const createdDate = safeDate(member.created_at)
+          if (!createdDate) return false
+
+          const memberYear = createdDate.getFullYear()
+          return memberYear === parseInt(yearFilter)
+        })
+      }
     }
 
     // Sort the filtered results
@@ -271,7 +292,7 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView])
+  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView, customDate, useCustomDate])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -612,9 +633,9 @@ const ViewMembers = ({ userId }) => {
               >
                 {currentView === "active" ? "Archive" : "Active Users"}
               </Button>
-            <Button onClick={handleOpenAddDialog}>
-              <Plus className="mr-2 h-4 w-4" /> Add User
-            </Button>
+              <Button onClick={handleOpenAddDialog}>
+                <Plus className="mr-2 h-4 w-4" /> Add User
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -674,6 +695,54 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="2020">2020</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Custom Date Picker */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={useCustomDate ? "default" : "outline"}
+                  className={cn(
+                    "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                    useCustomDate
+                      ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {customDate ? format(customDate, "MMM dd, yyyy") : "📅 Pick specific date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                <Calendar
+                  mode="single"
+                  selected={customDate}
+                  onSelect={(date) => {
+                    setCustomDate(date)
+                    setUseCustomDate(!!date)
+                    // Clear month/year filters when custom date is selected
+                    if (date) {
+                      setMonthFilter("")
+                      setYearFilter("")
+                    }
+                  }}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
+            {useCustomDate && customDate && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCustomDate(null)
+                  setUseCustomDate(false)
+                }}
+                className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
+              >
+                ✕ Clear Date
+              </Button>
+            )}
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Sort by" />
