@@ -62,9 +62,11 @@ const SubscriptionMonitor = ({ userId }) => {
   const [discountConfig, setDiscountConfig] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('gym-discounts')
+      console.log('Staff dashboard - Loading discounts from localStorage:', saved)
       if (saved) {
         try {
           const discounts = JSON.parse(saved)
+          console.log('Staff dashboard - Parsed discounts:', discounts)
           const config = {}
           discounts.forEach((discount, index) => {
             // Use original keys for compatibility
@@ -86,18 +88,16 @@ const SubscriptionMonitor = ({ userId }) => {
               description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
             }
           })
+          console.log('Staff dashboard - Generated config:', config)
           return config
         } catch (e) {
           console.error('Error parsing saved discounts:', e)
         }
       }
     }
-    // Fallback to default discounts with original keys
-    return {
-      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
-    }
+    console.log('Staff dashboard - No discounts found, returning empty config')
+    // Return empty config if no discounts are saved - admin must set them first
+    return {}
   })
 
   // Decline dialog state
@@ -1132,10 +1132,13 @@ const SubscriptionMonitor = ({ userId }) => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
+                    console.log('Manual refresh - Checking localStorage...')
                     const saved = localStorage.getItem('gym-discounts')
+                    console.log('Manual refresh - Found in localStorage:', saved)
                     if (saved) {
                       try {
                         const discounts = JSON.parse(saved)
+                        console.log('Manual refresh - Parsed discounts:', discounts)
                         const config = {}
                         discounts.forEach((discount, index) => {
                           // Use original keys for compatibility
@@ -1157,16 +1160,14 @@ const SubscriptionMonitor = ({ userId }) => {
                             description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
                           }
                         })
+                        console.log('Manual refresh - Setting config:', config)
                         setDiscountConfig(config)
                       } catch (e) {
-                        console.error('Error parsing saved discounts:', e)
+                        console.error('Manual refresh - Error parsing discounts:', e)
                       }
                     } else {
-                      setDiscountConfig({
-                        regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-                        student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-                        senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
-                      })
+                      console.log('Manual refresh - No discounts found in localStorage')
+                      setDiscountConfig({})
                     }
                   }}
                   className="text-xs"
