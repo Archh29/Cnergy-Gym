@@ -563,15 +563,17 @@ const StaffMonitoring = () => {
                         <Button
                           variant={useCustomDate ? "default" : "outline"}
                           className={cn(
-                            "w-[200px] justify-start text-left font-normal",
-                            !customDate && !useCustomDate && "text-muted-foreground"
+                            "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                            useCustomDate
+                              ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                              : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {customDate ? format(customDate, "PPP") : "📅 Pick Date"}
+                          {customDate ? format(customDate, "MMM dd, yyyy") : "📅 Pick Date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
+                      <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
                         <Calendar
                           mode="single"
                           selected={customDate}
@@ -597,7 +599,7 @@ const StaffMonitoring = () => {
                           setUseCustomDate(false)
                           setDateFilter("all")
                         }}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
                       >
                         ✕ Clear Date
                       </Button>
