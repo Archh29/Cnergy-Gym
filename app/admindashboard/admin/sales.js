@@ -109,6 +109,18 @@ const Sales = ({ userId }) => {
     loadSales()
   }, [saleTypeFilter, dateFilter])
 
+  // Calculate total sales with discount consideration
+  const calculateTotalSales = (salesData) => {
+    return salesData.reduce((total, sale) => {
+      // If the sale has discount info, use the discounted amount
+      if (sale.discount_amount && sale.discount_amount > 0) {
+        return total + (sale.amount - sale.discount_amount);
+      }
+      // Otherwise use the regular amount
+      return total + sale.amount;
+    }, 0);
+  }
+
   const loadInitialData = async () => {
     setLoading(true)
     try {
@@ -886,7 +898,7 @@ const Sales = ({ userId }) => {
                         <SelectValue placeholder="Month" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All Months</SelectItem>
+                        <SelectItem value="all">All Months</SelectItem>
                         <SelectItem value="1">January</SelectItem>
                         <SelectItem value="2">February</SelectItem>
                         <SelectItem value="3">March</SelectItem>
@@ -909,7 +921,7 @@ const Sales = ({ userId }) => {
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">All Years</SelectItem>
+                        <SelectItem value="all">All Years</SelectItem>
                         <SelectItem value="2024">2024</SelectItem>
                         <SelectItem value="2023">2023</SelectItem>
                         <SelectItem value="2022">2022</SelectItem>
@@ -944,8 +956,8 @@ const Sales = ({ userId }) => {
                           setUseCustomDate(!!date)
                           // Clear month/year filters when custom date is selected
                           if (date) {
-                            setMonthFilter("")
-                            setYearFilter("")
+                            setMonthFilter("all")
+                            setYearFilter("all")
                           }
                         }}
                         initialFocus

@@ -51,7 +51,7 @@ const SubscriptionMonitor = ({ userId }) => {
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    discount_type: "regular_rate",
+    discount_type: "regular",
     amount_paid: "",
     payment_method: "cash",
     amount_received: "",
@@ -67,7 +67,19 @@ const SubscriptionMonitor = ({ userId }) => {
           const discounts = JSON.parse(saved)
           const config = {}
           discounts.forEach((discount, index) => {
-            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            // Use original keys for compatibility
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              // For custom discounts, create a safe key
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
+
             config[key] = {
               name: discount.name,
               discount: discount.amount,
@@ -80,11 +92,11 @@ const SubscriptionMonitor = ({ userId }) => {
         }
       }
     }
-    // Fallback to default discounts
+    // Fallback to default discounts with original keys
     return {
-      regular_rate: { name: "Regular Rate", discount: 0, description: "No discount" },
-      student_discount: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-      senior_discount: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+      regular: { name: "Regular Rate", discount: 0, description: "No discount" },
+      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
     }
   })
 
@@ -1147,7 +1159,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
 
             {/* Price Breakdown */}
-            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular_rate' && (
+            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular' && (
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                 <h4 className="font-semibold text-green-800 mb-2">Price Breakdown</h4>
                 <div className="text-sm text-green-700 space-y-1">
