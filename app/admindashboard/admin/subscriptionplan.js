@@ -44,11 +44,24 @@ const SubscriptionPlans = () => {
     name: "",
     amount: ""
   })
-  const [discounts, setDiscounts] = useState([
-    { name: "Regular Rate", amount: 0 },
-    { name: "Student Discount", amount: 150 },
-    { name: "Senior Discount", amount: 200 }
-  ])
+  const [discounts, setDiscounts] = useState(() => {
+    // Load discounts from localStorage or use defaults
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gym-discounts')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error('Error parsing saved discounts:', e)
+        }
+      }
+    }
+    return [
+      { name: "Regular Rate", amount: 0 },
+      { name: "Student Discount", amount: 150 },
+      { name: "Senior Discount", amount: 200 }
+    ]
+  })
   const [currentPlan, setCurrentPlan] = useState({
     id: null,
     plan_name: "",
@@ -340,6 +353,10 @@ const SubscriptionPlans = () => {
                     />
                   </div>
                   <div className="flex gap-2">
+                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline">
+                      <Percent className="mr-2 h-4 w-4" />
+                      Discount
+                    </Button>
                     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                       <DialogTrigger asChild>
                         <Button onClick={handleAdd} disabled={isLoading}>
@@ -348,10 +365,6 @@ const SubscriptionPlans = () => {
                         </Button>
                       </DialogTrigger>
                     </Dialog>
-                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline">
-                      <Percent className="mr-2 h-4 w-4" />
-                      Discount
-                    </Button>
                   </div>
                 </div>
               </div>
@@ -590,11 +603,11 @@ const SubscriptionPlans = () => {
                               // For active subscriptions, show days until expiry
                               return (
                                 <span className={`font-medium ${subscription.expiry_status === 'expired' ? 'text-red-600' :
-                                    subscription.days_until_expiry < 0 ? 'text-red-600' :
-                                      subscription.expiry_status === 'critical' ? 'text-red-600' :
-                                        subscription.expiry_status === 'warning' ? 'text-orange-600' :
-                                          subscription.expiry_status === 'notice' ? 'text-yellow-600' :
-                                            'text-green-600'
+                                  subscription.days_until_expiry < 0 ? 'text-red-600' :
+                                    subscription.expiry_status === 'critical' ? 'text-red-600' :
+                                      subscription.expiry_status === 'warning' ? 'text-orange-600' :
+                                        subscription.expiry_status === 'notice' ? 'text-yellow-600' :
+                                          'text-green-600'
                                   }`}>
                                   {subscription.days_until_expiry < 0 ?
                                     `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
@@ -901,7 +914,12 @@ const SubscriptionPlans = () => {
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        setDiscounts(discounts.filter((_, i) => i !== index))
+                        const newDiscounts = discounts.filter((_, i) => i !== index)
+                        setDiscounts(newDiscounts)
+                        // Save to localStorage
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('gym-discounts', JSON.stringify(newDiscounts))
+                        }
                       }}
                     >
                       <X className="h-3 w-3" />
@@ -919,7 +937,12 @@ const SubscriptionPlans = () => {
             <Button
               onClick={() => {
                 if (discountForm.name && discountForm.amount !== "") {
-                  setDiscounts([...discounts, { name: discountForm.name, amount: parseInt(discountForm.amount) }])
+                  const newDiscounts = [...discounts, { name: discountForm.name, amount: parseInt(discountForm.amount) }]
+                  setDiscounts(newDiscounts)
+                  // Save to localStorage
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('gym-discounts', JSON.stringify(newDiscounts))
+                  }
                   setDiscountForm({ name: "", amount: "" })
                 }
               }}

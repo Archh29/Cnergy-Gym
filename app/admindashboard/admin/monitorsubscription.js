@@ -51,19 +51,42 @@ const SubscriptionMonitor = ({ userId }) => {
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    discount_type: "regular",
+    discount_type: "regular_rate",
     amount_paid: "",
     payment_method: "cash",
     amount_received: "",
     notes: ""
   })
 
-  // Discount configuration
-  const discountConfig = {
-    regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-    student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-    senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
-  }
+  // Discount configuration - load from localStorage
+  const [discountConfig, setDiscountConfig] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gym-discounts')
+      if (saved) {
+        try {
+          const discounts = JSON.parse(saved)
+          const config = {}
+          discounts.forEach((discount, index) => {
+            const key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            config[key] = {
+              name: discount.name,
+              discount: discount.amount,
+              description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
+            }
+          })
+          return config
+        } catch (e) {
+          console.error('Error parsing saved discounts:', e)
+        }
+      }
+    }
+    // Fallback to default discounts
+    return {
+      regular_rate: { name: "Regular Rate", discount: 0, description: "No discount" },
+      student_discount: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
+      senior_discount: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+    }
+  })
 
   // Decline dialog state
   const [declineDialog, setDeclineDialog] = useState({
@@ -1113,8 +1136,8 @@ const SubscriptionMonitor = ({ userId }) => {
                     <Button
                       variant={subscriptionForm.discount_type === key ? "default" : "outline"}
                       className={`w-full h-12 text-sm ${subscriptionForm.discount_type === key
-                          ? "bg-blue-600 hover:bg-blue-700 text-white"
-                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
                         }`}
                       onClick={() => {
                         setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
@@ -1139,7 +1162,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
 
             {/* Price Breakdown */}
-            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular' && (
+            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular_rate' && (
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                 <h4 className="font-semibold text-green-800 mb-2">Price Breakdown</h4>
                 <div className="text-sm text-green-700 space-y-1">
