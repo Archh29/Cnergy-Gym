@@ -88,32 +88,7 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      // Build query parameters
-      const params = new URLSearchParams()
-
-      // Priority order: Date > Month+Year > Month > Year > Period
-      if (selectedDate) {
-        // Specific date takes highest priority
-        params.append('date', selectedDate)
-      } else if (selectedMonth && selectedMonth !== "all-time" && selectedYear && selectedYear !== "all-time") {
-        // Specific month and year
-        params.append('month', `${selectedYear}-${selectedMonth}`)
-      } else if (selectedMonth && selectedMonth !== "all-time") {
-        // Month only (current year) - send both month and year
-        const currentYear = new Date().getFullYear()
-        params.append('month', `${currentYear}-${selectedMonth}`)
-      } else if (selectedYear && selectedYear !== "all-time") {
-        // Year only
-        params.append('year', selectedYear)
-      } else {
-        // Fall back to period filter
-        params.append('period', period)
-      }
-
-      // Debug: log what parameters are being sent
-      console.log('API Parameters:', params.toString())
-
-      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?${params.toString()}`, {
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
         timeout: 10000 // 10 second timeout
       })
 
@@ -151,7 +126,7 @@ const GymDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod, selectedMonth, selectedYear, selectedDate])
+  }, [timePeriod])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
