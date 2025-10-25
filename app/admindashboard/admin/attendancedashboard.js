@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ selectedDate, filterType, periodFilter, selectedMonth }) => {
+const AttendanceDashboard = ({ selectedMonth, filterType }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -44,10 +44,8 @@ const AttendanceDashboard = ({ selectedDate, filterType, periodFilter, selectedM
     const [useCustomDate, setUseCustomDate] = useState(false)
 
     // Use external filters if provided, otherwise use internal state
-    const effectiveSelectedDate = selectedDate || ""
-    const effectiveFilterType = filterType || "all"
-    const effectivePeriodFilter = periodFilter || "all"
     const effectiveSelectedMonth = selectedMonth || ""
+    const effectiveFilterType = filterType || "all"
 
     // Calculate analytics from attendance data
     const calculateAnalytics = (data) => {
@@ -90,23 +88,7 @@ const AttendanceDashboard = ({ selectedDate, filterType, periodFilter, selectedM
     const loadAttendanceData = async () => {
         setLoading(true)
         try {
-            let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
-
-            // Handle period filtering
-            if (effectivePeriodFilter === "today") {
-                const today = new Date().toISOString().split('T')[0]
-                attendanceUrl += `&date=${today}`
-            } else if (effectivePeriodFilter === "yesterday") {
-                const yesterday = new Date()
-                yesterday.setDate(yesterday.getDate() - 1)
-                const yesterdayStr = yesterday.toISOString().split('T')[0]
-                attendanceUrl += `&date=${yesterdayStr}`
-            } else if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
-                // For custom month, we'll fetch all data and filter on the frontend
-                // since the API might not support month filtering
-            } else if (effectiveSelectedDate) {
-                attendanceUrl += `&date=${effectiveSelectedDate}`
-            }
+            const attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
             const response = await axios.get(attendanceUrl)
             const data = response.data || []
@@ -124,8 +106,8 @@ const AttendanceDashboard = ({ selectedDate, filterType, periodFilter, selectedM
                 })
             }
 
-            // Apply month filter for custom month selection
-            if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
+            // Apply month filter
+            if (effectiveSelectedMonth) {
                 filteredData = filteredData.filter(entry => {
                     const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
                     if (entryDate) {
@@ -164,29 +146,15 @@ const AttendanceDashboard = ({ selectedDate, filterType, periodFilter, selectedM
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [effectiveSelectedDate, effectiveFilterType, effectivePeriodFilter, effectiveSelectedMonth])
+    }, [effectiveSelectedMonth, effectiveFilterType])
 
     // Get current period display text
     const getPeriodDisplay = () => {
-        if (effectiveSelectedDate) {
-            return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
-        }
-
-        if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
+        if (effectiveSelectedMonth) {
             const monthDate = new Date(effectiveSelectedMonth + "-01")
             return format(monthDate, "MMMM yyyy")
         }
-
-        switch (effectivePeriodFilter) {
-            case "today":
-                return "Today"
-            case "yesterday":
-                return "Yesterday"
-            case "all":
-                return "All Time"
-            default:
-                return "All Time"
-        }
+        return "All Time"
     }
 
     // Get trend indicator

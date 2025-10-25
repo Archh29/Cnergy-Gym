@@ -37,8 +37,8 @@ const AttendanceTracking = ({ userId }) => {
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    // Apply month filter for custom month selection
-    if (periodFilter === "custom_month" && selectedMonth) {
+    // Apply month filter
+    if (selectedMonth) {
       filtered = filtered.filter((entry) => {
         const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
         if (entryDate) {
@@ -60,26 +60,10 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   // Load members and attendance data
-  const fetchData = async (dateFilter = null, period = periodFilter) => {
+  const fetchData = async () => {
     setLoading(true)
     try {
-      let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
-
-      // Handle period filtering
-      if (period === "today") {
-        const today = new Date().toISOString().split('T')[0]
-        attendanceUrl += `&date=${today}`
-      } else if (period === "yesterday") {
-        const yesterday = new Date()
-        yesterday.setDate(yesterday.getDate() - 1)
-        const yesterdayStr = yesterday.toISOString().split('T')[0]
-        attendanceUrl += `&date=${yesterdayStr}`
-      } else if (period === "custom_month" && selectedMonth) {
-        // For custom month, we'll fetch all data and filter on the frontend
-        // since the API might not support month filtering
-      } else if (dateFilter) {
-        attendanceUrl += `&date=${dateFilter}`
-      }
+      const attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
       const [membersRes, attendanceRes] = await Promise.all([
         axios.get("https://api.cnergy.site/attendance.php?action=members"),
@@ -100,14 +84,10 @@ const AttendanceTracking = ({ userId }) => {
     fetchData()
   }, [])
 
-  // Refetch data when date filter or period filter changes
+  // Refetch data when month filter changes
   useEffect(() => {
-    if (selectedDate) {
-      fetchData(selectedDate, "custom")
-    } else {
-      fetchData(null, periodFilter)
-    }
-  }, [selectedDate, periodFilter, selectedMonth])
+    fetchData()
+  }, [selectedMonth])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -267,7 +247,7 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard selectedDate={selectedDate} filterType={filterType} periodFilter={periodFilter} selectedMonth={selectedMonth} />
+      <AttendanceDashboard selectedMonth={selectedMonth} filterType={filterType} />
 
       {/* Live Tracking Section */}
       <div className="flex flex-col lg:flex-row gap-6">
@@ -296,97 +276,22 @@ const AttendanceTracking = ({ userId }) => {
                 </div>
               </div>
 
-              {/* Period Filter */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Period</label>
-                <Select value={periodFilter} onValueChange={(value) => {
-                  setPeriodFilter(value)
-                  setSelectedDate("") // Clear custom date when period changes
-                  setSelectedMonth("") // Clear month when period changes
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        All Time
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="today">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        Today
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="yesterday">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        Yesterday
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="custom_month">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        Specific Month
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* Month Filter */}
-              {periodFilter === "custom_month" && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Select Month</label>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="month"
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="flex-1"
-                      placeholder="Select month"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedMonth("")
-                        setPeriodFilter("all")
-                      }}
-                      className="px-2"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Date Filter */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Custom Date</label>
+                <label className="text-sm font-medium">Select Month</label>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <Input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => {
-                      setSelectedDate(e.target.value)
-                      setPeriodFilter("custom") // Set to custom when date is selected
-                      setSelectedMonth("") // Clear month when date is selected
-                    }}
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
                     className="flex-1"
-                    placeholder="Select date"
+                    placeholder="Select month"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setSelectedDate("")
-                      setPeriodFilter("all")
-                    }}
+                    onClick={() => setSelectedMonth("")}
                     className="px-2"
                   >
                     Clear
