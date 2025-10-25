@@ -90,23 +90,23 @@ const GymDashboard = () => {
     try {
       // Build query parameters
       const params = new URLSearchParams()
-      params.append('period', period)
 
-      if (selectedMonth && selectedMonth !== "all-time") {
-        if (selectedYear && selectedYear !== "all-time") {
-          // Combine month and year: YYYY-MM
-          params.append('month', `${selectedYear}-${selectedMonth}`)
-        } else {
-          // Just month (MM format)
-          params.append('month', selectedMonth)
-        }
-      } else if (selectedYear && selectedYear !== "all-time") {
-        // Just year
-        params.append('year', selectedYear)
-      }
-
+      // Priority order: Date > Month+Year > Month > Year > Period
       if (selectedDate) {
+        // Specific date takes highest priority
         params.append('date', selectedDate)
+      } else if (selectedMonth && selectedMonth !== "all-time" && selectedYear && selectedYear !== "all-time") {
+        // Specific month and year
+        params.append('month', `${selectedYear}-${selectedMonth}`)
+      } else if (selectedMonth && selectedMonth !== "all-time") {
+        // Month only (current year)
+        params.append('month', selectedMonth)
+      } else if (selectedYear && selectedYear !== "all-time") {
+        // Year only
+        params.append('year', selectedYear)
+      } else {
+        // Fall back to period filter
+        params.append('period', period)
       }
 
       const response = await axios.get(`https://api.cnergy.site/admindashboard.php?${params.toString()}`, {
@@ -155,15 +155,19 @@ const GymDashboard = () => {
   const handleMonthChange = (value) => {
     setSelectedMonth(value)
     setSelectedDate("") // Clear day when month changes
+    setSelectedYear("all-time") // Clear year when month changes
   }
 
   const handleYearChange = (value) => {
     setSelectedYear(value)
     setSelectedDate("") // Clear day when year changes
+    setSelectedMonth("all-time") // Clear month when year changes
   }
 
   const handleDateChange = (value) => {
     setSelectedDate(value)
+    setSelectedMonth("all-time") // Clear month when date changes
+    setSelectedYear("all-time") // Clear year when date changes
   }
 
   // Custom formatters
