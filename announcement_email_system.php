@@ -6,10 +6,14 @@ class AnnouncementEmailService {
     private $isConfigured = false;
     private $fromEmail = 'cnergyfitnessgym@cnergy.site';
     private $fromName = 'CNERGY GYM';
+    private $smtpHost = 'smtp.hostinger.com';
+    private $smtpPort = 465;
+    private $smtpUsername = 'cnergyfitnessgym@cnergy.site';
+    private $smtpPassword = 'Gwapoko385@';
     
     public function __construct() {
-        $this->isConfigured = true; // Always configured since we use built-in mail()
-        error_log("AnnouncementEmailService initialized with built-in mail() function");
+        $this->isConfigured = true;
+        error_log("AnnouncementEmailService initialized with Hostinger SMTP");
     }
     
     /**
@@ -29,6 +33,8 @@ class AnnouncementEmailService {
             // Get all users from database
             $users = $this->getAllUsers();
             
+            error_log("Found " . count($users) . " users in database");
+            
             if (empty($users)) {
                 return ['success' => false, 'message' => 'No users found in database'];
             }
@@ -42,6 +48,8 @@ class AnnouncementEmailService {
             
             // Send email to each user
             foreach ($users as $user) {
+                error_log("Processing user: " . $user['email'] . " (" . $user['fname'] . ' ' . $user['lname'] . ")");
+                
                 $emailResult = $this->sendAnnouncementEmail(
                     $user['email'],
                     $user['fname'] . ' ' . $user['lname'],
@@ -71,6 +79,9 @@ class AnnouncementEmailService {
                         'error' => $emailResult['message']
                     ];
                 }
+                
+                // Add a small delay between emails to prevent spam detection
+                usleep(100000); // 0.1 second delay
             }
             
             // Log the announcement activity
@@ -121,6 +132,8 @@ class AnnouncementEmailService {
             
             // Send email to each user
             foreach ($users as $user) {
+                error_log("Processing user: " . $user['email'] . " (" . $user['fname'] . ' ' . $user['lname'] . ")");
+                
                 $emailResult = $this->sendAnnouncementEmail(
                     $user['email'],
                     $user['fname'] . ' ' . $user['lname'],
@@ -150,12 +163,16 @@ class AnnouncementEmailService {
                         'error' => $emailResult['message']
                     ];
                 }
+                
+                // Add a small delay between emails to prevent spam detection
+                usleep(100000); // 0.1 second delay
             }
             
             // Log the announcement activity
             $this->logAnnouncementActivity($adminId, $subject, $results);
             
             error_log("Announcement sent to " . $results['emails_sent'] . " users of types: " . implode(', ', $userTypes));
+            error_log("Total users processed: " . $results['total_users'] . ", Emails sent: " . $results['emails_sent'] . ", Emails failed: " . $results['emails_failed']);
             
             return [
                 'success' => true,
@@ -169,6 +186,111 @@ class AnnouncementEmailService {
         }
     }
     
+    /**
+     * Send email using SMTP
+     * @param string $toEmail - Recipient email
+     * @param string $toName - Recipient name
+     * @param string $subject - Email subject
+     * @param string $htmlBody - HTML email body
+     * @param string $textBody - Plain text email body
+     * @return array - Success/failure response
+     */
+    private function sendEmailViaSMTP($toEmail, $toName, $subject, $htmlBody, $textBody) {
+        try {
+            // Create SSL SMTP connection (port 465)
+            $context = stream_context_create([
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'allow_self_signed' => true
+                ]
+            ]);
+            
+            $socket = stream_socket_client("ssl://{$this->smtpHost}:{$this->smtpPort}", $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $context);
+            if (!$socket) {
+                throw new Exception("SSL SMTP connection failed: $errstr ($errno)");
+            }
+            
+            // Set socket timeout
+            stream_set_timeout($socket, 10);
+            
+            // Read initial response with timeout check
+            $response = fgets($socket, 515);
+            if ($response === false) {
+                throw new Exception("SMTP connection timeout - no response from server");
+            }
+            if (substr($response, 0, 3) != '220') {
+                throw new Exception("SMTP server error: $response");
+            }
+            
+            // Send EHLO command
+            fputs($socket, "EHLO " . $_SERVER['HTTP_HOST'] . "\r\n");
+            $response = fgets($socket, 515);
+            
+            // Authenticate
+            fputs($socket, "AUTH LOGIN\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '334') {
+                throw new Exception("AUTH LOGIN failed: $response");
+            }
+            
+            fputs($socket, base64_encode($this->smtpUsername) . "\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '334') {
+                throw new Exception("Username authentication failed: $response");
+            }
+            
+            fputs($socket, base64_encode($this->smtpPassword) . "\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '235') {
+                throw new Exception("Password authentication failed: $response");
+            }
+            
+            // Send MAIL FROM
+            fputs($socket, "MAIL FROM: <" . $this->fromEmail . ">\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '250') {
+                throw new Exception("MAIL FROM failed: $response");
+            }
+            
+            // Send RCPT TO
+            fputs($socket, "RCPT TO: <" . $toEmail . ">\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '250') {
+                throw new Exception("RCPT TO failed: $response");
+            }
+            
+            // Send DATA
+            fputs($socket, "DATA\r\n");
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '354') {
+                throw new Exception("DATA command failed: $response");
+            }
+            
+            // Send email headers and body
+            $emailData = $this->createEmailHeaders($toEmail, $toName, $htmlBody, $textBody);
+            fputs($socket, $emailData['headers'] . "\r\n" . $emailData['message'] . "\r\n.\r\n");
+            
+            $response = fgets($socket, 515);
+            if (substr($response, 0, 3) != '250') {
+                throw new Exception("Email sending failed: $response");
+            }
+            
+            // Quit
+            fputs($socket, "QUIT\r\n");
+            fclose($socket);
+            
+            return ['success' => true, 'message' => 'Email sent successfully via SMTP'];
+            
+        } catch (Exception $e) {
+            if (isset($socket)) {
+                fclose($socket);
+            }
+            error_log("SMTP sending failed: " . $e->getMessage());
+            return ['success' => false, 'message' => 'SMTP sending failed: ' . $e->getMessage()];
+        }
+    }
+
     /**
      * Send announcement email to a single user
      * @param string $userEmail - User's email address
@@ -197,19 +319,31 @@ class AnnouncementEmailService {
             error_log("Attempting to send announcement email to: " . $userEmail);
             error_log("Email subject: " . $emailSubject);
             
-            // Send email using PHP's built-in mail() function
-            $success = mail($userEmail, $emailSubject, $emailData['message'], $emailData['headers']);
+            // Try SMTP first, fallback to PHP mail() if it fails
+            $result = $this->sendEmailViaSMTP($userEmail, $userName, $emailSubject, $htmlBody, $textBody);
             
-            if ($success) {
-                error_log("Announcement email sent successfully to: " . $userEmail);
-                return ['success' => true, 'message' => 'Announcement email sent successfully'];
+            if ($result['success']) {
+                error_log("Announcement email sent successfully to: " . $userEmail . " via SMTP");
+                return ['success' => true, 'message' => 'Announcement email sent successfully via SMTP'];
             } else {
-                error_log("Failed to send announcement email to: " . $userEmail);
-                return ['success' => false, 'message' => 'Failed to send announcement email - mail() function returned false'];
+                error_log("SMTP failed for " . $userEmail . ", trying PHP mail() fallback: " . $result['message']);
+                
+                // Fallback to PHP mail() function
+                $emailData = $this->createEmailHeaders($userEmail, $userName, $htmlBody, $textBody);
+                $success = mail($userEmail, $emailSubject, $emailData['message'], $emailData['headers']);
+                
+                if ($success) {
+                    error_log("Announcement email sent successfully to: " . $userEmail . " via PHP mail() fallback");
+                    return ['success' => true, 'message' => 'Announcement email sent successfully via PHP mail() fallback'];
+                } else {
+                    error_log("Both SMTP and PHP mail() failed for: " . $userEmail);
+                    return ['success' => false, 'message' => 'Failed to send announcement email - both SMTP and PHP mail() failed'];
+                }
             }
             
         } catch (Exception $e) {
             error_log("Announcement email sending failed to " . $userEmail . ": " . $e->getMessage());
+            error_log("SMTP Error Details: " . print_r($e, true));
             return ['success' => false, 'message' => 'Failed to send announcement email: ' . $e->getMessage()];
         }
     }
@@ -220,8 +354,12 @@ class AnnouncementEmailService {
      */
     private function getAllUsers() {
         try {
-            // Include database connection
-            require_once 'db.php';
+            // Use the same database connection as announcement.php
+            global $pdo;
+            
+            if (!$pdo) {
+                throw new Exception("Database connection not available");
+            }
             
             $query = "
                 SELECT 
@@ -237,16 +375,11 @@ class AnnouncementEmailService {
                 ORDER BY u.fname, u.lname
             ";
             
-            $result = $conn->query($query);
+            $stmt = $pdo->prepare($query);
+            $stmt->execute();
             
-            if (!$result) {
-                throw new Exception("Database query failed: " . $conn->error);
-            }
-            
-            $users = [];
-            while ($row = $result->fetch_assoc()) {
-                $users[] = $row;
-            }
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            error_log("Database query returned " . count($users) . " users");
             
             return $users;
             
@@ -263,8 +396,12 @@ class AnnouncementEmailService {
      */
     private function getUsersByType($userTypes) {
         try {
-            // Include database connection
-            require_once 'db.php';
+            // Use the same database connection as announcement.php
+            global $pdo;
+            
+            if (!$pdo) {
+                throw new Exception("Database connection not available");
+            }
             
             $placeholders = implode(',', array_fill(0, count($userTypes), '?'));
             $query = "
@@ -282,17 +419,10 @@ class AnnouncementEmailService {
                 ORDER BY u.fname, u.lname
             ";
             
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param(str_repeat('s', count($userTypes)), ...$userTypes);
-            $stmt->execute();
-            $result = $stmt->get_result();
+            $stmt = $pdo->prepare($query);
+            $stmt->execute($userTypes);
             
-            $users = [];
-            while ($row = $result->fetch_assoc()) {
-                $users[] = $row;
-            }
-            
-            return $users;
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
             
         } catch (Exception $e) {
             error_log("Failed to get users by type: " . $e->getMessage());
@@ -308,15 +438,18 @@ class AnnouncementEmailService {
      */
     private function logAnnouncementActivity($adminId, $subject, $results) {
         try {
-            // Include database connection
-            require_once 'db.php';
+            // Use the same database connection as announcement.php
+            global $pdo;
+            
+            if (!$pdo) {
+                throw new Exception("Database connection not available");
+            }
             
             $activity = "Announcement sent: '{$subject}' - Sent to {$results['emails_sent']} users, {$results['emails_failed']} failed";
             
             $query = "INSERT INTO activity_log (user_id, activity, timestamp) VALUES (?, ?, NOW())";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param('is', $adminId, $activity);
-            $stmt->execute();
+            $stmt = $pdo->prepare($query);
+            $stmt->execute([$adminId, $activity]);
             
         } catch (Exception $e) {
             error_log("Failed to log announcement activity: " . $e->getMessage());
@@ -340,6 +473,10 @@ class AnnouncementEmailService {
         $headers .= "Content-Type: multipart/alternative; boundary=\"{$boundary}\"\r\n";
         $headers .= "X-Mailer: PHP/" . phpversion() . "\r\n";
         $headers .= "X-Priority: 3\r\n";
+        $headers .= "Message-ID: <" . time() . "." . md5($toEmail) . "@cnergy.site>\r\n";
+        $headers .= "Date: " . date('r') . "\r\n";
+        $headers .= "List-Unsubscribe: <mailto:unsubscribe@cnergy.site>\r\n";
+        $headers .= "X-Spam-Check: OK\r\n";
         
         // Create multipart message body
         $message = "--{$boundary}\r\n";
@@ -811,63 +948,6 @@ class AnnouncementEmailService {
 
 // Usage Examples:
 /*
-// Example 1: Send announcement to all users
-$announcementService = new AnnouncementEmailService();
-$result = $announcementService->sendAnnouncementToAllUsers(
-    'Gym Maintenance Scheduled',
-    'We will be performing routine maintenance on our equipment this Saturday from 6 AM to 12 PM. The gym will remain open during this time, but some equipment may be temporarily unavailable. We apologize for any inconvenience.',
-    'maintenance',
-    1 // Admin ID
-);
-
-// Example 2: Send announcement to specific user types
-$result = $announcementService->sendAnnouncementToUserTypes(
-    'New Group Fitness Classes',
-    'We are excited to announce new group fitness classes starting next week! Join us for Yoga, Pilates, and High-Intensity Interval Training sessions. Classes are included with your membership.',
-    ['customer', 'staff'], // Send to customers and staff
-    'promotion',
-    1 // Admin ID
-);
-
-// Example 3: Send general announcement to all users
-$result = $announcementService->sendAnnouncementToAllUsers(
-    'Welcome to CNERGY GYM!',
-    'Thank you for being a valued member of our fitness community. We are committed to providing you with the best fitness experience possible.',
-    'general',
-    1 // Admin ID
-);
 */
 
-// API Endpoint for creating announcements
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-    
-    try {
-        $input = json_decode(file_get_contents('php://input'), true);
-        
-        if (!isset($input['subject']) || !isset($input['message'])) {
-            throw new Exception('Subject and message are required');
-        }
-        
-        $subject = $input['subject'];
-        $message = $input['message'];
-        $announcementType = $input['announcement_type'] ?? 'general';
-        $userTypes = $input['user_types'] ?? ['customer'];
-        $adminId = $input['admin_id'] ?? null;
-        
-        $announcementService = new AnnouncementEmailService();
-        
-        if (isset($input['send_to_all']) && $input['send_to_all']) {
-            $result = $announcementService->sendAnnouncementToAllUsers($subject, $message, $announcementType, $adminId);
-        } else {
-            $result = $announcementService->sendAnnouncementToUserTypes($subject, $message, $userTypes, $announcementType, $adminId);
-        }
-        
-        echo json_encode($result);
-        
-    } catch (Exception $e) {
-        http_response_code(400);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-}
 ?>
