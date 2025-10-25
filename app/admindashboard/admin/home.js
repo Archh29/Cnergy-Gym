@@ -99,8 +99,9 @@ const GymDashboard = () => {
         // Specific month and year
         params.append('month', `${selectedYear}-${selectedMonth}`)
       } else if (selectedMonth && selectedMonth !== "all-time") {
-        // Month only (current year)
-        params.append('month', selectedMonth)
+        // Month only (current year) - send both month and year
+        const currentYear = new Date().getFullYear()
+        params.append('month', `${currentYear}-${selectedMonth}`)
       } else if (selectedYear && selectedYear !== "all-time") {
         // Year only
         params.append('year', selectedYear)
@@ -108,6 +109,9 @@ const GymDashboard = () => {
         // Fall back to period filter
         params.append('period', period)
       }
+
+      // Debug: log what parameters are being sent
+      console.log('API Parameters:', params.toString())
 
       const response = await axios.get(`https://api.cnergy.site/admindashboard.php?${params.toString()}`, {
         timeout: 10000 // 10 second timeout
@@ -156,13 +160,13 @@ const GymDashboard = () => {
   const handleMonthChange = (value) => {
     setSelectedMonth(value)
     setSelectedDate("") // Clear day when month changes
-    setSelectedYear("all-time") // Clear year when month changes
+    // Don't clear year - let month work with selected year
   }
 
   const handleYearChange = (value) => {
     setSelectedYear(value)
     setSelectedDate("") // Clear day when year changes
-    setSelectedMonth("all-time") // Clear month when year changes
+    // Don't clear month - let year work with selected month
   }
 
   const handleDateChange = (value) => {
