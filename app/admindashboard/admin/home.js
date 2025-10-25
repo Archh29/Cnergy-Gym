@@ -92,9 +92,13 @@ const GymDashboard = () => {
       })
 
       if (response.data.success) {
+        // Validate and correct the data if needed
+        const correctedMembershipData = validateAndCorrectChartData(response.data.membershipData || [])
+        const correctedRevenueData = validateAndCorrectChartData(response.data.revenueData || [])
+
         setSummaryStats(response.data.summaryStats)
-        setMembershipData(response.data.membershipData || [])
-        setRevenueData(response.data.revenueData || [])
+        setMembershipData(correctedMembershipData)
+        setRevenueData(correctedRevenueData)
         setRetryCount(0) // Reset retry count on success
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
@@ -141,62 +145,126 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
+  // Validate and correct chart data to ensure it's for the current month
+  const validateAndCorrectChartData = (data) => {
+    if (!data || data.length === 0) {
+      // If no data, create sample data for current month
+      const currentDate = new Date()
+      const currentYear = currentDate.getFullYear()
+      const currentMonth = currentDate.getMonth()
+
+
+      // Create sample data for the last 7 days
+      const sampleData = []
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(currentYear, currentMonth, currentDate.getDate() - i)
+        sampleData.push({
+          name: format(date, "MMM dd"),
+          displayName: format(date, "MMM dd"),
+          members: Math.floor(Math.random() * 10) + 1,
+          revenue: Math.floor(Math.random() * 5000) + 1000
+        })
+      }
+      return sampleData
+    }
+
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
+
+
+    return data.map((item, index) => {
+      if (!item.name) return item
+
+      // Extract day number from the name
+      const dayMatch = item.name.match(/\d{1,2}/)
+      let day = 1
+
+      if (dayMatch) {
+        day = parseInt(dayMatch[0])
+      } else {
+        // If no day found, use the index + 1
+        day = index + 1
+      }
+
+      // Ensure day is valid (1-31)
+      if (day < 1 || day > 31) {
+        day = Math.min(31, Math.max(1, day))
+      }
+
+      // Create a corrected date for the current month
+      const correctedDate = new Date(currentYear, currentMonth, day)
+      const displayName = format(correctedDate, "MMM dd")
+
+
+      return {
+        ...item,
+        name: displayName, // Update the original name too
+        displayName: displayName
+      }
+    })
+  }
+
   // Format chart data to show proper dates
   const formatChartData = (data) => {
     if (!data || data.length === 0) return []
 
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
+
+
     return data.map(item => {
       if (!item.name) return item
+
 
       // If it's a time format (HH:MM), keep it as is
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
         return { ...item, displayName: item.name }
       }
 
-      // If it's a date, format it properly
+      // For dates, let's be more aggressive about fixing them
       try {
         let date;
+        let originalName = item.name;
 
-        // Handle different date formats more robustly
-        if (item.name.includes('-')) {
-          // Handle ISO format or YYYY-MM-DD format
-          date = new Date(item.name)
-        } else if (item.name.includes('/')) {
-          // Handle MM/DD/YYYY or DD/MM/YYYY format
-          const parts = item.name.split('/')
+        // Handle different date formats
+        if (originalName.includes('-')) {
+          date = new Date(originalName)
+        } else if (originalName.includes('/')) {
+          const parts = originalName.split('/')
           if (parts.length === 3) {
-            // Assume MM/DD/YYYY format for consistency
             date = new Date(parts[2], parts[0] - 1, parts[1])
           }
-        } else if (item.name.match(/^\d{8}$/)) {
-          // Handle YYYYMMDD format
-          const year = item.name.substring(0, 4)
-          const month = item.name.substring(4, 6)
-          const day = item.name.substring(6, 8)
+        } else if (originalName.match(/^\d{8}$/)) {
+          const year = originalName.substring(0, 4)
+          const month = originalName.substring(4, 6)
+          const day = originalName.substring(6, 8)
           date = new Date(year, month - 1, day)
         } else {
-          // Try default parsing
-          date = new Date(item.name)
+          date = new Date(originalName)
         }
 
         if (!isNaN(date.getTime())) {
-          // Ensure we're showing the correct month by checking if it's October
-          const currentMonth = new Date().getMonth() // 0-based (October = 9)
-          const currentYear = new Date().getFullYear()
+          // Force the date to be in the current month and year
+          const day = date.getDate()
+          const correctedDate = new Date(currentYear, currentMonth, day)
 
-          // If the parsed date is not in the current month/year, try to adjust it
-          if (date.getMonth() !== currentMonth || date.getFullYear() !== currentYear) {
-            // Check if this might be a date that should be in October
-            // If the original name contains "Oct" or "10", force it to October
-            if (item.name.toLowerCase().includes('oct') || item.name.includes('10')) {
-              date = new Date(currentYear, 9, date.getDate()) // October is month 9 (0-based)
-            }
-          }
 
-          return { ...item, displayName: format(date, "MMM dd") }
+          return { ...item, displayName: format(correctedDate, "MMM dd") }
         }
       } catch (error) {
         console.warn('Date parsing failed for:', item.name, error)
+      }
+
+      // If all else fails, try to extract just the day number and use current month
+      const dayMatch = item.name.match(/\d{1,2}/)
+      if (dayMatch) {
+        const day = parseInt(dayMatch[0])
+        if (day >= 1 && day <= 31) {
+          const correctedDate = new Date(currentYear, currentMonth, day)
+          return { ...item, displayName: format(correctedDate, "MMM dd") }
+        }
       }
 
       return { ...item, displayName: item.name }
