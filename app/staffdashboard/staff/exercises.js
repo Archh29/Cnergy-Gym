@@ -794,15 +794,31 @@ const ExerciseMuscleManager = ({ userId }) => {
                         <TableRow key={muscle.id}>
                           <TableCell className="font-medium">{muscle.name}</TableCell>
                           <TableCell>
-                            {muscle.image_url ? (
-                              <img
-                                src={muscle.image_url || "/placeholder.svg"}
-                                alt={muscle.name}
-                                className="w-12 h-12 object-cover rounded"
-                              />
-                            ) : (
-                              <span className="text-muted-foreground text-sm">No image</span>
-                            )}
+                            <div className="flex items-center justify-center">
+                              {muscle.image_url ? (
+                                <div className="relative group">
+                                  <img
+                                    src={muscle.image_url}
+                                    alt={muscle.name}
+                                    className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none'
+                                      e.target.nextSibling.style.display = 'flex'
+                                    }}
+                                  />
+                                  <div
+                                    className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium"
+                                    style={{ display: 'none' }}
+                                  >
+                                    No Image
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium">
+                                  No Image
+                                </div>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
@@ -905,15 +921,31 @@ const ExerciseMuscleManager = ({ userId }) => {
                             <Badge variant="outline">{muscle.parent_name}</Badge>
                           </TableCell>
                           <TableCell>
-                            {muscle.image_url ? (
-                              <img
-                                src={muscle.image_url || "/placeholder.svg"}
-                                alt={muscle.name}
-                                className="w-12 h-12 object-cover rounded"
-                              />
-                            ) : (
-                              <span className="text-muted-foreground text-sm">No image</span>
-                            )}
+                            <div className="flex items-center justify-center">
+                              {muscle.image_url ? (
+                                <div className="relative group">
+                                  <img
+                                    src={muscle.image_url}
+                                    alt={muscle.name}
+                                    className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none'
+                                      e.target.nextSibling.style.display = 'flex'
+                                    }}
+                                  />
+                                  <div
+                                    className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium"
+                                    style={{ display: 'none' }}
+                                  >
+                                    No Image
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium">
+                                  No Image
+                                </div>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex gap-2">
@@ -1017,13 +1049,25 @@ const ExerciseMuscleManager = ({ userId }) => {
                         disabled={isLoading}
                       />
                       <div className="flex items-center space-x-2">
-                        {muscleGroup.image_url && (
-                          <img
-                            src={muscleGroup.image_url || "/placeholder.svg"}
-                            alt={muscleGroup.name}
-                            className="w-6 h-6 object-cover rounded"
-                          />
-                        )}
+                        <div className="flex items-center justify-center">
+                          {muscleGroup.image_url ? (
+                            <img
+                              src={muscleGroup.image_url}
+                              alt={muscleGroup.name}
+                              className="w-8 h-8 object-cover rounded-lg border border-gray-200"
+                              onError={(e) => {
+                                e.target.style.display = 'none'
+                                e.target.nextSibling.style.display = 'flex'
+                              }}
+                            />
+                          ) : null}
+                          <div
+                            className="w-8 h-8 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 text-xs"
+                            style={{ display: muscleGroup.image_url ? 'none' : 'flex' }}
+                          >
+                            📷
+                          </div>
+                        </div>
                         <Label
                           htmlFor={`muscle-group-${muscleGroup.id}`}
                           className="text-sm font-normal cursor-pointer"
@@ -1331,12 +1375,17 @@ const ExerciseMuscleManager = ({ userId }) => {
                 )}
               </div>
               {musclePartImagePreview && (
-                <div className="mt-2">
-                  <img
-                    src={musclePartImagePreview || "/placeholder.svg"}
-                    alt="Preview"
-                    className="w-24 h-24 object-cover rounded border"
-                  />
+                <div className="mt-2 flex justify-center">
+                  <div className="relative group">
+                    <img
+                      src={musclePartImagePreview}
+                      alt="Preview"
+                      className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200 shadow-sm"
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
+                      <span className="text-white opacity-0 group-hover:opacity-100 text-xs font-medium">Preview</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

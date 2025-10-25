@@ -328,16 +328,41 @@ const AttendanceTracking = ({ userId }) => {
                 <label className="text-sm font-medium">Select Month</label>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => {
-                      setSelectedMonth(e.target.value)
-                      setSelectedDate("") // Clear day when month changes
-                    }}
-                    className="flex-1"
-                    placeholder="Select month"
-                  />
+                  <Select value={selectedMonth} onValueChange={(value) => {
+                    setSelectedMonth(value)
+                    setSelectedDate("") // Clear day when month changes
+                  }}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select month" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Time</SelectItem>
+                      <SelectItem value="2025-01">January 2025</SelectItem>
+                      <SelectItem value="2025-02">February 2025</SelectItem>
+                      <SelectItem value="2025-03">March 2025</SelectItem>
+                      <SelectItem value="2025-04">April 2025</SelectItem>
+                      <SelectItem value="2025-05">May 2025</SelectItem>
+                      <SelectItem value="2025-06">June 2025</SelectItem>
+                      <SelectItem value="2025-07">July 2025</SelectItem>
+                      <SelectItem value="2025-08">August 2025</SelectItem>
+                      <SelectItem value="2025-09">September 2025</SelectItem>
+                      <SelectItem value="2025-10">October 2025</SelectItem>
+                      <SelectItem value="2025-11">November 2025</SelectItem>
+                      <SelectItem value="2025-12">December 2025</SelectItem>
+                      <SelectItem value="2024-01">January 2024</SelectItem>
+                      <SelectItem value="2024-02">February 2024</SelectItem>
+                      <SelectItem value="2024-03">March 2024</SelectItem>
+                      <SelectItem value="2024-04">April 2024</SelectItem>
+                      <SelectItem value="2024-05">May 2024</SelectItem>
+                      <SelectItem value="2024-06">June 2024</SelectItem>
+                      <SelectItem value="2024-07">July 2024</SelectItem>
+                      <SelectItem value="2024-08">August 2024</SelectItem>
+                      <SelectItem value="2024-09">September 2024</SelectItem>
+                      <SelectItem value="2024-10">October 2024</SelectItem>
+                      <SelectItem value="2024-11">November 2024</SelectItem>
+                      <SelectItem value="2024-12">December 2024</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="outline"
                     size="sm"
