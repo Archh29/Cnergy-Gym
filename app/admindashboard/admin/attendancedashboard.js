@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
+const AttendanceDashboard = ({ selectedMonth, selectedYear, selectedDate, filterType }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -84,6 +84,7 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
 
     // Use external filters if provided, otherwise use internal state
     const effectiveSelectedMonth = selectedMonth || ""
+    const effectiveSelectedYear = selectedYear || ""
     const effectiveSelectedDate = selectedDate || ""
     const effectiveFilterType = filterType || "all"
 
@@ -158,8 +159,27 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
                 filteredData = filteredData.filter(entry => {
                     const entryDate = parseDateFromEntry(entry)
                     if (entryDate) {
-                        const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
-                        return entryMonth === effectiveSelectedMonth
+                        const entryMonth = entryDate.substring(5, 7) // Get MM part (YYYY-MM-DD format)
+                        const entryYear = entryDate.substring(0, 4) // Get YYYY part
+
+                        // If year is also selected, check both month and year
+                        if (effectiveSelectedYear && effectiveSelectedYear !== "all-time") {
+                            return entryMonth === effectiveSelectedMonth && entryYear === effectiveSelectedYear
+                        } else {
+                            // Just check month
+                            return entryMonth === effectiveSelectedMonth
+                        }
+                    }
+                    return false
+                })
+            }
+            // Apply year filter (if no month selected)
+            else if (effectiveSelectedYear && effectiveSelectedYear !== "all-time") {
+                filteredData = filteredData.filter(entry => {
+                    const entryDate = parseDateFromEntry(entry)
+                    if (entryDate) {
+                        const entryYear = entryDate.substring(0, 4) // Get YYYY part
+                        return entryYear === effectiveSelectedYear
                     }
                     return false
                 })
@@ -193,7 +213,7 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [effectiveSelectedMonth, effectiveSelectedDate, effectiveFilterType])
+    }, [effectiveSelectedMonth, effectiveSelectedYear, effectiveSelectedDate, effectiveFilterType])
 
     // Get current period display text
     const getPeriodDisplay = () => {
@@ -201,8 +221,15 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
             return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
         }
         if (effectiveSelectedMonth && effectiveSelectedMonth !== "all-time") {
-            const monthDate = new Date(effectiveSelectedMonth + "-01")
-            return format(monthDate, "MMMM yyyy")
+            if (effectiveSelectedYear && effectiveSelectedYear !== "all-time") {
+                const monthDate = new Date(`${effectiveSelectedYear}-${effectiveSelectedMonth}-01`)
+                return format(monthDate, "MMMM yyyy")
+            } else {
+                return `Month ${effectiveSelectedMonth}`
+            }
+        }
+        if (effectiveSelectedYear && effectiveSelectedYear !== "all-time") {
+            return `Year ${effectiveSelectedYear}`
         }
         return "All Time"
     }

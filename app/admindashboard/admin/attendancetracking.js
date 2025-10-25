@@ -21,7 +21,8 @@ const AttendanceTracking = ({ userId }) => {
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
-  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (YYYY-MM format or "all-time")
+  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
+  const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
 
   // Helper function to parse date from various formats
@@ -81,11 +82,33 @@ const AttendanceTracking = ({ userId }) => {
     else if (selectedMonth && selectedMonth !== "all-time") {
       filtered = filtered.filter((entry) => {
         const entryDate = parseDateFromEntry(entry)
-        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth)
+        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth, "Selected year:", selectedYear)
         if (entryDate) {
-          const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
-          console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
-          return entryMonth === selectedMonth
+          const entryMonth = entryDate.substring(5, 7) // Get MM part (YYYY-MM-DD format)
+          const entryYear = entryDate.substring(0, 4) // Get YYYY part
+
+          // If year is also selected, check both month and year
+          if (selectedYear && selectedYear !== "all-time") {
+            console.log("🔍 Debug - Comparing month and year:", entryMonth, "vs", selectedMonth, "and", entryYear, "vs", selectedYear)
+            return entryMonth === selectedMonth && entryYear === selectedYear
+          } else {
+            // Just check month
+            console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
+            return entryMonth === selectedMonth
+          }
+        }
+        return false
+      })
+    }
+    // Apply year filter (if no month selected)
+    else if (selectedYear && selectedYear !== "all-time") {
+      filtered = filtered.filter((entry) => {
+        const entryDate = parseDateFromEntry(entry)
+        console.log("🔍 Debug - Year filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected year:", selectedYear)
+        if (entryDate) {
+          const entryYear = entryDate.substring(0, 4) // Get YYYY part
+          console.log("🔍 Debug - Comparing years:", entryYear, "vs", selectedYear)
+          return entryYear === selectedYear
         }
         return false
       })
@@ -131,10 +154,10 @@ const AttendanceTracking = ({ userId }) => {
     fetchData()
   }, [])
 
-  // Refetch data when month or date filter changes
+  // Refetch data when month, year, or date filter changes
   useEffect(() => {
     fetchData()
-  }, [selectedMonth, selectedDate])
+  }, [selectedMonth, selectedYear, selectedDate])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -294,7 +317,7 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard selectedMonth={selectedMonth} selectedDate={selectedDate} filterType={filterType} />
+      <AttendanceDashboard selectedMonth={selectedMonth} selectedYear={selectedYear} selectedDate={selectedDate} filterType={filterType} />
 
       {/* Live Tracking Section */}
       <div className="flex flex-col lg:flex-row gap-6">
@@ -337,36 +360,54 @@ const AttendanceTracking = ({ userId }) => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all-time">All Time</SelectItem>
-                      <SelectItem value="2025-01">January 2025</SelectItem>
-                      <SelectItem value="2025-02">February 2025</SelectItem>
-                      <SelectItem value="2025-03">March 2025</SelectItem>
-                      <SelectItem value="2025-04">April 2025</SelectItem>
-                      <SelectItem value="2025-05">May 2025</SelectItem>
-                      <SelectItem value="2025-06">June 2025</SelectItem>
-                      <SelectItem value="2025-07">July 2025</SelectItem>
-                      <SelectItem value="2025-08">August 2025</SelectItem>
-                      <SelectItem value="2025-09">September 2025</SelectItem>
-                      <SelectItem value="2025-10">October 2025</SelectItem>
-                      <SelectItem value="2025-11">November 2025</SelectItem>
-                      <SelectItem value="2025-12">December 2025</SelectItem>
-                      <SelectItem value="2024-01">January 2024</SelectItem>
-                      <SelectItem value="2024-02">February 2024</SelectItem>
-                      <SelectItem value="2024-03">March 2024</SelectItem>
-                      <SelectItem value="2024-04">April 2024</SelectItem>
-                      <SelectItem value="2024-05">May 2024</SelectItem>
-                      <SelectItem value="2024-06">June 2024</SelectItem>
-                      <SelectItem value="2024-07">July 2024</SelectItem>
-                      <SelectItem value="2024-08">August 2024</SelectItem>
-                      <SelectItem value="2024-09">September 2024</SelectItem>
-                      <SelectItem value="2024-10">October 2024</SelectItem>
-                      <SelectItem value="2024-11">November 2024</SelectItem>
-                      <SelectItem value="2024-12">December 2024</SelectItem>
+                      <SelectItem value="01">January</SelectItem>
+                      <SelectItem value="02">February</SelectItem>
+                      <SelectItem value="03">March</SelectItem>
+                      <SelectItem value="04">April</SelectItem>
+                      <SelectItem value="05">May</SelectItem>
+                      <SelectItem value="06">June</SelectItem>
+                      <SelectItem value="07">July</SelectItem>
+                      <SelectItem value="08">August</SelectItem>
+                      <SelectItem value="09">September</SelectItem>
+                      <SelectItem value="10">October</SelectItem>
+                      <SelectItem value="11">November</SelectItem>
+                      <SelectItem value="12">December</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setSelectedMonth("")}
+                    className="px-2"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              {/* Year Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Select Year</label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Select value={selectedYear} onValueChange={(value) => {
+                    setSelectedYear(value)
+                    setSelectedDate("") // Clear day when year changes
+                  }}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all-time">All Time</SelectItem>
+                      <SelectItem value="2024">2024</SelectItem>
+                      <SelectItem value="2025">2025</SelectItem>
+                      <SelectItem value="2026">2026</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedYear("all-time")}
                     className="px-2"
                   >
                     Clear
