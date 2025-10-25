@@ -239,10 +239,9 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard />
+      <AttendanceDashboard selectedDate={selectedDate} filterType={filterType} />
 
       {/* Live Tracking Section */}
-
       <Card className="w-full">
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -259,7 +258,6 @@ const AttendanceTracking = ({ userId }) => {
                 <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                 Refresh
               </Button>
-
 
               {/* Manual Member Entry */}
               <Dialog open={manualOpen} onOpenChange={setManualOpen}>
@@ -312,6 +310,7 @@ const AttendanceTracking = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Filters Section */}
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

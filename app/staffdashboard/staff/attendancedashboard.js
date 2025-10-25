@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ userId }) => {
+const AttendanceDashboard = ({ userId, selectedDate, filterType }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -43,6 +43,10 @@ const AttendanceDashboard = ({ userId }) => {
     const [yearFilter, setYearFilter] = useState("all")
     const [customDate, setCustomDate] = useState(null)
     const [useCustomDate, setUseCustomDate] = useState(false)
+
+    // Use external filters if provided, otherwise use internal state
+    const effectiveSelectedDate = selectedDate || ""
+    const effectiveFilterType = filterType || "all"
 
     // Calculate analytics from attendance data
     const calculateAnalytics = (data) => {
@@ -90,6 +94,8 @@ const AttendanceDashboard = ({ userId }) => {
             // Add date filter if using custom date
             if (useCustomDate && customDate) {
                 attendanceUrl += `&date=${format(customDate, "yyyy-MM-dd")}`
+            } else if (effectiveSelectedDate) {
+                attendanceUrl += `&date=${effectiveSelectedDate}`
             }
 
             const response = await axios.get(attendanceUrl)
@@ -104,14 +110,34 @@ const AttendanceDashboard = ({ userId }) => {
                 switch (periodFilter) {
                     case "today":
                         filteredData = data.filter(entry => {
-                            const entryDate = new Date(entry.date)
+                            // Handle different date formats
+                            let entryDate
+                            if (entry.date) {
+                                entryDate = new Date(entry.date)
+                            } else if (entry.check_in) {
+                                // Extract date from check_in timestamp
+                                entryDate = new Date(entry.check_in.split(' ')[0])
+                            } else if (entry.timestamp) {
+                                entryDate = new Date(entry.timestamp)
+                            } else {
+                                return false
+                            }
                             return entryDate.toDateString() === today.toDateString()
                         })
                         break
                     case "yesterday":
                         const yesterday = subDays(today, 1)
                         filteredData = data.filter(entry => {
-                            const entryDate = new Date(entry.date)
+                            let entryDate
+                            if (entry.date) {
+                                entryDate = new Date(entry.date)
+                            } else if (entry.check_in) {
+                                entryDate = new Date(entry.check_in.split(' ')[0])
+                            } else if (entry.timestamp) {
+                                entryDate = new Date(entry.timestamp)
+                            } else {
+                                return false
+                            }
                             return entryDate.toDateString() === yesterday.toDateString()
                         })
                         break
@@ -119,7 +145,16 @@ const AttendanceDashboard = ({ userId }) => {
                         const weekStart = startOfWeek(today)
                         const weekEnd = endOfWeek(today)
                         filteredData = data.filter(entry => {
-                            const entryDate = new Date(entry.date)
+                            let entryDate
+                            if (entry.date) {
+                                entryDate = new Date(entry.date)
+                            } else if (entry.check_in) {
+                                entryDate = new Date(entry.check_in.split(' ')[0])
+                            } else if (entry.timestamp) {
+                                entryDate = new Date(entry.timestamp)
+                            } else {
+                                return false
+                            }
                             return entryDate >= weekStart && entryDate <= weekEnd
                         })
                         break
@@ -127,7 +162,16 @@ const AttendanceDashboard = ({ userId }) => {
                         const monthStart = startOfMonth(today)
                         const monthEnd = endOfMonth(today)
                         filteredData = data.filter(entry => {
-                            const entryDate = new Date(entry.date)
+                            let entryDate
+                            if (entry.date) {
+                                entryDate = new Date(entry.date)
+                            } else if (entry.check_in) {
+                                entryDate = new Date(entry.check_in.split(' ')[0])
+                            } else if (entry.timestamp) {
+                                entryDate = new Date(entry.timestamp)
+                            } else {
+                                return false
+                            }
                             return entryDate >= monthStart && entryDate <= monthEnd
                         })
                         break
@@ -135,9 +179,22 @@ const AttendanceDashboard = ({ userId }) => {
                         const yearStart = startOfYear(today)
                         const yearEnd = endOfYear(today)
                         filteredData = data.filter(entry => {
-                            const entryDate = new Date(entry.date)
+                            let entryDate
+                            if (entry.date) {
+                                entryDate = new Date(entry.date)
+                            } else if (entry.check_in) {
+                                entryDate = new Date(entry.check_in.split(' ')[0])
+                            } else if (entry.timestamp) {
+                                entryDate = new Date(entry.timestamp)
+                            } else {
+                                return false
+                            }
                             return entryDate >= yearStart && entryDate <= yearEnd
                         })
+                        break
+                    case "all":
+                        // Show all data without date filtering
+                        filteredData = data
                         break
                 }
             }
@@ -145,7 +202,16 @@ const AttendanceDashboard = ({ userId }) => {
             // Apply month filter
             if (monthFilter && monthFilter !== "all") {
                 filteredData = filteredData.filter(entry => {
-                    const entryDate = new Date(entry.date)
+                    let entryDate
+                    if (entry.date) {
+                        entryDate = new Date(entry.date)
+                    } else if (entry.check_in) {
+                        entryDate = new Date(entry.check_in.split(' ')[0])
+                    } else if (entry.timestamp) {
+                        entryDate = new Date(entry.timestamp)
+                    } else {
+                        return false
+                    }
                     return entryDate.getMonth() + 1 === parseInt(monthFilter)
                 })
             }
@@ -153,8 +219,29 @@ const AttendanceDashboard = ({ userId }) => {
             // Apply year filter
             if (yearFilter && yearFilter !== "all") {
                 filteredData = filteredData.filter(entry => {
-                    const entryDate = new Date(entry.date)
+                    let entryDate
+                    if (entry.date) {
+                        entryDate = new Date(entry.date)
+                    } else if (entry.check_in) {
+                        entryDate = new Date(entry.check_in.split(' ')[0])
+                    } else if (entry.timestamp) {
+                        entryDate = new Date(entry.timestamp)
+                    } else {
+                        return false
+                    }
                     return entryDate.getFullYear() === parseInt(yearFilter)
+                })
+            }
+
+            // Apply user type filter
+            if (effectiveFilterType && effectiveFilterType !== "all") {
+                filteredData = filteredData.filter(entry => {
+                    if (effectiveFilterType === "members") {
+                        return entry.user_type === "member"
+                    } else if (effectiveFilterType === "guests") {
+                        return entry.user_type === "guest"
+                    }
+                    return true
                 })
             }
 
@@ -186,7 +273,7 @@ const AttendanceDashboard = ({ userId }) => {
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [periodFilter, monthFilter, yearFilter, useCustomDate, customDate])
+    }, [periodFilter, monthFilter, yearFilter, useCustomDate, customDate, effectiveSelectedDate, effectiveFilterType])
 
     // Get current period display text
     const getPeriodDisplay = () => {
@@ -206,6 +293,8 @@ const AttendanceDashboard = ({ userId }) => {
                 return "This Month"
             case "year":
                 return "This Year"
+            case "all":
+                return "All Time"
             default:
                 return "Today"
         }
@@ -267,6 +356,7 @@ const AttendanceDashboard = ({ userId }) => {
                                     <SelectItem value="week">This Week</SelectItem>
                                     <SelectItem value="month">This Month</SelectItem>
                                     <SelectItem value="year">This Year</SelectItem>
+                                    <SelectItem value="all">All Time</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
@@ -463,50 +553,6 @@ const AttendanceDashboard = ({ userId }) => {
                 </Card>
             </div>
 
-            {/* Recent Attendance */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Activity className="h-5 w-5" />
-                        Recent Attendance ({attendanceData.length} entries)
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {attendanceData.length > 0 ? (
-                        <div className="space-y-2">
-                            {attendanceData.slice(0, 10).map((entry, index) => (
-                                <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                            <UserCheck className="h-4 w-4 text-blue-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">{entry.name}</p>
-                                            <p className="text-sm text-muted-foreground">
-                                                {entry.user_type === "guest" ? "Day Pass" : "Member"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-sm font-medium">{entry.time}</p>
-                                        <p className="text-xs text-muted-foreground">{entry.date}</p>
-                                    </div>
-                                </div>
-                            ))}
-                            {attendanceData.length > 10 && (
-                                <p className="text-sm text-muted-foreground text-center pt-2">
-                                    Showing 10 of {attendanceData.length} entries
-                                </p>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="text-center py-8 text-muted-foreground">
-                            <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                            <p>No attendance data for the selected period</p>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
         </div>
     )
 }
