@@ -168,11 +168,11 @@ const GymDashboard = () => {
       for (let month = 1; month <= 12; month++) {
         const date = new Date(parseInt(year), month - 1, 1)
         membershipData.push({
-          name: format(date, 'MMM'),
+          name: format(date, 'yyyy-MM-dd'),
           members: Math.floor(Math.random() * 50) + 20
         })
         revenueData.push({
-          name: format(date, 'MMM'),
+          name: format(date, 'yyyy-MM-dd'),
           revenue: Math.floor(Math.random() * 100000) + 20000
         })
       }
@@ -181,11 +181,11 @@ const GymDashboard = () => {
       for (let month = 1; month <= 12; month++) {
         const date = new Date(currentYear, month - 1, 1)
         membershipData.push({
-          name: format(date, 'MMM'),
+          name: format(date, 'yyyy-MM-dd'),
           members: Math.floor(Math.random() * 50) + 20
         })
         revenueData.push({
-          name: format(date, 'MMM'),
+          name: format(date, 'yyyy-MM-dd'),
           revenue: Math.floor(Math.random() * 100000) + 20000
         })
       }
@@ -249,10 +249,26 @@ const GymDashboard = () => {
 
   // Format chart data to show 'MMM DD' (e.g., 'Oct 17')
   const formatChartData = (data) => {
-    return data.map(item => ({
-      ...item,
-      displayName: item.name ? format(new Date(item.name), "MMM dd") : item.name // Format to 'Oct 17'
-    }))
+    return data.map(item => {
+      if (!item.name) return item
+
+      try {
+        const date = new Date(item.name)
+        // Check if the date is valid
+        if (isNaN(date.getTime())) {
+          console.warn('Invalid date:', item.name)
+          return { ...item, displayName: item.name }
+        }
+
+        return {
+          ...item,
+          displayName: format(date, "MMM dd")
+        }
+      } catch (error) {
+        console.warn('Error formatting date:', item.name, error)
+        return { ...item, displayName: item.name }
+      }
+    })
   }
 
   // Show error state if there's an error and no data
