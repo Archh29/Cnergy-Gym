@@ -154,7 +154,7 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
                 })
             }
             // Apply month filter (entire month)
-            else if (effectiveSelectedMonth) {
+            else if (effectiveSelectedMonth && effectiveSelectedMonth !== "all-time") {
                 filteredData = filteredData.filter(entry => {
                     const entryDate = parseDateFromEntry(entry)
                     if (entryDate) {
@@ -200,7 +200,7 @@ const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
         if (effectiveSelectedDate) {
             return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
         }
-        if (effectiveSelectedMonth) {
+        if (effectiveSelectedMonth && effectiveSelectedMonth !== "all-time") {
             const monthDate = new Date(effectiveSelectedMonth + "-01")
             return format(monthDate, "MMMM yyyy")
         }

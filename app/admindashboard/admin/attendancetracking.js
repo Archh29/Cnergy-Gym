@@ -21,7 +21,7 @@ const AttendanceTracking = ({ userId }) => {
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
-  const [selectedMonth, setSelectedMonth] = useState("") // Month filter (YYYY-MM format)
+  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (YYYY-MM format or "all-time")
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
 
   // Helper function to parse date from various formats
@@ -78,7 +78,7 @@ const AttendanceTracking = ({ userId }) => {
       })
     }
     // Apply month filter (entire month)
-    else if (selectedMonth) {
+    else if (selectedMonth && selectedMonth !== "all-time") {
       filtered = filtered.filter((entry) => {
         const entryDate = parseDateFromEntry(entry)
         console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth)
@@ -336,7 +336,7 @@ const AttendanceTracking = ({ userId }) => {
                       <SelectValue placeholder="Select month" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Time</SelectItem>
+                      <SelectItem value="all-time">All Time</SelectItem>
                       <SelectItem value="2025-01">January 2025</SelectItem>
                       <SelectItem value="2025-02">February 2025</SelectItem>
                       <SelectItem value="2025-03">March 2025</SelectItem>
