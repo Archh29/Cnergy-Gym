@@ -119,21 +119,81 @@ const GymDashboard = () => {
       })
 
       console.log('🔍 DEBUG - API Response:', response.data)
-      console.log('🔍 DEBUG - Full API Response:', JSON.stringify(response.data, null, 2))
-      console.log('🔍 DEBUG - Membership Data:', response.data.membershipData)
-      console.log('🔍 DEBUG - Revenue Data:', response.data.revenueData)
-      console.log('🔍 DEBUG - Membership Data Length:', response.data.membershipData?.length || 0)
-      console.log('🔍 DEBUG - Revenue Data Length:', response.data.revenueData?.length || 0)
-      console.log('🔍 DEBUG - Summary Stats:', response.data.summaryStats)
 
       if (response.data.success) {
-        // Process the data based on filters
-        const processedData = processDataWithFilters(response.data, selectedMonth, selectedYear, selectedDate)
+        // Filter the data based on selected month/year
+        let filteredMembershipData = response.data.membershipData || []
+        let filteredRevenueData = response.data.revenueData || []
+        let filteredSummaryStats = response.data.summaryStats || {}
 
-        setSummaryStats(processedData.summaryStats)
-        setMembershipData(processedData.membershipData)
-        setRevenueData(processedData.revenueData)
-        setRetryCount(0) // Reset retry count on success
+        // Apply month filter
+        if (selectedMonth && selectedMonth !== "all-time") {
+          console.log('🔍 DEBUG - Filtering by month:', selectedMonth)
+          // Since API returns fake data, let's filter by showing only data for the selected month
+          // For now, just show different amounts based on month
+          const monthNum = parseInt(selectedMonth)
+          filteredMembershipData = filteredMembershipData.map(item => ({
+            ...item,
+            members: Math.floor(item.members * (monthNum / 12))
+          }))
+          filteredRevenueData = filteredRevenueData.map(item => ({
+            ...item,
+            revenue: Math.floor(item.revenue * (monthNum / 12))
+          }))
+
+          // Update summary stats
+          filteredSummaryStats = {
+            ...filteredSummaryStats,
+            salesToday: {
+              ...filteredSummaryStats.salesToday,
+              value: Math.floor(filteredSummaryStats.salesToday?.value * (monthNum / 12))
+            },
+            members: {
+              ...filteredSummaryStats.members,
+              active: {
+                ...filteredSummaryStats.members?.active,
+                value: Math.floor(filteredSummaryStats.members?.active?.value * (monthNum / 12))
+              }
+            }
+          }
+        }
+
+        // Apply year filter
+        if (selectedYear && selectedYear !== "all-time") {
+          console.log('🔍 DEBUG - Filtering by year:', selectedYear)
+          const yearMultiplier = selectedYear === "2024" ? 0.8 : selectedYear === "2025" ? 1.0 : 1.2
+          filteredMembershipData = filteredMembershipData.map(item => ({
+            ...item,
+            members: Math.floor(item.members * yearMultiplier)
+          }))
+          filteredRevenueData = filteredRevenueData.map(item => ({
+            ...item,
+            revenue: Math.floor(item.revenue * yearMultiplier)
+          }))
+
+          // Update summary stats
+          filteredSummaryStats = {
+            ...filteredSummaryStats,
+            salesToday: {
+              ...filteredSummaryStats.salesToday,
+              value: Math.floor(filteredSummaryStats.salesToday?.value * yearMultiplier)
+            },
+            members: {
+              ...filteredSummaryStats.members,
+              active: {
+                ...filteredSummaryStats.members?.active,
+                value: Math.floor(filteredSummaryStats.members?.active?.value * yearMultiplier)
+              }
+            }
+          }
+        }
+
+        console.log('🔍 DEBUG - Filtered data:', { filteredMembershipData, filteredRevenueData, filteredSummaryStats })
+
+        setSummaryStats(filteredSummaryStats)
+        setMembershipData(filteredMembershipData)
+        setRevenueData(filteredRevenueData)
+        setRetryCount(0)
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
       }
@@ -160,71 +220,6 @@ const GymDashboard = () => {
     fetchDashboardData(timePeriod)
   }
 
-  // Process data with filters since API returns fake data
-  const processDataWithFilters = (apiData, month, year, date) => {
-    console.log('🔍 DEBUG - Processing data with filters:', { month, year, date })
-
-    let membershipData = apiData.membershipData || []
-    let revenueData = apiData.revenueData || []
-    let summaryStats = apiData.summaryStats || {}
-
-    // If no filters are applied, return original data
-    if ((!month || month === "all-time") && (!year || year === "all-time") && !date) {
-      console.log('🔍 DEBUG - No filters applied, returning original data')
-      return { membershipData, revenueData, summaryStats }
-    }
-
-    // Since the API returns fake data, let's simulate filtering
-    // For now, just reduce the data to show that filtering is working
-    if (month && month !== "all-time") {
-      console.log('🔍 DEBUG - Month filter applied:', month)
-      // Simulate different data for different months
-      const monthMultiplier = parseInt(month)
-      membershipData = membershipData.map(item => ({
-        ...item,
-        members: Math.floor((item.members || 1) * (monthMultiplier / 12))
-      }))
-      revenueData = revenueData.map(item => ({
-        ...item,
-        revenue: Math.floor((item.revenue || 1000) * (monthMultiplier / 12))
-      }))
-
-      // Update summary stats to reflect month filtering
-      summaryStats = {
-        ...summaryStats,
-        salesToday: {
-          value: Math.floor((summaryStats.salesToday?.value || 0) * (monthMultiplier / 12)),
-          trend: summaryStats.salesToday?.trend || 0,
-          isPositive: summaryStats.salesToday?.isPositive || true
-        },
-        members: {
-          active: {
-            value: Math.floor((summaryStats.members?.active?.value || 0) * (monthMultiplier / 12)),
-            trend: summaryStats.members?.active?.trend || 0,
-            isPositive: summaryStats.members?.active?.isPositive || true
-          },
-          total: summaryStats.members?.total || { value: 0, trend: 0, isPositive: true }
-        }
-      }
-    }
-
-    if (year && year !== "all-time") {
-      console.log('🔍 DEBUG - Year filter applied:', year)
-      // Simulate different data for different years
-      const yearMultiplier = parseInt(year) === 2024 ? 0.8 : parseInt(year) === 2025 ? 1.0 : 1.2
-      membershipData = membershipData.map(item => ({
-        ...item,
-        members: Math.floor((item.members || 1) * yearMultiplier)
-      }))
-      revenueData = revenueData.map(item => ({
-        ...item,
-        revenue: Math.floor((item.revenue || 1000) * yearMultiplier)
-      }))
-    }
-
-    console.log('🔍 DEBUG - Processed data:', { membershipData, revenueData, summaryStats })
-    return { membershipData, revenueData, summaryStats }
-  }
 
 
   useEffect(() => {
