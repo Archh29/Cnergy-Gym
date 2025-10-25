@@ -86,34 +86,43 @@ const GymDashboard = () => {
   const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
-    
+
     try {
       // Build the API URL with proper parameters
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
-      
+
       // Add month filter if selected
       if (selectedMonth && selectedMonth !== "all-time") {
         const currentYear = new Date().getFullYear()
         const monthYear = selectedYear && selectedYear !== "all-time" ? selectedYear : currentYear
         apiUrl += `&month=${monthYear}-${selectedMonth}`
       }
-      
+
       // Add year filter if selected (and no month)
       if (selectedYear && selectedYear !== "all-time" && (!selectedMonth || selectedMonth === "all-time")) {
         apiUrl += `&year=${selectedYear}`
       }
-      
+
       // Add date filter if selected
       if (selectedDate) {
         apiUrl += `&date=${selectedDate}`
       }
-      
-      console.log('Fetching from:', apiUrl)
-      
+
+      console.log('🔍 DEBUG - Fetching from:', apiUrl)
+      console.log('🔍 DEBUG - Selected Month:', selectedMonth)
+      console.log('🔍 DEBUG - Selected Year:', selectedYear)
+      console.log('🔍 DEBUG - Selected Date:', selectedDate)
+      console.log('🔍 DEBUG - Time Period:', period)
+
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
-      
+
+      console.log('🔍 DEBUG - API Response:', response.data)
+      console.log('🔍 DEBUG - Membership Data Length:', response.data.membershipData?.length || 0)
+      console.log('🔍 DEBUG - Revenue Data Length:', response.data.revenueData?.length || 0)
+      console.log('🔍 DEBUG - Summary Stats:', response.data.summaryStats)
+
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
         setMembershipData(response.data.membershipData || [])
@@ -127,7 +136,7 @@ const GymDashboard = () => {
       setError(err.message)
       setMembershipData([])
       setRevenueData([])
-      
+
       // Auto-retry logic (max 3 retries)
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
@@ -183,26 +192,38 @@ const GymDashboard = () => {
 
   // Format chart data to show 'MMM DD' (e.g., 'Oct 17') only if data exists
   const formatChartData = (data) => {
-    if (!data || data.length === 0) return []
+    console.log('🔍 DEBUG - formatChartData input:', data)
 
-    return data.map(item => {
+    if (!data || data.length === 0) {
+      console.log('🔍 DEBUG - No data to format, returning empty array')
+      return []
+    }
+
+    const formatted = data.map(item => {
       if (!item.name) return item
 
       try {
         const date = new Date(item.name)
         // Check if the date is valid
         if (isNaN(date.getTime())) {
+          console.log('🔍 DEBUG - Invalid date:', item.name)
           return { ...item, displayName: item.name }
         }
 
-        return {
+        const formattedItem = {
           ...item,
           displayName: format(date, "MMM dd")
         }
+        console.log('🔍 DEBUG - Formatted item:', formattedItem)
+        return formattedItem
       } catch (error) {
+        console.log('🔍 DEBUG - Error formatting date:', item.name, error)
         return { ...item, displayName: item.name }
       }
     })
+
+    console.log('🔍 DEBUG - Final formatted data:', formatted)
+    return formatted
   }
 
   // Show error state if there's an error and no data
