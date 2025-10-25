@@ -1238,7 +1238,7 @@ const SubscriptionMonitor = ({ userId }) => {
               }
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
+              {currentSubscriptionId ? "Process Payment & Approve" : "Process Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

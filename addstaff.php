@@ -22,7 +22,7 @@ try {
             if (isset($_GET['id'])) {
                 // Fetch a specific staff member by ID
                 try {
-                    $stmt = $pdo->prepare("SELECT * FROM user WHERE id = ? AND user_type_id = 2");
+                    $stmt = $pdo->prepare("SELECT * FROM user WHERE id = ? AND user_type_id = 2 AND is_deleted = 0");
                     $stmt->execute([$_GET['id']]);
                     $staff = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -31,7 +31,7 @@ try {
                         $staff['gender'] = $staff['gender_id'] == 1 ? 'Male' : 'Female';
                     }
                 } catch (PDOException $e) {
-                    $stmt = $pdo->prepare("SELECT * FROM User WHERE id = ? AND user_type_id = 2");
+                    $stmt = $pdo->prepare("SELECT * FROM User WHERE id = ? AND user_type_id = 2 AND is_deleted = 0");
                     $stmt->execute([$_GET['id']]);
                     $staff = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -45,7 +45,7 @@ try {
                 // Fetch all staff users - simplified approach
                 try {
                     // First, let's try a simple query to get staff users
-                    $stmt = $pdo->prepare("SELECT * FROM user WHERE user_type_id = 2");
+                    $stmt = $pdo->prepare("SELECT * FROM user WHERE user_type_id = 2 AND is_deleted = 0");
                     $stmt->execute();
                     $staffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -57,7 +57,7 @@ try {
 
                 } catch (PDOException $e) {
                     // If that fails, try with 'User' table (uppercase)
-                    $stmt = $pdo->prepare("SELECT * FROM User WHERE user_type_id = 2");
+                    $stmt = $pdo->prepare("SELECT * FROM User WHERE user_type_id = 2 AND is_deleted = 0");
                     $stmt->execute();
                     $staffs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -211,13 +211,13 @@ try {
                 exit;
             }
 
-            // Simple delete
+            // Soft delete (hide staff instead of actually deleting)
             try {
-                $stmt = $pdo->prepare('DELETE FROM user WHERE id = ? AND user_type_id = 2');
+                $stmt = $pdo->prepare('UPDATE user SET is_deleted = 1 WHERE id = ? AND user_type_id = 2');
                 $stmt->execute([$staffId]);
 
                 if ($stmt->rowCount() > 0) {
-                    echo json_encode(['success' => true, 'message' => 'Staff deleted successfully']);
+                    echo json_encode(['success' => true, 'message' => 'Staff deactivated successfully']);
                 } else {
                     http_response_code(404);
                     echo json_encode(['error' => 'Staff not found']);
@@ -225,11 +225,11 @@ try {
             } catch (PDOException $e) {
                 // Try uppercase table
                 try {
-                    $stmt = $pdo->prepare('DELETE FROM User WHERE id = ? AND user_type_id = 2');
+                    $stmt = $pdo->prepare('UPDATE User SET is_deleted = 1 WHERE id = ? AND user_type_id = 2');
                     $stmt->execute([$staffId]);
 
                     if ($stmt->rowCount() > 0) {
-                        echo json_encode(['success' => true, 'message' => 'Staff deleted successfully']);
+                        echo json_encode(['success' => true, 'message' => 'Staff deactivated successfully']);
                     } else {
                         http_response_code(404);
                         echo json_encode(['error' => 'Staff not found']);

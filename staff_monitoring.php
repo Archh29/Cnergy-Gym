@@ -491,7 +491,7 @@ function getStaffList($pdo)
                 ut.type_name as user_type
             FROM user u
             LEFT JOIN usertype ut ON u.user_type_id = ut.id
-            WHERE u.user_type_id IN (1, 2)
+            WHERE u.user_type_id IN (1, 2) AND u.is_deleted = 0
             ORDER BY u.fname, u.lname
         ");
 
