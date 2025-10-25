@@ -242,190 +242,213 @@ const AttendanceTracking = ({ userId }) => {
       <AttendanceDashboard userId={userId} selectedDate={selectedDate} filterType={filterType} />
 
       {/* Live Tracking Section */}
-      <Card className="w-full">
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="outline"
-                onClick={fetchData}
-                disabled={loading}
-                className="w-full sm:w-auto bg-transparent"
-              >
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh
-              </Button>
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Left Sidebar - Filters */}
+        <div className="lg:w-80 flex-shrink-0">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filters
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Search */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Search</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search attendance records..."
+                    className="pl-8"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
 
-              {/* Manual Member Entry */}
-              <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full sm:w-auto bg-transparent">
-                    <Plus className="mr-2 h-4 w-4" />
-                    <span className="hidden sm:inline">Manual Entry</span>
-                    <span className="sm:hidden">Manual</span>
+              {/* Date Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Date</label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="flex-1"
+                    placeholder="Select date"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedDate("")}
+                    className="px-2"
+                  >
+                    Clear
                   </Button>
-                </DialogTrigger>
-                <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
-                  <DialogHeader>
-                    <DialogTitle>Manual Attendance Entry</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <Input
-                      type="text"
-                      placeholder="Search member..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                    <div className="max-h-60 overflow-y-auto space-y-1">
-                      {members
-                        .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
-                        .map((member) => (
-                          <Button
-                            key={member.id}
-                            variant="ghost"
-                            className="w-full justify-start"
-                            onClick={() => handleManualEntry(member)}
-                          >
-                            <div className="text-left">
-                              <div className="font-medium">
-                                {member.fname} {member.lname}
-                              </div>
-                              <div className="text-sm text-muted-foreground">{member.email}</div>
-                            </div>
-                          </Button>
-                        ))}
-                    </div>
-                  </div>
-                  <DialogFooter className="pt-4">
-                    <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
-                      Cancel
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Filters Section */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search attendance records..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-[160px]"
-                placeholder="Select date"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedDate("")}
-                className="px-2"
-              >
-                Clear
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Filter by type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      All Users
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="members">
-                    <div className="flex items-center gap-2">
-                      <UserCheck className="h-4 w-4" />
-                      Members Only
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="guests">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4" />
-                      Day Pass Only
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          {/* Mobile-friendly table wrapper with fixed height and scroll */}
-          <div className="rounded-md border overflow-hidden">
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-              <Table>
-                <TableHeader className="sticky top-0 bg-white z-10">
-                  <TableRow>
-                    <TableHead className="min-w-[120px]">Name</TableHead>
-                    <TableHead className="min-w-[100px]">Type</TableHead>
-                    <TableHead className="min-w-[140px]">Check In</TableHead>
-                    <TableHead className="min-w-[140px]">Check Out</TableHead>
-                    <TableHead className="min-w-[80px]">Duration</TableHead>
-                    <TableHead className="min-w-[80px]">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {getFilteredAttendance().map((entry) => (
-                    <TableRow key={`${entry.user_type}-${entry.id}`}>
-                      <TableCell className="font-medium">{entry.name}</TableCell>
-                      <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.user_type === "guest"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-green-100 text-green-800"
-                            }`}
-                        >
-                          {entry.user_type === "guest" ? "Day Pass" : "Member"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm">{entry.check_in}</TableCell>
-                      <TableCell className="text-sm">{entry.check_out || "Still in gym"}</TableCell>
-                      <TableCell className="text-sm">{entry.duration || "-"}</TableCell>
-                      <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.check_out && !entry.check_out.includes("Still in gym")
-                            ? "bg-gray-100 text-gray-800"
-                            : "bg-green-100 text-green-800"
-                            }`}
-                        >
-                          {entry.check_out && !entry.check_out.includes("Still in gym") ? "Completed" : "Active"}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {getFilteredAttendance().length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        {loading ? "Loading attendance records..." : "No attendance records found"}
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              {/* User Type Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">User Type</label>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        All Users
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="members">
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="h-4 w-4" />
+                        Members Only
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="guests">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Day Pass Only
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  onClick={fetchData}
+                  disabled={loading}
+                  className="w-full"
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+
+                {/* Manual Member Entry */}
+                <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Manual Entry
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
+                    <DialogHeader>
+                      <DialogTitle>Manual Attendance Entry</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <Input
+                        type="text"
+                        placeholder="Search member..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                      <div className="max-h-60 overflow-y-auto space-y-1">
+                        {members
+                          .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
+                          .map((member) => (
+                            <Button
+                              key={member.id}
+                              variant="ghost"
+                              className="w-full justify-start"
+                              onClick={() => handleManualEntry(member)}
+                            >
+                              <div className="text-left">
+                                <div className="font-medium">
+                                  {member.fname} {member.lname}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{member.email}</div>
+                              </div>
+                            </Button>
+                          ))}
+                      </div>
+                    </div>
+                    <DialogFooter className="pt-4">
+                      <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
+                        Cancel
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Side - Attendance Table */}
+        <div className="flex-1">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Mobile-friendly table wrapper with fixed height and scroll */}
+              <div className="rounded-md border overflow-hidden">
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-white z-10">
+                      <TableRow>
+                        <TableHead className="min-w-[120px]">Name</TableHead>
+                        <TableHead className="min-w-[100px]">Type</TableHead>
+                        <TableHead className="min-w-[140px]">Check In</TableHead>
+                        <TableHead className="min-w-[140px]">Check Out</TableHead>
+                        <TableHead className="min-w-[80px]">Duration</TableHead>
+                        <TableHead className="min-w-[80px]">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {getFilteredAttendance().map((entry) => (
+                        <TableRow key={`${entry.user_type}-${entry.id}`}>
+                          <TableCell className="font-medium">{entry.name}</TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.user_type === "guest"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-green-100 text-green-800"
+                                }`}
+                            >
+                              {entry.user_type === "guest" ? "Day Pass" : "Member"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-sm">{entry.check_in}</TableCell>
+                          <TableCell className="text-sm">{entry.check_out || "Still in gym"}</TableCell>
+                          <TableCell className="text-sm">{entry.duration || "-"}</TableCell>
+                          <TableCell>
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.check_out && !entry.check_out.includes("Still in gym")
+                                ? "bg-gray-100 text-gray-800"
+                                : "bg-green-100 text-green-800"
+                                }`}
+                            >
+                              {entry.check_out && !entry.check_out.includes("Still in gym") ? "Completed" : "Active"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {getFilteredAttendance().length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            {loading ? "Loading attendance records..." : "No attendance records found"}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   )
 }

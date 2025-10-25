@@ -91,151 +91,18 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
         try {
             let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
-            // Add date filter if using custom date
-            if (useCustomDate && customDate) {
-                attendanceUrl += `&date=${format(customDate, "yyyy-MM-dd")}`
-            } else if (effectiveSelectedDate) {
+            // Add date filter if provided
+            if (effectiveSelectedDate) {
                 attendanceUrl += `&date=${effectiveSelectedDate}`
             }
 
             const response = await axios.get(attendanceUrl)
             const data = response.data || []
 
-            // Filter data based on period, month, and year
-            let filteredData = data
-
-            if (!useCustomDate) {
-                const today = new Date()
-
-                switch (periodFilter) {
-                    case "today":
-                        filteredData = data.filter(entry => {
-                            // Handle different date formats
-                            let entryDate
-                            if (entry.date) {
-                                entryDate = new Date(entry.date)
-                            } else if (entry.check_in) {
-                                // Extract date from check_in timestamp
-                                entryDate = new Date(entry.check_in.split(' ')[0])
-                            } else if (entry.timestamp) {
-                                entryDate = new Date(entry.timestamp)
-                            } else {
-                                return false
-                            }
-                            return entryDate.toDateString() === today.toDateString()
-                        })
-                        break
-                    case "yesterday":
-                        const yesterday = subDays(today, 1)
-                        filteredData = data.filter(entry => {
-                            let entryDate
-                            if (entry.date) {
-                                entryDate = new Date(entry.date)
-                            } else if (entry.check_in) {
-                                entryDate = new Date(entry.check_in.split(' ')[0])
-                            } else if (entry.timestamp) {
-                                entryDate = new Date(entry.timestamp)
-                            } else {
-                                return false
-                            }
-                            return entryDate.toDateString() === yesterday.toDateString()
-                        })
-                        break
-                    case "week":
-                        const weekStart = startOfWeek(today)
-                        const weekEnd = endOfWeek(today)
-                        filteredData = data.filter(entry => {
-                            let entryDate
-                            if (entry.date) {
-                                entryDate = new Date(entry.date)
-                            } else if (entry.check_in) {
-                                entryDate = new Date(entry.check_in.split(' ')[0])
-                            } else if (entry.timestamp) {
-                                entryDate = new Date(entry.timestamp)
-                            } else {
-                                return false
-                            }
-                            return entryDate >= weekStart && entryDate <= weekEnd
-                        })
-                        break
-                    case "month":
-                        const monthStart = startOfMonth(today)
-                        const monthEnd = endOfMonth(today)
-                        filteredData = data.filter(entry => {
-                            let entryDate
-                            if (entry.date) {
-                                entryDate = new Date(entry.date)
-                            } else if (entry.check_in) {
-                                entryDate = new Date(entry.check_in.split(' ')[0])
-                            } else if (entry.timestamp) {
-                                entryDate = new Date(entry.timestamp)
-                            } else {
-                                return false
-                            }
-                            return entryDate >= monthStart && entryDate <= monthEnd
-                        })
-                        break
-                    case "year":
-                        const yearStart = startOfYear(today)
-                        const yearEnd = endOfYear(today)
-                        filteredData = data.filter(entry => {
-                            let entryDate
-                            if (entry.date) {
-                                entryDate = new Date(entry.date)
-                            } else if (entry.check_in) {
-                                entryDate = new Date(entry.check_in.split(' ')[0])
-                            } else if (entry.timestamp) {
-                                entryDate = new Date(entry.timestamp)
-                            } else {
-                                return false
-                            }
-                            return entryDate >= yearStart && entryDate <= yearEnd
-                        })
-                        break
-                    case "all":
-                        // Show all data without date filtering
-                        filteredData = data
-                        break
-                }
-            }
-
-            // Apply month filter
-            if (monthFilter && monthFilter !== "all") {
-                filteredData = filteredData.filter(entry => {
-                    let entryDate
-                    if (entry.date) {
-                        entryDate = new Date(entry.date)
-                    } else if (entry.check_in) {
-                        entryDate = new Date(entry.check_in.split(' ')[0])
-                    } else if (entry.timestamp) {
-                        entryDate = new Date(entry.timestamp)
-                    } else {
-                        return false
-                    }
-                    return entryDate.getMonth() + 1 === parseInt(monthFilter)
-                })
-            }
-
-            // Apply year filter
-            if (yearFilter && yearFilter !== "all") {
-                filteredData = filteredData.filter(entry => {
-                    let entryDate
-                    if (entry.date) {
-                        entryDate = new Date(entry.date)
-                    } else if (entry.check_in) {
-                        entryDate = new Date(entry.check_in.split(' ')[0])
-                    } else if (entry.timestamp) {
-                        entryDate = new Date(entry.timestamp)
-                    } else {
-                        return false
-                    }
-                    return entryDate.getFullYear() === parseInt(yearFilter)
-                })
-            }
-
             // Apply user type filter
+            let filteredData = data
             if (effectiveFilterType && effectiveFilterType !== "all") {
-                filteredData = filteredData.filter(entry => {
+                filteredData = data.filter(entry => {
                     if (effectiveFilterType === "members") {
                         return entry.user_type === "member"
                     } else if (effectiveFilterType === "guests") {
@@ -273,7 +140,7 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [periodFilter, monthFilter, yearFilter, useCustomDate, customDate, effectiveSelectedDate, effectiveFilterType])
+    }, [effectiveSelectedDate, effectiveFilterType])
 
     // Get current period display text
     const getPeriodDisplay = () => {
@@ -329,121 +196,6 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
                     Refresh
                 </Button>
             </div>
-
-            {/* Filters */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Filter className="h-5 w-5" />
-                        Filters
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-wrap items-center gap-4">
-                        {/* Period Filter */}
-                        <div className="flex items-center gap-2">
-                            <Label htmlFor="period-filter">Period:</Label>
-                            <Select value={periodFilter} onValueChange={(value) => {
-                                setPeriodFilter(value)
-                                setUseCustomDate(false)
-                            }}>
-                                <SelectTrigger className="w-32">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="today">Today</SelectItem>
-                                    <SelectItem value="yesterday">Yesterday</SelectItem>
-                                    <SelectItem value="week">This Week</SelectItem>
-                                    <SelectItem value="month">This Month</SelectItem>
-                                    <SelectItem value="year">This Year</SelectItem>
-                                    <SelectItem value="all">All Time</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Month Filter */}
-                        <div className="flex items-center gap-2">
-                            <Label htmlFor="month-filter">Month:</Label>
-                            <Select value={monthFilter} onValueChange={setMonthFilter}>
-                                <SelectTrigger className="w-32">
-                                    <SelectValue placeholder="Month" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Months</SelectItem>
-                                    <SelectItem value="1">January</SelectItem>
-                                    <SelectItem value="2">February</SelectItem>
-                                    <SelectItem value="3">March</SelectItem>
-                                    <SelectItem value="4">April</SelectItem>
-                                    <SelectItem value="5">May</SelectItem>
-                                    <SelectItem value="6">June</SelectItem>
-                                    <SelectItem value="7">July</SelectItem>
-                                    <SelectItem value="8">August</SelectItem>
-                                    <SelectItem value="9">September</SelectItem>
-                                    <SelectItem value="10">October</SelectItem>
-                                    <SelectItem value="11">November</SelectItem>
-                                    <SelectItem value="12">December</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Year Filter */}
-                        <div className="flex items-center gap-2">
-                            <Label htmlFor="year-filter">Year:</Label>
-                            <Select value={yearFilter} onValueChange={setYearFilter}>
-                                <SelectTrigger className="w-24">
-                                    <SelectValue placeholder="Year" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Years</SelectItem>
-                                    <SelectItem value="2024">2024</SelectItem>
-                                    <SelectItem value="2023">2023</SelectItem>
-                                    <SelectItem value="2022">2022</SelectItem>
-                                    <SelectItem value="2021">2021</SelectItem>
-                                    <SelectItem value="2020">2020</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Custom Date Picker */}
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    variant={useCustomDate ? "default" : "outline"}
-                                    className={cn(
-                                        "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
-                                        useCustomDate
-                                            ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
-                                            : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                                    )}
-                                >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                                <Calendar
-                                    mode="single"
-                                    selected={customDate}
-                                    onSelect={(date) => {
-                                        setCustomDate(date)
-                                        setUseCustomDate(true)
-                                        setPeriodFilter("custom")
-                                    }}
-                                    className="rounded-md border"
-                                />
-                            </PopoverContent>
-                        </Popover>
-
-                        {/* Current Period Display */}
-                        <div className="ml-auto">
-                            <Badge variant="secondary" className="text-sm">
-                                <CalendarIcon className="h-3 w-3 mr-1" />
-                                {getPeriodDisplay()}
-                            </Badge>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
 
             {/* Analytics Cards */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
