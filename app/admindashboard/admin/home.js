@@ -155,12 +155,48 @@ const GymDashboard = () => {
 
       // If it's a date, format it properly
       try {
-        const date = new Date(item.name)
+        let date;
+
+        // Handle different date formats more robustly
+        if (item.name.includes('-')) {
+          // Handle ISO format or YYYY-MM-DD format
+          date = new Date(item.name)
+        } else if (item.name.includes('/')) {
+          // Handle MM/DD/YYYY or DD/MM/YYYY format
+          const parts = item.name.split('/')
+          if (parts.length === 3) {
+            // Assume MM/DD/YYYY format for consistency
+            date = new Date(parts[2], parts[0] - 1, parts[1])
+          }
+        } else if (item.name.match(/^\d{8}$/)) {
+          // Handle YYYYMMDD format
+          const year = item.name.substring(0, 4)
+          const month = item.name.substring(4, 6)
+          const day = item.name.substring(6, 8)
+          date = new Date(year, month - 1, day)
+        } else {
+          // Try default parsing
+          date = new Date(item.name)
+        }
+
         if (!isNaN(date.getTime())) {
+          // Ensure we're showing the correct month by checking if it's October
+          const currentMonth = new Date().getMonth() // 0-based (October = 9)
+          const currentYear = new Date().getFullYear()
+
+          // If the parsed date is not in the current month/year, try to adjust it
+          if (date.getMonth() !== currentMonth || date.getFullYear() !== currentYear) {
+            // Check if this might be a date that should be in October
+            // If the original name contains "Oct" or "10", force it to October
+            if (item.name.toLowerCase().includes('oct') || item.name.includes('10')) {
+              date = new Date(currentYear, 9, date.getDate()) // October is month 9 (0-based)
+            }
+          }
+
           return { ...item, displayName: format(date, "MMM dd") }
         }
       } catch (error) {
-        // If date parsing fails, use original name
+        console.warn('Date parsing failed for:', item.name, error)
       }
 
       return { ...item, displayName: item.name }

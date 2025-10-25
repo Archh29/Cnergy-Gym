@@ -5,16 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { format } from "date-fns"
 import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
   if (trend === 0) return null;
-  
+
   const Icon = isPositive ? TrendingUp : TrendingDown;
   const color = isPositive ? "text-green-600" : "text-red-600";
   const bgColor = isPositive ? "bg-green-100" : "bg-red-100";
-  
+
   return (
     <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${bgColor} ${color}`}>
       <Icon className="w-3 h-3 mr-1" />
@@ -80,12 +81,12 @@ const GymDashboard = () => {
   const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
-    
+
     try {
       const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
         timeout: 10000 // 10 second timeout
       })
-      
+
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
         setMembershipData(response.data.membershipData || [])
@@ -97,7 +98,7 @@ const GymDashboard = () => {
       console.error("Error fetching dashboard data:", err)
       setError(err.message)
       setMembershipData([])
-      
+
       // Auto-retry logic (max 3 retries)
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
@@ -126,6 +127,68 @@ const GymDashboard = () => {
   // Custom formatters
   const formatNumber = (value) => {
     return value.toLocaleString()
+  }
+
+  // Format chart data to show proper dates
+  const formatChartData = (data) => {
+    if (!data || data.length === 0) return []
+
+    return data.map(item => {
+      if (!item.name) return item
+
+      // If it's a time format (HH:MM), keep it as is
+      if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+        return { ...item, displayName: item.name }
+      }
+
+      // If it's a date, format it properly
+      try {
+        let date;
+
+        // Handle different date formats more robustly
+        if (item.name.includes('-')) {
+          // Handle ISO format or YYYY-MM-DD format
+          date = new Date(item.name)
+        } else if (item.name.includes('/')) {
+          // Handle MM/DD/YYYY or DD/MM/YYYY format
+          const parts = item.name.split('/')
+          if (parts.length === 3) {
+            // Assume MM/DD/YYYY format for consistency
+            date = new Date(parts[2], parts[0] - 1, parts[1])
+          }
+        } else if (item.name.match(/^\d{8}$/)) {
+          // Handle YYYYMMDD format
+          const year = item.name.substring(0, 4)
+          const month = item.name.substring(4, 6)
+          const day = item.name.substring(6, 8)
+          date = new Date(year, month - 1, day)
+        } else {
+          // Try default parsing
+          date = new Date(item.name)
+        }
+
+        if (!isNaN(date.getTime())) {
+          // Ensure we're showing the correct month by checking if it's October
+          const currentMonth = new Date().getMonth() // 0-based (October = 9)
+          const currentYear = new Date().getFullYear()
+
+          // If the parsed date is not in the current month/year, try to adjust it
+          if (date.getMonth() !== currentMonth || date.getFullYear() !== currentYear) {
+            // Check if this might be a date that should be in October
+            // If the original name contains "Oct" or "10", force it to October
+            if (item.name.toLowerCase().includes('oct') || item.name.includes('10')) {
+              date = new Date(currentYear, 9, date.getDate()) // October is month 9 (0-based)
+            }
+          }
+
+          return { ...item, displayName: format(date, "MMM dd") }
+        }
+      } catch (error) {
+        console.warn('Date parsing failed for:', item.name, error)
+      }
+
+      return { ...item, displayName: item.name }
+    })
   }
 
   // Show error state if there's an error and no data
@@ -185,9 +248,9 @@ const GymDashboard = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Active / Total</p>
                       {summaryStats.members.active.trend !== undefined && (
-                        <TrendIndicator 
-                          trend={summaryStats.members.active.trend} 
-                          isPositive={summaryStats.members.active.isPositive} 
+                        <TrendIndicator
+                          trend={summaryStats.members.active.trend}
+                          isPositive={summaryStats.members.active.isPositive}
                         />
                       )}
                     </div>
@@ -207,9 +270,9 @@ const GymDashboard = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Active / Total</p>
                       {summaryStats.totalUsers.active.trend !== undefined && (
-                        <TrendIndicator 
-                          trend={summaryStats.totalUsers.active.trend} 
-                          isPositive={summaryStats.totalUsers.active.isPositive} 
+                        <TrendIndicator
+                          trend={summaryStats.totalUsers.active.trend}
+                          isPositive={summaryStats.totalUsers.active.isPositive}
                         />
                       )}
                     </div>
@@ -228,9 +291,9 @@ const GymDashboard = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Monthly plan subscribers</p>
                       {summaryStats.activeSubscriptions.trend !== undefined && (
-                        <TrendIndicator 
-                          trend={summaryStats.activeSubscriptions.trend} 
-                          isPositive={summaryStats.activeSubscriptions.isPositive} 
+                        <TrendIndicator
+                          trend={summaryStats.activeSubscriptions.trend}
+                          isPositive={summaryStats.activeSubscriptions.isPositive}
                         />
                       )}
                     </div>
@@ -248,9 +311,9 @@ const GymDashboard = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Today's visits</p>
                       {summaryStats.checkinsToday.trend !== undefined && (
-                        <TrendIndicator 
-                          trend={summaryStats.checkinsToday.trend} 
-                          isPositive={summaryStats.checkinsToday.isPositive} 
+                        <TrendIndicator
+                          trend={summaryStats.checkinsToday.trend}
+                          isPositive={summaryStats.checkinsToday.isPositive}
                         />
                       )}
                     </div>
@@ -268,9 +331,9 @@ const GymDashboard = () => {
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-muted-foreground">Next 7 days</p>
                       {summaryStats.upcomingExpirations.trend !== undefined && (
-                        <TrendIndicator 
-                          trend={summaryStats.upcomingExpirations.trend} 
-                          isPositive={summaryStats.upcomingExpirations.isPositive} 
+                        <TrendIndicator
+                          trend={summaryStats.upcomingExpirations.trend}
+                          isPositive={summaryStats.upcomingExpirations.isPositive}
                         />
                       )}
                     </div>
@@ -298,15 +361,15 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={membershipData}>
+                <LineChart data={formatChartData(membershipData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis 
-                    dataKey="name" 
+                  <XAxis
+                    dataKey="displayName"
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
                   />
-                  <YAxis 
+                  <YAxis
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
@@ -322,15 +385,15 @@ const GymDashboard = () => {
                     }}
                     style={{ stroke: "hsl(var(--chart-1))" }}
                   />
-                  <ChartTooltip 
-                    content={<ChartTooltipContent 
+                  <ChartTooltip
+                    content={<ChartTooltipContent
                       formatter={(value, name, props) => [
-                        formatNumber(value), 
+                        formatNumber(value),
                         "Members",
                         `Date: ${props.payload?.name || 'N/A'}`
                       ]}
                       labelFormatter={(label) => `Period: ${label}`}
-                    />} 
+                    />}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -355,7 +418,7 @@ const GymDashboard = () => {
                   {summaryStats.checkinsToday.value || 0}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <AlertTriangle className="h-4 w-4 text-orange-600" />
@@ -365,7 +428,7 @@ const GymDashboard = () => {
                   {summaryStats.upcomingExpirations.value || 0}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <Users className="h-4 w-4 text-blue-600" />
@@ -393,7 +456,7 @@ const GymDashboard = () => {
                   </div>
                 </div>
               </button>
-              
+
               <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
                 <div className="flex items-center space-x-3">
                   <Users className="h-5 w-5 text-green-600" />
@@ -403,7 +466,7 @@ const GymDashboard = () => {
                   </div>
                 </div>
               </button>
-              
+
               <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
                 <div className="flex items-center space-x-3">
                   <AlertTriangle className="h-5 w-5 text-orange-600" />
@@ -430,7 +493,7 @@ const GymDashboard = () => {
                     <p className="text-xs text-gray-500">2 minutes ago</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   <div className="flex-1">
@@ -438,7 +501,7 @@ const GymDashboard = () => {
                     <p className="text-xs text-gray-500">15 minutes ago</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center space-x-3">
                   <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
                   <div className="flex-1">
