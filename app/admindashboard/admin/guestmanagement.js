@@ -407,12 +407,6 @@ export default function GuestManagement({ userId }) {
             if (!matchesSearch) return false;
         }
 
-        // Month filter
-        if (selectedMonth && session.created_at) {
-            const sessionDate = new Date(session.created_at);
-            const sessionMonth = sessionDate.toISOString().substring(0, 7); // Get YYYY-MM
-            if (sessionMonth !== selectedMonth) return false;
-        }
 
         // Date filter (custom date)
         if (dateFilter && session.created_at) {
@@ -543,24 +537,6 @@ export default function GuestManagement({ userId }) {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <Input
-                                type="month"
-                                value={selectedMonth}
-                                onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="w-[160px]"
-                                placeholder="Select month"
-                            />
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setSelectedMonth("")}
-                                className="px-2"
-                            >
-                                Clear
-                            </Button>
                         </div>
                         <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />

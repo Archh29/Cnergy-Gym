@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ selectedMonth, filterType }) => {
+const AttendanceDashboard = ({ selectedMonth, selectedDate, filterType }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -45,6 +45,7 @@ const AttendanceDashboard = ({ selectedMonth, filterType }) => {
 
     // Use external filters if provided, otherwise use internal state
     const effectiveSelectedMonth = selectedMonth || ""
+    const effectiveSelectedDate = selectedDate || ""
     const effectiveFilterType = filterType || "all"
 
     // Calculate analytics from attendance data
@@ -106,8 +107,15 @@ const AttendanceDashboard = ({ selectedMonth, filterType }) => {
                 })
             }
 
-            // Apply month filter
-            if (effectiveSelectedMonth) {
+            // Apply date filter (specific day)
+            if (effectiveSelectedDate) {
+                filteredData = filteredData.filter(entry => {
+                    const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
+                    return entryDate === effectiveSelectedDate
+                })
+            }
+            // Apply month filter (entire month)
+            else if (effectiveSelectedMonth) {
                 filteredData = filteredData.filter(entry => {
                     const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
                     if (entryDate) {
@@ -146,10 +154,13 @@ const AttendanceDashboard = ({ selectedMonth, filterType }) => {
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [effectiveSelectedMonth, effectiveFilterType])
+    }, [effectiveSelectedMonth, effectiveSelectedDate, effectiveFilterType])
 
     // Get current period display text
     const getPeriodDisplay = () => {
+        if (effectiveSelectedDate) {
+            return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
+        }
         if (effectiveSelectedMonth) {
             const monthDate = new Date(effectiveSelectedMonth + "-01")
             return format(monthDate, "MMMM yyyy")

@@ -21,9 +21,8 @@ const AttendanceTracking = ({ userId }) => {
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
-  const [selectedDate, setSelectedDate] = useState("") // Date filter
-  const [periodFilter, setPeriodFilter] = useState("all") // "all", "today", "yesterday", "custom_month"
   const [selectedMonth, setSelectedMonth] = useState("") // Month filter (YYYY-MM format)
+  const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
 
   // Show notification with different types
   const showNotification = (message, type = "success") => {
@@ -37,12 +36,33 @@ const AttendanceTracking = ({ userId }) => {
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    // Apply month filter
-    if (selectedMonth) {
+    // Apply date filter (specific day)
+    if (selectedDate) {
       filtered = filtered.filter((entry) => {
         const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
+        console.log("🔍 Debug - Day filter - Entry:", entry.name, "Date fields:", {
+          date: entry.date,
+          check_in: entry.check_in,
+          timestamp: entry.timestamp,
+          parsedDate: entryDate,
+          selectedDate: selectedDate
+        })
+        return entryDate === selectedDate
+      })
+    }
+    // Apply month filter (entire month)
+    else if (selectedMonth) {
+      filtered = filtered.filter((entry) => {
+        const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
+        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Date fields:", {
+          date: entry.date,
+          check_in: entry.check_in,
+          timestamp: entry.timestamp,
+          parsedDate: entryDate
+        })
         if (entryDate) {
           const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
+          console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
           return entryMonth === selectedMonth
         }
         return false
@@ -56,6 +76,7 @@ const AttendanceTracking = ({ userId }) => {
       filtered = filtered.filter(entry => entry.user_type === "guest")
     }
 
+    console.log("🔍 Debug - Final filtered count:", filtered.length)
     return filtered
   }
 
@@ -84,10 +105,10 @@ const AttendanceTracking = ({ userId }) => {
     fetchData()
   }, [])
 
-  // Refetch data when month filter changes
+  // Refetch data when month or date filter changes
   useEffect(() => {
     fetchData()
-  }, [selectedMonth])
+  }, [selectedMonth, selectedDate])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -247,7 +268,7 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard userId={userId} selectedMonth={selectedMonth} filterType={filterType} />
+      <AttendanceDashboard userId={userId} selectedMonth={selectedMonth} selectedDate={selectedDate} filterType={filterType} />
 
       {/* Live Tracking Section */}
       <div className="flex flex-col lg:flex-row gap-6">
@@ -284,7 +305,10 @@ const AttendanceTracking = ({ userId }) => {
                   <Input
                     type="month"
                     value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedMonth(e.target.value)
+                      setSelectedDate("") // Clear day when month changes
+                    }}
                     className="flex-1"
                     placeholder="Select month"
                   />
@@ -292,6 +316,32 @@ const AttendanceTracking = ({ userId }) => {
                     variant="outline"
                     size="sm"
                     onClick={() => setSelectedMonth("")}
+                    className="px-2"
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+
+              {/* Day Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Or Select Specific Day</label>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value)
+                      setSelectedMonth("") // Clear month when day changes
+                    }}
+                    className="flex-1"
+                    placeholder="Select day"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedDate("")}
                     className="px-2"
                   >
                     Clear
