@@ -76,6 +76,9 @@ const GymDashboard = () => {
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
   })
   const [timePeriod, setTimePeriod] = useState("today")
+  const [selectedMonth, setSelectedMonth] = useState("all-time")
+  const [selectedYear, setSelectedYear] = useState("all-time")
+  const [selectedDate, setSelectedDate] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -85,7 +88,28 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
+      // Build query parameters
+      const params = new URLSearchParams()
+      params.append('period', period)
+
+      if (selectedMonth && selectedMonth !== "all-time") {
+        if (selectedYear && selectedYear !== "all-time") {
+          // Combine month and year: YYYY-MM
+          params.append('month', `${selectedYear}-${selectedMonth}`)
+        } else {
+          // Just month (MM format)
+          params.append('month', selectedMonth)
+        }
+      } else if (selectedYear && selectedYear !== "all-time") {
+        // Just year
+        params.append('year', selectedYear)
+      }
+
+      if (selectedDate) {
+        params.append('date', selectedDate)
+      }
+
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?${params.toString()}`, {
         timeout: 10000 // 10 second timeout
       })
 
@@ -122,10 +146,24 @@ const GymDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod])
+  }, [timePeriod, selectedMonth, selectedYear, selectedDate])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
+  }
+
+  const handleMonthChange = (value) => {
+    setSelectedMonth(value)
+    setSelectedDate("") // Clear day when month changes
+  }
+
+  const handleYearChange = (value) => {
+    setSelectedYear(value)
+    setSelectedDate("") // Clear day when year changes
+  }
+
+  const handleDateChange = (value) => {
+    setSelectedDate(value)
   }
 
   // Custom formatters
@@ -182,19 +220,70 @@ const GymDashboard = () => {
                 Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
               </CardDescription>
             </div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Select time period" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Month:</label>
+                <Select value={selectedMonth} onValueChange={handleMonthChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Select month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-time">All Time</SelectItem>
+                    <SelectItem value="01">January</SelectItem>
+                    <SelectItem value="02">February</SelectItem>
+                    <SelectItem value="03">March</SelectItem>
+                    <SelectItem value="04">April</SelectItem>
+                    <SelectItem value="05">May</SelectItem>
+                    <SelectItem value="06">June</SelectItem>
+                    <SelectItem value="07">July</SelectItem>
+                    <SelectItem value="08">August</SelectItem>
+                    <SelectItem value="09">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Year:</label>
+                <Select value={selectedYear} onValueChange={handleYearChange}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="Select year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-time">All Time</SelectItem>
+                    <SelectItem value="2024">2024</SelectItem>
+                    <SelectItem value="2025">2025</SelectItem>
+                    <SelectItem value="2026">2026</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium">Day:</label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
