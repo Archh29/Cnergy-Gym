@@ -108,91 +108,14 @@ const GymDashboard = () => {
         apiUrl += `&date=${selectedDate}`
       }
 
-      console.log('🔍 DEBUG - Fetching from:', apiUrl)
-      console.log('🔍 DEBUG - Selected Month:', selectedMonth)
-      console.log('🔍 DEBUG - Selected Year:', selectedYear)
-      console.log('🔍 DEBUG - Selected Date:', selectedDate)
-      console.log('🔍 DEBUG - Time Period:', period)
-
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
 
-      console.log('🔍 DEBUG - API Response:', response.data)
-
       if (response.data.success) {
-        // Filter the data based on selected month/year
-        let filteredMembershipData = response.data.membershipData || []
-        let filteredRevenueData = response.data.revenueData || []
-        let filteredSummaryStats = response.data.summaryStats || {}
-
-        // Apply month filter
-        if (selectedMonth && selectedMonth !== "all-time") {
-          console.log('🔍 DEBUG - Filtering by month:', selectedMonth)
-          // Since API returns fake data, let's filter by showing only data for the selected month
-          // For now, just show different amounts based on month
-          const monthNum = parseInt(selectedMonth)
-          filteredMembershipData = filteredMembershipData.map(item => ({
-            ...item,
-            members: Math.floor(item.members * (monthNum / 12))
-          }))
-          filteredRevenueData = filteredRevenueData.map(item => ({
-            ...item,
-            revenue: Math.floor(item.revenue * (monthNum / 12))
-          }))
-
-          // Update summary stats
-          filteredSummaryStats = {
-            ...filteredSummaryStats,
-            salesToday: {
-              ...filteredSummaryStats.salesToday,
-              value: Math.floor(filteredSummaryStats.salesToday?.value * (monthNum / 12))
-            },
-            members: {
-              ...filteredSummaryStats.members,
-              active: {
-                ...filteredSummaryStats.members?.active,
-                value: Math.floor(filteredSummaryStats.members?.active?.value * (monthNum / 12))
-              }
-            }
-          }
-        }
-
-        // Apply year filter
-        if (selectedYear && selectedYear !== "all-time") {
-          console.log('🔍 DEBUG - Filtering by year:', selectedYear)
-          const yearMultiplier = selectedYear === "2024" ? 0.8 : selectedYear === "2025" ? 1.0 : 1.2
-          filteredMembershipData = filteredMembershipData.map(item => ({
-            ...item,
-            members: Math.floor(item.members * yearMultiplier)
-          }))
-          filteredRevenueData = filteredRevenueData.map(item => ({
-            ...item,
-            revenue: Math.floor(item.revenue * yearMultiplier)
-          }))
-
-          // Update summary stats
-          filteredSummaryStats = {
-            ...filteredSummaryStats,
-            salesToday: {
-              ...filteredSummaryStats.salesToday,
-              value: Math.floor(filteredSummaryStats.salesToday?.value * yearMultiplier)
-            },
-            members: {
-              ...filteredSummaryStats.members,
-              active: {
-                ...filteredSummaryStats.members?.active,
-                value: Math.floor(filteredSummaryStats.members?.active?.value * yearMultiplier)
-              }
-            }
-          }
-        }
-
-        console.log('🔍 DEBUG - Filtered data:', { filteredMembershipData, filteredRevenueData, filteredSummaryStats })
-
-        setSummaryStats(filteredSummaryStats)
-        setMembershipData(filteredMembershipData)
-        setRevenueData(filteredRevenueData)
+        setSummaryStats(response.data.summaryStats)
+        setMembershipData(response.data.membershipData || [])
+        setRevenueData(response.data.revenueData || [])
         setRetryCount(0)
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
@@ -257,46 +180,10 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Format chart data to show 'MMM DD' (e.g., 'Oct 17') only if data exists
+  // Use data as-is from API
   const formatChartData = (data) => {
-    console.log('🔍 DEBUG - formatChartData input:', data)
-
-    if (!data || data.length === 0) {
-      console.log('🔍 DEBUG - No data to format, returning empty array')
-      return []
-    }
-
-    const formatted = data.map(item => {
-      if (!item.name) return item
-
-      try {
-        // Check if it's a time format (HH:MM) instead of a date
-        if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-          console.log('🔍 DEBUG - Time format detected:', item.name)
-          return { ...item, displayName: item.name }
-        }
-
-        const date = new Date(item.name)
-        // Check if the date is valid
-        if (isNaN(date.getTime())) {
-          console.log('🔍 DEBUG - Invalid date:', item.name)
-          return { ...item, displayName: item.name }
-        }
-
-        const formattedItem = {
-          ...item,
-          displayName: format(date, "MMM dd")
-        }
-        console.log('🔍 DEBUG - Formatted item:', formattedItem)
-        return formattedItem
-      } catch (error) {
-        console.log('🔍 DEBUG - Error formatting date:', item.name, error)
-        return { ...item, displayName: item.name }
-      }
-    })
-
-    console.log('🔍 DEBUG - Final formatted data:', formatted)
-    return formatted
+    if (!data || data.length === 0) return []
+    return data
   }
 
   // Show error state if there's an error and no data
@@ -541,7 +428,7 @@ const GymDashboard = () => {
                 <LineChart data={formatChartData(membershipData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
-                    dataKey="displayName"
+                    dataKey="name"
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
@@ -594,7 +481,7 @@ const GymDashboard = () => {
                 <BarChart data={formatChartData(revenueData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
-                    dataKey="displayName"
+                    dataKey="name"
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
