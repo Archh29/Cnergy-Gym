@@ -109,34 +109,17 @@ const GymDashboard = () => {
         params.append('period', period)
       }
 
-      // Since admindashboard.php doesn't exist, let's use existing APIs
-      try {
-        // Try to get data from existing APIs
-        const salesResponse = await axios.get(`https://api.cnergy.site/sales_api_updated.php?${params.toString()}`)
-        const membersResponse = await axios.get(`https://api.cnergy.site/member_management.php`)
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?${params.toString()}`, {
+        timeout: 10000 // 10 second timeout
+      })
 
-        // Process the real data
-        const processedData = processRealDashboardData(salesResponse.data, membersResponse.data, selectedMonth, selectedYear, selectedDate)
-
-        setSummaryStats(processedData.summaryStats)
-        setMembershipData(processedData.membershipData)
-        setRevenueData(processedData.revenueData)
-        setRetryCount(0)
-
-      } catch (apiError) {
-        console.log('API calls failed, showing empty data:', apiError)
-        // Show empty data instead of fake data
-        setSummaryStats({
-          members: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
-          totalUsers: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
-          salesToday: { value: 0, trend: 0, isPositive: true },
-          activeSubscriptions: { value: 0, trend: 0, isPositive: true },
-          checkinsToday: { value: 0, trend: 0, isPositive: true },
-          upcomingExpirations: { value: 0, trend: 0, isPositive: true },
-        })
-        setMembershipData([])
-        setRevenueData([])
-        setRetryCount(0)
+      if (response.data.success) {
+        setSummaryStats(response.data.summaryStats)
+        setMembershipData(response.data.membershipData || [])
+        setRevenueData(response.data.revenueData || [])
+        setRetryCount(0) // Reset retry count on success
+      } else {
+        throw new Error(response.data.error || 'Failed to fetch dashboard data')
       }
     } catch (err) {
       console.error("Error fetching dashboard data:", err)
@@ -161,54 +144,6 @@ const GymDashboard = () => {
     fetchDashboardData(timePeriod)
   }
 
-  // Process real data from existing APIs
-  const processRealDashboardData = (salesData, membersData, month, year, date) => {
-    const membershipData = []
-    const revenueData = []
-
-    // Process sales data for revenue chart
-    if (salesData && salesData.sales) {
-      salesData.sales.forEach(sale => {
-        const saleDate = new Date(sale.sale_date)
-        const dateStr = format(saleDate, 'yyyy-MM-dd')
-        revenueData.push({
-          name: dateStr,
-          revenue: sale.total_amount || 0
-        })
-      })
-    }
-
-    // Process members data for membership chart
-    if (membersData && membersData.members) {
-      membersData.members.forEach(member => {
-        const memberDate = new Date(member.created_at)
-        const dateStr = format(memberDate, 'yyyy-MM-dd')
-        membershipData.push({
-          name: dateStr,
-          members: 1
-        })
-      })
-    }
-
-    return {
-      summaryStats: {
-        members: {
-          active: { value: membersData?.totalActive || 0, trend: 0, isPositive: true },
-          total: { value: membersData?.totalMembers || 0, trend: 0, isPositive: true }
-        },
-        totalUsers: {
-          active: { value: membersData?.totalActive || 0, trend: 0, isPositive: true },
-          total: { value: membersData?.totalMembers || 0, trend: 0, isPositive: true }
-        },
-        salesToday: { value: salesData?.todaysSales || 0, trend: 0, isPositive: true },
-        activeSubscriptions: { value: membersData?.activeSubscriptions || 0, trend: 0, isPositive: true },
-        checkinsToday: { value: 0, trend: 0, isPositive: true },
-        upcomingExpirations: { value: membersData?.expiringSoon || 0, trend: 0, isPositive: false },
-      },
-      membershipData,
-      revenueData
-    }
-  }
 
   useEffect(() => {
     fetchDashboardData()
