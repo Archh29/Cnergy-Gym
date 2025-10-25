@@ -6,7 +6,10 @@ import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, Cart
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
-import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
+import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown, CalendarDays } from "lucide-react"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Button } from "@/components/ui/button"
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
@@ -79,6 +82,8 @@ const GymDashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [calendarOpen, setCalendarOpen] = useState(false)
 
   const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
     setLoading(true)
@@ -225,6 +230,29 @@ const GymDashboard = () => {
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
+  }
+
+  // Filter data by selected date
+  const filterDataByDate = (data, targetDate) => {
+    if (!data || data.length === 0) return data
+
+    // If no specific date is selected, show all data
+    if (!targetDate) return data
+
+    const targetDay = targetDate.getDate()
+    return data.filter(item => {
+      const dayMatch = item.name?.match(/\d{1,2}/)
+      if (dayMatch) {
+        const itemDay = parseInt(dayMatch[0])
+        return itemDay === targetDay
+      }
+      return false
+    })
+  }
+
+  const handleDateSelect = (date) => {
+    setSelectedDate(date)
+    setCalendarOpen(false)
   }
 
   // Custom formatters
@@ -538,6 +566,50 @@ const GymDashboard = () => {
         </CardContent>
       </Card>
 
+      {/* Date Filter */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5" />
+            Date Filter
+          </CardTitle>
+          <CardDescription>Select a specific date to view detailed data</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-[280px] justify-start text-left font-normal"
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <CalendarComponent
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={handleDateSelect}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <div className="text-sm text-muted-foreground">
+              Selected: {format(selectedDate, "MMM dd, yyyy")}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedDate(null)}
+            >
+              Show All Dates
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Charts */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
@@ -553,7 +625,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(membershipData)}>
+                <LineChart data={formatChartData(filterDataByDate(membershipData, selectedDate))}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
@@ -606,7 +678,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={formatChartData(revenueData)}>
+                <BarChart data={formatChartData(filterDataByDate(revenueData, selectedDate))}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
