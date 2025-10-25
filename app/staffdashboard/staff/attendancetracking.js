@@ -22,6 +22,7 @@ const AttendanceTracking = ({ userId }) => {
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedDate, setSelectedDate] = useState("") // Date filter
+  const [periodFilter, setPeriodFilter] = useState("all") // "all", "today", "yesterday"
 
   // Show notification with different types
   const showNotification = (message, type = "success") => {
@@ -46,12 +47,23 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   // Load members and attendance data
-  const fetchData = async (dateFilter = null) => {
+  const fetchData = async (dateFilter = null, period = periodFilter) => {
     setLoading(true)
     try {
-      const attendanceUrl = dateFilter
-        ? `https://api.cnergy.site/attendance.php?action=attendance&date=${dateFilter}`
-        : "https://api.cnergy.site/attendance.php?action=attendance"
+      let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
+
+      // Handle period filtering
+      if (period === "today") {
+        const today = new Date().toISOString().split('T')[0]
+        attendanceUrl += `&date=${today}`
+      } else if (period === "yesterday") {
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayStr = yesterday.toISOString().split('T')[0]
+        attendanceUrl += `&date=${yesterdayStr}`
+      } else if (dateFilter) {
+        attendanceUrl += `&date=${dateFilter}`
+      }
 
       const [membersRes, attendanceRes] = await Promise.all([
         axios.get("https://api.cnergy.site/attendance.php?action=members"),
@@ -72,14 +84,14 @@ const AttendanceTracking = ({ userId }) => {
     fetchData()
   }, [])
 
-  // Refetch data when date filter changes
+  // Refetch data when date filter or period filter changes
   useEffect(() => {
     if (selectedDate) {
-      fetchData(selectedDate)
+      fetchData(selectedDate, "custom")
     } else {
-      fetchData()
+      fetchData(null, periodFilter)
     }
-  }, [selectedDate])
+  }, [selectedDate, periodFilter])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -239,7 +251,7 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard userId={userId} selectedDate={selectedDate} filterType={filterType} />
+      <AttendanceDashboard userId={userId} selectedDate={selectedDate} filterType={filterType} periodFilter={periodFilter} />
 
       {/* Live Tracking Section */}
       <div className="flex flex-col lg:flex-row gap-6">
@@ -268,22 +280,61 @@ const AttendanceTracking = ({ userId }) => {
                 </div>
               </div>
 
+              {/* Period Filter */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Period</label>
+                <Select value={periodFilter} onValueChange={(value) => {
+                  setPeriodFilter(value)
+                  setSelectedDate("") // Clear custom date when period changes
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        All Time
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="today">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Today
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="yesterday">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Yesterday
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Date Filter */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Date</label>
+                <label className="text-sm font-medium">Custom Date</label>
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <Input
                     type="date"
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value)
+                      setPeriodFilter("custom") // Set to custom when date is selected
+                    }}
                     className="flex-1"
                     placeholder="Select date"
                   />
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setSelectedDate("")}
+                    onClick={() => {
+                      setSelectedDate("")
+                      setPeriodFilter("all")
+                    }}
                     className="px-2"
                   >
                     Clear

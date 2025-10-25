@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ selectedDate, filterType }) => {
+const AttendanceDashboard = ({ selectedDate, filterType, periodFilter }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -47,6 +47,7 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
     // Use external filters if provided, otherwise use internal state
     const effectiveSelectedDate = selectedDate || ""
     const effectiveFilterType = filterType || "all"
+    const effectivePeriodFilter = periodFilter || "all"
 
     // Calculate analytics from attendance data
     const calculateAnalytics = (data) => {
@@ -91,8 +92,16 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
         try {
             let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
-            // Add date filter if provided
-            if (effectiveSelectedDate) {
+            // Handle period filtering
+            if (effectivePeriodFilter === "today") {
+                const today = new Date().toISOString().split('T')[0]
+                attendanceUrl += `&date=${today}`
+            } else if (effectivePeriodFilter === "yesterday") {
+                const yesterday = new Date()
+                yesterday.setDate(yesterday.getDate() - 1)
+                const yesterdayStr = yesterday.toISOString().split('T')[0]
+                attendanceUrl += `&date=${yesterdayStr}`
+            } else if (effectiveSelectedDate) {
                 attendanceUrl += `&date=${effectiveSelectedDate}`
             }
 
@@ -140,30 +149,23 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [effectiveSelectedDate, effectiveFilterType])
+    }, [effectiveSelectedDate, effectiveFilterType, effectivePeriodFilter])
 
     // Get current period display text
     const getPeriodDisplay = () => {
-        if (useCustomDate && customDate) {
-            return format(customDate, "MMM dd, yyyy")
+        if (effectiveSelectedDate) {
+            return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
         }
 
-        const today = new Date()
-        switch (periodFilter) {
+        switch (effectivePeriodFilter) {
             case "today":
                 return "Today"
             case "yesterday":
                 return "Yesterday"
-            case "week":
-                return "This Week"
-            case "month":
-                return "This Month"
-            case "year":
-                return "This Year"
             case "all":
                 return "All Time"
             default:
-                return "Today"
+                return "All Time"
         }
     }
 
@@ -257,7 +259,7 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
             </div>
 
             {/* Additional Analytics */}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-1">
                 {/* Average Daily */}
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -268,38 +270,6 @@ const AttendanceDashboard = ({ selectedDate, filterType }) => {
                         <div className="text-2xl font-bold">{analytics.averageDaily}</div>
                         <p className="text-xs text-muted-foreground">
                             Daily average attendance
-                        </p>
-                    </CardContent>
-                </Card>
-
-                {/* Weekly Trend */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Weekly Trend</CardTitle>
-                        {getTrendIcon(analytics.weeklyTrend)}
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {analytics.weeklyTrend > 0 ? `+${analytics.weeklyTrend}` : analytics.weeklyTrend}%
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            vs last week
-                        </p>
-                    </CardContent>
-                </Card>
-
-                {/* Monthly Trend */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Monthly Trend</CardTitle>
-                        {getTrendIcon(analytics.monthlyTrend)}
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {analytics.monthlyTrend > 0 ? `+${analytics.monthlyTrend}` : analytics.monthlyTrend}%
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            vs last month
                         </p>
                     </CardContent>
                 </Card>
