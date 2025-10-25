@@ -43,6 +43,8 @@ export default function GuestManagement({ userId }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [dateFilter, setDateFilter] = useState('');
+    const [periodFilter, setPeriodFilter] = useState('all'); // "all", "today", "yesterday", "custom_month"
+    const [selectedMonth, setSelectedMonth] = useState(''); // Month filter (YYYY-MM format)
     const { toast } = useToast();
 
     // POS state
@@ -405,7 +407,30 @@ export default function GuestManagement({ userId }) {
             if (!matchesSearch) return false;
         }
 
-        // Date filter
+        // Period filter
+        if (periodFilter !== 'all' && session.created_at) {
+            const sessionDate = new Date(session.created_at);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+            switch (periodFilter) {
+                case 'today':
+                    if (sessionDate.toDateString() !== today.toDateString()) return false;
+                    break;
+                case 'yesterday':
+                    if (sessionDate.toDateString() !== yesterday.toDateString()) return false;
+                    break;
+                case 'this_month':
+                    if (sessionDate < thisMonth) return false;
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        // Date filter (custom date)
         if (dateFilter && session.created_at) {
             const sessionDate = new Date(session.created_at).toDateString();
             const filterDate = new Date(dateFilter).toDateString();
@@ -536,18 +561,41 @@ export default function GuestManagement({ userId }) {
                             />
                         </div>
                         <div className="flex items-center gap-2">
+                            <Filter className="h-4 w-4 text-muted-foreground" />
+                            <Select value={periodFilter} onValueChange={(value) => {
+                                setPeriodFilter(value);
+                                setDateFilter(""); // Clear custom date when period changes
+                            }}>
+                                <SelectTrigger className="w-[160px]">
+                                    <SelectValue placeholder="Select period" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Time</SelectItem>
+                                    <SelectItem value="today">Today</SelectItem>
+                                    <SelectItem value="yesterday">Yesterday</SelectItem>
+                                    <SelectItem value="this_month">This Month</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
                             <Input
                                 type="date"
                                 value={dateFilter}
-                                onChange={(e) => setDateFilter(e.target.value)}
+                                onChange={(e) => {
+                                    setDateFilter(e.target.value);
+                                    setPeriodFilter("custom"); // Set to custom when date is selected
+                                }}
                                 className="w-[160px]"
-                                placeholder="Filter by date"
+                                placeholder="Custom date"
                             />
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setDateFilter("")}
+                                onClick={() => {
+                                    setDateFilter("");
+                                    setPeriodFilter("all");
+                                }}
                                 className="px-2"
                             >
                                 Clear

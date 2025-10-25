@@ -23,7 +23,7 @@ import {
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter }) => {
+const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter, selectedMonth }) => {
     const [analytics, setAnalytics] = useState({
         totalAttendance: 0,
         membersToday: 0,
@@ -47,6 +47,7 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
     const effectiveSelectedDate = selectedDate || ""
     const effectiveFilterType = filterType || "all"
     const effectivePeriodFilter = periodFilter || "all"
+    const effectiveSelectedMonth = selectedMonth || ""
 
     // Calculate analytics from attendance data
     const calculateAnalytics = (data) => {
@@ -100,6 +101,9 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
                 yesterday.setDate(yesterday.getDate() - 1)
                 const yesterdayStr = yesterday.toISOString().split('T')[0]
                 attendanceUrl += `&date=${yesterdayStr}`
+            } else if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
+                // For custom month, we'll fetch all data and filter on the frontend
+                // since the API might not support month filtering
             } else if (effectiveSelectedDate) {
                 attendanceUrl += `&date=${effectiveSelectedDate}`
             }
@@ -117,6 +121,18 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
                         return entry.user_type === "guest"
                     }
                     return true
+                })
+            }
+
+            // Apply month filter for custom month selection
+            if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
+                filteredData = filteredData.filter(entry => {
+                    const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
+                    if (entryDate) {
+                        const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
+                        return entryMonth === effectiveSelectedMonth
+                    }
+                    return false
                 })
             }
 
@@ -148,12 +164,17 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
     // Load data when filters change
     useEffect(() => {
         loadAttendanceData()
-    }, [effectiveSelectedDate, effectiveFilterType, effectivePeriodFilter])
+    }, [effectiveSelectedDate, effectiveFilterType, effectivePeriodFilter, effectiveSelectedMonth])
 
     // Get current period display text
     const getPeriodDisplay = () => {
         if (effectiveSelectedDate) {
             return format(new Date(effectiveSelectedDate), "MMM dd, yyyy")
+        }
+
+        if (effectivePeriodFilter === "custom_month" && effectiveSelectedMonth) {
+            const monthDate = new Date(effectiveSelectedMonth + "-01")
+            return format(monthDate, "MMMM yyyy")
         }
 
         switch (effectivePeriodFilter) {
@@ -199,7 +220,7 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
             </div>
 
             {/* Analytics Cards */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {/* Total Attendance */}
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -241,6 +262,23 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
                         </p>
                     </CardContent>
                 </Card>
+            </div>
+
+            {/* Additional Analytics */}
+            <div className="grid gap-4 md:grid-cols-2">
+                {/* Average Daily */}
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Average Daily</CardTitle>
+                        <Activity className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{analytics.averageDaily}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Daily average attendance
+                        </p>
+                    </CardContent>
+                </Card>
 
                 {/* Peak Hour */}
                 <Card>
@@ -252,23 +290,6 @@ const AttendanceDashboard = ({ userId, selectedDate, filterType, periodFilter })
                         <div className="text-2xl font-bold">{analytics.peakHour}</div>
                         <p className="text-xs text-muted-foreground">
                             Most active time
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Additional Analytics */}
-            <div className="grid gap-4 md:grid-cols-1">
-                {/* Average Daily */}
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Average Daily</CardTitle>
-                        <Activity className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{analytics.averageDaily}</div>
-                        <p className="text-xs text-muted-foreground">
-                            Daily average attendance
                         </p>
                     </CardContent>
                 </Card>

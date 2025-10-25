@@ -22,7 +22,8 @@ const AttendanceTracking = ({ userId }) => {
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedDate, setSelectedDate] = useState("") // Date filter
-  const [periodFilter, setPeriodFilter] = useState("all") // "all", "today", "yesterday"
+  const [periodFilter, setPeriodFilter] = useState("all") // "all", "today", "yesterday", "custom_month"
+  const [selectedMonth, setSelectedMonth] = useState("") // Month filter (YYYY-MM format)
 
   // Show notification with different types
   const showNotification = (message, type = "success") => {
@@ -35,6 +36,18 @@ const AttendanceTracking = ({ userId }) => {
     let filtered = attendance.filter((entry) =>
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
+
+    // Apply month filter for custom month selection
+    if (periodFilter === "custom_month" && selectedMonth) {
+      filtered = filtered.filter((entry) => {
+        const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
+        if (entryDate) {
+          const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
+          return entryMonth === selectedMonth
+        }
+        return false
+      })
+    }
 
     // Filter by user type
     if (filterType === "members") {
@@ -61,6 +74,9 @@ const AttendanceTracking = ({ userId }) => {
         yesterday.setDate(yesterday.getDate() - 1)
         const yesterdayStr = yesterday.toISOString().split('T')[0]
         attendanceUrl += `&date=${yesterdayStr}`
+      } else if (period === "custom_month" && selectedMonth) {
+        // For custom month, we'll fetch all data and filter on the frontend
+        // since the API might not support month filtering
       } else if (dateFilter) {
         attendanceUrl += `&date=${dateFilter}`
       }
@@ -91,7 +107,7 @@ const AttendanceTracking = ({ userId }) => {
     } else {
       fetchData(null, periodFilter)
     }
-  }, [selectedDate, periodFilter])
+  }, [selectedDate, periodFilter, selectedMonth])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -251,7 +267,7 @@ const AttendanceTracking = ({ userId }) => {
       )}
 
       {/* Dashboard Section */}
-      <AttendanceDashboard userId={userId} selectedDate={selectedDate} filterType={filterType} periodFilter={periodFilter} />
+      <AttendanceDashboard userId={userId} selectedDate={selectedDate} filterType={filterType} periodFilter={periodFilter} selectedMonth={selectedMonth} />
 
       {/* Live Tracking Section */}
       <div className="flex flex-col lg:flex-row gap-6">
@@ -286,6 +302,7 @@ const AttendanceTracking = ({ userId }) => {
                 <Select value={periodFilter} onValueChange={(value) => {
                   setPeriodFilter(value)
                   setSelectedDate("") // Clear custom date when period changes
+                  setSelectedMonth("") // Clear month when period changes
                 }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select period" />
@@ -309,9 +326,43 @@ const AttendanceTracking = ({ userId }) => {
                         Yesterday
                       </div>
                     </SelectItem>
+                    <SelectItem value="custom_month">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Specific Month
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Month Filter */}
+              {periodFilter === "custom_month" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select Month</label>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="month"
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="flex-1"
+                      placeholder="Select month"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedMonth("")
+                        setPeriodFilter("all")
+                      }}
+                      className="px-2"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Date Filter */}
               <div className="space-y-2">
@@ -324,6 +375,7 @@ const AttendanceTracking = ({ userId }) => {
                     onChange={(e) => {
                       setSelectedDate(e.target.value)
                       setPeriodFilter("custom") // Set to custom when date is selected
+                      setSelectedMonth("") // Clear month when date is selected
                     }}
                     className="flex-1"
                     placeholder="Select date"
