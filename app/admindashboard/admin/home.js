@@ -119,6 +119,9 @@ const GymDashboard = () => {
       })
 
       console.log('🔍 DEBUG - API Response:', response.data)
+      console.log('🔍 DEBUG - Full API Response:', JSON.stringify(response.data, null, 2))
+      console.log('🔍 DEBUG - Membership Data:', response.data.membershipData)
+      console.log('🔍 DEBUG - Revenue Data:', response.data.revenueData)
       console.log('🔍 DEBUG - Membership Data Length:', response.data.membershipData?.length || 0)
       console.log('🔍 DEBUG - Revenue Data Length:', response.data.revenueData?.length || 0)
       console.log('🔍 DEBUG - Summary Stats:', response.data.summaryStats)
@@ -203,6 +206,12 @@ const GymDashboard = () => {
       if (!item.name) return item
 
       try {
+        // Check if it's a time format (HH:MM) instead of a date
+        if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+          console.log('🔍 DEBUG - Time format detected:', item.name)
+          return { ...item, displayName: item.name }
+        }
+
         const date = new Date(item.name)
         // Check if the date is valid
         if (isNaN(date.getTime())) {
