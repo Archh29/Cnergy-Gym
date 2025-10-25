@@ -44,49 +44,129 @@ const AttendanceDashboard = () => {
     const [customDate, setCustomDate] = useState(null)
     const [useCustomDate, setUseCustomDate] = useState(false)
 
-    // Load analytics data
-    const loadAnalytics = async () => {
+    // Calculate analytics from attendance data
+    const calculateAnalytics = (data) => {
+        const totalAttendance = data.length
+        const membersToday = data.filter(entry => entry.user_type === "member").length
+        const dayPassToday = data.filter(entry => entry.user_type === "guest").length
+
+        // Calculate peak hour
+        const hourCounts = {}
+        data.forEach(entry => {
+            if (entry.time) {
+                const hour = entry.time.split(':')[0]
+                hourCounts[hour] = (hourCounts[hour] || 0) + 1
+            }
+        })
+
+        const peakHour = Object.keys(hourCounts).length > 0
+            ? Object.keys(hourCounts).reduce((a, b) => hourCounts[a] > hourCounts[b] ? a : b) + ":00"
+            : "N/A"
+
+        // Calculate trends (simplified - would need historical data for accurate trends)
+        const weeklyTrend = 0 // Placeholder - would need last week's data
+        const monthlyTrend = 0 // Placeholder - would need last month's data
+        const averageDaily = totalAttendance // Simplified for current period
+
+        return {
+            totalAttendance,
+            membersToday,
+            dayPassToday,
+            totalMembers: membersToday, // Simplified
+            totalDayPass: dayPassToday, // Simplified
+            peakHour,
+            averageDaily,
+            weeklyTrend,
+            monthlyTrend
+        }
+    }
+
+    // Load attendance data
+    const loadAttendanceData = async () => {
         setLoading(true)
         try {
-            const params = new URLSearchParams()
+            let attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
-            // Handle custom date first (highest priority)
+            // Add date filter if using custom date
             if (useCustomDate && customDate) {
-                params.append("period", "custom")
-                params.append("custom_date", format(customDate, "yyyy-MM-dd"))
-            } else {
-                params.append("period", periodFilter)
+                attendanceUrl += `&date=${format(customDate, "yyyy-MM-dd")}`
             }
 
+            const response = await axios.get(attendanceUrl)
+            const data = response.data || []
+
+            // Filter data based on period, month, and year
+            let filteredData = data
+
+            if (!useCustomDate) {
+                const today = new Date()
+
+                switch (periodFilter) {
+                    case "today":
+                        filteredData = data.filter(entry => {
+                            const entryDate = new Date(entry.date)
+                            return entryDate.toDateString() === today.toDateString()
+                        })
+                        break
+                    case "yesterday":
+                        const yesterday = subDays(today, 1)
+                        filteredData = data.filter(entry => {
+                            const entryDate = new Date(entry.date)
+                            return entryDate.toDateString() === yesterday.toDateString()
+                        })
+                        break
+                    case "week":
+                        const weekStart = startOfWeek(today)
+                        const weekEnd = endOfWeek(today)
+                        filteredData = data.filter(entry => {
+                            const entryDate = new Date(entry.date)
+                            return entryDate >= weekStart && entryDate <= weekEnd
+                        })
+                        break
+                    case "month":
+                        const monthStart = startOfMonth(today)
+                        const monthEnd = endOfMonth(today)
+                        filteredData = data.filter(entry => {
+                            const entryDate = new Date(entry.date)
+                            return entryDate >= monthStart && entryDate <= monthEnd
+                        })
+                        break
+                    case "year":
+                        const yearStart = startOfYear(today)
+                        const yearEnd = endOfYear(today)
+                        filteredData = data.filter(entry => {
+                            const entryDate = new Date(entry.date)
+                            return entryDate >= yearStart && entryDate <= yearEnd
+                        })
+                        break
+                }
+            }
+
+            // Apply month filter
             if (monthFilter && monthFilter !== "all") {
-                params.append("month", monthFilter)
-            }
-            if (yearFilter && yearFilter !== "all") {
-                params.append("year", yearFilter)
-            }
-
-            const response = await axios.get(`https://api.cnergy.site/attendance.php?action=analytics&${params.toString()}`)
-
-            if (response.data.success) {
-                setAnalytics(response.data.analytics)
-                setAttendanceData(response.data.attendance_data || [])
-            } else {
-                // Fallback to mock data if API doesn't support analytics yet
-                setAnalytics({
-                    totalAttendance: attendanceData.length,
-                    membersToday: attendanceData.filter(entry => entry.user_type === "member").length,
-                    dayPassToday: attendanceData.filter(entry => entry.user_type === "guest").length,
-                    totalMembers: 0,
-                    totalDayPass: 0,
-                    peakHour: "6:00 PM",
-                    averageDaily: 0,
-                    weeklyTrend: 0,
-                    monthlyTrend: 0
+                filteredData = filteredData.filter(entry => {
+                    const entryDate = new Date(entry.date)
+                    return entryDate.getMonth() + 1 === parseInt(monthFilter)
                 })
             }
+
+            // Apply year filter
+            if (yearFilter && yearFilter !== "all") {
+                filteredData = filteredData.filter(entry => {
+                    const entryDate = new Date(entry.date)
+                    return entryDate.getFullYear() === parseInt(yearFilter)
+                })
+            }
+
+            setAttendanceData(filteredData)
+
+            // Calculate analytics from filtered data
+            const calculatedAnalytics = calculateAnalytics(filteredData)
+            setAnalytics(calculatedAnalytics)
+
         } catch (error) {
-            console.error("Error loading analytics:", error)
-            // Set default values on error
+            console.error("Error loading attendance data:", error)
+            setAttendanceData([])
             setAnalytics({
                 totalAttendance: 0,
                 membersToday: 0,
@@ -103,64 +183,8 @@ const AttendanceDashboard = () => {
         }
     }
 
-    // Load attendance data
-    const loadAttendanceData = async () => {
-        try {
-            const params = new URLSearchParams()
-
-            if (useCustomDate && customDate) {
-                params.append("date", format(customDate, "yyyy-MM-dd"))
-            } else {
-                // Add period-based date filtering
-                const today = new Date()
-                let startDate, endDate
-
-                switch (periodFilter) {
-                    case "today":
-                        startDate = endDate = format(today, "yyyy-MM-dd")
-                        break
-                    case "yesterday":
-                        const yesterday = subDays(today, 1)
-                        startDate = endDate = format(yesterday, "yyyy-MM-dd")
-                        break
-                    case "week":
-                        startDate = format(startOfWeek(today), "yyyy-MM-dd")
-                        endDate = format(endOfWeek(today), "yyyy-MM-dd")
-                        break
-                    case "month":
-                        startDate = format(startOfMonth(today), "yyyy-MM-dd")
-                        endDate = format(endOfMonth(today), "yyyy-MM-dd")
-                        break
-                    case "year":
-                        startDate = format(startOfYear(today), "yyyy-MM-dd")
-                        endDate = format(endOfYear(today), "yyyy-MM-dd")
-                        break
-                    default:
-                        startDate = endDate = format(today, "yyyy-MM-dd")
-                }
-
-                params.append("start_date", startDate)
-                params.append("end_date", endDate)
-            }
-
-            if (monthFilter && monthFilter !== "all") {
-                params.append("month", monthFilter)
-            }
-            if (yearFilter && yearFilter !== "all") {
-                params.append("year", yearFilter)
-            }
-
-            const response = await axios.get(`https://api.cnergy.site/attendance.php?action=attendance&${params.toString()}`)
-            setAttendanceData(response.data || [])
-        } catch (error) {
-            console.error("Error loading attendance data:", error)
-            setAttendanceData([])
-        }
-    }
-
     // Load data when filters change
     useEffect(() => {
-        loadAnalytics()
         loadAttendanceData()
     }, [periodFilter, monthFilter, yearFilter, useCustomDate, customDate])
 
@@ -208,7 +232,6 @@ const AttendanceDashboard = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                        loadAnalytics()
                         loadAttendanceData()
                     }}
                     disabled={loading}
