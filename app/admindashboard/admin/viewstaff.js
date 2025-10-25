@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff, Archive, RotateCcw } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
 
@@ -62,6 +63,10 @@ const ViewStaff = () => {
   const [validationErrors, setValidationErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
+  const [archivedStaff, setArchivedStaff] = useState([])
+  const [loadingArchived, setLoadingArchived] = useState(false)
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
+  const [staffToRestore, setStaffToRestore] = useState(null)
 
   useEffect(() => {
     fetchStaffData()
@@ -81,6 +86,57 @@ const ViewStaff = () => {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchArchivedStaff = async () => {
+    setLoadingArchived(true)
+    try {
+      const response = await axios.get(`${API_BASE_URL}?archived=1`)
+      setArchivedStaff(response.data.staff || [])
+    } catch (error) {
+      console.error("Error fetching archived staff:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load archived staff data.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingArchived(false)
+    }
+  }
+
+  const handleRestoreClick = (staffId) => {
+    setStaffToRestore(staffId)
+    setRestoreConfirmOpen(true)
+  }
+
+  const handleRestoreStaff = async () => {
+    if (!staffToRestore) return
+
+    setSubmitting(true)
+    try {
+      const response = await axios.patch(`${API_BASE_URL}`, {
+        id: staffToRestore,
+        action: 'restore'
+      })
+
+      toast({
+        title: "Success",
+        description: "Staff member restored successfully",
+      })
+      setRestoreConfirmOpen(false)
+      fetchStaffData()
+      fetchArchivedStaff()
+    } catch (error) {
+      console.error("Error restoring staff:", error)
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to restore staff member",
+        variant: "destructive",
+      })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -252,10 +308,11 @@ const ViewStaff = () => {
 
       toast({
         title: "Success",
-        description: "Staff member deleted successfully",
+        description: "Staff member archived successfully",
       })
       setDeleteConfirmOpen(false)
       fetchStaffData()
+      fetchArchivedStaff()
     } catch (error) {
       console.error("Error deleting staff:", error)
       toast({
@@ -430,67 +487,125 @@ const ViewStaff = () => {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search staff..."
-            className="pl-8"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+        <Tabs defaultValue="active" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="active" onClick={fetchStaffData}>
+              Active Staff
+            </TabsTrigger>
+            <TabsTrigger value="archived" onClick={fetchArchivedStaff}>
+              Archived Staff ({archivedStaff.length})
+            </TabsTrigger>
+          </TabsList>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center py-8">
-                  <div className="flex justify-center items-center">
-                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                    <span>Loading staff data...</span>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : filteredStaff.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={3} className="text-center py-8">
-                  No staff members found
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredStaff.map((staff) => (
-                <TableRow key={staff.id}>
-                  <TableCell>
-                    <button className="hover:underline text-left font-medium" onClick={() => handleUserClick(staff)}>
-                      {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
-                    </button>
-                  </TableCell>
-                  <TableCell>{staff.email}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
-                      <Button size="sm" onClick={() => handleEditClick(staff)}>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDeleteClick(staff.id)}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
+          <TabsContent value="active" className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search staff..."
+                className="pl-8"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8">
+                      <div className="flex justify-center items-center">
+                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                        <span>Loading staff data...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredStaff.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8">
+                      No staff members found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredStaff.map((staff) => (
+                    <TableRow key={staff.id}>
+                      <TableCell>
+                        <button className="hover:underline text-left font-medium" onClick={() => handleUserClick(staff)}>
+                          {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
+                        </button>
+                      </TableCell>
+                      <TableCell>{staff.email}</TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button size="sm" onClick={() => handleEditClick(staff)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => handleDeleteClick(staff.id)}>
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Archive
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TabsContent>
+
+          <TabsContent value="archived" className="space-y-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loadingArchived ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8">
+                      <div className="flex justify-center items-center">
+                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                        <span>Loading archived staff...</span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : archivedStaff.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8">
+                      No archived staff members
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  archivedStaff.map((staff) => (
+                    <TableRow key={staff.id}>
+                      <TableCell>
+                        {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
+                      </TableCell>
+                      <TableCell>{staff.email}</TableCell>
+                      <TableCell>
+                        <Button variant="outline" size="sm" onClick={() => handleRestoreClick(staff.id)}>
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Restore
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TabsContent>
+        </Tabs>
       </CardContent>
 
       {/* User Info Modal */}
@@ -655,10 +770,10 @@ const ViewStaff = () => {
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Confirm Deletion</DialogTitle>
+            <DialogTitle>Confirm Archive</DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <p>Are you sure you want to delete this staff member? This action cannot be undone.</p>
+            <p>Are you sure you want to archive this staff member? They will be hidden from the active list but can be restored later.</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
@@ -666,7 +781,28 @@ const ViewStaff = () => {
             </Button>
             <Button variant="destructive" onClick={handleDeleteStaff} disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete
+              Archive
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={restoreConfirmOpen} onOpenChange={setRestoreConfirmOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirm Restore</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>Are you sure you want to restore this staff member? They will be visible in the active staff list again.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRestoreStaff} disabled={submitting}>
+              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Restore
             </Button>
           </DialogFooter>
         </DialogContent>
