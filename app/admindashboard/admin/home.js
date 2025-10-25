@@ -86,12 +86,34 @@ const GymDashboard = () => {
   const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
-
+    
     try {
-      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
+      // Build the API URL with proper parameters
+      let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
+      
+      // Add month filter if selected
+      if (selectedMonth && selectedMonth !== "all-time") {
+        const currentYear = new Date().getFullYear()
+        const monthYear = selectedYear && selectedYear !== "all-time" ? selectedYear : currentYear
+        apiUrl += `&month=${monthYear}-${selectedMonth}`
+      }
+      
+      // Add year filter if selected (and no month)
+      if (selectedYear && selectedYear !== "all-time" && (!selectedMonth || selectedMonth === "all-time")) {
+        apiUrl += `&year=${selectedYear}`
+      }
+      
+      // Add date filter if selected
+      if (selectedDate) {
+        apiUrl += `&date=${selectedDate}`
+      }
+      
+      console.log('Fetching from:', apiUrl)
+      
+      const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
-
+      
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
         setMembershipData(response.data.membershipData || [])
@@ -105,7 +127,7 @@ const GymDashboard = () => {
       setError(err.message)
       setMembershipData([])
       setRevenueData([])
-
+      
       // Auto-retry logic (max 3 retries)
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
@@ -126,7 +148,7 @@ const GymDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod])
+  }, [timePeriod, selectedMonth, selectedYear, selectedDate])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
