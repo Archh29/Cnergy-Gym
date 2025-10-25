@@ -118,6 +118,9 @@ const GymDashboard = () => {
       })
 
       console.log('🔍 DEBUG - API Response:', response.data)
+      console.log('🔍 DEBUG - Membership Data:', response.data.membershipData)
+      console.log('🔍 DEBUG - Revenue Data:', response.data.revenueData)
+      console.log('🔍 DEBUG - Summary Stats:', response.data.summaryStats)
 
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
