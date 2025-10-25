@@ -38,7 +38,6 @@ const AttendanceDashboard = ({ selectedDate, filterType, periodFilter }) => {
 
     const [attendanceData, setAttendanceData] = useState([])
     const [loading, setLoading] = useState(false)
-    const [periodFilter, setPeriodFilter] = useState("today")
     const [monthFilter, setMonthFilter] = useState("all")
     const [yearFilter, setYearFilter] = useState("all")
     const [customDate, setCustomDate] = useState(null)
