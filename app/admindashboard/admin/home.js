@@ -108,9 +108,16 @@ const GymDashboard = () => {
         apiUrl += `&date=${selectedDate}`
       }
 
+      console.log('🔍 DEBUG - API URL:', apiUrl)
+      console.log('🔍 DEBUG - Selected Month:', selectedMonth)
+      console.log('🔍 DEBUG - Selected Year:', selectedYear)
+      console.log('🔍 DEBUG - Selected Date:', selectedDate)
+
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
+
+      console.log('🔍 DEBUG - API Response:', response.data)
 
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
