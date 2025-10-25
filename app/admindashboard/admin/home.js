@@ -6,6 +6,7 @@ import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, Cart
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
+import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
