@@ -88,29 +88,42 @@ const GymDashboard = () => {
       })
 
       if (response.data.success) {
-        // Completely override the data to force October dates
+        // Extract actual day numbers from API data and force them to October
         const currentDate = new Date()
         const currentYear = currentDate.getFullYear()
-        const currentMonth = currentDate.getMonth() // October = 9
+        const currentMonth = 9 // October = 9 (0-based)
 
-        // Create October data for the last 7 days
-        const octoberMembershipData = []
+        // Process membership data
+        const octoberMembershipData = (response.data.membershipData || []).map((item, index) => {
+          // Extract day number from the name (e.g., "Jul 17" -> 17, "Aug 19" -> 19)
+          const dayMatch = item.name?.match(/\d{1,2}/)
+          let day = 1
 
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(currentYear, currentMonth, currentDate.getDate() - i)
-          const dayName = format(date, "MMM dd")
+          if (dayMatch) {
+            day = parseInt(dayMatch[0])
+          } else {
+            // If no day found, use index + 1
+            day = index + 1
+          }
 
-          // Use original data values if available, otherwise use sample data
-          const originalMembership = response.data.membershipData?.[i] || {}
+          // Ensure day is valid (1-31)
+          if (day < 1 || day > 31) {
+            day = Math.min(31, Math.max(1, day))
+          }
 
-          octoberMembershipData.push({
+          // Create October date with the actual day number
+          const octoberDate = new Date(currentYear, currentMonth, day)
+          const dayName = format(octoberDate, "MMM dd")
+
+          return {
             name: dayName,
             displayName: dayName,
-            members: originalMembership.members || Math.floor(Math.random() * 10) + 1
-          })
-        }
+            members: item.members || 0
+          }
+        })
 
-        console.log('Generated October Membership Data:', octoberMembershipData)
+        console.log('Original API Membership Data:', response.data.membershipData)
+        console.log('Corrected October Membership Data:', octoberMembershipData)
 
         setSummaryStats(response.data.summaryStats)
         setMembershipData(octoberMembershipData)
@@ -122,23 +135,26 @@ const GymDashboard = () => {
       console.error("Error fetching dashboard data:", err)
       setError(err.message)
 
-      // Create October data even if API fails
+      // Create October data even if API fails, using sample day numbers
       const currentDate = new Date()
       const currentYear = currentDate.getFullYear()
-      const currentMonth = currentDate.getMonth()
+      const currentMonth = 9 // October = 9 (0-based)
 
       const octoberMembershipData = []
 
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(currentYear, currentMonth, currentDate.getDate() - i)
-        const dayName = format(date, "MMM dd")
+      // Use sample day numbers that match common patterns
+      const sampleDays = [17, 19, 21, 22, 23, 24, 25]
+
+      sampleDays.forEach((day, index) => {
+        const octoberDate = new Date(currentYear, currentMonth, day)
+        const dayName = format(octoberDate, "MMM dd")
 
         octoberMembershipData.push({
           name: dayName,
           displayName: dayName,
           members: Math.floor(Math.random() * 10) + 1
         })
-      }
+      })
 
       setMembershipData(octoberMembershipData)
 
