@@ -76,9 +76,6 @@ const GymDashboard = () => {
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
   })
   const [timePeriod, setTimePeriod] = useState("today")
-  const [selectedMonth, setSelectedMonth] = useState("all-time")
-  const [selectedYear, setSelectedYear] = useState("all-time")
-  const [selectedDate, setSelectedDate] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -88,53 +85,18 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      // Build query parameters for real API calls
-      const params = new URLSearchParams()
-      params.append('period', period)
+      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
+        timeout: 10000 // 10 second timeout
+      })
 
-      if (selectedMonth && selectedMonth !== "all-time") {
-        if (selectedYear && selectedYear !== "all-time") {
-          // Combine month and year: YYYY-MM
-          params.append('month', `${selectedYear}-${selectedMonth}`)
-        } else {
-          // Just month (MM format)
-          params.append('month', selectedMonth)
-        }
-      } else if (selectedYear && selectedYear !== "all-time") {
-        // Just year
-        params.append('year', selectedYear)
+      if (response.data.success) {
+        setSummaryStats(response.data.summaryStats)
+        setMembershipData(response.data.membershipData || [])
+        setRevenueData(response.data.revenueData || [])
+        setRetryCount(0) // Reset retry count on success
+      } else {
+        throw new Error(response.data.error || 'Failed to fetch dashboard data')
       }
-
-      if (selectedDate) {
-        params.append('date', selectedDate)
-      }
-
-      // Try to fetch from existing APIs
-      try {
-        // Try sales API for revenue data
-        const salesResponse = await axios.get(`https://api.cnergy.site/sales_api_updated.php?${params.toString()}`)
-
-        // Try member management for membership data
-        const membersResponse = await axios.get(`https://api.cnergy.site/member_management.php?${params.toString()}`)
-
-        // Process real data
-        const realData = processRealData(salesResponse.data, membersResponse.data, period, selectedMonth, selectedYear, selectedDate)
-
-        setSummaryStats(realData.summaryStats)
-        setMembershipData(realData.membershipData)
-        setRevenueData(realData.revenueData)
-        setRetryCount(0)
-
-      } catch (apiError) {
-        console.warn('API calls failed, using minimal real data:', apiError)
-        // If APIs fail, show empty/current data only
-        const minimalData = generateMinimalRealData(period, selectedMonth, selectedYear, selectedDate)
-        setSummaryStats(minimalData.summaryStats)
-        setMembershipData(minimalData.membershipData)
-        setRevenueData(minimalData.revenueData)
-        setRetryCount(0)
-      }
-
     } catch (err) {
       console.error("Error fetching dashboard data:", err)
       setError(err.message)
@@ -153,119 +115,6 @@ const GymDashboard = () => {
     }
   }
 
-  // Process real data from APIs
-  const processRealData = (salesData, membersData, period, month, year, date) => {
-    // Process sales data for revenue chart
-    const revenueData = []
-    if (salesData && salesData.sales) {
-      salesData.sales.forEach(sale => {
-        const saleDate = new Date(sale.sale_date)
-        const dateStr = format(saleDate, 'yyyy-MM-dd')
-        revenueData.push({
-          name: dateStr,
-          revenue: sale.total_amount || 0
-        })
-      })
-    }
-
-    // Process members data for membership chart
-    const membershipData = []
-    if (membersData && membersData.members) {
-      membersData.members.forEach(member => {
-        const memberDate = new Date(member.created_at)
-        const dateStr = format(memberDate, 'yyyy-MM-dd')
-        membershipData.push({
-          name: dateStr,
-          members: 1 // Each member counts as 1
-        })
-      })
-    }
-
-    return {
-      summaryStats: {
-        members: {
-          active: { value: membersData?.totalActive || 0, trend: 0, isPositive: true },
-          total: { value: membersData?.totalMembers || 0, trend: 0, isPositive: true }
-        },
-        totalUsers: {
-          active: { value: membersData?.totalActive || 0, trend: 0, isPositive: true },
-          total: { value: membersData?.totalMembers || 0, trend: 0, isPositive: true }
-        },
-        salesToday: { value: salesData?.todaysSales || 0, trend: 0, isPositive: true },
-        activeSubscriptions: { value: membersData?.activeSubscriptions || 0, trend: 0, isPositive: true },
-        checkinsToday: { value: 0, trend: 0, isPositive: true }, // Would need attendance API
-        upcomingExpirations: { value: membersData?.expiringSoon || 0, trend: 0, isPositive: false },
-      },
-      membershipData,
-      revenueData
-    }
-  }
-
-  // Generate minimal real data (only current month if no APIs available)
-  const generateMinimalRealData = (period, month, year, date) => {
-    const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth() + 1
-
-    // Only show current month data if no specific filters
-    if (!month || month === "all-time") {
-      month = currentMonth.toString().padStart(2, '0')
-    }
-    if (!year || year === "all-time") {
-      year = currentYear.toString()
-    }
-
-    // Generate data only for the current month
-    const membershipData = []
-    const revenueData = []
-
-    if (date) {
-      // Specific date - show single day data
-      const targetDate = new Date(date)
-      membershipData.push({
-        name: format(targetDate, 'yyyy-MM-dd'),
-        members: 0 // No real data
-      })
-      revenueData.push({
-        name: format(targetDate, 'yyyy-MM-dd'),
-        revenue: 0 // No real data
-      })
-    } else {
-      // Show only current month data
-      const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate()
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${year}-${month.padStart(2, '0')}-${day.toString().padStart(2, '0')}`
-        membershipData.push({
-          name: dateStr,
-          members: 0 // No real data
-        })
-        revenueData.push({
-          name: dateStr,
-          revenue: 0 // No real data
-        })
-      }
-    }
-
-    return {
-      summaryStats: {
-        members: {
-          active: { value: 0, trend: 0, isPositive: true },
-          total: { value: 0, trend: 0, isPositive: true }
-        },
-        totalUsers: {
-          active: { value: 0, trend: 0, isPositive: true },
-          total: { value: 0, trend: 0, isPositive: true }
-        },
-        salesToday: { value: 0, trend: 0, isPositive: true },
-        activeSubscriptions: { value: 0, trend: 0, isPositive: true },
-        checkinsToday: { value: 0, trend: 0, isPositive: true },
-        upcomingExpirations: { value: 0, trend: 0, isPositive: false },
-      },
-      membershipData,
-      revenueData
-    }
-  }
-
   const handleRetry = () => {
     setRetryCount(0)
     fetchDashboardData(timePeriod)
@@ -273,24 +122,10 @@ const GymDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod, selectedMonth, selectedYear, selectedDate])
+  }, [timePeriod])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
-  }
-
-  const handleMonthChange = (value) => {
-    setSelectedMonth(value)
-    setSelectedDate("") // Clear day when month changes
-  }
-
-  const handleYearChange = (value) => {
-    setSelectedYear(value)
-    setSelectedDate("") // Clear day when year changes
-  }
-
-  const handleDateChange = (value) => {
-    setSelectedDate(value)
   }
 
   // Custom formatters
@@ -302,8 +137,10 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Format chart data to show 'MMM DD' (e.g., 'Oct 17')
+  // Format chart data to show 'MMM DD' (e.g., 'Oct 17') only if data exists
   const formatChartData = (data) => {
+    if (!data || data.length === 0) return []
+
     return data.map(item => {
       if (!item.name) return item
 
@@ -311,7 +148,6 @@ const GymDashboard = () => {
         const date = new Date(item.name)
         // Check if the date is valid
         if (isNaN(date.getTime())) {
-          console.warn('Invalid date:', item.name)
           return { ...item, displayName: item.name }
         }
 
@@ -320,7 +156,6 @@ const GymDashboard = () => {
           displayName: format(date, "MMM dd")
         }
       } catch (error) {
-        console.warn('Error formatting date:', item.name, error)
         return { ...item, displayName: item.name }
       }
     })
@@ -347,70 +182,19 @@ const GymDashboard = () => {
                 Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Month:</label>
-                <Select value={selectedMonth} onValueChange={handleMonthChange}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Select month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-time">All Time</SelectItem>
-                    <SelectItem value="01">January</SelectItem>
-                    <SelectItem value="02">February</SelectItem>
-                    <SelectItem value="03">March</SelectItem>
-                    <SelectItem value="04">April</SelectItem>
-                    <SelectItem value="05">May</SelectItem>
-                    <SelectItem value="06">June</SelectItem>
-                    <SelectItem value="07">July</SelectItem>
-                    <SelectItem value="08">August</SelectItem>
-                    <SelectItem value="09">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Year:</label>
-                <Select value={selectedYear} onValueChange={handleYearChange}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Select year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-time">All Time</SelectItem>
-                    <SelectItem value="2024">2024</SelectItem>
-                    <SelectItem value="2025">2025</SelectItem>
-                    <SelectItem value="2026">2026</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Day:</label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            <div className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Select time period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>
