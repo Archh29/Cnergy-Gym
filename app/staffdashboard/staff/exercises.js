@@ -117,6 +117,7 @@ const ExerciseMuscleManager = ({ userId }) => {
         : `${API_URL}?action=get_muscle_parts`
       const response = await axios.get(url)
       if (response.data.success) {
+        console.log('Fetched muscle parts:', response.data.data)
         setMuscleParts(response.data.data)
       }
     } catch (error) {
@@ -795,15 +796,21 @@ const ExerciseMuscleManager = ({ userId }) => {
                           <TableCell className="font-medium">{muscle.name}</TableCell>
                           <TableCell>
                             <div className="flex items-center justify-center">
-                              {muscle.image_url ? (
+                              {muscle.image_url && muscle.image_url.trim() !== '' ? (
                                 <div className="relative group">
                                   <img
                                     src={muscle.image_url}
                                     alt={muscle.name}
                                     className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
                                     onError={(e) => {
+                                      console.log('Image failed to load:', muscle.image_url)
                                       e.target.style.display = 'none'
                                       e.target.nextSibling.style.display = 'flex'
+                                    }}
+                                    onLoad={(e) => {
+                                      console.log('Image loaded successfully:', muscle.image_url)
+                                      e.target.style.display = 'block'
+                                      e.target.nextSibling.style.display = 'none'
                                     }}
                                   />
                                   <div
@@ -922,15 +929,21 @@ const ExerciseMuscleManager = ({ userId }) => {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center justify-center">
-                              {muscle.image_url ? (
+                              {muscle.image_url && muscle.image_url.trim() !== '' ? (
                                 <div className="relative group">
                                   <img
                                     src={muscle.image_url}
                                     alt={muscle.name}
                                     className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
                                     onError={(e) => {
+                                      console.log('Image failed to load:', muscle.image_url)
                                       e.target.style.display = 'none'
                                       e.target.nextSibling.style.display = 'flex'
+                                    }}
+                                    onLoad={(e) => {
+                                      console.log('Image loaded successfully:', muscle.image_url)
+                                      e.target.style.display = 'block'
+                                      e.target.nextSibling.style.display = 'none'
                                     }}
                                   />
                                   <div
@@ -1112,12 +1125,24 @@ const ExerciseMuscleManager = ({ userId }) => {
                               disabled={isLoading}
                             />
                             <div className="flex items-center space-x-2">
-                              {muscle.image_url && (
+                              {muscle.image_url && muscle.image_url.trim() !== '' ? (
                                 <img
-                                  src={muscle.image_url || "/placeholder.svg"}
+                                  src={muscle.image_url}
                                   alt={muscle.name}
                                   className="w-8 h-8 object-cover rounded"
+                                  onError={(e) => {
+                                    console.log('Muscle part image failed to load:', muscle.image_url)
+                                    e.target.style.display = 'none'
+                                  }}
+                                  onLoad={(e) => {
+                                    console.log('Muscle part image loaded successfully:', muscle.image_url)
+                                    e.target.style.display = 'block'
+                                  }}
                                 />
+                              ) : (
+                                <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-xs">
+                                  📷
+                                </div>
                               )}
                               <Label
                                 htmlFor={`muscle-target-${muscle.id}`}
