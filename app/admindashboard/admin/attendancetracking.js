@@ -24,10 +24,43 @@ const AttendanceTracking = ({ userId }) => {
   const [selectedMonth, setSelectedMonth] = useState("") // Month filter (YYYY-MM format)
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
 
-  // Show notification with different typesz
-  const showNotification = (message, type = "success") => {
-    setNotification({ show: true, message, type })
-    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 6000)
+  // Helper function to parse date from various formats
+  const parseDateFromEntry = (entry) => {
+    // Try different date fields
+    let dateStr = entry.date || entry.check_in || entry.timestamp || entry.created_at
+
+    if (!dateStr) return null
+
+    // Handle different date formats
+    try {
+      // If it's already in YYYY-MM-DD format
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+        return dateStr.substring(0, 10)
+      }
+
+      // If it's in "Oct 24, 2025" format
+      if (dateStr.match(/^[A-Za-z]{3} \d{1,2}, \d{4}/)) {
+        const date = new Date(dateStr)
+        return date.toISOString().substring(0, 10)
+      }
+
+      // If it's in "Oct 24, 2025 11:17 PM" format
+      if (dateStr.match(/^[A-Za-z]{3} \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M/)) {
+        const date = new Date(dateStr)
+        return date.toISOString().substring(0, 10)
+      }
+
+      // If it's a full datetime string
+      const date = new Date(dateStr)
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().substring(0, 10)
+      }
+
+      return null
+    } catch (error) {
+      console.error("Error parsing date:", dateStr, error)
+      return null
+    }
   }
 
   // Filter attendance based on type (date filtering is done server-side)
@@ -39,27 +72,16 @@ const AttendanceTracking = ({ userId }) => {
     // Apply date filter (specific day)
     if (selectedDate) {
       filtered = filtered.filter((entry) => {
-        const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
-        console.log("🔍 Debug - Day filter - Entry:", entry.name, "Date fields:", {
-          date: entry.date,
-          check_in: entry.check_in,
-          timestamp: entry.timestamp,
-          parsedDate: entryDate,
-          selectedDate: selectedDate
-        })
+        const entryDate = parseDateFromEntry(entry)
+        console.log("🔍 Debug - Day filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected:", selectedDate)
         return entryDate === selectedDate
       })
     }
     // Apply month filter (entire month)
     else if (selectedMonth) {
       filtered = filtered.filter((entry) => {
-        const entryDate = entry.date || entry.check_in?.split(' ')[0] || entry.timestamp?.split(' ')[0]
-        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Date fields:", {
-          date: entry.date,
-          check_in: entry.check_in,
-          timestamp: entry.timestamp,
-          parsedDate: entryDate
-        })
+        const entryDate = parseDateFromEntry(entry)
+        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth)
         if (entryDate) {
           const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
           console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
@@ -90,6 +112,10 @@ const AttendanceTracking = ({ userId }) => {
         axios.get("https://api.cnergy.site/attendance.php?action=members"),
         axios.get(attendanceUrl),
       ])
+
+      console.log("🔍 Debug - Raw attendance data:", attendanceRes.data)
+      console.log("🔍 Debug - Sample entry:", attendanceRes.data[0])
+
       setMembers(membersRes.data)
       setAttendance(attendanceRes.data)
     } catch (err) {
