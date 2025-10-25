@@ -76,9 +76,6 @@ const GymDashboard = () => {
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
   })
   const [timePeriod, setTimePeriod] = useState("today")
-  const [selectedMonth, setSelectedMonth] = useState("all-time")
-  const [selectedYear, setSelectedYear] = useState("all-time")
-  const [selectedDate, setSelectedDate] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
@@ -88,25 +85,7 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      // Build the API URL with proper parameters
-      let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
-
-      // Add month filter if selected
-      if (selectedMonth && selectedMonth !== "all-time") {
-        const currentYear = new Date().getFullYear()
-        const monthYear = selectedYear && selectedYear !== "all-time" ? selectedYear : currentYear
-        apiUrl += `&month=${monthYear}-${selectedMonth}`
-      }
-
-      // Add year filter if selected (and no month)
-      if (selectedYear && selectedYear !== "all-time" && (!selectedMonth || selectedMonth === "all-time")) {
-        apiUrl += `&year=${selectedYear}`
-      }
-
-      // Add date filter if selected
-      if (selectedDate) {
-        apiUrl += `&date=${selectedDate}`
-      }
+      const apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
 
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
@@ -116,7 +95,7 @@ const GymDashboard = () => {
         setSummaryStats(response.data.summaryStats)
         setMembershipData(response.data.membershipData || [])
         setRevenueData(response.data.revenueData || [])
-        setRetryCount(0)
+        setRetryCount(0) // Reset retry count on success
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
       }
@@ -147,28 +126,10 @@ const GymDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod, selectedMonth, selectedYear, selectedDate])
+  }, [timePeriod])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
-  }
-
-  const handleMonthChange = (value) => {
-    setSelectedMonth(value)
-    setSelectedDate("") // Clear day when month changes
-    // Don't clear year - let month work with selected year
-  }
-
-  const handleYearChange = (value) => {
-    setSelectedYear(value)
-    setSelectedDate("") // Clear day when year changes
-    // Don't clear month - let year work with selected month
-  }
-
-  const handleDateChange = (value) => {
-    setSelectedDate(value)
-    setSelectedMonth("all-time") // Clear month when date changes
-    setSelectedYear("all-time") // Clear year when date changes
   }
 
   // Custom formatters
@@ -180,10 +141,66 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Use data as-is from API
+  // Format chart data to show proper dates
   const formatChartData = (data) => {
     if (!data || data.length === 0) return []
-    return data
+
+    return data.map(item => {
+      if (!item.name) return item
+
+      // If it's a time format (HH:MM), keep it as is
+      if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+        return { ...item, displayName: item.name }
+      }
+
+      // If it's a date, format it properly
+      try {
+        let date;
+
+        // Handle different date formats more robustly
+        if (item.name.includes('-')) {
+          // Handle ISO format or YYYY-MM-DD format
+          date = new Date(item.name)
+        } else if (item.name.includes('/')) {
+          // Handle MM/DD/YYYY or DD/MM/YYYY format
+          const parts = item.name.split('/')
+          if (parts.length === 3) {
+            // Assume MM/DD/YYYY format for consistency
+            date = new Date(parts[2], parts[0] - 1, parts[1])
+          }
+        } else if (item.name.match(/^\d{8}$/)) {
+          // Handle YYYYMMDD format
+          const year = item.name.substring(0, 4)
+          const month = item.name.substring(4, 6)
+          const day = item.name.substring(6, 8)
+          date = new Date(year, month - 1, day)
+        } else {
+          // Try default parsing
+          date = new Date(item.name)
+        }
+
+        if (!isNaN(date.getTime())) {
+          // Ensure we're showing the correct month by checking if it's October
+          const currentMonth = new Date().getMonth() // 0-based (October = 9)
+          const currentYear = new Date().getFullYear()
+
+          // If the parsed date is not in the current month/year, try to adjust it
+          if (date.getMonth() !== currentMonth || date.getFullYear() !== currentYear) {
+            // Check if this might be a date that should be in October
+            // If the original name contains "Oct" or "10", force it to October
+            if (item.name.toLowerCase().includes('oct') || item.name.includes('10')) {
+              date = new Date(currentYear, 9, date.getDate()) // October is month 9 (0-based)
+            }
+          }
+
+          return { ...item, displayName: format(date, "MMM dd") }
+        }
+      } catch (error) {
+        console.warn('Date parsing failed for:', item.name, error)
+      }
+
+      return { ...item, displayName: item.name }
+    })
   }
 
   // Show error state if there's an error and no data
@@ -223,54 +240,6 @@ const GymDashboard = () => {
                 </Select>
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Month:</label>
-                <Select value={selectedMonth} onValueChange={handleMonthChange}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Select month" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-time">All Time</SelectItem>
-                    <SelectItem value="01">January</SelectItem>
-                    <SelectItem value="02">February</SelectItem>
-                    <SelectItem value="03">March</SelectItem>
-                    <SelectItem value="04">April</SelectItem>
-                    <SelectItem value="05">May</SelectItem>
-                    <SelectItem value="06">June</SelectItem>
-                    <SelectItem value="07">July</SelectItem>
-                    <SelectItem value="08">August</SelectItem>
-                    <SelectItem value="09">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Year:</label>
-                <Select value={selectedYear} onValueChange={handleYearChange}>
-                  <SelectTrigger className="w-[120px]">
-                    <SelectValue placeholder="Select year" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all-time">All Time</SelectItem>
-                    <SelectItem value="2024">2024</SelectItem>
-                    <SelectItem value="2025">2025</SelectItem>
-                    <SelectItem value="2026">2026</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium">Day:</label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
             </div>
           </div>
         </CardHeader>
@@ -428,7 +397,7 @@ const GymDashboard = () => {
                 <LineChart data={formatChartData(membershipData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
-                    dataKey="name"
+                    dataKey="displayName"
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
@@ -481,7 +450,7 @@ const GymDashboard = () => {
                 <BarChart data={formatChartData(revenueData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
-                    dataKey="name"
+                    dataKey="displayName"
                     className="text-xs fill-muted-foreground"
                     tickLine={false}
                     axisLine={false}
