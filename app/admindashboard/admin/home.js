@@ -144,8 +144,11 @@ const GymDashboard = () => {
   const filterDataByDate = (data, targetDate, period) => {
     if (!data || data.length === 0) return data
     if (!targetDate) return data // Show all data if no date selected
-    if (period === "year") return data // Show all data for year view
+    // Only apply date filtering for "today" or "week" periods
+    // For "month" and "year" periods, show all data regardless of date selection
+    if (period === "year" || period === "month") return data
 
+    // For "today" and "week", filter to specific date
     const targetDateStr = format(targetDate, "MMM dd")
     return data.filter(item => item.displayName === targetDateStr)
   }
@@ -225,21 +228,6 @@ const GymDashboard = () => {
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -259,6 +247,21 @@ const GymDashboard = () => {
                   />
                 </PopoverContent>
               </Popover>
+
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               {selectedDate && (
                 <Button
