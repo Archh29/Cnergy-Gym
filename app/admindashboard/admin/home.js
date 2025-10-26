@@ -82,7 +82,7 @@ const GymDashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [selectedDate, setSelectedDate] = useState(null)
   const [calendarOpen, setCalendarOpen] = useState(false)
 
   const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
@@ -97,75 +97,9 @@ const GymDashboard = () => {
       })
 
       if (response.data.success) {
-        // Extract actual day numbers from API data and force them to October
-        const currentDate = new Date()
-        const currentYear = currentDate.getFullYear()
-        const currentMonth = 9 // October = 9 (0-based)
-
-        // Process membership data
-        const octoberMembershipData = (response.data.membershipData || []).map((item, index) => {
-          // Extract day number from the name (e.g., "Jul 17" -> 17, "Aug 19" -> 19)
-          const dayMatch = item.name?.match(/\d{1,2}/)
-          let day = 1
-
-          if (dayMatch) {
-            day = parseInt(dayMatch[0])
-          } else {
-            // If no day found, use index + 1
-            day = index + 1
-          }
-
-          // Ensure day is valid (1-31)
-          if (day < 1 || day > 31) {
-            day = Math.min(31, Math.max(1, day))
-          }
-
-          // Create October date with the actual day number
-          const octoberDate = new Date(currentYear, currentMonth, day)
-          const dayName = format(octoberDate, "MMM dd")
-
-          return {
-            name: dayName,
-            displayName: dayName,
-            members: item.members || 0
-          }
-        })
-
-        // Process revenue data
-        const octoberRevenueData = (response.data.revenueData || []).map((item, index) => {
-          // Extract day number from the name
-          const dayMatch = item.name?.match(/\d{1,2}/)
-          let day = 1
-
-          if (dayMatch) {
-            day = parseInt(dayMatch[0])
-          } else {
-            day = index + 1
-          }
-
-          if (day < 1 || day > 31) {
-            day = Math.min(31, Math.max(1, day))
-          }
-
-          // Create October date with the actual day number
-          const octoberDate = new Date(currentYear, currentMonth, day)
-          const dayName = format(octoberDate, "MMM dd")
-
-          return {
-            name: dayName,
-            displayName: dayName,
-            revenue: item.revenue || 0
-          }
-        })
-
-        console.log('Original API Membership Data:', response.data.membershipData)
-        console.log('Corrected October Membership Data:', octoberMembershipData)
-        console.log('Original API Revenue Data:', response.data.revenueData)
-        console.log('Corrected October Revenue Data:', octoberRevenueData)
-
         setSummaryStats(response.data.summaryStats)
-        setMembershipData(octoberMembershipData)
-        setRevenueData(octoberRevenueData)
+        setMembershipData(response.data.membershipData || [])
+        setRevenueData(response.data.revenueData || [])
         setRetryCount(0)
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
@@ -173,37 +107,8 @@ const GymDashboard = () => {
     } catch (err) {
       console.error("Error fetching dashboard data:", err)
       setError(err.message)
-
-      // Create October data even if API fails, using sample day numbers
-      const currentDate = new Date()
-      const currentYear = currentDate.getFullYear()
-      const currentMonth = 9 // October = 9 (0-based)
-
-      const octoberMembershipData = []
-      const octoberRevenueData = []
-
-      // Use sample day numbers that match common patterns
-      const sampleDays = [17, 19, 21, 22, 23, 24, 25]
-
-      sampleDays.forEach((day, index) => {
-        const octoberDate = new Date(currentYear, currentMonth, day)
-        const dayName = format(octoberDate, "MMM dd")
-
-        octoberMembershipData.push({
-          name: dayName,
-          displayName: dayName,
-          members: Math.floor(Math.random() * 10) + 1
-        })
-
-        octoberRevenueData.push({
-          name: dayName,
-          displayName: dayName,
-          revenue: Math.floor(Math.random() * 5000) + 1000
-        })
-      })
-
-      setMembershipData(octoberMembershipData)
-      setRevenueData(octoberRevenueData)
+      setMembershipData([])
+      setRevenueData([])
 
       // Auto-retry logic (max 3 retries)
       if (!isRetry && retryCount < 3) {
@@ -228,6 +133,11 @@ const GymDashboard = () => {
     fetchDashboardData()
   }, [timePeriod])
 
+  // Clear date filter when period changes to avoid conflicts
+  useEffect(() => {
+    setSelectedDate(null)
+  }, [timePeriod])
+
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
   }
@@ -235,19 +145,10 @@ const GymDashboard = () => {
   // Filter data by selected date
   const filterDataByDate = (data, targetDate) => {
     if (!data || data.length === 0) return data
+    if (!targetDate) return data // Show all data if no date selected
 
-    // If no specific date is selected, show all data
-    if (!targetDate) return data
-
-    const targetDay = targetDate.getDate()
-    return data.filter(item => {
-      const dayMatch = item.name?.match(/\d{1,2}/)
-      if (dayMatch) {
-        const itemDay = parseInt(dayMatch[0])
-        return itemDay === targetDay
-      }
-      return false
-    })
+    const targetDateStr = format(targetDate, "MMM dd")
+    return data.filter(item => item.displayName === targetDateStr)
   }
 
   const handleDateSelect = (date) => {
@@ -264,126 +165,31 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Validate and correct chart data to ensure it's for the current month
-  const validateAndCorrectChartData = (data) => {
-    if (!data || data.length === 0) {
-      // If no data, create sample data for current month
-      const currentDate = new Date()
-      const currentYear = currentDate.getFullYear()
-      const currentMonth = currentDate.getMonth()
-
-
-      // Create sample data for the last 7 days
-      const sampleData = []
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(currentYear, currentMonth, currentDate.getDate() - i)
-        sampleData.push({
-          name: format(date, "MMM dd"),
-          displayName: format(date, "MMM dd"),
-          members: Math.floor(Math.random() * 10) + 1,
-          revenue: Math.floor(Math.random() * 5000) + 1000
-        })
-      }
-      return sampleData
-    }
-
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
-
-
-    return data.map((item, index) => {
-      if (!item.name) return item
-
-      // Extract day number from the name
-      const dayMatch = item.name.match(/\d{1,2}/)
-      let day = 1
-
-      if (dayMatch) {
-        day = parseInt(dayMatch[0])
-      } else {
-        // If no day found, use the index + 1
-        day = index + 1
-      }
-
-      // Ensure day is valid (1-31)
-      if (day < 1 || day > 31) {
-        day = Math.min(31, Math.max(1, day))
-      }
-
-      // Create a corrected date for the current month
-      const correctedDate = new Date(currentYear, currentMonth, day)
-      const displayName = format(correctedDate, "MMM dd")
-
-
-      return {
-        ...item,
-        name: displayName, // Update the original name too
-        displayName: displayName
-      }
-    })
-  }
-
   // Format chart data to show proper dates
   const formatChartData = (data) => {
     if (!data || data.length === 0) return []
 
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
-
-
     return data.map(item => {
-      if (!item.name) return item
+      if (!item.name) return { ...item, displayName: item.name || '' }
 
+      // If already has displayName, use it
+      if (item.displayName) {
+        return item
+      }
 
       // If it's a time format (HH:MM), keep it as is
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
         return { ...item, displayName: item.name }
       }
 
-      // For dates, let's be more aggressive about fixing them
+      // Try to format as date
       try {
-        let date;
-        let originalName = item.name;
-
-        // Handle different date formats
-        if (originalName.includes('-')) {
-          date = new Date(originalName)
-        } else if (originalName.includes('/')) {
-          const parts = originalName.split('/')
-          if (parts.length === 3) {
-            date = new Date(parts[2], parts[0] - 1, parts[1])
-          }
-        } else if (originalName.match(/^\d{8}$/)) {
-          const year = originalName.substring(0, 4)
-          const month = originalName.substring(4, 6)
-          const day = originalName.substring(6, 8)
-          date = new Date(year, month - 1, day)
-        } else {
-          date = new Date(originalName)
-        }
-
+        const date = new Date(item.name)
         if (!isNaN(date.getTime())) {
-          // Force the date to be in the current month and year
-          const day = date.getDate()
-          const correctedDate = new Date(currentYear, currentMonth, day)
-
-
-          return { ...item, displayName: format(correctedDate, "MMM dd") }
+          return { ...item, displayName: format(date, "MMM dd") }
         }
       } catch (error) {
-        console.warn('Date parsing failed for:', item.name, error)
-      }
-
-      // If all else fails, try to extract just the day number and use current month
-      const dayMatch = item.name.match(/\d{1,2}/)
-      if (dayMatch) {
-        const day = parseInt(dayMatch[0])
-        if (day >= 1 && day <= 31) {
-          const correctedDate = new Date(currentYear, currentMonth, day)
-          return { ...item, displayName: format(correctedDate, "MMM dd") }
-        }
+        // Use original name if date parsing fails
       }
 
       return { ...item, displayName: item.name }
@@ -614,8 +420,8 @@ const GymDashboard = () => {
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Annual Membership Growth</CardTitle>
-            <CardDescription>Annual membership growth trend</CardDescription>
+            <CardTitle>Membership Growth</CardTitle>
+            <CardDescription>Membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -667,7 +473,12 @@ const GymDashboard = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Revenue</CardTitle>
+            <CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Revenue
+            </CardTitle>
             <CardDescription>Revenue performance over time</CardDescription>
           </CardHeader>
           <CardContent>
