@@ -152,27 +152,33 @@ const GymDashboard = () => {
     if (!data || data.length === 0) return data
     if (!targetDate) return data // Show all data if no date selected
 
-    // Only skip filtering for "year" period (show all months)
-    if (period === "year") return data
+    // Skip filtering for "year" and "today" periods
+    // - "year" shows all months
+    // - "today" shows all times for today (data comes with time labels like "14:00")
+    if (period === "year" || period === "today") {
+      return data
+    }
 
-    // Filter to specific date for all other periods
+    // For "week" and "month" periods, try to match dates
     const targetDateStr = format(targetDate, "MMM dd")
     console.log("Filtering data for date:", targetDateStr, "Data items:", data)
 
     const filtered = data.filter(item => {
-      // Check both displayName and name to match the date
       const itemName = item.displayName || item.name || ''
-      console.log("Checking item:", itemName, "against:", targetDateStr)
-      // Exact match or contains the date string
-      return itemName === targetDateStr || itemName.includes(targetDateStr)
+      // Try exact match or partial match
+      const matches = itemName === targetDateStr || itemName.includes(targetDateStr)
+      if (matches) {
+        console.log("Matched item:", itemName)
+      }
+      return matches
     })
 
-    console.log("Filtered data:", filtered)
+    console.log("Filtered data count:", filtered.length)
     return filtered
   }
 
   const handleDateSelect = (date) => {
-    console.log("Date selected:", date)
+    console.log("Date selected:", date, "Current period:", timePeriod)
     setSelectedDate(date)
     setCalendarOpen(false)
     // No need to refetch - we just filter the existing data
@@ -199,9 +205,13 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), keep it as is
+      // If it's a time format (HH:MM), convert to 12-hour format with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-        return { ...item, displayName: item.name }
+        const [hours, minutes] = item.name.split(':').map(Number)
+        const period = hours >= 12 ? 'PM' : 'AM'
+        const hour12 = hours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
+        const formattedTime = `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+        return { ...item, displayName: formattedTime }
       }
 
       // Handle month abbreviations (e.g., "Jan", "Feb", "Aug", "Oct")
