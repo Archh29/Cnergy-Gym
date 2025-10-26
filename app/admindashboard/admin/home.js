@@ -7,9 +7,6 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
 import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Button } from "@/components/ui/button"
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
@@ -82,8 +79,6 @@ const GymDashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [selectedDate, setSelectedDate] = useState(null)
-  const [calendarOpen, setCalendarOpen] = useState(false)
 
   const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
     setLoading(true)
@@ -138,57 +133,8 @@ const GymDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timePeriod])
 
-  // Clear date filter when period changes
-  useEffect(() => {
-    setSelectedDate(null)
-  }, [timePeriod])
-
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
-  }
-
-  // Filter data by selected date - works independently of period filter
-  const filterDataByDate = (data, targetDate, period) => {
-    if (!data || data.length === 0) return data
-    if (!targetDate) return data // Show all data if no date selected
-
-    // Only skip filtering for "year" period (shows all months)
-    if (period === "year") {
-      return data
-    }
-
-    // For "today" period, don't filter - the data is already for today with times
-    // User can't view past days when period is "today"
-    if (period === "today") {
-      console.log("SKIPPING FILTER: Today period - showing all today's times")
-      return data
-    }
-
-    // For "week" and "month" periods, filter by the selected date
-    const targetDateStr = format(targetDate, "MMM dd")
-    console.log("FILTERING: Looking for date:", targetDateStr, "Period:", period)
-    console.log("FILTERING: Data items:", data)
-
-    const filtered = data.filter(item => {
-      const itemName = item.displayName || item.name || ''
-      // Check if the item name contains the date
-      const matches = itemName.includes(targetDateStr)
-      if (matches) {
-        console.log("MATCHED:", itemName, "contains", targetDateStr)
-      }
-      return matches
-    })
-
-    console.log("FILTERED RESULT: Found", filtered.length, "items out of", data.length)
-    return filtered
-  }
-
-  const handleDateSelect = (date) => {
-    console.log("Date selected:", date, "Current period:", timePeriod)
-
-    setSelectedDate(date)
-    setCalendarOpen(false)
-    // Date selection is independent - just filter the current data
   }
 
   // Custom formatters
@@ -262,30 +208,9 @@ const GymDashboard = () => {
               <CardTitle className="text-lg sm:text-xl">Dashboard Overview</CardTitle>
               <CardDescription className="text-sm">
                 Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
-                {timePeriod === "today" && " (Date filter works with Week, Month, or Year periods)"}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-4">
-              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-[280px] justify-start text-left font-normal"
-                  >
-                    <Calendar className="mr-2 h-4 w-4" />
-                    {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <CalendarComponent
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={handleDateSelect}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
@@ -301,15 +226,6 @@ const GymDashboard = () => {
                 </Select>
               </div>
 
-              {selectedDate && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedDate(null)}
-                >
-                  Clear Date
-                </Button>
-              )}
             </div>
           </div>
         </CardHeader>
@@ -469,7 +385,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(filterDataByDate(membershipData, selectedDate, timePeriod))}>
+                <LineChart data={formatChartData(membershipData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
@@ -527,7 +443,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={formatChartData(filterDataByDate(revenueData, selectedDate, timePeriod))}>
+                <BarChart data={formatChartData(revenueData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
