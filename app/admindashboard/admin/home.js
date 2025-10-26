@@ -152,29 +152,27 @@ const GymDashboard = () => {
     if (!data || data.length === 0) return data
     if (!targetDate) return data // Show all data if no date selected
 
-    // For "year" period, don't filter by date
+    // Only skip filtering for "year" period (shows all months)
     if (period === "year") {
       return data
     }
 
-    // For "today" period, the data already is for today, so just return it
-    if (period === "today") {
-      return data
-    }
-
-    // For "week" and "month" periods, filter by the selected date
+    // Filter by the selected date for ALL other periods (today, week, month)
     const targetDateStr = format(targetDate, "MMM dd")
-    console.log("Filtering data for date:", targetDateStr, "Period:", period, "Data items:", data)
+    console.log("FILTERING: Looking for date:", targetDateStr, "Period:", period)
+    console.log("FILTERING: Data items:", data)
 
     const filtered = data.filter(item => {
       const itemName = item.displayName || item.name || ''
-      console.log("Checking item:", itemName, "against:", targetDateStr)
-      // Check if the name includes the date string
-      const matches = itemName === targetDateStr || itemName.includes(targetDateStr)
+      // Check if the item name contains the date
+      const matches = itemName.includes(targetDateStr)
+      if (matches) {
+        console.log("MATCHED:", itemName, "contains", targetDateStr)
+      }
       return matches
     })
 
-    console.log("Filtered data count:", filtered.length, "out of", data.length)
+    console.log("FILTERED RESULT: Found", filtered.length, "items out of", data.length)
     return filtered
   }
 
