@@ -138,7 +138,7 @@ const GymDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timePeriod])
 
-  // Clear date filter when period changes to avoid conflicts
+  // Clear date filter when period changes
   useEffect(() => {
     setSelectedDate(null)
   }, [timePeriod])
@@ -147,41 +147,43 @@ const GymDashboard = () => {
     setTimePeriod(value)
   }
 
-  // Filter data by selected date
+  // Filter data by selected date - works independently of period filter
   const filterDataByDate = (data, targetDate, period) => {
     if (!data || data.length === 0) return data
     if (!targetDate) return data // Show all data if no date selected
 
-    // Skip filtering for "year" and "today" periods
-    // - "year" shows all months
-    // - "today" shows all times for today (data comes with time labels like "14:00")
-    if (period === "year" || period === "today") {
+    // For "year" period, don't filter by date
+    if (period === "year") {
       return data
     }
 
-    // For "week" and "month" periods, try to match dates
+    // For "today" period, the data already is for today, so just return it
+    if (period === "today") {
+      return data
+    }
+
+    // For "week" and "month" periods, filter by the selected date
     const targetDateStr = format(targetDate, "MMM dd")
-    console.log("Filtering data for date:", targetDateStr, "Data items:", data)
+    console.log("Filtering data for date:", targetDateStr, "Period:", period, "Data items:", data)
 
     const filtered = data.filter(item => {
       const itemName = item.displayName || item.name || ''
-      // Try exact match or partial match
+      console.log("Checking item:", itemName, "against:", targetDateStr)
+      // Check if the name includes the date string
       const matches = itemName === targetDateStr || itemName.includes(targetDateStr)
-      if (matches) {
-        console.log("Matched item:", itemName)
-      }
       return matches
     })
 
-    console.log("Filtered data count:", filtered.length)
+    console.log("Filtered data count:", filtered.length, "out of", data.length)
     return filtered
   }
 
   const handleDateSelect = (date) => {
     console.log("Date selected:", date, "Current period:", timePeriod)
+
     setSelectedDate(date)
     setCalendarOpen(false)
-    // No need to refetch - we just filter the existing data
+    // Date selection is independent - just filter the current data
   }
 
   // Custom formatters
