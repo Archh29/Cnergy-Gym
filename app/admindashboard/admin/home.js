@@ -85,22 +85,21 @@ const GymDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const fetchDashboardData = useCallback(async (period = timePeriod, date = null, isRetry = false) => {
+  const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
 
     try {
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
 
-      // Add date parameter if a specific date is selected
-      if (date && period !== "year") {
-        const dateStr = format(date, "yyyy-MM-dd")
-        apiUrl += `&date=${dateStr}`
-      }
+      // Don't send date parameter to API - we'll filter client-side
+      console.log("Fetching data for period:", period, "URL:", apiUrl)
 
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
+
+      console.log("API Response received:", response.data)
 
       if (response.data.success) {
         setSummaryStats(response.data.summaryStats)
@@ -120,23 +119,24 @@ const GymDashboard = () => {
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
           setRetryCount(prev => prev + 1)
-          fetchDashboardData(period, null, true)
+          fetchDashboardData(period, true)
         }, 2000 * (retryCount + 1)) // Exponential backoff
       }
     } finally {
       setLoading(false)
     }
-  }, [timePeriod, retryCount, selectedDate])
+  }, [timePeriod, retryCount])
 
   const handleRetry = () => {
     setRetryCount(0)
-    fetchDashboardData(timePeriod, selectedDate)
+    fetchDashboardData(timePeriod)
   }
 
   useEffect(() => {
-    fetchDashboardData(timePeriod, selectedDate)
+    console.log("useEffect triggered - Period:", timePeriod)
+    fetchDashboardData(timePeriod)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timePeriod, selectedDate])
+  }, [timePeriod])
 
   // Clear date filter when period changes to avoid conflicts
   useEffect(() => {
@@ -148,18 +148,34 @@ const GymDashboard = () => {
   }
 
   // Filter data by selected date
-  // Now that we fetch the correct data from API, we just need minimal filtering
   const filterDataByDate = (data, targetDate, period) => {
     if (!data || data.length === 0) return data
-    // API already returns filtered data when date parameter is passed
-    // So we just return all data
-    return data
+    if (!targetDate) return data // Show all data if no date selected
+
+    // Only skip filtering for "year" period (show all months)
+    if (period === "year") return data
+
+    // Filter to specific date for all other periods
+    const targetDateStr = format(targetDate, "MMM dd")
+    console.log("Filtering data for date:", targetDateStr, "Data items:", data)
+
+    const filtered = data.filter(item => {
+      // Check both displayName and name to match the date
+      const itemName = item.displayName || item.name || ''
+      console.log("Checking item:", itemName, "against:", targetDateStr)
+      // Exact match or contains the date string
+      return itemName === targetDateStr || itemName.includes(targetDateStr)
+    })
+
+    console.log("Filtered data:", filtered)
+    return filtered
   }
 
   const handleDateSelect = (date) => {
+    console.log("Date selected:", date)
     setSelectedDate(date)
     setCalendarOpen(false)
-    // The useEffect will automatically fetch data when selectedDate changes
+    // No need to refetch - we just filter the existing data
   }
 
   // Custom formatters
