@@ -85,12 +85,18 @@ const GymDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
+  const fetchDashboardData = useCallback(async (period = timePeriod, date = null, isRetry = false) => {
     setLoading(true)
     setError(null)
 
     try {
-      const apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
+      let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
+
+      // Add date parameter if a specific date is selected
+      if (date && period !== "year") {
+        const dateStr = format(date, "yyyy-MM-dd")
+        apiUrl += `&date=${dateStr}`
+      }
 
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
@@ -114,22 +120,23 @@ const GymDashboard = () => {
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
           setRetryCount(prev => prev + 1)
-          fetchDashboardData(period, true)
+          fetchDashboardData(period, null, true)
         }, 2000 * (retryCount + 1)) // Exponential backoff
       }
     } finally {
       setLoading(false)
     }
-  }, [timePeriod, retryCount])
+  }, [timePeriod, retryCount, selectedDate])
 
   const handleRetry = () => {
     setRetryCount(0)
-    fetchDashboardData(timePeriod)
+    fetchDashboardData(timePeriod, selectedDate)
   }
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [fetchDashboardData])
+    fetchDashboardData(timePeriod, selectedDate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timePeriod, selectedDate])
 
   // Clear date filter when period changes to avoid conflicts
   useEffect(() => {
@@ -141,21 +148,18 @@ const GymDashboard = () => {
   }
 
   // Filter data by selected date
+  // Now that we fetch the correct data from API, we just need minimal filtering
   const filterDataByDate = (data, targetDate, period) => {
     if (!data || data.length === 0) return data
-    if (!targetDate) return data // Show all data if no date selected
-    // Only apply date filtering for "today" or "week" periods
-    // For "month" and "year" periods, show all data regardless of date selection
-    if (period === "year" || period === "month") return data
-
-    // For "today" and "week", filter to specific date
-    const targetDateStr = format(targetDate, "MMM dd")
-    return data.filter(item => item.displayName === targetDateStr)
+    // API already returns filtered data when date parameter is passed
+    // So we just return all data
+    return data
   }
 
   const handleDateSelect = (date) => {
     setSelectedDate(date)
     setCalendarOpen(false)
+    // The useEffect will automatically fetch data when selectedDate changes
   }
 
   // Custom formatters
@@ -415,7 +419,12 @@ const GymDashboard = () => {
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Membership Growth</CardTitle>
+            <CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Membership Growth
+            </CardTitle>
             <CardDescription>Membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
