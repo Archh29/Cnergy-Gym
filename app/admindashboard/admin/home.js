@@ -1,12 +1,12 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
-import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown, CalendarDays } from "lucide-react"
+import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
@@ -85,7 +85,7 @@ const GymDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(null)
   const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
+  const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
 
@@ -120,18 +120,16 @@ const GymDashboard = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [timePeriod, retryCount])
 
   const handleRetry = () => {
     setRetryCount(0)
     fetchDashboardData(timePeriod)
   }
 
-
-
   useEffect(() => {
     fetchDashboardData()
-  }, [timePeriod])
+  }, [fetchDashboardData])
 
   // Clear date filter when period changes to avoid conflicts
   useEffect(() => {
@@ -242,6 +240,35 @@ const GymDashboard = () => {
                 </Select>
               </div>
 
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-[280px] justify-start text-left font-normal"
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <CalendarComponent
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleDateSelect}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {selectedDate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedDate(null)}
+                >
+                  Clear Date
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -377,52 +404,6 @@ const GymDashboard = () => {
                 </Card>
               </>
             )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Date Filter */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5" />
-            Date Filter
-          </CardTitle>
-          <CardDescription>Select a specific date to view detailed data</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-[280px] justify-start text-left font-normal"
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <CalendarComponent
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={handleDateSelect}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            {selectedDate && (
-              <div className="text-sm text-muted-foreground">
-                Selected: {format(selectedDate, "MMM dd, yyyy")}
-              </div>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(null)}
-            >
-              Show All Dates
-            </Button>
           </div>
         </CardContent>
       </Card>
