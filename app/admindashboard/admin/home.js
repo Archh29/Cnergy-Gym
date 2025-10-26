@@ -157,7 +157,14 @@ const GymDashboard = () => {
       return data
     }
 
-    // Filter by the selected date for ALL other periods (today, week, month)
+    // For "today" period, don't filter - the data is already for today with times
+    // User can't view past days when period is "today"
+    if (period === "today") {
+      console.log("SKIPPING FILTER: Today period - showing all today's times")
+      return data
+    }
+
+    // For "week" and "month" periods, filter by the selected date
     const targetDateStr = format(targetDate, "MMM dd")
     console.log("FILTERING: Looking for date:", targetDateStr, "Period:", period)
     console.log("FILTERING: Data items:", data)
@@ -255,6 +262,7 @@ const GymDashboard = () => {
               <CardTitle className="text-lg sm:text-xl">Dashboard Overview</CardTitle>
               <CardDescription className="text-sm">
                 Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
+                {timePeriod === "today" && " (Date filter works with Week, Month, or Year periods)"}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-4">
