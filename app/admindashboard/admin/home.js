@@ -143,9 +143,10 @@ const GymDashboard = () => {
   }
 
   // Filter data by selected date
-  const filterDataByDate = (data, targetDate) => {
+  const filterDataByDate = (data, targetDate, period) => {
     if (!data || data.length === 0) return data
     if (!targetDate) return data // Show all data if no date selected
+    if (period === "year") return data // Show all data for year view
 
     const targetDateStr = format(targetDate, "MMM dd")
     return data.filter(item => item.displayName === targetDateStr)
@@ -182,7 +183,14 @@ const GymDashboard = () => {
         return { ...item, displayName: item.name }
       }
 
-      // Try to format as date
+      // Handle month abbreviations (e.g., "Jan", "Feb", "Aug", "Oct")
+      const monthAbbrev = item.name.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}$/i)
+      if (monthAbbrev) {
+        // Return as is for month/day format
+        return { ...item, displayName: item.name }
+      }
+
+      // Try to format as date if it's a valid date string
       try {
         const date = new Date(item.name)
         if (!isNaN(date.getTime())) {
@@ -192,6 +200,7 @@ const GymDashboard = () => {
         // Use original name if date parsing fails
       }
 
+      // Use original name
       return { ...item, displayName: item.name }
     })
   }
@@ -402,9 +411,11 @@ const GymDashboard = () => {
                 />
               </PopoverContent>
             </Popover>
-            <div className="text-sm text-muted-foreground">
-              Selected: {format(selectedDate, "MMM dd, yyyy")}
-            </div>
+            {selectedDate && (
+              <div className="text-sm text-muted-foreground">
+                Selected: {format(selectedDate, "MMM dd, yyyy")}
+              </div>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -431,7 +442,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(filterDataByDate(membershipData, selectedDate))}>
+                <LineChart data={formatChartData(filterDataByDate(membershipData, selectedDate, timePeriod))}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
@@ -489,7 +500,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={formatChartData(filterDataByDate(revenueData, selectedDate))}>
+                <BarChart data={formatChartData(filterDataByDate(revenueData, selectedDate, timePeriod))}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
