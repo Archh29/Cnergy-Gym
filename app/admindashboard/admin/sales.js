@@ -48,9 +48,10 @@ const Sales = ({ userId }) => {
 
   // Filter states
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
-  const [saleTypeFilter, setSaleTypeFilter] = useState("all")
+  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
+  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in
 
   // Calendar states
   const [customDate, setCustomDate] = useState(null)
@@ -978,8 +979,10 @@ const Sales = ({ userId }) => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="Product">Product</SelectItem>
-                        <SelectItem value="Subscription">Subscription</SelectItem>
+                        <SelectItem value="Product">Product Sales</SelectItem>
+                        <SelectItem value="Subscription">Subscription Sales</SelectItem>
+                        <SelectItem value="Coach Assignment">Coach Assignment Sales</SelectItem>
+                        <SelectItem value="Walk-in">Walk-in Sales</SelectItem>
                         <SelectItem value="Guest">Day Pass Access</SelectItem>
                       </SelectContent>
                     </Select>
