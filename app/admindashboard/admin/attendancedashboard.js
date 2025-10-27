@@ -97,9 +97,29 @@ const AttendanceDashboard = ({ selectedMonth, selectedYear, selectedDate, filter
         // Calculate peak hour
         const hourCounts = {}
         data.forEach(entry => {
-            if (entry.time) {
-                const hour = entry.time.split(':')[0]
-                hourCounts[hour] = (hourCounts[hour] || 0) + 1
+            // Try to get time from check_in, timestamp, or created_at
+            const timeStr = entry.check_in || entry.timestamp || entry.created_at
+            if (timeStr) {
+                // Extract hour from time string
+                let hour = null
+
+                // Handle formats like "Oct 24, 2025 11:17 AM"
+                const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i)
+                if (timeMatch) {
+                    let hour24 = parseInt(timeMatch[1])
+                    const ampm = timeMatch[3].toUpperCase()
+                    if (ampm === 'PM' && hour24 !== 12) hour24 += 12
+                    if (ampm === 'AM' && hour24 === 12) hour24 = 0
+                    hour = hour24.toString().padStart(2, '0')
+                }
+                // Handle formats like "11:17:23"
+                else if (timeStr.includes(':')) {
+                    hour = timeStr.split(':')[0]
+                }
+
+                if (hour) {
+                    hourCounts[hour] = (hourCounts[hour] || 0) + 1
+                }
             }
         })
 

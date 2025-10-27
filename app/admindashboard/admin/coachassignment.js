@@ -589,12 +589,15 @@ const CoachAssignments = ({ userId }) => {
                         <SelectValue placeholder="Select a coach" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Coaches</SelectItem>
-                        {availableCoaches.map((coach) => (
-                          <SelectItem key={coach.id} value={coach.id.toString()}>
-                            {coach.name}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="all">All Coaches ({assignedMembers.length})</SelectItem>
+                        {availableCoaches.map((coach) => {
+                          const memberCount = assignedMembers.filter(assignment => assignment.coach?.id?.toString() === coach.id.toString()).length
+                          return (
+                            <SelectItem key={coach.id} value={coach.id.toString()}>
+                              {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
+                            </SelectItem>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
                   </div>

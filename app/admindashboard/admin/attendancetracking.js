@@ -325,10 +325,20 @@ const AttendanceTracking = ({ userId }) => {
         <div className="lg:w-80 flex-shrink-0">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filters
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5" />
+                  Filters
+                </CardTitle>
+                <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Manual Entry
+                    </Button>
+                  </DialogTrigger>
+                </Dialog>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Search */}
@@ -482,54 +492,48 @@ const AttendanceTracking = ({ userId }) => {
                   <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                   Refresh
                 </Button>
-
-                {/* Manual Member Entry */}
-                <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="w-full">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Manual Entry
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
-                    <DialogHeader>
-                      <DialogTitle>Manual Attendance Entry</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <Input
-                        type="text"
-                        placeholder="Search member..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
-                      <div className="max-h-60 overflow-y-auto space-y-1">
-                        {members
-                          .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
-                          .map((member) => (
-                            <Button
-                              key={member.id}
-                              variant="ghost"
-                              className="w-full justify-start"
-                              onClick={() => handleManualEntry(member)}
-                            >
-                              <div className="text-left">
-                                <div className="font-medium">
-                                  {member.fname} {member.lname}
-                                </div>
-                                <div className="text-sm text-muted-foreground">{member.email}</div>
-                              </div>
-                            </Button>
-                          ))}
-                      </div>
-                    </div>
-                    <DialogFooter className="pt-4">
-                      <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
-                        Cancel
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
               </div>
+
+              {/* Manual Member Entry Dialog */}
+              <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
+                  <DialogHeader>
+                    <DialogTitle>Manual Attendance Entry</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Input
+                      type="text"
+                      placeholder="Search member..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {members
+                        .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((member) => (
+                          <Button
+                            key={member.id}
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => handleManualEntry(member)}
+                          >
+                            <div className="text-left">
+                              <div className="font-medium">
+                                {member.fname} {member.lname}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{member.email}</div>
+                            </div>
+                          </Button>
+                        ))}
+                    </div>
+                  </div>
+                  <DialogFooter className="pt-4">
+                    <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
+                      Cancel
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         </div>
