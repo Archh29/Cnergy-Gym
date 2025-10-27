@@ -876,7 +876,7 @@ const SubscriptionMonitor = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="pending" className="w-full">
+          <Tabs defaultValue="all" className="w-full">
             <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="all">All ({analytics.total})</TabsTrigger>
               <TabsTrigger value="pending">Pending ({analytics.pending})</TabsTrigger>

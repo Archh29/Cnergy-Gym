@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3, Trash2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import AttendanceDashboard from "./attendancedashboard"
@@ -207,6 +208,14 @@ const AttendanceTracking = ({ userId }) => {
 
   // Handle manual attendance entry
   const handleManualEntry = async (member) => {
+    // Prompt for password
+    const password = prompt("Enter password to confirm manual entry:");
+
+    if (password !== "Cnergy123@") {
+      showNotification("Invalid password. Manual entry cancelled.", "error")
+      return
+    }
+
     try {
       const response = await axios.post(`https://api.cnergy.site/attendance.php`, {
         action: 'qr_scan',
@@ -529,7 +538,18 @@ const AttendanceTracking = ({ userId }) => {
         <div className="flex-1">
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openFailedScansDialog}
+                  className="bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
+                >
+                  <AlertCircle className="mr-2 h-4 w-4" />
+                  Attendance Denied Log
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Mobile-friendly table wrapper with fixed height and scroll */}
@@ -590,6 +610,105 @@ const AttendanceTracking = ({ userId }) => {
           </Card>
         </div>
       </div>
+
+      {/* Failed QR Scans Dialog */}
+      <Dialog open={failedScansOpen} onOpenChange={setFailedScansOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh]">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="flex items-center gap-3 text-2xl">
+              <div className="p-2 rounded-lg bg-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <div>Attendance Denied Log</div>
+                <div className="text-sm font-normal text-muted-foreground mt-1">
+                  Records of failed QR scan attempts and access denials
+                </div>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          {failedScans.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="p-4 rounded-full bg-green-100 mb-4">
+                <CheckCircle className="h-12 w-12 text-green-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">All Clear!</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                No denied access attempts recorded. All QR scans have been successful.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="py-4 border-b">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="px-3 py-1 rounded-full bg-red-100">
+                      <span className="text-sm font-semibold text-red-700">
+                        {failedScans.length} {failedScans.length === 1 ? 'Denial' : 'Denials'}
+                      </span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      Total failed access attempts
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFailedScans}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Clear History
+                  </Button>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto max-h-[60vh]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white z-10">
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="font-semibold">Timestamp</TableHead>
+                      <TableHead className="font-semibold">Member Name</TableHead>
+                      <TableHead className="font-semibold">Error Type</TableHead>
+                      <TableHead className="font-semibold">Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {failedScans.map((scan, index) => (
+                      <TableRow key={index} className="hover:bg-gray-50 transition-colors">
+                        <TableCell className="font-mono text-sm">
+                          {new Date(scan.timestamp).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {scan.memberName}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="destructive"
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            {scan.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-md">
+                          {scan.message}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => setFailedScansOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -46,6 +46,7 @@ import {
   Calendar as CalendarIcon,
   User,
   ShoppingBag,
+  CheckCircle,
 } from "lucide-react"
 
 // API Configuration
