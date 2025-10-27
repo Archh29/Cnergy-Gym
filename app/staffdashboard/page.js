@@ -81,7 +81,7 @@ const App = () => {
     // Remove the automatic "No active membership" addition since backend now handles this
 
     setNotification({ show: true, message: fullMessage, type })
-    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 5000)
+    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 8000)
   }
 
   // Clean and normalize QR data

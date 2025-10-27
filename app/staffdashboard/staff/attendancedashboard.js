@@ -122,8 +122,24 @@ const AttendanceDashboard = ({ userId, selectedMonth, selectedDate, filterType }
             }
         })
 
+        // Convert peak hour to 12-hour format
         const peakHour = Object.keys(hourCounts).length > 0
-            ? Object.keys(hourCounts).reduce((a, b) => hourCounts[a] > hourCounts[b] ? a : b) + ":00"
+            ? (() => {
+                const peakHour24 = parseInt(Object.keys(hourCounts).reduce((a, b) => hourCounts[a] > hourCounts[b] ? a : b))
+                let hour12 = peakHour24
+                let ampm = "AM"
+
+                if (peakHour24 === 0) {
+                    hour12 = 12
+                } else if (peakHour24 >= 12) {
+                    ampm = "PM"
+                    if (peakHour24 > 12) {
+                        hour12 = peakHour24 - 12
+                    }
+                }
+
+                return `${hour12}:00 ${ampm}`
+            })()
             : "N/A"
 
         // Calculate trends (simplified - would need historical data for accurate trends)
