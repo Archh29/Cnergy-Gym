@@ -1696,6 +1696,28 @@ const Sales = ({ userId }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Success Notification Dialog */}
+      <Dialog open={showSuccessNotification} onOpenChange={setShowSuccessNotification}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 rounded-full bg-green-100">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+              </div>
+              Success
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-center text-gray-700">{successMessage}</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowSuccessNotification(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
