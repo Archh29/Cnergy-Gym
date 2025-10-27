@@ -239,13 +239,13 @@ const AttendanceTracking = ({ userId }) => {
       } else {
         // Handle plan validation errors with better messages
         if (response.data.type === "expired_plan") {
-          const errorMessage = response.data.message ||
-            "❌ Access Denied: This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription."
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
           showNotification(errorMessage, "error")
         }
         else if (response.data.type === "no_plan") {
-          const errorMessage = response.data.message ||
-            "❌ Access Denied: This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription."
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
           showNotification(errorMessage, "error")
         }
         // Handle cooldown errors
