@@ -101,6 +101,10 @@ const Sales = ({ userId }) => {
   // Low stock dialog state
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
 
+  // Success notification state
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false)
+  const [successMessage, setSuccessMessage] = useState("")
+
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
@@ -457,7 +461,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert("Product added successfully!")
+        setSuccessMessage("Product added successfully!")
+        setShowSuccessNotification(true)
         setNewProduct({ name: "", price: "", stock: "", category: "Uncategorized" })
         await loadProducts()
       }
@@ -490,7 +495,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setSuccessMessage(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setShowSuccessNotification(true)
         setStockUpdateProduct(null)
         setStockUpdateQuantity("")
         setStockUpdateType("add")
@@ -520,7 +526,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert("Product updated successfully!")
+        setSuccessMessage("Product updated successfully!")
+        setShowSuccessNotification(true)
         setEditProduct(null)
         setEditProductData({ name: "", price: "", category: "Uncategorized" })
         await loadProducts()

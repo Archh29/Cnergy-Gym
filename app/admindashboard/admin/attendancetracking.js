@@ -684,26 +684,15 @@ const AttendanceTracking = ({ userId }) => {
           ) : (
             <>
               <div className="py-4 border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="px-3 py-1 rounded-full bg-red-100">
-                      <span className="text-sm font-semibold text-red-700">
-                        {failedScans.length} {failedScans.length === 1 ? 'Denial' : 'Denials'}
-                      </span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      Total failed access attempts
+                <div className="flex items-center gap-4">
+                  <div className="px-3 py-1 rounded-full bg-red-100">
+                    <span className="text-sm font-semibold text-red-700">
+                      {failedScans.length} {failedScans.length === 1 ? 'Denial' : 'Denials'}
                     </span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearFailedScans}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Clear History
-                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Total failed access attempts (permanent record)
+                  </span>
                 </div>
               </div>
 
