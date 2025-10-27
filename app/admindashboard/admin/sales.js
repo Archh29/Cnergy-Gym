@@ -34,6 +34,8 @@ import {
   Trash2,
   Minus,
   Calendar as CalendarIcon,
+  User,
+  ShoppingBag,
 } from "lucide-react"
 
 // API Configuration
@@ -710,7 +712,7 @@ const Sales = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
@@ -718,11 +720,7 @@ const Sales = ({ userId }) => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">
-                  {saleTypeFilter === "all" ? "All sales" :
-                    saleTypeFilter === "Product" ? "Product sales only" :
-                      saleTypeFilter === "Subscription" ? "Subscription sales only" : "Filtered sales"}
-                </p>
+                <p className="text-xs text-muted-foreground">All sales combined</p>
               </CardContent>
             </Card>
 
@@ -747,6 +745,28 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
                 <p className="text-xs text-muted-foreground">Membership revenue</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Coach Assignment</CardTitle>
+                <User className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">Coach revenue</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Walk-in Sales</CardTitle>
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(analytics.walkinSales || 0)}</div>
+                <p className="text-xs text-muted-foreground">Guest/day pass revenue</p>
               </CardContent>
             </Card>
 
