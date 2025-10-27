@@ -350,16 +350,22 @@ function getAnalyticsData($pdo)
 	$stmt->execute($productParams);
 	$productsSoldPeriod = $stmt->fetch()['products_sold_period'];
 
-	// Get separate product and subscription sales for the period
+	// Get all sales types from the sales table
+	// Try multiple possible sale_type values for coach and walk-in
+	// NOTE: Coach assignments are stored as 'Coaching' in the database
 	$stmt = $pdo->prepare("
 		SELECT 
 			COALESCE(SUM(CASE WHEN sale_type = 'Product' THEN total_amount ELSE 0 END), 0) AS product_sales,
-			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' THEN total_amount ELSE 0 END), 0) AS subscription_sales
+			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
+			COALESCE(SUM(CASE WHEN sale_type IN ('Coaching', 'Coach Assignment', 'Coach') THEN total_amount ELSE 0 END), 0) AS coach_assignment_sales,
+			COALESCE(SUM(CASE WHEN sale_type IN ('Walk-in', 'Walkin', 'Guest', 'Day Pass') THEN total_amount ELSE 0 END), 0) AS walkin_sales
 		FROM `sales`
 		WHERE $dateCondition
 	");
 	$stmt->execute();
 	$salesBreakdown = $stmt->fetch();
+	$coachSales = (float) $salesBreakdown['coach_assignment_sales'];
+	$walkinSales = (float) $salesBreakdown['walkin_sales'];
 
 	// Get low stock items (only relevant for product sales)
 	$stmt = $pdo->prepare("
@@ -385,7 +391,10 @@ function getAnalyticsData($pdo)
 			"lowStockItems" => (int) $lowStockItems,
 			"monthlyRevenue" => (float) $totalRevenue,
 			"productSales" => (float) $salesBreakdown['product_sales'],
-			"subscriptionSales" => (float) $salesBreakdown['subscription_sales']
+			"subscriptionSales" => (float) $salesBreakdown['subscription_sales'],
+			"coachAssignmentSales" => (float) $coachSales,
+			"walkinSales" => (float) $walkinSales,
+			"totalSales" => (float) $periodSales
 		]
 	]);
 }
@@ -624,28 +633,49 @@ function deleteProduct($pdo, $data)
 		return;
 	}
 
-	// Get product details before deletion for logging
-	$productStmt = $pdo->prepare("SELECT name, price, category FROM product WHERE id = ?");
-	$productStmt->execute([$data['id']]);
-	$product = $productStmt->fetch();
+	// Begin transaction to ensure data integrity
+	$pdo->beginTransaction();
 
-	$stmt = $pdo->prepare("DELETE FROM `product` WHERE id = ?");
-	$stmt->execute([$data['id']]);
+	try {
+		// Get product details before deletion for logging
+		$productStmt = $pdo->prepare("SELECT name, price, category FROM product WHERE id = ?");
+		$productStmt->execute([$data['id']]);
+		$product = $productStmt->fetch();
 
-	if ($stmt->rowCount() > 0) {
-		// Log activity using dedicated logging file
-		$productName = $product ? $product['name'] : "Product ID: {$data['id']}";
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Delete%20Product&details=" . urlencode("Product deleted: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
+		if (!$product) {
+			throw new Exception("Product not found");
 		}
-		file_get_contents($logUrl);
 
-		echo json_encode(["success" => "Product deleted successfully"]);
-	} else {
+		// First, delete all sales_details that reference this product
+		$deleteDetailsStmt = $pdo->prepare("DELETE FROM `sales_details` WHERE product_id = ?");
+		$deleteDetailsStmt->execute([$data['id']]);
+
+		// Now delete the product
+		$stmt = $pdo->prepare("DELETE FROM `product` WHERE id = ?");
+		$stmt->execute([$data['id']]);
+
+		if ($stmt->rowCount() > 0) {
+			// Commit the transaction
+			$pdo->commit();
+
+			// Log activity using dedicated logging file
+			$productName = $product['name'];
+			$userId = $_SESSION['user_id'] ?? null;
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Delete%20Product&details=" . urlencode("Product deleted: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
+			if ($userId) {
+				$logUrl .= "&user_id=" . $userId;
+			}
+			file_get_contents($logUrl);
+
+			echo json_encode(["success" => "Product deleted successfully"]);
+		} else {
+			throw new Exception("Product not found");
+		}
+	} catch (Exception $e) {
+		// Rollback transaction on error
+		$pdo->rollBack();
 		http_response_code(404);
-		echo json_encode(["error" => "Product not found"]);
+		echo json_encode(["error" => $e->getMessage()]);
 	}
 }
 

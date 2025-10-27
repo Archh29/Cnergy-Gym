@@ -1110,15 +1110,7 @@ const Sales = ({ userId }) => {
                               <Edit className="mr-1 h-3 w-3" />
                               Edit
                             </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleDeleteProduct(product)}
-                              disabled={loading}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              Delete
-                            </Button>
+
                           </div>
                         </TableCell>
                       </TableRow>

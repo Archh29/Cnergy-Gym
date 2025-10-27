@@ -712,20 +712,65 @@ const SubscriptionMonitor = ({ userId }) => {
     }).format(amount)
   }
 
+  // Get analytics
+  const getActiveSubscriptions = () => {
+    return (subscriptions || []).filter((s) => {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const endDate = new Date(s.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      return s.display_status === "Active" || (s.status_name === "approved" && endDate >= today)
+    })
+  }
+
+  const getExpiringSoonSubscriptions = () => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const sevenDaysFromNow = new Date()
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+    sevenDaysFromNow.setHours(23, 59, 59, 999)
+
+    return (subscriptions || []).filter((s) => {
+      const endDate = new Date(s.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      return (s.display_status === "Active" || s.status_name === "approved") &&
+        endDate >= today &&
+        endDate <= sevenDaysFromNow
+    })
+  }
+
+  const getExpiredSubscriptions = () => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    return (subscriptions || []).filter((s) => {
+      const endDate = new Date(s.end_date)
+      endDate.setHours(0, 0, 0, 0)
+      return s.display_status === "Expired" || (s.status_name === "approved" && endDate < today)
+    })
+  }
+
   // Filter subscriptions
-  const filteredSubscriptions = (subscriptions || []).filter((subscription) => {
-    const matchesSearch =
-      `${subscription.fname || ''} ${subscription.mname || ''} ${subscription.lname || ''}`
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase()) ||
-      (subscription.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (subscription.plan_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filterSubscriptions = (subscriptionList) => {
+    return (subscriptionList || []).filter((subscription) => {
+      const matchesSearch =
+        `${subscription.fname || ''} ${subscription.mname || ''} ${subscription.lname || ''}`
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase()) ||
+        (subscription.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (subscription.plan_name || '').toLowerCase().includes(searchQuery.toLowerCase())
 
-    const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
-    const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
+      const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
+      const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
 
-    return matchesSearch && matchesStatus && matchesPlan
-  })
+      return matchesSearch && matchesStatus && matchesPlan
+    })
+  }
+
+  const filteredSubscriptions = filterSubscriptions(subscriptions)
+  const activeSubscriptions = getActiveSubscriptions()
+  const expiringSoonSubscriptions = getExpiringSoonSubscriptions()
+  const expiredSubscriptions = getExpiredSubscriptions()
 
   // Get analytics
   const analytics = {
@@ -733,6 +778,9 @@ const SubscriptionMonitor = ({ userId }) => {
     pending: pendingSubscriptions?.length || 0,
     approved: subscriptions?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
     declined: subscriptions?.filter((s) => s.status_name === "declined")?.length || 0,
+    active: activeSubscriptions.length,
+    expiringSoon: expiringSoonSubscriptions.length,
+    expired: expiredSubscriptions.length,
   }
 
   if (loading) {
@@ -761,19 +809,19 @@ const SubscriptionMonitor = ({ userId }) => {
         </Card>
         <Card>
           <CardContent className="flex items-center p-6">
-            <Clock className="h-8 w-8 text-yellow-600" />
+            <CheckCircle className="h-8 w-8 text-green-600" />
             <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Pending Approval</p>
-              <p className="text-2xl font-bold">{analytics.pending}</p>
+              <p className="text-sm font-medium text-muted-foreground">Active</p>
+              <p className="text-2xl font-bold">{analytics.active}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center p-6">
-            <CheckCircle className="h-8 w-8 text-green-600" />
+            <Clock className="h-8 w-8 text-orange-600" />
             <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Approved</p>
-              <p className="text-2xl font-bold">{analytics.approved}</p>
+              <p className="text-sm font-medium text-muted-foreground">Expiring Soon</p>
+              <p className="text-2xl font-bold">{analytics.expiringSoon}</p>
             </div>
           </CardContent>
         </Card>
@@ -781,8 +829,8 @@ const SubscriptionMonitor = ({ userId }) => {
           <CardContent className="flex items-center p-6">
             <XCircle className="h-8 w-8 text-red-600" />
             <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Declined</p>
-              <p className="text-2xl font-bold">{analytics.declined}</p>
+              <p className="text-sm font-medium text-muted-foreground">Expired</p>
+              <p className="text-2xl font-bold">{analytics.expired}</p>
             </div>
           </CardContent>
         </Card>
@@ -829,9 +877,12 @@ const SubscriptionMonitor = ({ userId }) => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="pending" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="pending">Pending Requests ({analytics.pending})</TabsTrigger>
-              <TabsTrigger value="all">All Requests ({analytics.total})</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="pending">Pending ({analytics.pending})</TabsTrigger>
+              <TabsTrigger value="active">Active ({analytics.active})</TabsTrigger>
+              <TabsTrigger value="expiring">Expiring Soon ({analytics.expiringSoon})</TabsTrigger>
+              <TabsTrigger value="expired">Expired ({analytics.expired})</TabsTrigger>
+              <TabsTrigger value="all">All ({analytics.total})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="pending" className="space-y-4">
@@ -926,6 +977,297 @@ const SubscriptionMonitor = ({ userId }) => {
                   </Table>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="active" className="space-y-4">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search members, emails, or plans..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={planFilter} onValueChange={setPlanFilter}>
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="Filter by plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Plans</SelectItem>
+                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
+                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Active Subscriptions Table */}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Total Paid</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!filterSubscriptions(activeSubscriptions) || filterSubscriptions(activeSubscriptions).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          No active subscriptions found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filterSubscriptions(activeSubscriptions).map((subscription) => (
+                        <TableRow key={subscription.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback>
+                                  {subscription.fname[0]}
+                                  {subscription.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatCurrency(subscription.price)}/month
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                            >
+                              {getStatusIcon(subscription.status_name)}
+                              {subscription.display_status || subscription.status_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.end_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="expiring" className="space-y-4">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search members, emails, or plans..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={planFilter} onValueChange={setPlanFilter}>
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="Filter by plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Plans</SelectItem>
+                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
+                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Expiring Soon Subscriptions Table */}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Total Paid</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!filterSubscriptions(expiringSoonSubscriptions) || filterSubscriptions(expiringSoonSubscriptions).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          No subscriptions expiring soon
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filterSubscriptions(expiringSoonSubscriptions).map((subscription) => (
+                        <TableRow key={subscription.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback>
+                                  {subscription.fname[0]}
+                                  {subscription.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatCurrency(subscription.price)}/month
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              {subscription.display_status || subscription.status_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium text-orange-600">{formatDate(subscription.end_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="expired" className="space-y-4">
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Search members, emails, or plans..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={planFilter} onValueChange={setPlanFilter}>
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder="Filter by plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Plans</SelectItem>
+                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
+                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Expired Subscriptions Table */}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Member</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Total Paid</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {!filterSubscriptions(expiredSubscriptions) || filterSubscriptions(expiredSubscriptions).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          No expired subscriptions found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filterSubscriptions(expiredSubscriptions).map((subscription) => (
+                        <TableRow key={subscription.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarFallback>
+                                  {subscription.fname[0]}
+                                  {subscription.lname[0]}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                </div>
+                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatCurrency(subscription.price)}/month
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                            >
+                              {getStatusIcon(subscription.status_name)}
+                              {subscription.display_status || subscription.status_name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </TabsContent>
 
             <TabsContent value="all" className="space-y-4">
