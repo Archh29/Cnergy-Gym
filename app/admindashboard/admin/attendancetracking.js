@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
 import { Search, Plus, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,12 +15,14 @@ import AttendanceDashboard from "./attendancedashboard"
 
 const AttendanceTracking = ({ userId }) => {
   const [manualOpen, setManualOpen] = useState(false)
+  const [failedScansOpen, setFailedScansOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [attendance, setAttendance] = useState([])
   const [members, setMembers] = useState([])
   const [lastScanTime, setLastScanTime] = useState(0)
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
+  const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
   const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
@@ -147,6 +150,25 @@ const AttendanceTracking = ({ userId }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadFailedScans = () => {
+    const stored = localStorage.getItem('failedQrScans')
+    if (stored) {
+      setFailedScans(JSON.parse(stored))
+    } else {
+      setFailedScans([])
+    }
+  }
+
+  const clearFailedScans = () => {
+    localStorage.removeItem('failedQrScans')
+    setFailedScans([])
+  }
+
+  const openFailedScansDialog = () => {
+    loadFailedScans()
+    setFailedScansOpen(true)
   }
 
   // Initial data load
@@ -337,14 +359,24 @@ const AttendanceTracking = ({ userId }) => {
                   <Filter className="h-5 w-5" />
                   Filters
                 </CardTitle>
-                <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Manual Entry
-                    </Button>
-                  </DialogTrigger>
-                </Dialog>
+                <div className="flex gap-2">
+                  <Dialog open={failedScansOpen} onOpenChange={setFailedScansOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" onClick={openFailedScansDialog}>
+                        <AlertCircle className="mr-2 h-4 w-4" />
+                        Failed Scans
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                  <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Manual Entry
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -610,6 +642,63 @@ const AttendanceTracking = ({ userId }) => {
           </Card>
         </div>
       </div>
+
+      {/* Failed QR Scans Dialog */}
+      <Dialog open={failedScansOpen} onOpenChange={setFailedScansOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+              Failed QR Scans
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {failedScans.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No failed QR scans recorded</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Time</TableHead>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Error Type</TableHead>
+                    <TableHead>Message</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {failedScans.map((scan, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        {new Date(scan.timestamp).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {scan.memberName}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="destructive">{scan.type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {scan.message}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={clearFailedScans}>
+              Clear History
+            </Button>
+            <Button onClick={() => setFailedScansOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

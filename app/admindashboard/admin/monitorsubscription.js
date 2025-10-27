@@ -855,10 +855,10 @@ const SubscriptionMonitor = ({ userId }) => {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2">
-                Subscription Management
+                Monitor Subscription
                 <Badge variant="outline">{analytics.pending} pending</Badge>
               </CardTitle>
-              <CardDescription>Monitor subscription requests and create manual subscriptions</CardDescription>
+              <CardDescription>Monitor subscription status and track upcoming expirations</CardDescription>
             </div>
             <div className="flex gap-2">
               <Button onClick={fetchAllData} variant="outline" size="sm">
@@ -877,12 +877,12 @@ const SubscriptionMonitor = ({ userId }) => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="pending" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
+              <TabsTrigger value="all">All ({analytics.total})</TabsTrigger>
               <TabsTrigger value="pending">Pending ({analytics.pending})</TabsTrigger>
               <TabsTrigger value="active">Active ({analytics.active})</TabsTrigger>
-              <TabsTrigger value="expiring">Expiring Soon ({analytics.expiringSoon})</TabsTrigger>
+              <TabsTrigger value="upcoming">Upcoming ({analytics.expiringSoon})</TabsTrigger>
               <TabsTrigger value="expired">Expired ({analytics.expired})</TabsTrigger>
-              <TabsTrigger value="all">All ({analytics.total})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="pending" className="space-y-4">
@@ -1076,7 +1076,7 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </TabsContent>
 
-            <TabsContent value="expiring" className="space-y-4">
+            <TabsContent value="upcoming" className="space-y-4">
               {/* Filters */}
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
@@ -1101,7 +1101,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 </Select>
               </div>
 
-              {/* Expiring Soon Subscriptions Table */}
+              {/* Upcoming Expiration Subscriptions Table */}
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -1118,7 +1118,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     {!filterSubscriptions(expiringSoonSubscriptions) || filterSubscriptions(expiringSoonSubscriptions).length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          No subscriptions expiring soon
+                          No subscriptions expiring within 7 days
                         </TableCell>
                       </TableRow>
                     ) : (

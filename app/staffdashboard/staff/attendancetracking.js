@@ -14,12 +14,14 @@ import AttendanceDashboard from "./attendancedashboard"
 
 const AttendanceTracking = ({ userId }) => {
   const [manualOpen, setManualOpen] = useState(false)
+  const [failedScansOpen, setFailedScansOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [attendance, setAttendance] = useState([])
   const [members, setMembers] = useState([])
   const [lastScanTime, setLastScanTime] = useState(0)
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
+  const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (YYYY-MM format or "all-time")
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
@@ -124,6 +126,25 @@ const AttendanceTracking = ({ userId }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const loadFailedScans = () => {
+    const stored = localStorage.getItem('failedQrScans')
+    if (stored) {
+      setFailedScans(JSON.parse(stored))
+    } else {
+      setFailedScans([])
+    }
+  }
+
+  const clearFailedScans = () => {
+    localStorage.removeItem('failedQrScans')
+    setFailedScans([])
+  }
+
+  const openFailedScansDialog = () => {
+    loadFailedScans()
+    setFailedScansOpen(true)
   }
 
   // Initial data load
