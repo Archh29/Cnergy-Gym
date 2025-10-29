@@ -18,6 +18,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -36,6 +46,7 @@ import {
   Calendar as CalendarIcon,
   User,
   ShoppingBag,
+  CheckCircle,
 } from "lucide-react"
 
 // API Configuration
@@ -82,6 +93,17 @@ const Sales = ({ userId }) => {
   // Product edit state
   const [editProduct, setEditProduct] = useState(null)
   const [editProductData, setEditProductData] = useState({ name: "", price: "", category: "Uncategorized" })
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [productToDelete, setProductToDelete] = useState(null)
+
+  // Low stock dialog state
+  const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
+
+  // Success notification state
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false)
+  const [successMessage, setSuccessMessage] = useState("")
 
   // Data from API
   const [sales, setSales] = useState([])
@@ -439,7 +461,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert("Product added successfully!")
+        setSuccessMessage("Product added successfully!")
+        setShowSuccessNotification(true)
         setNewProduct({ name: "", price: "", stock: "", category: "Uncategorized" })
         await loadProducts()
       }
@@ -472,7 +495,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setSuccessMessage(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setShowSuccessNotification(true)
         setStockUpdateProduct(null)
         setStockUpdateQuantity("")
         setStockUpdateType("add")
@@ -502,7 +526,8 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        alert("Product updated successfully!")
+        setSuccessMessage("Product updated successfully!")
+        setShowSuccessNotification(true)
         setEditProduct(null)
         setEditProductData({ name: "", price: "", category: "Uncategorized" })
         await loadProducts()
@@ -515,19 +540,18 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const handleDeleteProduct = async (product) => {
-    if (!confirm(`Are you sure you want to delete "${product.name}"? This action cannot be undone.`)) {
-      return
-    }
+  const handleDeleteProduct = async () => {
+    if (!productToDelete) return
 
     setLoading(true)
     try {
       const response = await axios.delete(`${API_BASE_URL}?action=product`, {
-        data: { id: product.id }
+        data: { id: productToDelete.id }
       })
 
       if (response.data.success) {
-        alert("Product deleted successfully!")
+        setDeleteDialogOpen(false)
+        setProductToDelete(null)
         await loadProducts()
       }
     } catch (error) {
@@ -536,6 +560,11 @@ const Sales = ({ userId }) => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const openDeleteDialog = (product) => {
+    setProductToDelete(product)
+    setDeleteDialogOpen(true)
   }
 
   const openEditDialog = (product) => {
@@ -582,6 +611,10 @@ const Sales = ({ userId }) => {
       return products
     }
     return products.filter(product => product.category === categoryFilter)
+  }
+
+  const getLowStockProducts = () => {
+    return products.filter(product => product.stock <= 10)
   }
 
   const filteredSales = sales.filter((sale) => {
@@ -770,7 +803,10 @@ const Sales = ({ userId }) => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setLowStockDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
                 <Package className="h-4 w-4 text-muted-foreground" />
@@ -778,6 +814,7 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
                 <p className="text-xs text-muted-foreground">Need restocking</p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
           </div>
@@ -1314,7 +1351,7 @@ const Sales = ({ userId }) => {
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={() => handleDeleteProduct(product)}
+                              onClick={() => openDeleteDialog(product)}
                               disabled={loading}
                             >
                               <Trash2 className="mr-1 h-3 w-3" />
@@ -1557,6 +1594,125 @@ const Sales = ({ userId }) => {
           )}
           <DialogFooter>
             <Button onClick={() => setShowReceipt(false)} className="w-full">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Delete Product
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{productToDelete?.name}&quot;</span>? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteProduct}
+              disabled={loading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {loading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Low Stock Products Dialog */}
+      <Dialog open={lowStockDialogOpen} onOpenChange={setLowStockDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-orange-600" />
+              Low Stock Products
+            </DialogTitle>
+            <DialogDescription>
+              Products with 10 or fewer items remaining that need restocking
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {getLowStockProducts().length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50 text-green-600" />
+                <p>All products are well stocked!</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Current Stock</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {getLowStockProducts()
+                    .sort((a, b) => a.stock - b.stock)
+                    .map((product) => (
+                      <TableRow key={product.id}>
+                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell>{product.category}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
+                            className="w-fit"
+                          >
+                            {product.stock} units
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatCurrency(product.price)}</TableCell>
+                        <TableCell>
+                          {product.stock === 0 ? (
+                            <Badge variant="destructive">Out of Stock</Badge>
+                          ) : product.stock <= 5 ? (
+                            <Badge variant="destructive" className="bg-red-600">
+                              Critical
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">
+                              Low Stock
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setLowStockDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success Notification Dialog */}
+      <Dialog open={showSuccessNotification} onOpenChange={setShowSuccessNotification}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 rounded-full bg-green-100">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+              </div>
+              Success
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-center text-gray-700">{successMessage}</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowSuccessNotification(false)}>
               Close
             </Button>
           </DialogFooter>

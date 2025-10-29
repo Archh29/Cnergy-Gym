@@ -79,6 +79,9 @@ const Sales = ({ userId }) => {
   const [editProduct, setEditProduct] = useState(null)
   const [editProductData, setEditProductData] = useState({ name: "", price: "", category: "Uncategorized" })
 
+  // Low stock dialog state
+  const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
+
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
@@ -527,6 +530,10 @@ const Sales = ({ userId }) => {
     return products.filter(product => product.category === categoryFilter)
   }
 
+  const getLowStockProducts = () => {
+    return products.filter(product => product.stock <= 10)
+  }
+
   const filteredSales = sales.filter((sale) => {
     // Filter by search query
     const matchesSearch = searchQuery === "" ||
@@ -571,7 +578,10 @@ const Sales = ({ userId }) => {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setLowStockDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
                 <Package className="h-4 w-4 text-muted-foreground" />
@@ -579,6 +589,7 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{lowStockItems}</div>
                 <p className="text-xs text-muted-foreground">Items need restocking</p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
           </div>
@@ -1110,15 +1121,7 @@ const Sales = ({ userId }) => {
                               <Edit className="mr-1 h-3 w-3" />
                               Edit
                             </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleDeleteProduct(product)}
-                              disabled={loading}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              Delete
-                            </Button>
+
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1356,6 +1359,78 @@ const Sales = ({ userId }) => {
           )}
           <DialogFooter>
             <Button onClick={() => setShowReceipt(false)} className="w-full">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Low Stock Products Dialog */}
+      <Dialog open={lowStockDialogOpen} onOpenChange={setLowStockDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-orange-600" />
+              Low Stock Products
+            </DialogTitle>
+            <DialogDescription>
+              Products with 10 or fewer items remaining that need restocking
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {getLowStockProducts().length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="h-12 w-12 mx-auto mb-4 opacity-50 text-green-600" />
+                <p>All products are well stocked!</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Current Stock</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {getLowStockProducts()
+                    .sort((a, b) => a.stock - b.stock)
+                    .map((product) => (
+                      <TableRow key={product.id}>
+                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell>{product.category}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
+                            className="w-fit"
+                          >
+                            {product.stock} units
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatCurrency(product.price)}</TableCell>
+                        <TableCell>
+                          {product.stock === 0 ? (
+                            <Badge variant="destructive">Out of Stock</Badge>
+                          ) : product.stock <= 5 ? (
+                            <Badge variant="destructive" className="bg-red-600">
+                              Critical
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">
+                              Low Stock
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setLowStockDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>

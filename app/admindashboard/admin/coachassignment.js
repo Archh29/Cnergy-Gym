@@ -27,9 +27,12 @@ import {
   Activity,
   Users,
   UserCheck,
+  Filter,
 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const API_BASE_URL = "https://api.cnergy.site/admin_coach.php"
+const COACH_API_URL = "https://api.cnergy.site/addcoach.php"
 
 const CoachAssignments = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
@@ -40,6 +43,8 @@ const CoachAssignments = ({ userId }) => {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
+  const [availableCoaches, setAvailableCoaches] = useState([])
 
   // POS Modal states
   const [posModalOpen, setPosModalOpen] = useState(false)
@@ -113,6 +118,21 @@ const CoachAssignments = ({ userId }) => {
     }
   }
 
+  const fetchAvailableCoaches = async () => {
+    try {
+      const response = await axios.get(COACH_API_URL)
+      if (response.data && response.data.coaches) {
+        const coaches = response.data.coaches.map(coach => ({
+          id: coach.id,
+          name: `${coach.fname} ${coach.mname} ${coach.lname}`.trim()
+        }))
+        setAvailableCoaches(coaches)
+      }
+    } catch (err) {
+      console.error("Error fetching coaches:", err)
+    }
+  }
+
   const fetchRequestDetails = async (requestId) => {
     try {
       const response = await axios.get(`${API_BASE_URL}?action=request-details&request_id=${requestId}`)
@@ -133,7 +153,7 @@ const CoachAssignments = ({ userId }) => {
     setLoading(true)
     setError(null)
     try {
-      await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog()])
+      await Promise.all([fetchPendingRequests(), fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog(), fetchAvailableCoaches()])
     } catch (err) {
       console.error("Error loading data:", err)
       setError("Failed to load data")
@@ -155,7 +175,7 @@ const CoachAssignments = ({ userId }) => {
       } catch (err) {
         console.error("Error getting current user from session:", err)
       }
-      
+
       // Fallback: try to get user from admin_coach.php
       try {
         const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
@@ -306,13 +326,21 @@ const CoachAssignments = ({ userId }) => {
       request.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
-  const filteredMembers = assignedMembers.filter(
-    (assignment) =>
+  const filteredMembers = assignedMembers.filter((assignment) => {
+    // Filter by coach if selected
+    if (selectedCoachFilter !== "all" && assignment.coach?.id?.toString() !== selectedCoachFilter) {
+      return false
+    }
+
+    // Filter by search query
+    const matchesSearch =
       assignment.member?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       assignment.coach?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       assignment.member?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      assignment.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+      assignment.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase())
+
+    return matchesSearch
+  })
 
   if (loading) {
     return (
@@ -550,6 +578,31 @@ const CoachAssignments = ({ userId }) => {
                 </TabsContent>
                 {/* Assigned Members Tab */}
                 <TabsContent value="assigned" className="space-y-4">
+                  {/* Coach Filter */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">Filter by Coach:</span>
+                    </div>
+                    <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
+                      <SelectTrigger className="w-[250px]">
+                        <SelectValue placeholder="Select a coach" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Coaches ({assignedMembers.length})</SelectItem>
+                        {availableCoaches
+                          .filter(coach => coach.id && coach.id.toString().trim() !== '')
+                          .map((coach) => {
+                            const memberCount = assignedMembers.filter(assignment => assignment.coach?.id?.toString() === coach.id.toString()).length
+                            return (
+                              <SelectItem key={coach.id} value={coach.id.toString()}>
+                                {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
+                              </SelectItem>
+                            )
+                          })}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -869,7 +922,7 @@ const CoachAssignments = ({ userId }) => {
                   <label className="text-sm font-medium">Payment Method</label>
                   <select
                     value={posData.payment_method}
-                    onChange={(e) => setPosData({...posData, payment_method: e.target.value})}
+                    onChange={(e) => setPosData({ ...posData, payment_method: e.target.value })}
                     className="w-full p-2 border rounded-md text-sm"
                   >
                     <option value="cash">Cash</option>
@@ -904,31 +957,31 @@ const CoachAssignments = ({ userId }) => {
                     type="number"
                     step="0.01"
                     value={posData.amount_received}
-                  onChange={(e) => {
-                    const inputValue = e.target.value;
-                    const amount = inputValue === '' ? 0 : parseFloat(inputValue) || 0;
-                    const rateType = selectedRequest.rateType || 'monthly';
-                    let dueAmount = 0;
-                    switch (rateType) {
-                      case 'monthly':
-                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
-                        break;
-                      case 'package':
-                        dueAmount = selectedRequest.coach?.package_rate || 0;
-                        break;
-                      case 'per_session':
-                        dueAmount = selectedRequest.coach?.per_session_rate || 0;
-                        break;
-                      default:
-                        dueAmount = selectedRequest.coach?.monthly_rate || 0;
-                    }
-                    const change = Math.max(0, amount - dueAmount)
-                    setPosData({
-                      ...posData,
-                      amount_received: inputValue === '' ? '' : amount,
-                      change_given: change
-                    })
-                  }}
+                    onChange={(e) => {
+                      const inputValue = e.target.value;
+                      const amount = inputValue === '' ? 0 : parseFloat(inputValue) || 0;
+                      const rateType = selectedRequest.rateType || 'monthly';
+                      let dueAmount = 0;
+                      switch (rateType) {
+                        case 'monthly':
+                          dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                          break;
+                        case 'package':
+                          dueAmount = selectedRequest.coach?.package_rate || 0;
+                          break;
+                        case 'per_session':
+                          dueAmount = selectedRequest.coach?.per_session_rate || 0;
+                          break;
+                        default:
+                          dueAmount = selectedRequest.coach?.monthly_rate || 0;
+                      }
+                      const change = Math.max(0, amount - dueAmount)
+                      setPosData({
+                        ...posData,
+                        amount_received: inputValue === '' ? '' : amount,
+                        change_given: change
+                      })
+                    }}
                     placeholder="0.00"
                     className="text-sm"
                   />
@@ -979,7 +1032,7 @@ const CoachAssignments = ({ userId }) => {
                   <label className="text-sm font-medium">Notes</label>
                   <Textarea
                     value={posData.notes}
-                    onChange={(e) => setPosData({...posData, notes: e.target.value})}
+                    onChange={(e) => setPosData({ ...posData, notes: e.target.value })}
                     placeholder="Additional notes..."
                     rows={2}
                     className="text-sm"
@@ -989,8 +1042,8 @@ const CoachAssignments = ({ userId }) => {
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setPosModalOpen(false)}
               className="w-full sm:w-auto"
             >

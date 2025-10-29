@@ -81,7 +81,7 @@ const App = () => {
     // Remove the automatic "No active membership" addition since backend now handles this
 
     setNotification({ show: true, message: fullMessage, type })
-    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 5000)
+    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 8000)
   }
 
   // Clean and normalize QR data
@@ -150,30 +150,30 @@ const App = () => {
     try {
       // Get userId from session storage for global QR scanner
       const currentUserId = sessionStorage.getItem("user_id")
-      
+
       const response = await axios.post("https://api.cnergy.site/attendance.php", {
         action: "qr_scan",
         qr_data: cleanedData.trim(),
         staff_id: currentUserId,
       })
 
-          if (response.data.success) {
-            const actionType = response.data.action
-            let notificationMessage = response.data.message
+      if (response.data.success) {
+        const actionType = response.data.action
+        let notificationMessage = response.data.message
 
-            // Add plan info to notification if available
-            if (response.data.plan_info) {
-              const planInfo = response.data.plan_info
-              notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
-            }
+        // Add plan info to notification if available
+        if (response.data.plan_info) {
+          const planInfo = response.data.plan_info
+          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        }
 
-            if (actionType === "auto_checkout") {
-              showNotification(notificationMessage, "info")
-            } else if (actionType === "auto_checkout_and_checkin") {
-              showNotification(notificationMessage, "info")
-            } else {
-              showNotification(notificationMessage, "success")
-            }
+        if (actionType === "auto_checkout") {
+          showNotification(notificationMessage, "info")
+        } else if (actionType === "auto_checkout_and_checkin") {
+          showNotification(notificationMessage, "info")
+        } else {
+          showNotification(notificationMessage, "success")
+        }
 
         // Trigger custom event for other components
         window.dispatchEvent(
@@ -181,29 +181,54 @@ const App = () => {
             detail: { data: cleanedData, response: response.data },
           }),
         )
-          } else {
-            // Handle plan validation errors
-            if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
-              showNotification(response.data.message, "error")
-            }
-            // Handle cooldown errors
-            else if (response.data.type === "cooldown") {
-              showNotification(response.data.message, "warning")
-            }
-            // Handle attendance limit errors
-            else if (response.data.type === "already_checked_in") {
-              showNotification(response.data.message, "warning")
-            }
-            else if (response.data.type === "already_attended_today") {
-              showNotification(response.data.message, "info")
-            }
-            // Handle session conflict errors
-            else if (response.data.type === "session_conflict") {
-              showNotification(response.data.message, "error")
-            } else {
-              showNotification(response.data.message || "Failed to process QR code", "error")
-            }
-          }
+      } else {
+        // Log failed scan to localStorage for tracking
+        const failedScan = {
+          timestamp: new Date().toISOString(),
+          type: response.data.type || "unknown",
+          message: response.data.message || "Failed to process QR code",
+          memberName: response.data.member_name || "Unknown",
+          qrData: cleanedData
+        }
+        
+        // Get existing failed scans from localStorage
+        const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
+        existingFailures.unshift(failedScan) // Add to beginning
+        // Keep only last 100 failed scans
+        if (existingFailures.length > 100) {
+          existingFailures.pop()
+        }
+        localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
+
+        // Handle plan validation errors with better messages
+        if (response.data.type === "expired_plan") {
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
+          showNotification(errorMessage, "error")
+        }
+        else if (response.data.type === "no_plan") {
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
+          showNotification(errorMessage, "error")
+        }
+        // Handle cooldown errors
+        else if (response.data.type === "cooldown") {
+          showNotification(response.data.message, "warning")
+        }
+        // Handle attendance limit errors
+        else if (response.data.type === "already_checked_in") {
+          showNotification(response.data.message, "warning")
+        }
+        else if (response.data.type === "already_attended_today") {
+          showNotification(response.data.message, "info")
+        }
+        // Handle session conflict errors
+        else if (response.data.type === "session_conflict") {
+          showNotification(response.data.message, "error")
+        } else {
+          showNotification(response.data.message || "Failed to process QR code", "error")
+        }
+      }
       setIsConnected(true)
     } catch (err) {
       setIsConnected(false)
@@ -374,10 +399,9 @@ const App = () => {
           <div
             className={`
               max-w-sm rounded-lg shadow-lg border p-4 bg-white whitespace-pre-line
-              ${
-                notification.type === "error"
-                  ? "border-red-200 bg-red-50"
-                  : notification.type === "warning"
+              ${notification.type === "error"
+                ? "border-red-200 bg-red-50"
+                : notification.type === "warning"
                   ? "border-orange-200 bg-orange-50"
                   : "border-green-200 bg-green-50"
               }
@@ -395,13 +419,12 @@ const App = () => {
               </div>
               <div className="flex-1">
                 <p
-                  className={`text-sm font-medium whitespace-pre-line ${
-                    notification.type === "error"
-                      ? "text-red-800"
-                      : notification.type === "warning"
+                  className={`text-sm font-medium whitespace-pre-line ${notification.type === "error"
+                    ? "text-red-800"
+                    : notification.type === "warning"
                       ? "text-orange-800"
                       : "text-green-800"
-                  }`}
+                    }`}
                 >
                   {notification.message}
                 </p>

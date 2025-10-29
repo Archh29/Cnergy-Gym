@@ -43,6 +43,7 @@ import {
   Eye,
   EyeOff,
   Ban,
+  CalendarDays,
 } from "lucide-react"
 
 const memberSchema = z.object({
@@ -979,7 +980,7 @@ const ViewMembers = ({ userId }) => {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Calendar className="h-5 w-5 text-primary" />
+                <CalendarDays className="h-5 w-5 text-primary" />
                 <div>
                   <p className="text-sm font-medium">Date of Birth</p>
                   <p>{selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}</p>

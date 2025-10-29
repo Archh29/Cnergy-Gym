@@ -7,19 +7,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Search, Plus, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3, Trash2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import AttendanceDashboard from "./attendancedashboard"
 
 const AttendanceTracking = ({ userId }) => {
   const [manualOpen, setManualOpen] = useState(false)
+  const [failedScansOpen, setFailedScansOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [attendance, setAttendance] = useState([])
   const [members, setMembers] = useState([])
   const [lastScanTime, setLastScanTime] = useState(0)
   const [notification, setNotification] = useState({ show: false, message: "", type: "" })
   const [loading, setLoading] = useState(false)
+  const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
   const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
@@ -149,6 +152,25 @@ const AttendanceTracking = ({ userId }) => {
     }
   }
 
+  const loadFailedScans = () => {
+    const stored = localStorage.getItem('failedQrScans')
+    if (stored) {
+      setFailedScans(JSON.parse(stored))
+    } else {
+      setFailedScans([])
+    }
+  }
+
+  const clearFailedScans = () => {
+    localStorage.removeItem('failedQrScans')
+    setFailedScans([])
+  }
+
+  const openFailedScansDialog = () => {
+    loadFailedScans()
+    setFailedScansOpen(true)
+  }
+
   // Initial data load
   useEffect(() => {
     fetchData()
@@ -209,6 +231,14 @@ const AttendanceTracking = ({ userId }) => {
 
   // Handle manual attendance entry
   const handleManualEntry = async (member) => {
+    // Prompt for password
+    const password = prompt("Enter password to confirm manual entry:");
+
+    if (password !== "Cnergy123@") {
+      showNotification("Invalid password. Manual entry cancelled.", "error")
+      return
+    }
+
     try {
       const response = await axios.post(`https://api.cnergy.site/attendance.php`, {
         action: 'qr_scan',
@@ -237,9 +267,16 @@ const AttendanceTracking = ({ userId }) => {
         }
         fetchData()
       } else {
-        // Handle plan validation errors
-        if (response.data.type === "expired_plan" || response.data.type === "no_plan") {
-          showNotification(response.data.message, "error")
+        // Handle plan validation errors with better messages
+        if (response.data.type === "expired_plan") {
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
+          showNotification(errorMessage, "error")
+        }
+        else if (response.data.type === "no_plan") {
+          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
+          const errorMessage = `${memberName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
+          showNotification(errorMessage, "error")
         }
         // Handle cooldown errors
         else if (response.data.type === "cooldown") {
@@ -325,10 +362,22 @@ const AttendanceTracking = ({ userId }) => {
         <div className="lg:w-80 flex-shrink-0">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filters
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="h-5 w-5" />
+                  Filters
+                </CardTitle>
+                <div className="flex gap-2">
+                  <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Manual Entry
+                      </Button>
+                    </DialogTrigger>
+                  </Dialog>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Search */}
@@ -482,54 +531,48 @@ const AttendanceTracking = ({ userId }) => {
                   <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                   Refresh
                 </Button>
-
-                {/* Manual Member Entry */}
-                <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="w-full">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Manual Entry
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
-                    <DialogHeader>
-                      <DialogTitle>Manual Attendance Entry</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <Input
-                        type="text"
-                        placeholder="Search member..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                      />
-                      <div className="max-h-60 overflow-y-auto space-y-1">
-                        {members
-                          .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
-                          .map((member) => (
-                            <Button
-                              key={member.id}
-                              variant="ghost"
-                              className="w-full justify-start"
-                              onClick={() => handleManualEntry(member)}
-                            >
-                              <div className="text-left">
-                                <div className="font-medium">
-                                  {member.fname} {member.lname}
-                                </div>
-                                <div className="text-sm text-muted-foreground">{member.email}</div>
-                              </div>
-                            </Button>
-                          ))}
-                      </div>
-                    </div>
-                    <DialogFooter className="pt-4">
-                      <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
-                        Cancel
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
               </div>
+
+              {/* Manual Member Entry Dialog */}
+              <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+                <DialogContent className="w-[95vw] max-w-[600px] mx-auto">
+                  <DialogHeader>
+                    <DialogTitle>Manual Attendance Entry</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <Input
+                      type="text"
+                      placeholder="Search member..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <div className="max-h-60 overflow-y-auto space-y-1">
+                      {members
+                        .filter((m) => `${m.fname} ${m.lname}`.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .map((member) => (
+                          <Button
+                            key={member.id}
+                            variant="ghost"
+                            className="w-full justify-start"
+                            onClick={() => handleManualEntry(member)}
+                          >
+                            <div className="text-left">
+                              <div className="font-medium">
+                                {member.fname} {member.lname}
+                              </div>
+                              <div className="text-sm text-muted-foreground">{member.email}</div>
+                            </div>
+                          </Button>
+                        ))}
+                    </div>
+                  </div>
+                  <DialogFooter className="pt-4">
+                    <Button variant="outline" onClick={() => setManualOpen(false)} className="w-full sm:w-auto">
+                      Cancel
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
         </div>
@@ -538,7 +581,18 @@ const AttendanceTracking = ({ userId }) => {
         <div className="flex-1">
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl sm:text-2xl">Attendance Tracking</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openFailedScansDialog}
+                  className="bg-red-50 hover:bg-red-100 border-red-200 text-red-700"
+                >
+                  <AlertCircle className="mr-2 h-4 w-4" />
+                  Attendance Denied Log
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Mobile-friendly table wrapper with fixed height and scroll */}
@@ -599,6 +653,94 @@ const AttendanceTracking = ({ userId }) => {
           </Card>
         </div>
       </div>
+
+      {/* Failed QR Scans Dialog */}
+      <Dialog open={failedScansOpen} onOpenChange={setFailedScansOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh]">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="flex items-center gap-3 text-2xl">
+              <div className="p-2 rounded-lg bg-red-100">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+              </div>
+              <div>
+                <div>Attendance Denied Log</div>
+                <div className="text-sm font-normal text-muted-foreground mt-1">
+                  Records of failed QR scan attempts and access denials
+                </div>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          {failedScans.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="p-4 rounded-full bg-green-100 mb-4">
+                <CheckCircle className="h-12 w-12 text-green-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">All Clear!</h3>
+              <p className="text-muted-foreground text-center max-w-sm">
+                No denied access attempts recorded. All QR scans have been successful.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="py-4 border-b">
+                <div className="flex items-center gap-4">
+                  <div className="px-3 py-1 rounded-full bg-red-100">
+                    <span className="text-sm font-semibold text-red-700">
+                      {failedScans.length} {failedScans.length === 1 ? 'Denial' : 'Denials'}
+                    </span>
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    Total failed access attempts (permanent record)
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto max-h-[60vh]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-white z-10">
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="font-semibold">Timestamp</TableHead>
+                      <TableHead className="font-semibold">Member Name</TableHead>
+                      <TableHead className="font-semibold">Error Type</TableHead>
+                      <TableHead className="font-semibold">Reason</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {failedScans.map((scan, index) => (
+                      <TableRow key={index} className="hover:bg-gray-50 transition-colors">
+                        <TableCell className="font-mono text-sm">
+                          {new Date(scan.timestamp).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {scan.memberName}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="destructive"
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            {scan.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-md">
+                          {scan.message}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => setFailedScansOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
