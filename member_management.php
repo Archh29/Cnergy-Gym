@@ -69,9 +69,10 @@ try {
             respond(['error' => 'Invalid JSON'], 400);
         }
 
-        foreach (['fname', 'mname', 'lname', 'email', 'password', 'gender_id', 'bday'] as $k) {
-            if (!isset($input[$k])) {
-                respond(['error' => 'Missing required fields'], 400);
+        // Check required fields (mname and gender_id are now optional)
+        foreach (['fname', 'lname', 'email', 'password', 'bday'] as $k) {
+            if (!isset($input[$k]) || trim($input[$k]) === '') {
+                respond(['error' => 'Missing required fields: ' . $k], 400);
             }
         }
 
@@ -89,17 +90,35 @@ try {
             ], 400);
         }
 
+        // CRITICAL: Check if first name and last name combination already exists (case-insensitive)
+        // This prevents duplicate accounts with the same name but different emails
+        $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ?');
+        $stmt->execute([strtolower($input['fname']), strtolower($input['lname'])]);
+        $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existingName) {
+            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
+            $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
+            respond([
+                'error' => 'Name already exists',
+                'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
+            ], 400);
+        }
+
+        // Set defaults for optional fields
+        $gender_id = isset($input['gender_id']) ? $input['gender_id'] : 1; // Default to Male
         $account_status = isset($input['account_status']) ? $input['account_status'] : 'approved';
+        $mname = isset($input['mname']) && trim($input['mname']) !== '' ? $input['mname'] : null; // Allow null middle name
 
         $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
                                VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
         $stmt->execute([
             $input['fname'],
-            $input['mname'],
+            $mname,
             $input['lname'],
             $input['email'],
             password_hash($input['password'], PASSWORD_DEFAULT),
-            $input['gender_id'],
+            $gender_id,
             $input['bday'],
             $account_status
         ]);
@@ -151,38 +170,72 @@ try {
             respond(['message' => 'Account status updated successfully']);
         }
 
-        // Full update requires core fields
+        // Full update requires core fields (mname, gender_id and account_status are not editable by admin)
         error_log("DEBUG: Full update detected. Input keys: " . implode(', ', array_keys($input)));
-        foreach (['id', 'fname', 'mname', 'lname', 'email', 'gender_id', 'bday'] as $k) {
-            if (!isset($input[$k])) {
+        // Check required fields (mname is optional)
+        foreach (['id', 'fname', 'lname', 'email', 'bday'] as $k) {
+            if (!isset($input[$k]) || ($k !== 'id' && trim($input[$k]) === '')) {
                 error_log("DEBUG: Missing required field: " . $k);
                 respond(['error' => 'Missing required fields: ' . $k], 400);
             }
         }
 
+        // Check if email already exists (excluding current user)
+        $stmt = $pdo->prepare('SELECT id, user_type_id, fname, lname FROM `user` WHERE email = ? AND id != ?');
+        $stmt->execute([$input['email'], $input['id']]);
+        $existingEmail = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existingEmail) {
+            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
+            $existingUserType = $userTypes[$existingEmail['user_type_id']] ?? 'Unknown';
+            respond([
+                'error' => 'Email already exists',
+                'message' => "Email '{$input['email']}' is already used by {$existingEmail['fname']} {$existingEmail['lname']} (Type: {$existingUserType}). Please use a different email."
+            ], 400);
+        }
+
+        // Check if name combination already exists (excluding current user)
+        $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ? AND id != ?');
+        $stmt->execute([strtolower($input['fname']), strtolower($input['lname']), $input['id']]);
+        $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existingName) {
+            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
+            $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
+            respond([
+                'error' => 'Name already exists',
+                'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
+            ], 400);
+        }
+
+        // Get existing gender_id from database
+        $stmt = $pdo->prepare('SELECT gender_id FROM `user` WHERE id = ?');
+        $stmt->execute([$input['id']]);
+        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+        $gender_id = $existing['gender_id']; // Keep existing gender
+
+        // Handle optional middle name
+        $mname = isset($input['mname']) && trim($input['mname']) !== '' ? $input['mname'] : null;
+
         if (!empty($input['password'])) {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, gender_id = ?, bday = ?, account_status = ?, password = ? WHERE id = ?');
+            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
             $stmt->execute([
                 $input['fname'],
-                $input['mname'],
+                $mname,
                 $input['lname'],
                 $input['email'],
-                $input['gender_id'],
                 $input['bday'],
-                isset($input['account_status']) ? $input['account_status'] : 'approved',
                 password_hash($input['password'], PASSWORD_DEFAULT),
                 $input['id']
             ]);
         } else {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, gender_id = ?, bday = ?, account_status = ? WHERE id = ?');
+            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
             $stmt->execute([
                 $input['fname'],
-                $input['mname'],
+                $mname,
                 $input['lname'],
                 $input['email'],
-                $input['gender_id'],
                 $input['bday'],
-                isset($input['account_status']) ? $input['account_status'] : 'approved',
                 $input['id']
             ]);
         }

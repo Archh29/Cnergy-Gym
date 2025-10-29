@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import ReCAPTCHA from "react-google-recaptcha";
@@ -19,13 +19,22 @@ export default function Login() {
 
   const router = useRouter();
 
+  // Helper function to set cookies for middleware compatibility
+  const setCookie = useCallback((name, value, days = 1) => {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
+  }, []);
+
   useEffect(() => {
     // Check if user is already logged in via sessionStorage
     const storedRole = sessionStorage.getItem('user_role');
     if (storedRole === 'admin' || storedRole === 'staff') {
+      // Ensure cookie is also set for middleware
+      setCookie('user_role', storedRole);
       router.replace(`/${storedRole}dashboard`);
     }
-  }, [router]);
+  }, [router, setCookie]);
 
   const handleCaptchaChange = (response) => {
     setCaptchaResponse(response);
@@ -65,6 +74,9 @@ export default function Login() {
         // Only allow admin and staff roles
         if (userRole === 'admin' || userRole === 'staff') {
           sessionStorage.setItem('user_role', userRole);
+          
+          // Set cookie for middleware compatibility
+          setCookie('user_role', userRole);
           
           // Store user ID if provided in response
           if (response.data.user_id) {

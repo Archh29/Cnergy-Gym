@@ -1339,18 +1339,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="image_url">Profile Image URL</Label>
-                  <Input
-                    id="image_url"
-                    name="image_url"
-                    placeholder="https://example.com/image.jpg"
-                    value={formData.image_url}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="certifications">Certifications</Label>
                 <Textarea
@@ -1641,18 +1630,7 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-image_url">Profile Image URL</Label>
-                  <Input
-                    id="edit-image_url"
-                    name="image_url"
-                    placeholder="https://example.com/image.jpg"
-                    value={formData.image_url}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="edit-certifications">Certifications</Label>
                 <Textarea

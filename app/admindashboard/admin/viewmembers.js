@@ -47,7 +47,7 @@ import {
 
 const memberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
-  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  mname: z.string().max(50, "Middle name must be less than 50 characters").optional(),
   lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
   email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
   password: z
@@ -56,15 +56,14 @@ const memberSchema = z.object({
     .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
-  gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required"),
   user_type_id: z.coerce.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
+  // Gender and account_status removed - not for admin to set
 })
 
 const editMemberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
-  mname: z.string().min(1, "Middle name is required").max(50, "Middle name must be less than 50 characters"),
+  mname: z.string().max(50, "Middle name must be less than 50 characters").optional(),
   lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
   email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
   password: z
@@ -74,14 +73,13 @@ const editMemberSchema = z.object({
       if (!val || val === "") return true
       return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
     }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
-  gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required").refine((val) => {
     if (!val || val === "" || val === "0000-00-00") return false
     const date = new Date(val)
     return !isNaN(date.getTime()) && date.getFullYear() > 1900
   }, "Please enter a valid date of birth"),
   user_type_id: z.coerce.number().default(4),
-  account_status: z.enum(["pending", "approved", "rejected", "deactivated"]).default("approved"),
+  // Gender and account_status removed - not for admin to edit
 })
 
 const ViewMembers = ({ userId }) => {
@@ -118,10 +116,8 @@ const ViewMembers = ({ userId }) => {
       lname: "",
       email: "",
       password: "",
-      gender_id: "",
       bday: "",
       user_type_id: 4,
-      account_status: "approved",
     },
   })
 
@@ -133,10 +129,8 @@ const ViewMembers = ({ userId }) => {
       lname: "",
       email: "",
       password: "",
-      gender_id: "",
       bday: "",
       user_type_id: 4,
-      account_status: "pending",
     },
   })
 
@@ -353,10 +347,8 @@ const ViewMembers = ({ userId }) => {
       lname: member.lname || "",
       email: member.email || "",
       password: "",
-      gender_id: member.gender_id?.toString() || "",
       bday: safeBday,
       user_type_id: member.user_type_id || 4,
-      account_status: member.account_status || "approved",
     })
     setIsEditDialogOpen(true)
   }
@@ -423,14 +415,13 @@ const ViewMembers = ({ userId }) => {
 
       const formattedData = {
         fname: data.fname.trim(),
-        mname: data.mname.trim(),
+        mname: data.mname ? data.mname.trim() : null,
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
         password: data.password,
-        gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
-        account_status: data.account_status,
+        account_status: "approved", // Admin-added users are always approved
         failed_attempt: 0,
         staff_id: userId,
       }
@@ -508,14 +499,13 @@ const ViewMembers = ({ userId }) => {
       const updateData = {
         id: selectedMember.id,
         fname: data.fname.trim(),
-        mname: data.mname.trim(),
+        mname: data.mname ? data.mname.trim() : null,
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
-        gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
-        account_status: data.account_status,
         staff_id: userId,
+        // Not updating: gender_id, account_status (user settings only)
       }
 
       if (data.password && data.password.trim() !== "") {
@@ -609,10 +599,8 @@ const ViewMembers = ({ userId }) => {
       lname: "",
       email: "",
       password: "",
-      gender_id: "",
       bday: "",
       user_type_id: 4,
-      account_status: "approved",
     })
     setShowPassword(false)
     setIsAddDialogOpen(true)
@@ -1050,7 +1038,7 @@ const ViewMembers = ({ userId }) => {
                   name="mname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Middle Name*</FormLabel>
+                      <FormLabel>Middle Name (optional)</FormLabel>
                       <FormControl>
                         <Input placeholder="Michael" {...field} />
                       </FormControl>
@@ -1112,65 +1100,15 @@ const ViewMembers = ({ userId }) => {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="gender_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Gender*</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {genderOptions.map((gender) => (
-                            <SelectItem key={gender.id} value={gender.id}>
-                              {gender.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="bday"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth*</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
               <FormField
                 control={form.control}
-                name="account_status"
+                name="bday"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Account Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {statusOptions.map((status) => (
-                          <SelectItem key={status.value} value={status.value}>
-                            {status.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Date of Birth*</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1220,7 +1158,7 @@ const ViewMembers = ({ userId }) => {
                   name="mname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Middle Name*</FormLabel>
+                      <FormLabel>Middle Name (optional)</FormLabel>
                       <FormControl>
                         <Input placeholder="Michael" {...field} />
                       </FormControl>
@@ -1283,65 +1221,15 @@ const ViewMembers = ({ userId }) => {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={editForm.control}
-                  name="gender_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Gender*</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {genderOptions.map((gender) => (
-                            <SelectItem key={gender.id} value={gender.id}>
-                              {gender.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={editForm.control}
-                  name="bday"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth*</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
               <FormField
                 control={editForm.control}
-                name="account_status"
+                name="bday"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Account Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {statusOptions.map((status) => (
-                          <SelectItem key={status.value} value={status.value}>
-                            {status.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>Date of Birth*</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
