@@ -190,14 +190,11 @@ const App = () => {
           memberName: response.data.member_name || "Unknown",
           qrData: cleanedData
         }
-        
+
         // Get existing failed scans from localStorage
         const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
         existingFailures.unshift(failedScan) // Add to beginning
-        // Keep only last 100 failed scans
-        if (existingFailures.length > 100) {
-          existingFailures.pop()
-        }
+        // Store all failed scans (no limit)
         localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
 
         // Handle plan validation errors with better messages

@@ -207,10 +207,16 @@ function getSalesData($pdo)
 		SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type,
 		       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
 		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.quantity, sd.price AS detail_price,
-		       p.name AS product_name, p.price AS product_price, p.category AS product_category
+		       p.name AS product_name, p.price AS product_price, p.category AS product_category,
+		       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS member_fullname,
+		       cml.coach_id,
+		       CONCAT_WS(' ', cu.fname, cu.mname, cu.lname) AS coach_fullname
 		FROM `sales` s
 		LEFT JOIN `sales_details` sd ON s.id = sd.sale_id
 		LEFT JOIN `product` p ON sd.product_id = p.id
+		LEFT JOIN `user` u ON s.user_id = u.id
+		LEFT JOIN `coach_member_list` cml ON s.user_id = cml.member_id
+		LEFT JOIN `user` cu ON cml.coach_id = cu.id
 		$whereClause
 		ORDER BY s.sale_date DESC
 	");
@@ -224,6 +230,10 @@ function getSalesData($pdo)
 		$saleId = $row['id'];
 
 		if (!isset($salesGrouped[$saleId])) {
+			// Get names from concatenated fields (already built by CONCAT_WS in SQL)
+			$memberName = !empty($row['member_fullname']) ? trim($row['member_fullname']) : null;
+			$coachName = !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null;
+
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
 				'total_amount' => (float) $row['total_amount'],
@@ -235,6 +245,10 @@ function getSalesData($pdo)
 				'cashier_id' => $row['cashier_id'],
 				'change_given' => (float) $row['change_given'],
 				'notes' => $row['notes'],
+				'user_id' => $row['user_id'],
+				'user_name' => $memberName,
+				'coach_id' => $row['coach_id'] ?? null,
+				'coach_name' => $coachName,
 				'sales_details' => []
 			];
 		}
@@ -353,6 +367,23 @@ function getAnalyticsData($pdo)
 	// Get all sales types from the sales table
 	// Try multiple possible sale_type values for coach and walk-in
 	// NOTE: Coach assignments are stored as 'Coaching' in the database
+	// Build params array for this query (excluding saleType param)
+	$salesBreakdownParams = [];
+
+	// Build date params (same logic as before, but we need to rebuild the params array without the saleType param)
+	if ($customDate) {
+		$salesBreakdownParams[] = $customDate;
+	} elseif ($month && $month !== 'all' && $year && $year !== 'all') {
+		$salesBreakdownParams[] = $month;
+		$salesBreakdownParams[] = $year;
+	} elseif ($month && $month !== 'all') {
+		$salesBreakdownParams[] = $month;
+	} elseif ($year && $year !== 'all') {
+		$salesBreakdownParams[] = $year;
+	}
+
+	$whereClause = $dateCondition ? "WHERE $dateCondition" : "";
+
 	$stmt = $pdo->prepare("
 		SELECT 
 			COALESCE(SUM(CASE WHEN sale_type = 'Product' THEN total_amount ELSE 0 END), 0) AS product_sales,
@@ -360,9 +391,9 @@ function getAnalyticsData($pdo)
 			COALESCE(SUM(CASE WHEN sale_type IN ('Coaching', 'Coach Assignment', 'Coach') THEN total_amount ELSE 0 END), 0) AS coach_assignment_sales,
 			COALESCE(SUM(CASE WHEN sale_type IN ('Walk-in', 'Walkin', 'Guest', 'Day Pass') THEN total_amount ELSE 0 END), 0) AS walkin_sales
 		FROM `sales`
-		WHERE $dateCondition
+		$whereClause
 	");
-	$stmt->execute();
+	$stmt->execute($salesBreakdownParams);
 	$salesBreakdown = $stmt->fetch();
 	$coachSales = (float) $salesBreakdown['coach_assignment_sales'];
 	$walkinSales = (float) $salesBreakdown['walkin_sales'];

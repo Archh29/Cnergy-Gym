@@ -264,6 +264,29 @@ const SubscriptionPlans = () => {
     return planName.includes(searchQuery.toLowerCase())
   })
 
+  // Filter subscriptions client-side
+  const filteredSubscriptions = subscriptions.filter((subscription) => {
+    // Filter by plan
+    const matchesPlan = planFilter === "all" || subscription.plan_id?.toString() === planFilter
+
+    // Filter by status
+    const status = subscription.computed_status || subscription.status_name
+    const daysUntilExpiry = subscription.days_until_expiry
+
+    let matchesStatus = true
+    if (statusFilter === "all") {
+      matchesStatus = true
+    } else if (statusFilter === "active") {
+      matchesStatus = status === 'approved' && daysUntilExpiry >= 0
+    } else if (statusFilter === "expiring") {
+      matchesStatus = status === 'approved' && daysUntilExpiry >= 0 && daysUntilExpiry <= 7
+    } else if (statusFilter === "expired") {
+      matchesStatus = daysUntilExpiry < 0 || status === 'expired'
+    }
+
+    return matchesPlan && matchesStatus
+  })
+
   if (isLoading && plans.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -486,55 +509,44 @@ const SubscriptionPlans = () => {
               </div>
 
               {/* Filters */}
-              <div className="flex items-center gap-4 mt-4">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="status-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Status:</Label>
-                  <select
-                    id="status-filter"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="all">All Status</option>
-                    <option value="approved">Approved</option>
-                    <option value="pending_approval">Pending</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="expired">Expired</option>
-                  </select>
+              <div className="space-y-4 mt-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="status-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Status:</Label>
+                    <select
+                      id="status-filter"
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="all">All</option>
+                      <option value="active">Active</option>
+                      <option value="expiring">Expiring</option>
+                      <option value="expired">Expired</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="expiring-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Expiring:</Label>
-                  <select
-                    id="expiring-filter"
-                    value={expiringFilter}
-                    onChange={(e) => setExpiringFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                {/* Plan Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Filter by Plan:</span>
+                  <Button
+                    variant={planFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPlanFilter("all")}
                   >
-                    <option value="all">All</option>
-                    <option value="active">Active Only</option>
-                    <option value="critical">Critical (3 days)</option>
-                    <option value="warning">Warning (7 days)</option>
-                    <option value="notice">Notice (14 days)</option>
-                    <option value="expired">Expired</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="plan-filter" className="text-sm font-medium">Plan:</Label>
-                  <select
-                    id="plan-filter"
-                    value={planFilter}
-                    onChange={(e) => setPlanFilter(e.target.value)}
-                    className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="all">All Plans</option>
-                    {availablePlans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.plan_name}
-                      </option>
-                    ))}
-                  </select>
+                    All Plans
+                  </Button>
+                  {availablePlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      variant={planFilter === plan.id.toString() ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPlanFilter(plan.id.toString())}
+                    >
+                      {plan.plan_name}
+                    </Button>
+                  ))}
                 </div>
               </div>
             </CardHeader>
@@ -552,14 +564,14 @@ const SubscriptionPlans = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {subscriptions.length === 0 ? (
+                  {filteredSubscriptions.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         No subscriptions found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    subscriptions.map((subscription) => (
+                    filteredSubscriptions.map((subscription) => (
                       <TableRow key={subscription.id}>
                         <TableCell>
                           <div>
@@ -644,15 +656,26 @@ const SubscriptionPlans = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={
-                            (subscription.computed_status || subscription.status_name) === 'approved' ? 'default' :
-                              (subscription.computed_status || subscription.status_name) === 'pending_approval' ? 'secondary' :
-                                (subscription.computed_status || subscription.status_name) === 'rejected' ? 'destructive' :
-                                  (subscription.computed_status || subscription.status_name) === 'expired' ? 'destructive' :
-                                    'outline'
-                          }>
-                            {(subscription.computed_status || subscription.status_name).replace('_', ' ').toUpperCase()}
-                          </Badge>
+                          {(() => {
+                            const status = subscription.computed_status || subscription.status_name
+                            // Show "Active" for approved subscriptions that are not expired
+                            const isActive = status === 'approved' && subscription.days_until_expiry >= 0
+
+                            return (
+                              <Badge
+                                variant={
+                                  isActive ? 'default' :
+                                    status === 'pending_approval' ? 'secondary' :
+                                      status === 'rejected' ? 'destructive' :
+                                        status === 'expired' ? 'destructive' :
+                                          'outline'
+                                }
+                                className={isActive ? 'bg-green-100 text-green-800 border-green-200' : ''}
+                              >
+                                {isActive ? 'ACTIVE' : status.replace('_', ' ').toUpperCase()}
+                              </Badge>
+                            )
+                          })()}
                         </TableCell>
                         <TableCell className="font-medium">
                           {(() => {

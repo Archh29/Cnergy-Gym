@@ -54,6 +54,7 @@ const memberSchema = z.object({
     .string()
     .min(8, "Password must be at least 8 characters")
     .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
   gender_id: z.string().min(1, "Gender is required"),
@@ -72,8 +73,8 @@ const editMemberSchema = z.object({
     .optional()
     .refine((val) => {
       if (!val || val === "") return true
-      return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
-    }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
+      return val.length >= 8 && /[A-Z]/.test(val) && /[a-z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
+    }, "Password must be at least 8 characters with 1 uppercase, 1 lowercase, 1 number, and 1 special character"),
   gender_id: z.string().min(1, "Gender is required"),
   bday: z.string().min(1, "Date of birth is required").refine((val) => {
     if (!val || val === "" || val === "0000-00-00") return false
@@ -116,7 +117,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "",
+      password: "CnergyGym123@",
       gender_id: "",
       bday: "",
       user_type_id: 4,
@@ -563,7 +564,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "",
+      password: "CnergyGym123@",
       gender_id: "",
       bday: "",
       user_type_id: 4,
@@ -585,29 +586,44 @@ const ViewMembers = ({ userId }) => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
+            <div
+              className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setStatusFilter("all")}
+            >
               <div className="text-2xl font-bold text-primary">{filteredMembers.length}</div>
               <div className="text-sm text-muted-foreground">Total Users</div>
             </div>
-            <div className="text-center">
+            <div
+              className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setStatusFilter("pending")}
+            >
               <div className="text-2xl font-bold text-yellow-600">
                 {filteredMembers.filter((m) => m.account_status === "pending").length}
               </div>
               <div className="text-sm text-muted-foreground">Pending</div>
             </div>
-            <div className="text-center">
+            <div
+              className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setStatusFilter("approved")}
+            >
               <div className="text-2xl font-bold text-green-600">
                 {filteredMembers.filter((m) => m.account_status === "approved").length}
               </div>
               <div className="text-sm text-muted-foreground">Approved</div>
             </div>
-            <div className="text-center">
+            <div
+              className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setStatusFilter("rejected")}
+            >
               <div className="text-2xl font-bold text-red-600">
                 {filteredMembers.filter((m) => m.account_status === "rejected").length}
               </div>
               <div className="text-sm text-muted-foreground">Rejected</div>
             </div>
-            <div className="text-center">
+            <div
+              className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setStatusFilter("deactivated")}
+            >
               <div className="text-2xl font-bold text-gray-600">
                 {filteredMembers.filter((m) => m.account_status === "deactivated").length}
               </div>
@@ -978,8 +994,8 @@ const ViewMembers = ({ userId }) => {
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add New Member</DialogTitle>
-            <DialogDescription>Enter the basic details for the new member.</DialogDescription>
+            <DialogTitle>Add New User</DialogTitle>
+            <DialogDescription>Enter the basic details for the new user.</DialogDescription>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleAddMember)} className="space-y-4">
@@ -1058,7 +1074,7 @@ const ViewMembers = ({ userId }) => {
                       </div>
                     </FormControl>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Password must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character
+                      Password must be at least 8 characters with 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character
                     </div>
                     <FormMessage />
                   </FormItem>
@@ -1133,7 +1149,7 @@ const ViewMembers = ({ userId }) => {
                 </Button>
                 <Button type="submit" disabled={isLoading}>
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Member
+                  Add User
                 </Button>
               </DialogFooter>
             </form>
@@ -1228,7 +1244,7 @@ const ViewMembers = ({ userId }) => {
                       </div>
                     </FormControl>
                     <div className="text-xs text-muted-foreground mt-1">
-                      If changing password: must be at least 8 characters with 1 uppercase letter, 1 number, and 1
+                      If changing password: must be at least 8 characters with 1 uppercase letter, 1 lowercase letter, 1 number, and 1
                       special character
                     </div>
                     <FormMessage />

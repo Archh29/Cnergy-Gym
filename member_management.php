@@ -46,6 +46,12 @@ function respond($payload, $code = 200)
 try {
     // GET: all members (user_type_id = 4)
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['id'])) {
+        // First, auto-decline pending requests older than 3 days
+        $threeDaysAgo = date('Y-m-d H:i:s', strtotime('-3 days'));
+        $stmt = $pdo->prepare('UPDATE `user` SET account_status = "rejected" WHERE user_type_id = 4 AND account_status = "pending" AND created_at < ?');
+        $stmt->execute([$threeDaysAgo]);
+
+        // Now fetch all members
         $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);

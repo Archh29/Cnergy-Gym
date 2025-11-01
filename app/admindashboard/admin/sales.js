@@ -105,6 +105,19 @@ const Sales = ({ userId }) => {
   const [showSuccessNotification, setShowSuccessNotification] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
 
+  // Coaching Sales dialog state
+  const [coachingSalesDialogOpen, setCoachingSalesDialogOpen] = useState(false)
+  const [coaches, setCoaches] = useState([])
+  const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
+
+  // Walk-in Sales dialog state
+  const [walkinSalesDialogOpen, setWalkinSalesDialogOpen] = useState(false)
+
+  // Subscription Sales dialog state
+  const [subscriptionSalesDialogOpen, setSubscriptionSalesDialogOpen] = useState(false)
+  const [subscriptionPlans, setSubscriptionPlans] = useState([])
+  const [selectedPlanFilter, setSelectedPlanFilter] = useState("all")
+
   // Data from API
   const [sales, setSales] = useState([])
   const [products, setProducts] = useState([])
@@ -136,6 +149,20 @@ const Sales = ({ userId }) => {
   useEffect(() => {
     loadSales()
   }, [saleTypeFilter, dateFilter, monthFilter, yearFilter, useCustomDate, customDate])
+
+  // Load coaches when coaching sales dialog opens
+  useEffect(() => {
+    if (coachingSalesDialogOpen) {
+      loadCoaches()
+    }
+  }, [coachingSalesDialogOpen])
+
+  // Load subscription plans when subscription sales dialog opens
+  useEffect(() => {
+    if (subscriptionSalesDialogOpen) {
+      loadSubscriptionPlans()
+    }
+  }, [subscriptionSalesDialogOpen])
 
   // Calculate total sales with discount consideration
   const calculateTotalSales = (salesData) => {
@@ -169,6 +196,49 @@ const Sales = ({ userId }) => {
       setProducts(response.data.products || [])
     } catch (error) {
       console.error("Error loading products:", error)
+    }
+  }
+
+  const loadCoaches = async () => {
+    try {
+      const response = await axios.get("https://api.cnergy.site/addcoach.php")
+      if (response.data && response.data.coaches) {
+        const coaches = response.data.coaches.map(coach => ({
+          id: coach.id,
+          name: `${coach.fname} ${coach.mname || ''} ${coach.lname}`.trim()
+        }))
+        setCoaches(coaches)
+      }
+    } catch (error) {
+      console.error("Error loading coaches:", error)
+    }
+  }
+
+  const loadSubscriptionPlans = async () => {
+    try {
+      const response = await axios.get("https://api.cnergy.site/monitor_subscription.php?action=plans")
+      if (response.data && response.data.plans) {
+        const plans = response.data.plans.map(plan => ({
+          id: plan.id,
+          name: plan.plan_name
+        }))
+        setSubscriptionPlans(plans)
+      }
+    } catch (error) {
+      console.error("Error loading subscription plans:", error)
+      // If that endpoint doesn't work, try fetching from monitor_subscription
+      try {
+        const altResponse = await axios.get("https://api.cnergy.site/monitor_subscription.php")
+        if (altResponse.data && altResponse.data.plans) {
+          const plans = altResponse.data.plans.map(plan => ({
+            id: plan.id,
+            name: plan.plan_name
+          }))
+          setSubscriptionPlans(plans)
+        }
+      } catch (altError) {
+        console.error("Error loading subscription plans from alternative endpoint:", altError)
+      }
     }
   }
 
@@ -418,8 +488,12 @@ const Sales = ({ userId }) => {
         setTransactionNotes("")
         setPaymentMethod("cash")
 
-        // Reload data
-        await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+        // Reload products immediately (before showing receipt)
+        await loadProducts()
+
+        // Reload sales and analytics in background
+        loadSales()
+        loadAnalytics()
       }
     } catch (error) {
       console.error("Error creating POS sale:", error)
@@ -770,7 +844,10 @@ const Sales = ({ userId }) => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setSubscriptionSalesDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -778,21 +855,29 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
                 <p className="text-xs text-muted-foreground">Membership revenue</p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setCoachingSalesDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Coach Assignment</CardTitle>
+                <CardTitle className="text-sm font-medium">Coaching Sales</CardTitle>
                 <User className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
                 <p className="text-xs text-muted-foreground">Coach revenue</p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
 
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setWalkinSalesDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Walk-in Sales</CardTitle>
                 <ShoppingBag className="h-4 w-4 text-muted-foreground" />
@@ -800,6 +885,7 @@ const Sales = ({ userId }) => {
               <CardContent>
                 <div className="text-2xl font-bold">{formatCurrency(analytics.walkinSales || 0)}</div>
                 <p className="text-xs text-muted-foreground">Guest/day pass revenue</p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
 
@@ -1713,6 +1799,291 @@ const Sales = ({ userId }) => {
           </div>
           <DialogFooter>
             <Button onClick={() => setShowSuccessNotification(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Coaching Sales Dialog */}
+      <Dialog open={coachingSalesDialogOpen} onOpenChange={setCoachingSalesDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5 text-blue-600" />
+              Coaching Sales Details
+            </DialogTitle>
+            <DialogDescription>
+              View all coaching sales by coach with detailed transaction information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Coach Filter */}
+            <div className="flex items-center gap-4">
+              <Label htmlFor="coach-filter">Filter by Coach:</Label>
+              <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select a coach" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Coaches</SelectItem>
+                  {coaches.map((coach) => (
+                    <SelectItem key={coach.id} value={coach.id.toString()}>
+                      {coach.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Coaching Sales Table */}
+            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Coach</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Receipt #</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sales
+                    .filter((sale) => {
+                      // Filter by coaching sales
+                      const isCoachingSale = sale.sale_type === 'Coaching' ||
+                        sale.sale_type === 'Coach Assignment' ||
+                        sale.sale_type === 'Coach'
+
+                      if (!isCoachingSale) return false
+
+                      // Filter by selected coach if not "all"
+                      if (selectedCoachFilter !== "all") {
+                        return sale.coach_id && sale.coach_id.toString() === selectedCoachFilter
+                      }
+
+                      return true
+                    })
+                    .map((sale) => (
+                      <TableRow key={sale.id}>
+                        <TableCell className="font-medium">
+                          {new Date(sale.sale_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {sale.user_name || 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {sale.coach_name ? (
+                            <Badge variant="secondary">{sale.coach_name}</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {sale.receipt_number || 'N/A'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+              {sales.filter(sale => sale.sale_type === 'Coaching' || sale.sale_type === 'Coach Assignment' || sale.sale_type === 'Coach').length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No coaching sales found</p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setCoachingSalesDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Walk-in Sales Dialog */}
+      <Dialog open={walkinSalesDialogOpen} onOpenChange={setWalkinSalesDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5 text-blue-600" />
+              Walk-in Sales Details
+            </DialogTitle>
+            <DialogDescription>
+              View all walk-in and guest/day pass sales with detailed transaction information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Walk-in Sales Table */}
+            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Guest Name</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Receipt #</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sales
+                    .filter((sale) => {
+                      // Filter by walk-in sales
+                      const isWalkinSale = sale.sale_type === 'Walk-in' ||
+                        sale.sale_type === 'Walkin' ||
+                        sale.sale_type === 'Guest' ||
+                        sale.sale_type === 'Day Pass'
+
+                      return isWalkinSale
+                    })
+                    .map((sale) => (
+                      <TableRow key={sale.id}>
+                        <TableCell className="font-medium">
+                          {new Date(sale.sale_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {sale.user_name || 'N/A'}
+                        </TableCell>
+                        <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {sale.receipt_number || 'N/A'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+              {sales.filter(sale => sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass').length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <ShoppingBag className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No walk-in sales found</p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setWalkinSalesDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Sales Dialog */}
+      <Dialog open={subscriptionSalesDialogOpen} onOpenChange={setSubscriptionSalesDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-blue-600" />
+              Subscription Sales Details
+            </DialogTitle>
+            <DialogDescription>
+              View all subscription and membership sales with detailed transaction information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Plan Filter */}
+            <div className="flex items-center gap-4">
+              <Label htmlFor="plan-filter">Filter by Plan:</Label>
+              <Select value={selectedPlanFilter} onValueChange={setSelectedPlanFilter}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select a plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Plans</SelectItem>
+                  {subscriptionPlans.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id.toString()}>
+                      {plan.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Subscription Sales Table */}
+            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Member</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Receipt #</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sales
+                    .filter((sale) => {
+                      // Filter by subscription sales
+                      const isSubscriptionSale = sale.sale_type === 'Subscription'
+
+                      if (!isSubscriptionSale) return false
+
+                      // Filter by selected plan if not "all"
+                      if (selectedPlanFilter !== "all") {
+                        // Check if any sales_details match the plan
+                        return sale.sales_details && sale.sales_details.some(detail =>
+                          detail.subscription_id && detail.subscription_id.toString() === selectedPlanFilter
+                        )
+                      }
+
+                      return true
+                    })
+                    .map((sale) => {
+                      // Get plan info from sales_details
+                      const subscriptionDetail = sale.sales_details?.find(d => d.subscription_id)
+                      const planId = subscriptionDetail?.subscription_id
+                      const matchedPlan = subscriptionPlans.find(p => p.id.toString() === planId?.toString())
+
+                      return (
+                        <TableRow key={sale.id}>
+                          <TableCell className="font-medium">
+                            {new Date(sale.sale_date).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            {sale.user_name || 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            {matchedPlan ? (
+                              <Badge variant="secondary">{matchedPlan.name}</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {sale.receipt_number || 'N/A'}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                </TableBody>
+              </Table>
+              {sales.filter(sale => sale.sale_type === 'Subscription').length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No subscription sales found</p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setSubscriptionSalesDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>

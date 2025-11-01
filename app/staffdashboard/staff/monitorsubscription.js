@@ -981,7 +981,7 @@ const SubscriptionMonitor = ({ userId }) => {
 
             <TabsContent value="active" className="space-y-4">
               {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -991,17 +991,27 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="pl-10"
                   />
                 </div>
-                <Select value={planFilter} onValueChange={setPlanFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Plans</SelectItem>
-                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
-                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Plan Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Filter by Plan:</span>
+                  <Button
+                    variant={planFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPlanFilter("all")}
+                  >
+                    All Plans
+                  </Button>
+                  {subscriptionPlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      variant={planFilter === plan.plan_name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPlanFilter(plan.plan_name)}
+                    >
+                      {plan.plan_name}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               {/* Active Subscriptions Table */}
@@ -1078,7 +1088,7 @@ const SubscriptionMonitor = ({ userId }) => {
 
             <TabsContent value="upcoming" className="space-y-4">
               {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -1088,17 +1098,27 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="pl-10"
                   />
                 </div>
-                <Select value={planFilter} onValueChange={setPlanFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Plans</SelectItem>
-                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
-                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Plan Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Filter by Plan:</span>
+                  <Button
+                    variant={planFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPlanFilter("all")}
+                  >
+                    All Plans
+                  </Button>
+                  {subscriptionPlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      variant={planFilter === plan.plan_name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPlanFilter(plan.plan_name)}
+                    >
+                      {plan.plan_name}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               {/* Upcoming Expiration Subscriptions Table */}
@@ -1175,7 +1195,7 @@ const SubscriptionMonitor = ({ userId }) => {
 
             <TabsContent value="expired" className="space-y-4">
               {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -1185,17 +1205,27 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="pl-10"
                   />
                 </div>
-                <Select value={planFilter} onValueChange={setPlanFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Plans</SelectItem>
-                    {Array.from(new Set(subscriptions?.map(s => s.plan_name) || [])).map(plan => (
-                      <SelectItem key={plan} value={plan}>{plan}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* Plan Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Filter by Plan:</span>
+                  <Button
+                    variant={planFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPlanFilter("all")}
+                  >
+                    All Plans
+                  </Button>
+                  {subscriptionPlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      variant={planFilter === plan.plan_name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPlanFilter(plan.plan_name)}
+                    >
+                      {plan.plan_name}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               {/* Expired Subscriptions Table */}
@@ -1272,29 +1302,52 @@ const SubscriptionMonitor = ({ userId }) => {
 
             <TabsContent value="all" className="space-y-4">
               {/* Filters */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search members, emails, or plans..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                    <Input
+                      placeholder="Search members, emails, or plans..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-full sm:w-48">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="pending_approval">Pending</SelectItem>
+                      <SelectItem value="approved">Approved</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="declined">Declined</SelectItem>
+                      <SelectItem value="expired">Expired</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending_approval">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="declined">Declined</SelectItem>
-                    <SelectItem value="expired">Expired</SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Plan Filter Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium">Filter by Plan:</span>
+                  <Button
+                    variant={planFilter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setPlanFilter("all")}
+                  >
+                    All Plans
+                  </Button>
+                  {subscriptionPlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      variant={planFilter === plan.plan_name ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setPlanFilter(plan.plan_name)}
+                    >
+                      {plan.plan_name}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               {/* All Subscriptions Table */}
