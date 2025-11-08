@@ -415,6 +415,25 @@ const SubscriptionMonitor = ({ userId }) => {
   const createNewManualSubscription = async () => {
     setActionLoading("create")
     setMessage(null)
+
+    // Ensure userId is available
+    let currentUserId = userId
+    if (!currentUserId) {
+      // Try to get from sessionStorage as fallback
+      const storedUserId = sessionStorage.getItem("user_id")
+      if (storedUserId) {
+        currentUserId = parseInt(storedUserId)
+        console.log("Using user_id from sessionStorage:", currentUserId)
+      } else {
+        setMessage({ 
+          type: "error", 
+          text: "User session not found. Please refresh the page and try again. If the problem persists, please log out and log back in." 
+        })
+        setActionLoading(null)
+        return
+      }
+    }
+
     try {
       const totalAmount = parseFloat(subscriptionForm.amount_paid)
       const receivedAmount = parseFloat(amountReceived) || totalAmount
@@ -457,7 +476,7 @@ const SubscriptionMonitor = ({ userId }) => {
         receipt_number: autoReceiptNumber,
         notes: transactionNotes,
         created_by: "Admin",
-        staff_id: userId, // Use current user ID - no fallback
+        staff_id: currentUserId, // Use current user ID with fallback
         transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
         discount_type: subscriptionForm.discount_type // Include discount type
       };

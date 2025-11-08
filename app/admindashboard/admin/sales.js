@@ -113,6 +113,11 @@ const Sales = ({ userId }) => {
   // Walk-in Sales dialog state
   const [walkinSalesDialogOpen, setWalkinSalesDialogOpen] = useState(false)
 
+  // Product Sales dialog state
+  const [productSalesDialogOpen, setProductSalesDialogOpen] = useState(false)
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("all")
+  const [selectedProductFilter, setSelectedProductFilter] = useState("all")
+
   // Subscription Sales dialog state
   const [subscriptionSalesDialogOpen, setSubscriptionSalesDialogOpen] = useState(false)
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
@@ -831,7 +836,10 @@ const Sales = ({ userId }) => {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card
+              className="cursor-pointer hover:bg-accent transition-colors"
+              onClick={() => setProductSalesDialogOpen(true)}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
                 <ShoppingCart className="h-4 w-4 text-muted-foreground" />
@@ -841,6 +849,7 @@ const Sales = ({ userId }) => {
                 <p className="text-xs text-muted-foreground">
                   {analytics.productsSoldToday || 0} items sold
                 </p>
+                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
               </CardContent>
             </Card>
 
@@ -1950,7 +1959,7 @@ const Sales = ({ userId }) => {
                           {new Date(sale.sale_date).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          {sale.user_name || 'N/A'}
+                          {sale.guest_name || sale.user_name || 'N/A'}
                         </TableCell>
                         <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
                         <TableCell>
@@ -2042,10 +2051,8 @@ const Sales = ({ userId }) => {
                       return true
                     })
                     .map((sale) => {
-                      // Get plan info from sales_details
-                      const subscriptionDetail = sale.sales_details?.find(d => d.subscription_id)
-                      const planId = subscriptionDetail?.subscription_id
-                      const matchedPlan = subscriptionPlans.find(p => p.id.toString() === planId?.toString())
+                      // Get plan info - prefer from sale level, fallback to sales_details
+                      const planName = sale.plan_name || sale.sales_details?.find(d => d.subscription?.plan_name)?.subscription?.plan_name
 
                       return (
                         <TableRow key={sale.id}>
@@ -2056,8 +2063,8 @@ const Sales = ({ userId }) => {
                             {sale.user_name || 'N/A'}
                           </TableCell>
                           <TableCell>
-                            {matchedPlan ? (
-                              <Badge variant="secondary">{matchedPlan.name}</Badge>
+                            {planName ? (
+                              <Badge variant="secondary">{planName}</Badge>
                             ) : (
                               <span className="text-xs text-muted-foreground">N/A</span>
                             )}
@@ -2084,6 +2091,179 @@ const Sales = ({ userId }) => {
           </div>
           <DialogFooter>
             <Button onClick={() => setSubscriptionSalesDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Sales Dialog */}
+      <Dialog open={productSalesDialogOpen} onOpenChange={(open) => {
+        setProductSalesDialogOpen(open)
+        if (!open) {
+          // Reset filters when dialog closes
+          setSelectedCategoryFilter("all")
+          setSelectedProductFilter("all")
+        }
+      }}>
+        <DialogContent className="max-w-6xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-blue-600" />
+              Product Sales Details
+            </DialogTitle>
+            <DialogDescription>
+              View all product sales with detailed transaction information
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Filters */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="category-filter">Filter by Category:</Label>
+                <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {getUniqueCategories().map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="product-filter">Filter by Product:</Label>
+                <Select value={selectedProductFilter} onValueChange={setSelectedProductFilter}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="All Products" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Products</SelectItem>
+                    {products
+                      .filter(p => selectedCategoryFilter === "all" || p.category === selectedCategoryFilter)
+                      .map((product) => (
+                        <SelectItem key={product.id} value={product.id.toString()}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Product Sales Table */}
+            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Products</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Payment Method</TableHead>
+                    <TableHead>Receipt #</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sales
+                    .filter((sale) => {
+                      // Filter by product sales - sales that have product items OR sale_type is Product
+                      const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                      const isProductSale = sale.sale_type === 'Product'
+                      
+                      if (!hasProducts && !isProductSale) return false
+
+                      // Filter by category if selected
+                      if (selectedCategoryFilter !== "all") {
+                        const hasCategoryMatch = sale.sales_details?.some(detail => {
+                          if (!detail.product_id) return false
+                          const product = detail.product || products.find(p => p.id === detail.product_id)
+                          return product?.category === selectedCategoryFilter
+                        })
+                        if (!hasCategoryMatch) return false
+                      }
+
+                      // Filter by product if selected
+                      if (selectedProductFilter !== "all") {
+                        const hasProductMatch = sale.sales_details?.some(detail => 
+                          detail.product_id && detail.product_id.toString() === selectedProductFilter
+                        )
+                        if (!hasProductMatch) return false
+                      }
+
+                      return true
+                    })
+                    .map((sale) => {
+                      // Get product names from sales_details
+                      const productDetails = sale.sales_details
+                        ?.filter(detail => detail.product_id)
+                        .map(detail => {
+                          const productName = detail.product?.name || products.find(p => p.id === detail.product_id)?.name || 'Unknown Product'
+                          const quantity = detail.quantity || 1
+                          return `${productName}${quantity > 1 ? ` (x${quantity})` : ''}`
+                        }) || []
+                      
+                      const productsDisplay = productDetails.length > 0 
+                        ? productDetails.join(', ') 
+                        : 'N/A'
+
+                      return (
+                        <TableRow key={sale.id}>
+                          <TableCell className="font-medium">
+                            {new Date(sale.sale_date).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell className="max-w-xs">
+                            <div className="text-sm truncate" title={productsDisplay}>
+                              {productsDisplay}
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {sale.receipt_number || 'N/A'}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                </TableBody>
+              </Table>
+              {sales.filter((sale) => {
+                const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                const isProductSale = sale.sale_type === 'Product'
+                if (!hasProducts && !isProductSale) return false
+                
+                if (selectedCategoryFilter !== "all") {
+                  const hasCategoryMatch = sale.sales_details?.some(detail => {
+                    if (!detail.product_id) return false
+                    const product = detail.product || products.find(p => p.id === detail.product_id)
+                    return product?.category === selectedCategoryFilter
+                  })
+                  if (!hasCategoryMatch) return false
+                }
+
+                if (selectedProductFilter !== "all") {
+                  const hasProductMatch = sale.sales_details?.some(detail => 
+                    detail.product_id && detail.product_id.toString() === selectedProductFilter
+                  )
+                  if (!hasProductMatch) return false
+                }
+
+                return true
+              }).length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <ShoppingCart className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No product sales found</p>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setProductSalesDialogOpen(false)}>
               Close
             </Button>
           </DialogFooter>

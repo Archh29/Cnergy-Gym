@@ -41,31 +41,90 @@ export default function AdminDashboardClient() {
   const fetchUserInfo = async () => {
     try {
       const response = await fetch("https://api.cnergy.site/session.php", {
-        credentials: "include"
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        }
       })
+      
+      if (response.status === 401) {
+        // 401 means unauthorized - session expired or not authenticated
+        // This is expected with third-party cookie restrictions
+        // Fall back to sessionStorage if available
+        const storedUserId = sessionStorage.getItem("user_id")
+        if (storedUserId) {
+          console.log("Session expired (401), using stored user_id:", storedUserId)
+          setUserId(parseInt(storedUserId))
+          return parseInt(storedUserId)
+        }
+        // If no stored user_id, session is truly invalid
+        return null
+      }
+      
+      if (!response.ok) {
+        // For other errors, try fallback but log the error
+        const storedUserId = sessionStorage.getItem("user_id")
+        if (storedUserId) {
+          console.warn(`Session check failed (${response.status}), using stored user_id as fallback`)
+          setUserId(parseInt(storedUserId))
+          return parseInt(storedUserId)
+        }
+        throw new Error(`Session check failed: ${response.status}`)
+      }
+      
       const data = await response.json()
       if (data.user_id) {
         setUserId(data.user_id)
         sessionStorage.setItem("user_id", data.user_id)
+        return data.user_id
+      } else if (data.error) {
+        console.warn("Session error:", data.error)
+        // Try to use stored user_id as fallback
+        const storedUserId = sessionStorage.getItem("user_id")
+        if (storedUserId) {
+          setUserId(parseInt(storedUserId))
+          return parseInt(storedUserId)
+        }
       }
     } catch (error) {
-      console.error("Error fetching user info:", error)
+      // Network errors or other exceptions
+      const storedUserId = sessionStorage.getItem("user_id")
+      if (storedUserId) {
+        console.log("Session API unavailable, using stored user_id:", storedUserId)
+        setUserId(parseInt(storedUserId))
+        return parseInt(storedUserId)
+      }
+      // Only log error if we truly have no fallback
+      console.error("Error fetching user info and no fallback available:", error)
     }
+    return null
   }
 
   useEffect(() => {
     if (!isClient) return
 
-    const role = sessionStorage.getItem("role") || "Admin"
+    const role = sessionStorage.getItem("role") || sessionStorage.getItem("user_role") || "Admin"
     setUserRole(role)
 
-    // Get user ID from session storage or API
+    // Get user ID from session storage first (fastest)
     const storedUserId = sessionStorage.getItem("user_id")
     if (storedUserId) {
       setUserId(parseInt(storedUserId))
+      // Still try to refresh from API in background (but don't block)
+      // Silently handle failures - we already have user_id from sessionStorage
+      fetchUserInfo().catch(() => {
+        // Silently fail - we have sessionStorage fallback
+      })
     } else {
       // If no user ID in session, try to get it from API
-      fetchUserInfo()
+      fetchUserInfo().then(userId => {
+        if (!userId) {
+          // Only log as warning, not error - user might need to log in again
+          console.warn("Could not retrieve user_id. User may need to log in again.")
+        }
+      }).catch(() => {
+        // Silently handle - already logged in fetchUserInfo if needed
+      })
     }
 
     // Load dark mode state (only on client)

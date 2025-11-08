@@ -81,6 +81,9 @@ export default function Login() {
           // Store user ID if provided in response
           if (response.data.user_id) {
             sessionStorage.setItem('user_id', response.data.user_id);
+            console.log('Stored user_id from login response:', response.data.user_id);
+          } else {
+            console.warn('Login response did not include user_id. Will try to retrieve from session.php after redirect.');
           }
         } else {
           setError('Invalid user role. Only admin and staff are allowed.');

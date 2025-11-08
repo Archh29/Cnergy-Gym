@@ -81,6 +81,9 @@ function handleGetRequest($pdo, $action)
 		case 'analytics':
 			getAnalyticsData($pdo);
 			break;
+		case 'coach_sales':
+			getCoachSales($pdo);
+			break;
 		default:
 			getAllData($pdo);
 			break;
@@ -206,17 +209,46 @@ function getSalesData($pdo)
 	$stmt = $pdo->prepare("
 		SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type,
 		       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
-		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.quantity, sd.price AS detail_price,
+		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.guest_session_id, sd.quantity, sd.price AS detail_price,
 		       p.name AS product_name, p.price AS product_price, p.category AS product_category,
+		       sub.plan_id, sub.user_id AS subscription_user_id,
+		       msp.plan_name,
 		       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS member_fullname,
+		       CONCAT_WS(' ', u_sub.fname, u_sub.mname, u_sub.lname) AS subscription_member_fullname,
 		       cml.coach_id,
-		       CONCAT_WS(' ', cu.fname, cu.mname, cu.lname) AS coach_fullname
+		       CONCAT_WS(' ', u_coach.fname, u_coach.mname, u_coach.lname) AS coach_fullname,
+		       gs.guest_name
 		FROM `sales` s
 		LEFT JOIN `sales_details` sd ON s.id = sd.sale_id
 		LEFT JOIN `product` p ON sd.product_id = p.id
+		LEFT JOIN `subscription` sub ON sd.subscription_id = sub.id
+		LEFT JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
 		LEFT JOIN `user` u ON s.user_id = u.id
-		LEFT JOIN `coach_member_list` cml ON s.user_id = cml.member_id
-		LEFT JOIN `user` cu ON cml.coach_id = cu.id
+		LEFT JOIN `user` u_sub ON sub.user_id = u_sub.id
+		LEFT JOIN `guest_session` gs ON (
+			(sd.guest_session_id IS NOT NULL AND sd.guest_session_id = gs.id)
+			OR (s.sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass') AND s.receipt_number = gs.receipt_number AND s.receipt_number IS NOT NULL)
+		)
+		LEFT JOIN `coach_member_list` cml ON s.user_id = cml.member_id 
+			AND s.sale_type = 'Coaching'
+			AND cml.status = 'active'
+			AND cml.coach_approval = 'approved'
+			AND cml.staff_approval = 'approved'
+			AND (cml.expires_at IS NULL OR cml.expires_at >= DATE(s.sale_date))
+			AND DATE(cml.staff_approved_at) <= DATE(s.sale_date)
+			AND cml.id = (
+				SELECT cml2.id
+				FROM `coach_member_list` cml2
+				WHERE cml2.member_id = s.user_id
+					AND cml2.status = 'active'
+					AND cml2.coach_approval = 'approved'
+					AND cml2.staff_approval = 'approved'
+					AND (cml2.expires_at IS NULL OR cml2.expires_at >= DATE(s.sale_date))
+					AND DATE(cml2.staff_approved_at) <= DATE(s.sale_date)
+				ORDER BY cml2.staff_approved_at DESC
+				LIMIT 1
+			)
+		LEFT JOIN `user` u_coach ON cml.coach_id = u_coach.id
 		$whereClause
 		ORDER BY s.sale_date DESC
 	");
@@ -230,10 +262,30 @@ function getSalesData($pdo)
 		$saleId = $row['id'];
 
 		if (!isset($salesGrouped[$saleId])) {
-			// Get names from concatenated fields (already built by CONCAT_WS in SQL)
+			// Get member name - prefer from sales.user_id, fallback to subscription.user_id
 			$memberName = !empty($row['member_fullname']) ? trim($row['member_fullname']) : null;
+			if (empty($memberName) && !empty($row['subscription_member_fullname'])) {
+				$memberName = trim($row['subscription_member_fullname']);
+			}
+			
+			// Get guest name for guest/walk-in sales
+			$guestName = !empty($row['guest_name']) ? trim($row['guest_name']) : null;
+			
+			// Get user_id - prefer from sales, fallback to subscription
+			$userId = $row['user_id'] ?? $row['subscription_user_id'] ?? null;
+			
+			// Get coach name for coaching sales
 			$coachName = !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null;
-
+			$coachId = !empty($row['coach_id']) ? (int)$row['coach_id'] : null;
+			
+			// For guest/walk-in sales, use guest_name instead of user_name
+			$displayName = null;
+			if (in_array($row['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
+				$displayName = $guestName;
+			} else {
+				$displayName = $memberName;
+			}
+			
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
 				'total_amount' => (float) $row['total_amount'],
@@ -245,12 +297,27 @@ function getSalesData($pdo)
 				'cashier_id' => $row['cashier_id'],
 				'change_given' => (float) $row['change_given'],
 				'notes' => $row['notes'],
-				'user_id' => $row['user_id'],
-				'user_name' => $memberName,
-				'coach_id' => $row['coach_id'] ?? null,
+				'user_id' => $userId,
+				'user_name' => $displayName, // This will be guest_name for guest sales
+				'guest_name' => $guestName, // Also store separately for clarity
+				'coach_id' => $coachId,
 				'coach_name' => $coachName,
 				'sales_details' => []
 			];
+		} else {
+			// If coach info wasn't set in first row but exists in this row, update it
+			if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
+				$salesGrouped[$saleId]['coach_name'] = trim($row['coach_fullname']);
+				$salesGrouped[$saleId]['coach_id'] = !empty($row['coach_id']) ? (int)$row['coach_id'] : null;
+			}
+			// If guest info wasn't set but exists in this row, update it
+			if (empty($salesGrouped[$saleId]['guest_name']) && !empty($row['guest_name'])) {
+				$salesGrouped[$saleId]['guest_name'] = trim($row['guest_name']);
+				// Update user_name for guest sales
+				if (in_array($salesGrouped[$saleId]['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
+					$salesGrouped[$saleId]['user_name'] = trim($row['guest_name']);
+				}
+			}
 		}
 
 		if ($row['detail_id']) {
@@ -260,17 +327,27 @@ function getSalesData($pdo)
 				'price' => (float) $row['detail_price']
 			];
 
-			if ($row['product_id']) {
-				$detail['product'] = [
-					'id' => $row['product_id'],
-					'name' => $row['product_name'],
-					'price' => (float) $row['product_price'],
-					'category' => $row['product_category']
-				];
-			}
+		if ($row['product_id']) {
+			$detail['product_id'] = $row['product_id'];
+			$detail['product'] = [
+				'id' => $row['product_id'],
+				'name' => $row['product_name'],
+				'price' => (float) $row['product_price'],
+				'category' => $row['product_category']
+			];
+		}
 
 			if ($row['subscription_id']) {
 				$detail['subscription_id'] = $row['subscription_id'];
+				$detail['subscription'] = [
+					'plan_id' => $row['plan_id'],
+					'plan_name' => $row['plan_name']
+				];
+				// Also store plan info at sale level for easy access in frontend
+				if (!isset($salesGrouped[$saleId]['plan_name']) && !empty($row['plan_name'])) {
+					$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
+					$salesGrouped[$saleId]['plan_id'] = $row['plan_id'];
+				}
 			}
 
 			$salesGrouped[$saleId]['sales_details'][] = $detail;
@@ -935,5 +1012,40 @@ function editTransaction($pdo, $data)
 		http_response_code(400);
 		echo json_encode(["error" => $e->getMessage()]);
 	}
+}
+
+function getCoachSales($pdo) {
+	// Get all coaches info.
+	$stmt = $pdo->query("SELECT * FROM coaches");
+	$coaches = $stmt->fetchAll();
+
+	$out = [];
+	foreach ($coaches as $coach) {
+		// core profile info for frontend
+		$coachObj = [
+			'user_id' => $coach['user_id'],
+			'id' => $coach['id'],
+			'name' => trim(($coach['specialty'] ? $coach['specialty'] . ' ' : '') . $coach['id']), // or use join to users for real names
+			'specialty' => $coach['specialty'],
+			'monthly_rate' => $coach['monthly_rate'],
+			'per_session_rate' => $coach['per_session_rate'],
+			'rating' => $coach['rating'],
+			'image_url' => $coach['image_url'],
+			// add more fields if frontend needs them
+		];
+		// Get sales for this coach (may be none)
+		$salesStmt = $pdo->prepare("SELECT sale_id, item, amount, sale_date, rate_type FROM coach_sales WHERE coach_user_id = ? ORDER BY sale_date DESC");
+		if ($salesStmt->execute([$coach['user_id']])) {
+			$rows = $salesStmt->fetchAll();
+			foreach ($rows as &$row) {
+				$row['amount'] = floatval($row['amount']);
+			}
+			$coachObj['sales'] = $rows;
+		} else {
+			$coachObj['sales'] = [];
+		}
+		$out[] = $coachObj;
+	}
+	echo json_encode(['coaches' => $out], JSON_UNESCAPED_UNICODE);
 }
 ?>
