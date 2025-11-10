@@ -355,7 +355,7 @@ const SubscriptionPlans = () => {
 
       <Tabs defaultValue="plans" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="plans">Membership Plans</TabsTrigger>
+          <TabsTrigger value="plans">Subscriptions</TabsTrigger>
           <TabsTrigger value="subscriptions">Active Subscriptions</TabsTrigger>
         </TabsList>
 
@@ -363,7 +363,7 @@ const SubscriptionPlans = () => {
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Membership Plans</CardTitle>
+                <CardTitle>Subscriptions</CardTitle>
                 <div className="flex items-center gap-4">
                   <div className="relative w-full max-w-md">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

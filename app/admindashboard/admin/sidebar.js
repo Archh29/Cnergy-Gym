@@ -68,7 +68,7 @@ const Sidebar = ({
     { name: "ViewUsers", icon: <FaUsers className="mr-2 h-4 w-4" /> },
     { name: "ViewStaff", icon: <FaUserTie className="mr-2 h-4 w-4" /> },
     { name: "ViewCoach", icon: <GiWhistle className="mr-2 h-4 w-4" /> },
-    { name: "StaffMonitoring", icon: <FaUserTie className="mr-2 h-4 w-4" /> },
+    { name: "StaffMonitoring", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
     { name: "SubscriptionPlans", icon: <FaIdCard className="mr-2 h-4 w-4" /> },
     { name: "MonitorSubscriptions", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
     { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> }, // Added Sales section
@@ -113,11 +113,11 @@ const Sidebar = ({
               variant={activeSection === name ? "secondary" : "ghost"}
               className={`w-full mb-1 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
               onClick={() => handleSectionClick(name)}
-              title={collapsed ? name.replace(/([A-Z])/g, " $1").trim() : ""}
+              title={collapsed ? (name === "StaffMonitoring" ? "Activity Logs" : name.replace(/([A-Z])/g, " $1").trim()) : ""}
             >
               {icon}
               <span className={`text-sm font-medium truncate ${collapsed ? 'lg:hidden' : ''}`}>
-                {name.replace(/([A-Z])/g, " $1").trim()}
+                {name === "StaffMonitoring" ? "Activity Logs" : name.replace(/([A-Z])/g, " $1").trim()}
               </span>
             </Button>
           ))}

@@ -182,20 +182,68 @@ const App = () => {
           }),
         )
       } else {
-        // Log failed scan to localStorage for tracking
-        const failedScan = {
-          timestamp: new Date().toISOString(),
-          type: response.data.type || "unknown",
-          message: response.data.message || "Failed to process QR code",
-          memberName: response.data.member_name || "Unknown",
-          qrData: cleanedData
+        // Extract member name from response or fetch from API
+        let memberName = "Unknown"
+        let memberId = null
+
+        if (response.data && response.data.member_name) {
+          memberName = response.data.member_name
+        } else if (cleanedData && cleanedData.includes(':')) {
+          // Try to extract from QR data format: CNERGY_ATTENDANCE:ID
+          const parts = cleanedData.split(':')
+          if (parts.length > 1) {
+            memberId = parts[1]
+          }
         }
 
-        // Get existing failed scans from localStorage
-        const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
-        existingFailures.unshift(failedScan) // Add to beginning
-        // Store all failed scans (no limit)
-        localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
+        // If we only have member ID, fetch the member name from API
+        if (memberId && memberName === "Unknown") {
+          try {
+            const membersResponse = await axios.get("https://api.cnergy.site/attendance.php?action=members")
+            const members = membersResponse.data || []
+            const member = members.find(m => m.id === parseInt(memberId))
+            if (member) {
+              memberName = `${member.fname || ''} ${member.lname || ''}`.trim() || `Member ID: ${memberId}`
+            } else {
+              memberName = `Member ID: ${memberId}`
+            }
+          } catch (err) {
+            console.error("Failed to fetch member name:", err)
+            memberName = `Member ID: ${memberId}`
+          }
+        }
+
+        let errorMessage = (response.data && response.data.message) ? response.data.message : "Failed to process QR code"
+        const errorType = (response.data && response.data.type) ? response.data.type : "unknown"
+
+        // Format error message for no_plan type
+        if (errorType === "no_plan") {
+          errorMessage = `${memberName} - No active subscription`
+        }
+
+        // Only log subscription-related denials (no_plan, expired_plan, guest errors)
+        // Don't log: already_attended_today, already_checked_in, cooldown, etc.
+        if (errorType === "no_plan" || errorType === "expired_plan" || errorType === "guest_expired" || errorType === "guest_error") {
+          const failedScan = {
+            timestamp: new Date().toISOString(),
+            type: errorType,
+            message: errorMessage,
+            memberName: memberName,
+            qrData: cleanedData || "Unknown",
+            entryMethod: "qr" // Mark as QR scan entry
+          }
+
+          try {
+            // Get existing failed scans from localStorage
+            const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
+            existingFailures.unshift(failedScan) // Add to beginning
+            // Store all failed scans (no limit)
+            localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
+            console.log("✅ Failed QR scan logged to denied attendance log:", failedScan)
+          } catch (storageError) {
+            console.error("❌ Error saving failed scan to localStorage:", storageError)
+          }
+        }
 
         // Handle plan validation errors with better messages
         if (response.data.type === "expired_plan") {
@@ -229,6 +277,7 @@ const App = () => {
       setIsConnected(true)
     } catch (err) {
       setIsConnected(false)
+      // Don't log network errors to denied attendance log - only subscription-related denials
       showNotification("Network error - check server connection", "error")
     } finally {
       globalScannerRef.current.isProcessing = false

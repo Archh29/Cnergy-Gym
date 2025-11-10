@@ -117,7 +117,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym123@",
+      password: "CnergyGym#1",
       gender_id: "",
       bday: "",
       user_type_id: 4,
@@ -416,13 +416,17 @@ const ViewMembers = ({ userId }) => {
     try {
       // Remove client-side email validation - let backend handle it
       console.log("Creating member with data:", data)
+      console.log("Password from form:", data.password)
+
+      // Ensure password is always set
+      const password = data.password && data.password.trim() !== "" ? data.password : "CnergyGym#1"
 
       const formattedData = {
         fname: data.fname.trim(),
         mname: data.mname.trim(),
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
-        password: data.password,
+        password: password, // Always use default password if not provided
         gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
@@ -432,6 +436,7 @@ const ViewMembers = ({ userId }) => {
       }
 
       console.log("Sending request to backend with data:", formattedData)
+      console.log("Password being sent:", formattedData.password)
 
       const response = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
@@ -564,15 +569,24 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym123@",
+      password: "CnergyGym#1",
       gender_id: "",
       bday: "",
       user_type_id: 4,
       account_status: "approved",
     })
+    // Ensure password is set in form
+    form.setValue("password", "CnergyGym#1")
     setShowPassword(false)
     setIsAddDialogOpen(true)
   }
+
+  // Ensure password is always set when dialog opens
+  useEffect(() => {
+    if (isAddDialogOpen) {
+      form.setValue("password", "CnergyGym#1", { shouldValidate: true, shouldDirty: true })
+    }
+  }, [isAddDialogOpen, form])
 
   return (
     <div className="space-y-6">
@@ -1061,12 +1075,27 @@ const ViewMembers = ({ userId }) => {
                     <FormLabel>Password*</FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <Input type={showPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="********"
+                          value={field.value || "CnergyGym#1"}
+                          readOnly
+                          className="bg-muted cursor-not-allowed"
+                          onFocus={(e) => e.target.blur()}
+                          tabIndex={-1}
+                          onChange={(e) => {
+                            // Always set to default password, prevent user changes
+                            field.onChange("CnergyGym#1")
+                          }}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent z-10"
                           onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -1074,7 +1103,7 @@ const ViewMembers = ({ userId }) => {
                       </div>
                     </FormControl>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Password must be at least 8 characters with 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character
+                      Standard password is automatically set. Password must be at least 8 characters with 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character
                     </div>
                     <FormMessage />
                   </FormItem>

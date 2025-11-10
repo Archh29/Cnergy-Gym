@@ -28,7 +28,6 @@ import {
   Search,
   Plus,
   Edit,
-  Trash2,
   User,
   Mail,
   Calendar as CalendarIcon,
@@ -44,6 +43,8 @@ import {
   EyeOff,
   Ban,
   CalendarDays,
+  PowerOff,
+  RotateCw,
 } from "lucide-react"
 
 const memberSchema = z.object({
@@ -98,11 +99,11 @@ const ViewMembers = ({ userId }) => {
   const [useCustomDate, setUseCustomDate] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedMember, setSelectedMember] = useState(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
+  const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -116,7 +117,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "",
+      password: "CnergyGym#1",
       bday: "",
       user_type_id: 4,
     },
@@ -143,10 +144,10 @@ const ViewMembers = ({ userId }) => {
 
   // Account status options
   const statusOptions = [
-    { value: "pending", label: "Pending", color: "bg-yellow-100 text-yellow-800" },
-    { value: "approved", label: "Approved", color: "bg-green-100 text-green-800" },
-    { value: "rejected", label: "Rejected", color: "bg-red-100 text-red-800" },
-    { value: "deactivated", label: "Deactivated", color: "bg-gray-100 text-gray-800" },
+    { value: "pending", label: "Pending", color: "bg-amber-50 text-amber-700 border-amber-200" },
+    { value: "approved", label: "Approved", color: "bg-green-50 text-green-700 border-green-200" },
+    { value: "rejected", label: "Rejected", color: "bg-red-50 text-red-700 border-red-200" },
+    { value: "deactivated", label: "Deactivated", color: "bg-gray-50 text-gray-700 border-gray-200" },
   ]
 
   const validateEmail = async (email, excludeId = null) => {
@@ -303,14 +304,14 @@ const ViewMembers = ({ userId }) => {
 
   const getStatusBadge = (status) => {
     const statusOption = statusOptions.find((s) => s.value === status)
-    if (!statusOption) return <Badge variant="outline">Unknown</Badge>
+    if (!statusOption) return <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">Unknown</Badge>
 
     return (
-      <Badge className={statusOption.color} variant="outline">
-        {status === "pending" && <Clock className="w-3 h-3 mr-1" />}
-        {status === "approved" && <CheckCircle className="w-3 h-3 mr-1" />}
-        {status === "rejected" && <XCircle className="w-3 h-3 mr-1" />}
-        {status === "deactivated" && <Ban className="w-3 h-3 mr-1" />}
+      <Badge className={`${statusOption.color} font-medium px-2.5 py-1 border`} variant="outline">
+        {status === "pending" && <Clock className="w-3 h-3 mr-1.5" />}
+        {status === "approved" && <CheckCircle className="w-3 h-3 mr-1.5" />}
+        {status === "rejected" && <XCircle className="w-3 h-3 mr-1.5" />}
+        {status === "deactivated" && <Ban className="w-3 h-3 mr-1.5" />}
         {statusOption.label}
       </Badge>
     )
@@ -320,9 +321,17 @@ const ViewMembers = ({ userId }) => {
     if (!member.created_at) return false
     const createdDate = safeDate(member.created_at)
     if (!createdDate) return false
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    return createdDate > sevenDaysAgo
+
+    // Get today's date at midnight (00:00:00)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Get creation date at midnight (00:00:00)
+    const createdDateMidnight = new Date(createdDate)
+    createdDateMidnight.setHours(0, 0, 0, 0)
+
+    // Show "NEW" badge only if created on the same calendar day (disappears after midnight)
+    return createdDateMidnight.getTime() === today.getTime()
   }
 
   const handleViewMember = (member) => {
@@ -354,10 +363,6 @@ const ViewMembers = ({ userId }) => {
     setIsEditDialogOpen(true)
   }
 
-  const handleDeleteMember = (member) => {
-    setSelectedMember(member)
-    setIsDeleteDialogOpen(true)
-  }
 
   const handleVerifyMember = (member) => {
     setSelectedMember(member)
@@ -414,12 +419,15 @@ const ViewMembers = ({ userId }) => {
       // Remove client-side email validation - let backend handle it
       console.log("Creating member with data:", data)
 
+      // Always use the standard default password - staff cannot change it
+      const password = "CnergyGym#1"
+
       const formattedData = {
         fname: data.fname.trim(),
-        mname: data.mname ? data.mname.trim() : null,
+        mname: data.mname && data.mname.trim() !== '' ? data.mname.trim() : '',
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
-        password: data.password,
+        password: password, // Always use standard default password
         bday: data.bday,
         user_type_id: data.user_type_id,
         account_status: "approved", // Admin-added users are always approved
@@ -428,6 +436,7 @@ const ViewMembers = ({ userId }) => {
       }
 
       console.log("Sending request to backend with data:", formattedData)
+      console.log("Password being sent:", formattedData.password)
 
       const response = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
@@ -444,27 +453,42 @@ const ViewMembers = ({ userId }) => {
       console.log("Response result:", result)
 
       if (response.ok) {
+        // Format user's full name before closing dialog
+        const fullName = `${data.fname}${data.mname ? ` ${data.mname}` : ''} ${data.lname}`.trim()
+
+        // Show success toast first with improved formatting
+        toast({
+          title: "User Successfully Added",
+          description: `${fullName} has been added to the system. Email: ${data.email}. Account is approved and ready to use.`,
+        })
+
+        // Then update members list and close dialog
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
-        setIsAddDialogOpen(false)
-        form.reset()
-        toast({
-          title: "Success",
-          description: "Member added successfully!",
+
+        form.reset({
+          fname: "",
+          mname: "",
+          lname: "",
+          email: "",
+          password: "CnergyGym#1",
+          bday: "",
+          user_type_id: 4,
         })
+        setIsAddDialogOpen(false)
       } else {
         // Prioritize the detailed message over the generic error
-        throw new Error(result.message || result.error || "Failed to add member")
+        throw new Error(result.message || result.error || "Failed to add user")
       }
     } catch (error) {
-      console.error("Error adding member:", error)
+      console.error("Error adding user:", error)
       console.error("Error message:", error.message)
       console.error("Full error object:", error)
 
       // Check if it's an email-related error
-      const errorMessage = error.message || "Failed to add member. Please try again."
+      const errorMessage = error.message || "Failed to add user. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
 
       // Show error message in alert (simple approach)
@@ -500,7 +524,7 @@ const ViewMembers = ({ userId }) => {
       const updateData = {
         id: selectedMember.id,
         fname: data.fname.trim(),
-        mname: data.mname ? data.mname.trim() : null,
+        mname: data.mname && data.mname.trim() !== '' ? data.mname.trim() : '',
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
         bday: data.bday,
@@ -536,33 +560,40 @@ const ViewMembers = ({ userId }) => {
         setSelectedMember(null)
         toast({
           title: "Success",
-          description: "Member updated successfully!",
+          description: "User updated successfully!",
         })
       } else {
-        throw new Error(result.error || result.message || "Failed to update member")
+        throw new Error(result.error || result.message || "Failed to update user")
       }
     } catch (error) {
       console.error("Error updating member:", error)
       toast({
         title: "Error",
-        description: error.message || "Failed to update member. Please try again.",
+        description: error.message || "Failed to update user. Please try again.",
         variant: "destructive",
       })
     }
     setIsLoading(false)
   }
 
-  const handleConfirmDelete = async () => {
+  const handleDeactivateMember = (member) => {
+    setSelectedMember(member)
+    setIsDeactivateDialogOpen(true)
+  }
+
+  const handleConfirmDeactivate = async () => {
     if (!selectedMember) return
     setIsLoading(true)
     try {
+      const newStatus = selectedMember.account_status === "deactivated" ? "approved" : "deactivated"
       const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
-        method: "DELETE",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           id: selectedMember.id,
+          account_status: newStatus,
           staff_id: userId,
         }),
       })
@@ -573,20 +604,20 @@ const ViewMembers = ({ userId }) => {
         const updatedMembers = await getResponse.json()
         setMembers(updatedMembers)
         setFilteredMembers(updatedMembers)
-        setIsDeleteDialogOpen(false)
+        setIsDeactivateDialogOpen(false)
         setSelectedMember(null)
         toast({
           title: "Success",
-          description: "Member deleted successfully!",
+          description: `Account ${newStatus === "deactivated" ? "deactivated" : "reactivated"} successfully!`,
         })
       } else {
-        throw new Error(result.message || "Failed to delete member")
+        throw new Error(result.message || `Failed to ${newStatus === "deactivated" ? "deactivate" : "reactivate"} account`)
       }
     } catch (error) {
-      console.error("Error deleting member:", error)
+      console.error("Error updating account status:", error)
       toast({
         title: "Error",
-        description: "Failed to delete member. Please try again.",
+        description: `Failed to ${selectedMember.account_status === "deactivated" ? "reactivate" : "deactivate"} account. Please try again.`,
         variant: "destructive",
       })
     }
@@ -599,95 +630,114 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "",
+      password: "CnergyGym#1",
       bday: "",
       user_type_id: 4,
     })
+    // Ensure password is set in form
+    form.setValue("password", "CnergyGym#1")
     setShowPassword(false)
     setIsAddDialogOpen(true)
   }
 
+  // Ensure password is always set when dialog opens
+  useEffect(() => {
+    if (isAddDialogOpen) {
+      form.setValue("password", "CnergyGym#1", { shouldValidate: true, shouldDirty: true })
+    }
+  }, [isAddDialogOpen, form])
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-6">
       {/* Statistics Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Users className="mr-2 h-5 w-5" />
+      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-gray-50/50">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center text-xl font-bold text-gray-800">
+            <div className="p-2 bg-primary/10 rounded-lg mr-3">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
             User Statistics
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">{filteredMembers.length}</div>
-              <div className="text-sm text-muted-foreground">Total Users</div>
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-5 text-center border border-blue-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="text-3xl font-bold text-blue-700 mb-1">{filteredMembers.length}</div>
+              <div className="text-sm font-medium text-blue-600">Total Users</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl p-5 text-center border border-amber-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="text-3xl font-bold text-amber-700 mb-1">
                 {filteredMembers.filter((m) => m.account_status === "pending").length}
               </div>
-              <div className="text-sm text-muted-foreground">Pending</div>
+              <div className="text-sm font-medium text-amber-600">Pending</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
+            <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-xl p-5 text-center border border-green-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="text-3xl font-bold text-green-700 mb-1">
                 {filteredMembers.filter((m) => m.account_status === "approved").length}
               </div>
-              <div className="text-sm text-muted-foreground">Approved</div>
+              <div className="text-sm font-medium text-green-600">Approved</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
+            <div className="bg-gradient-to-br from-red-50 to-red-100/50 rounded-xl p-5 text-center border border-red-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="text-3xl font-bold text-red-700 mb-1">
                 {filteredMembers.filter((m) => m.account_status === "rejected").length}
               </div>
-              <div className="text-sm text-muted-foreground">Rejected</div>
+              <div className="text-sm font-medium text-red-600">Rejected</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-600">
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 text-center border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="text-3xl font-bold text-gray-700 mb-1">
                 {filteredMembers.filter((m) => m.account_status === "deactivated").length}
               </div>
-              <div className="text-sm text-muted-foreground">Deactivated</div>
+              <div className="text-sm font-medium text-gray-600">Deactivated</div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200/50">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <CardTitle className="flex items-center">
-                <Shield className="mr-2 h-5 w-5" />
+              <CardTitle className="flex items-center text-xl font-bold text-gray-800 mb-2">
+                <div className="p-2 bg-primary/10 rounded-lg mr-3">
+                  <Shield className="h-5 w-5 text-primary" />
+                </div>
                 User Account Management
               </CardTitle>
-              <CardDescription>Manage and verify user accounts</CardDescription>
+              <CardDescription className="text-sm text-gray-600 ml-11">
+                Manage and verify user accounts
+              </CardDescription>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Button
                 variant={currentView === "archive" ? "default" : "outline"}
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
+                className="h-10 px-4 font-medium"
               >
                 {currentView === "active" ? "Archive" : "Active Users"}
               </Button>
-              <Button onClick={handleOpenAddDialog}>
+              <Button
+                onClick={handleOpenAddDialog}
+                className="h-10 px-4 font-medium shadow-md hover:shadow-lg transition-all duration-200"
+              >
                 <Plus className="mr-2 h-4 w-4" /> Add User
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-4 flex-wrap">
+        <CardContent className="space-y-5 p-6">
+          <div className="flex gap-3 flex-wrap items-center bg-gray-50/50 p-4 rounded-lg border border-gray-200/50">
             <div className="relative flex-1 min-w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
                 placeholder="Search members by name or email..."
-                className="pl-8"
+                className="pl-10 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -698,7 +748,7 @@ const ViewMembers = ({ userId }) => {
               </SelectContent>
             </Select>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-36 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
@@ -718,7 +768,7 @@ const ViewMembers = ({ userId }) => {
               </SelectContent>
             </Select>
             <Select value={yearFilter} onValueChange={setYearFilter}>
-              <SelectTrigger className="w-24">
+              <SelectTrigger className="w-28 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Year" />
               </SelectTrigger>
               <SelectContent>
@@ -737,17 +787,17 @@ const ViewMembers = ({ userId }) => {
                 <Button
                   variant={useCustomDate ? "default" : "outline"}
                   className={cn(
-                    "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                    "w-[220px] justify-start text-left font-medium h-11 border-2 transition-all duration-200",
                     useCustomDate
-                      ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
-                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                      ? "bg-primary hover:bg-primary/90 text-white border-primary shadow-md"
+                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-primary/50"
                   )}
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+              <PopoverContent className="w-auto p-0 shadow-2xl border-gray-200" align="start">
                 <Calendar
                   mode="single"
                   selected={customDate}
@@ -773,13 +823,13 @@ const ViewMembers = ({ userId }) => {
                   setCustomDate(null)
                   setUseCustomDate(false)
                 }}
-                className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
+                className="h-11 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200 font-medium"
               >
                 ✕ Clear Date
               </Button>
             )}
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
@@ -794,90 +844,146 @@ const ViewMembers = ({ userId }) => {
           </div>
 
           {isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex flex-col items-center justify-center py-16">
+              <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+              <p className="text-sm text-muted-foreground">Loading users...</p>
             </div>
           ) : currentMembers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No members found. Try a different search or add a new member.
+            <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+              <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-lg font-medium text-gray-700 mb-2">No accounts or user found</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {currentView === "archive"
+                  ? "No archived accounts or users found."
+                  : "Try a different search or add a new user."}
+              </p>
+              {currentView !== "archive" && (
+                <Button onClick={handleOpenAddDialog} variant="outline" className="mt-2">
+                  <Plus className="mr-2 h-4 w-4" /> Add User
+                </Button>
+              )}
             </div>
           ) : (
-            <div className="space-y-2">
-              {currentMembers.map((member, index) => (
-                <div
-                  key={member.id || `member-${index}`}
-                  className="flex items-center justify-between p-3 border rounded-md hover:bg-accent/50 transition-colors"
-                >
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start p-0 h-auto"
-                    onClick={() => handleViewMember(member)}
+            <div className="space-y-3">
+              {currentMembers.map((member, index) => {
+                const initials = `${member.fname?.[0] || ''}${member.lname?.[0] || ''}`.toUpperCase()
+                return (
+                  <div
+                    key={member.id || `member-${index}`}
+                    className="group flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-primary/50 hover:shadow-md transition-all duration-200"
                   >
-                    <div className="flex items-center">
-                      <User className="mr-2 h-4 w-4 text-muted-foreground" />
-                      <div className="text-left">
-                        <div className="font-medium">
-                          {member.fname} {member.mname} {member.lname}
+                    <Button
+                      variant="ghost"
+                      className="flex-1 justify-start p-0 h-auto hover:bg-transparent"
+                      onClick={() => handleViewMember(member)}
+                    >
+                      <div className="flex items-center gap-4 w-full">
+                        <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border-2 border-primary/20">
+                          <span className="text-primary font-semibold text-sm">{initials}</span>
                         </div>
-                        <div className="text-sm text-muted-foreground">{member.email}</div>
-                        {member.created_at && (
-                          <div className="text-xs text-muted-foreground">
-                            Created: {new Date(member.created_at).toLocaleDateString()}
+                        <div className="text-left flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="font-semibold text-gray-900 truncate">
+                              {member.fname} {member.mname} {member.lname}
+                            </div>
+                            {isNewMember(member) && (
+                              <Badge className="bg-green-500 text-white text-xs px-2 py-0.5 font-semibold" variant="default">
+                                NEW
+                              </Badge>
+                            )}
                           </div>
-                        )}
+                          <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+                            <Mail className="h-3 w-3" />
+                            <span className="truncate">{member.email}</span>
+                          </div>
+                          {member.created_at && (
+                            <div className="flex items-center gap-1 text-xs text-gray-500">
+                              <CalendarDays className="h-3 w-3" />
+                              <span>Created: {new Date(member.created_at).toLocaleDateString()}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </Button>
-                  <div className="flex items-center gap-2">
-                    {isNewMember(member) && (
-                      <Badge className="bg-green-100 text-green-800" variant="outline">
-                        NEW
+                    </Button>
+                    <div className="flex items-center gap-2 ml-4">
+                      {getStatusBadge(member.account_status)}
+                      <Badge variant="outline" className="border-gray-300 text-gray-700">
+                        {getGenderName(member.gender_id)}
                       </Badge>
-                    )}
-                    {getStatusBadge(member.account_status)}
-                    <Badge variant="outline">{getGenderName(member.gender_id)}</Badge>
-                    {member.account_status === "pending" && (
+                      {member.account_status === "pending" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleVerifyMember(member)}
+                          className="h-9 w-9 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Verify Account"
+                        >
+                          <Shield className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => handleVerifyMember(member)}
-                        className="text-blue-600 hover:text-blue-700"
+                        onClick={() => handleEditMember(member)}
+                        className="h-9 w-9 text-gray-600 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                        title="Edit Member"
                       >
-                        <Shield className="h-4 w-4" />
+                        <Edit className="h-4 w-4" />
                       </Button>
-                    )}
-                    <Button variant="ghost" size="icon" onClick={() => handleEditMember(member)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteMember(member)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                      {member.account_status !== "deactivated" ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeactivateMember(member)}
+                          className="h-9 w-9 text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                          title="Deactivate Account"
+                        >
+                          <PowerOff className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeactivateMember(member)}
+                          className="h-9 w-9 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Reactivate Account"
+                        >
+                          <RotateCw className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
           {!isLoading && filteredMembers.length > membersPerPage && (
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground">
-                Showing {indexOfFirstMember + 1}-{Math.min(indexOfLastMember, filteredMembers.length)} of{" "}
-                {filteredMembers.length}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <div className="text-sm font-medium text-gray-700">
+                Showing <span className="text-primary font-semibold">{indexOfFirstMember + 1}</span> to{" "}
+                <span className="text-primary font-semibold">{Math.min(indexOfLastMember, filteredMembers.length)}</span> of{" "}
+                <span className="text-primary font-semibold">{filteredMembers.length}</span> users
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                   disabled={currentPage === 1}
+                  className="h-9 w-9 border-gray-300 hover:border-primary hover:bg-primary/10 disabled:opacity-50"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
+                <div className="px-4 py-1.5 text-sm font-medium text-gray-700 bg-gray-50 rounded-md border border-gray-200">
+                  Page {currentPage} of {totalPages}
+                </div>
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                   disabled={currentPage === totalPages}
+                  className="h-9 w-9 border-gray-300 hover:border-primary hover:bg-primary/10 disabled:opacity-50"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -1011,24 +1117,33 @@ const ViewMembers = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Add Member Dialog */}
+      {/* Add User Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add New Member</DialogTitle>
-            <DialogDescription>Enter the basic details for the new member.</DialogDescription>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <User className="h-6 w-6 text-primary" />
+              Add New User
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Enter the basic details for the new user account.
+            </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleAddMember)} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={form.handleSubmit(handleAddMember)} className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
                   name="fname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name*</FormLabel>
+                      <FormLabel className="text-sm font-medium">First Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="John" {...field} />
+                        <Input
+                          placeholder="John"
+                          className="h-11"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1039,9 +1154,13 @@ const ViewMembers = ({ userId }) => {
                   name="mname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Middle Name (optional)</FormLabel>
+                      <FormLabel className="text-sm font-medium">Middle Name (optional)</FormLabel>
                       <FormControl>
-                        <Input placeholder="Michael" {...field} />
+                        <Input
+                          placeholder="Michael"
+                          className="h-11"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1053,9 +1172,13 @@ const ViewMembers = ({ userId }) => {
                 name="lname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name*</FormLabel>
+                    <FormLabel className="text-sm font-medium">Last Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Doe" {...field} />
+                      <Input
+                        placeholder="Doe"
+                        className="h-11"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1066,9 +1189,17 @@ const ViewMembers = ({ userId }) => {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email*</FormLabel>
+                    <FormLabel className="text-sm font-medium flex items-center gap-2">
+                      <Mail className="h-4 w-4" />
+                      Email
+                    </FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
+                      <Input
+                        type="email"
+                        placeholder="john@example.com"
+                        className="h-11"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1077,50 +1208,108 @@ const ViewMembers = ({ userId }) => {
               <FormField
                 control={form.control}
                 name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password*</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input type={showPassword ? "text" : "password"} placeholder="********" {...field} />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
+                render={({ field }) => {
+                  // Ensure field value is always set to default password
+                  const displayValue = field.value || "CnergyGym#1"
+
+                  return (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Password
+                      </FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            value={displayValue}
+                            readOnly
+                            className="bg-blue-50 border-blue-200 text-blue-900 cursor-not-allowed h-11 pr-36 font-mono"
+                            onFocus={(e) => e.target.blur()}
+                            tabIndex={-1}
+                            onChange={(e) => {
+                              // Always reset to default password if user tries to change it
+                              field.onChange("CnergyGym#1")
+                            }}
+                            onBlur={() => {
+                              // Ensure value is always set on blur
+                              field.onChange("CnergyGym#1")
+                            }}
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                              Auto-set
+                            </Badge>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 hover:bg-transparent"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                setShowPassword(!showPassword)
+                              }}
+                            >
+                              {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                            </Button>
+                          </div>
+                        </div>
+                      </FormControl>
+                      <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
+                        <p className="text-xs text-blue-800 flex items-start gap-2">
+                          <Shield className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                          <span>
+                            <strong>Standard password is automatically set.</strong> The default password meets all security requirements.
+                          </span>
+                        </p>
                       </div>
-                    </FormControl>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Password must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
               <FormField
                 control={form.control}
                 name="bday"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date of Birth*</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  // Get today's date in YYYY-MM-DD format for max date restriction
+                  const today = new Date().toISOString().split('T')[0]
+                  return (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Date of Birth
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type="date"
+                          className="h-11"
+                          max={today}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <DialogFooter className="pt-4 border-t gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsAddDialogOpen(false)}
+                  className="h-11 px-6"
+                >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isLoading}>
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                  className="h-11 px-6 bg-primary hover:bg-primary/90"
+                >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Member
+                  <User className="mr-2 h-4 w-4" />
+                  Add User
                 </Button>
               </DialogFooter>
             </form>
@@ -1128,27 +1317,32 @@ const ViewMembers = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Member Dialog */}
+      {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Member</DialogTitle>
-            <DialogDescription>Update the member's information and account status.</DialogDescription>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <Edit className="h-6 w-6 text-primary" />
+              Edit User
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Update the user's information and account details.
+            </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(handleUpdateMember, (errors) => {
               console.log("Form validation errors:", errors)
               console.log("Form values:", editForm.getValues())
-            })} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+            })} className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-6">
                 <FormField
                   control={editForm.control}
                   name="fname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name*</FormLabel>
+                      <FormLabel className="text-sm font-medium">First Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="John" {...field} />
+                        <Input placeholder="John" className="h-11" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1159,9 +1353,9 @@ const ViewMembers = ({ userId }) => {
                   name="mname"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Middle Name (optional)</FormLabel>
+                      <FormLabel className="text-sm font-medium">Middle Name (optional)</FormLabel>
                       <FormControl>
-                        <Input placeholder="Michael" {...field} />
+                        <Input placeholder="Michael" className="h-11" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1173,9 +1367,9 @@ const ViewMembers = ({ userId }) => {
                 name="lname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Last Name*</FormLabel>
+                    <FormLabel className="text-sm font-medium">Last Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Doe" {...field} />
+                      <Input placeholder="Doe" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1186,9 +1380,12 @@ const ViewMembers = ({ userId }) => {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email*</FormLabel>
+                    <FormLabel className="text-sm font-medium flex items-center gap-2">
+                      <Mail className="h-4 w-4" />
+                      Email
+                    </FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
+                      <Input type="email" placeholder="john@example.com" className="h-11" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1199,10 +1396,18 @@ const ViewMembers = ({ userId }) => {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>New Password (leave blank to keep current)</FormLabel>
+                    <FormLabel className="text-sm font-medium flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      New Password (leave blank to keep current)
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
-                        <Input type={showEditPassword ? "text" : "password"} placeholder="********" {...field} />
+                        <Input
+                          type={showEditPassword ? "text" : "password"}
+                          placeholder="********"
+                          className="h-11 pr-12"
+                          {...field}
+                        />
                         <Button
                           type="button"
                           variant="ghost"
@@ -1210,13 +1415,14 @@ const ViewMembers = ({ userId }) => {
                           className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                           onClick={() => setShowEditPassword(!showEditPassword)}
                         >
-                          {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showEditPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
                         </Button>
                       </div>
                     </FormControl>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      If changing password: must be at least 8 characters with 1 uppercase letter, 1 number, and 1
-                      special character
+                    <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mt-2">
+                      <p className="text-xs text-gray-700">
+                        <strong>Password Requirements:</strong> If changing password, it must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character.
+                      </p>
                     </div>
                     <FormMessage />
                   </FormItem>
@@ -1225,46 +1431,64 @@ const ViewMembers = ({ userId }) => {
               <FormField
                 control={editForm.control}
                 name="bday"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date of Birth*</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  // Get today's date in YYYY-MM-DD format for max date restriction
+                  const today = new Date().toISOString().split('T')[0]
+                  return (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Date of Birth
+                      </FormLabel>
+                      <FormControl>
+                        <Input type="date" className="h-11" max={today} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )
+                }}
               />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              <DialogFooter className="pt-4 border-t gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditDialogOpen(false)}
+                  className="h-11 px-6"
+                >
                   Cancel
                 </Button>
-                <Button type="button" disabled={isLoading} onClick={async () => {
-                  console.log("Update button clicked - manual submission")
-                  console.log("Form is valid:", editForm.formState.isValid)
-                  console.log("Form errors:", JSON.stringify(editForm.formState.errors, null, 2))
-                  console.log("Form values:", JSON.stringify(editForm.getValues(), null, 2))
+                <Button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={async () => {
+                    console.log("Update button clicked - manual submission")
+                    console.log("Form is valid:", editForm.formState.isValid)
+                    console.log("Form errors:", JSON.stringify(editForm.formState.errors, null, 2))
+                    console.log("Form values:", JSON.stringify(editForm.getValues(), null, 2))
 
-                  // Try manual form submission
-                  const isValid = await editForm.trigger()
-                  console.log("Form validation result:", isValid)
+                    // Try manual form submission
+                    const isValid = await editForm.trigger()
+                    console.log("Form validation result:", isValid)
 
-                  if (isValid) {
-                    const formData = editForm.getValues()
-                    console.log("Submitting form data:", formData)
-                    await handleUpdateMember(formData)
-                  } else {
-                    console.log("Form validation failed, errors:", JSON.stringify(editForm.formState.errors, null, 2))
-                    // Show user-friendly error message
-                    toast({
-                      title: "Validation Error",
-                      description: "Please check all fields and try again. Check console for details.",
-                      variant: "destructive",
-                    })
-                  }
-                }}>
+                    if (isValid) {
+                      const formData = editForm.getValues()
+                      console.log("Submitting form data:", formData)
+                      await handleUpdateMember(formData)
+                    } else {
+                      console.log("Form validation failed, errors:", JSON.stringify(editForm.formState.errors, null, 2))
+                      // Show user-friendly error message
+                      toast({
+                        title: "Validation Error",
+                        description: "Please check all fields and try again. Check console for details.",
+                        variant: "destructive",
+                      })
+                    }
+                  }}
+                  className="h-11 px-6 bg-primary hover:bg-primary/90"
+                >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Update
+                  <Edit className="mr-2 h-4 w-4" />
+                  Update User
                 </Button>
               </DialogFooter>
             </form>
@@ -1272,34 +1496,96 @@ const ViewMembers = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Member Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      {/* Deactivate/Reactivate Account Dialog */}
+      <Dialog open={isDeactivateDialogOpen} onOpenChange={setIsDeactivateDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Member</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedMember?.account_status === "deactivated" ? (
+                <>
+                  <RotateCw className="h-5 w-5 text-green-600" />
+                  Reactivate Account
+                </>
+              ) : (
+                <>
+                  <PowerOff className="h-5 w-5 text-orange-600" />
+                  Deactivate Account
+                </>
+              )}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this member? This action cannot be undone.
+              {selectedMember?.account_status === "deactivated"
+                ? "Are you sure you want to reactivate this account? The user will be able to access the system again."
+                : "Are you sure you want to deactivate this account? The user will not be able to access the system until reactivated."}
             </DialogDescription>
           </DialogHeader>
           {selectedMember && (
-            <div className="border rounded-md p-4 mb-4">
-              <p className="font-medium">
-                {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
-              </p>
-              <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-              <div className="mt-2 flex gap-2">
-                {getStatusBadge(selectedMember.account_status)}
-                <Badge variant="outline">{getGenderName(selectedMember.gender_id)}</Badge>
+            <div className="space-y-4">
+              <div className="border rounded-md p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <User className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">
+                      {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+                    </p>
+                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Current Status:</span>
+                  </div>
+                  <div>{getStatusBadge(selectedMember.account_status)}</div>
+                  <div>
+                    <span className="font-medium">Gender:</span> {getGenderName(selectedMember.gender_id)}
+                  </div>
+                </div>
+              </div>
+              <div className={cn(
+                "p-4 rounded-md",
+                selectedMember.account_status === "deactivated"
+                  ? "bg-green-50 border border-green-200"
+                  : "bg-orange-50 border border-orange-200"
+              )}>
+                <p className={cn(
+                  "text-sm",
+                  selectedMember.account_status === "deactivated"
+                    ? "text-green-800"
+                    : "text-orange-800"
+                )}>
+                  <strong>Note:</strong>{" "}
+                  {selectedMember.account_status === "deactivated"
+                    ? "Reactivating this account will restore access to the mobile application and all system features."
+                    : "Deactivating this account will prevent the user from accessing the mobile application and system features. The account can be reactivated at any time."}
+                </p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeactivateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isLoading}>
+            <Button
+              onClick={handleConfirmDeactivate}
+              disabled={isLoading}
+              className={cn(
+                selectedMember?.account_status === "deactivated"
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-orange-600 hover:bg-orange-700"
+              )}
+            >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete
+              {selectedMember?.account_status === "deactivated" ? (
+                <>
+                  <RotateCw className="mr-2 h-4 w-4" />
+                  Reactivate
+                </>
+              ) : (
+                <>
+                  <PowerOff className="mr-2 h-4 w-4" />
+                  Deactivate
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -7,12 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
-import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff, Archive, RotateCcw } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Search, Plus, Edit, Trash2, Loader2, Eye, EyeOff, Archive, RotateCcw, Users, Mail, Shield, CalendarDays, User, AlertTriangle, UserX, CheckCircle } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 
 const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
 
@@ -49,13 +48,13 @@ const ViewStaff = () => {
   const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState({
     email: "",
-    password: "",
+    password: "CnergyStaff#1",
     user_type_id: 2, // Always Staff
-    gender_id: 1,
     fname: "",
     mname: "",
     lname: "",
     bday: "",
+    gender_id: 1, // Default to 1 (Male)
   })
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [staffToDelete, setStaffToDelete] = useState(null)
@@ -67,10 +66,23 @@ const ViewStaff = () => {
   const [loadingArchived, setLoadingArchived] = useState(false)
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
   const [staffToRestore, setStaffToRestore] = useState(null)
+  const [activeTab, setActiveTab] = useState("active")
 
   useEffect(() => {
     fetchStaffData()
+    fetchArchivedStaff() // Also fetch archived staff count on mount
   }, [])
+
+  // Ensure password is always set when Add Staff dialog opens
+  useEffect(() => {
+    if (open) {
+      setFormData((prev) => ({
+        ...prev,
+        password: "CnergyStaff#1",
+      }))
+      setShowPassword(false)
+    }
+  }, [open])
 
   const fetchStaffData = async () => {
     setLoading(true)
@@ -185,10 +197,6 @@ const ViewStaff = () => {
     }
   }
 
-  const handleSelectChange = (name, value) => {
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
-
   const handleUserClick = (staff) => {
     setSelectedStaff(staff)
     setUserInfoOpen(true)
@@ -201,25 +209,35 @@ const ViewStaff = () => {
       email: staff.email,
       password: "", // Clear password field for editing
       user_type_id: 2, // Always Staff
-      gender_id: staff.gender === "Male" ? 1 : 2,
       fname: staff.fname,
       mname: staff.mname || "",
       lname: staff.lname,
       bday: staff.bday,
+      gender_id: staff.gender_id || 1, // Include gender_id, default to 1 if not present
     })
     setValidationErrors({}) // Clear validation errors
     setEditOpen(true)
   }
 
-  const handleDeleteClick = (staffId) => {
-    setStaffToDelete(staffId)
+  const handleDeleteClick = (staff) => {
+    setStaffToDelete(staff)
     setDeleteConfirmOpen(true)
   }
 
   const handleAddStaff = async (e) => {
     e.preventDefault()
 
-    const errors = validateForm(formData)
+    // Always use the standard default password
+    // Handle middle name - convert null/undefined/empty to empty string (database doesn't allow NULL)
+    // Set default gender_id (1 = Male) since gender field was removed from UI
+    const staffData = {
+      ...formData,
+      password: "CnergyStaff#1",
+      mname: formData.mname && formData.mname.trim() !== '' ? formData.mname.trim() : '',
+      gender_id: formData.gender_id || 1, // Default to 1 (Male) if not set
+    }
+
+    const errors = validateForm(staffData)
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
       return
@@ -228,12 +246,17 @@ const ViewStaff = () => {
     setSubmitting(true)
 
     try {
-      const response = await axios.post(`${API_BASE_URL}`, formData)
+      const response = await axios.post(`${API_BASE_URL}`, staffData)
 
+      // Format staff member's full name
+      const fullName = `${formData.fname}${formData.mname ? ` ${formData.mname}` : ''} ${formData.lname}`.trim()
+
+      // Show success toast with better formatting
       toast({
-        title: "Success",
-        description: "Staff member added successfully",
+        title: "Staff Member Successfully Added",
+        description: `${fullName} has been added to the system. Email: ${formData.email}. Account is ready to use.`,
       })
+
       setOpen(false)
       resetForm()
       fetchStaffData()
@@ -241,11 +264,11 @@ const ViewStaff = () => {
       console.error("Error adding staff:", error)
       console.error("Error response data:", error.response?.data)
       console.error("Error response status:", error.response?.status)
-      
+
       // Check if it's an email-related error
       const errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || "Failed to add staff member. Please try again."
       const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
-      
+
       // Show error message in alert (simple approach)
       alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
     } finally {
@@ -256,7 +279,15 @@ const ViewStaff = () => {
   const handleUpdateStaff = async (e) => {
     e.preventDefault()
 
-    const errors = validateForm(formData, true)
+    // Handle middle name - convert null/undefined/empty to empty string (database doesn't allow NULL)
+    // Ensure gender_id is set (default to 1 if not present)
+    const updateData = {
+      ...formData,
+      mname: formData.mname && formData.mname.trim() !== '' ? formData.mname.trim() : '',
+      gender_id: formData.gender_id || 1, // Default to 1 (Male) if not set
+    }
+
+    const errors = validateForm(updateData, true)
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors)
       return
@@ -265,7 +296,7 @@ const ViewStaff = () => {
     setSubmitting(true)
 
     try {
-      const response = await axios.put(`${API_BASE_URL}`, formData)
+      const response = await axios.put(`${API_BASE_URL}`, updateData)
 
       toast({
         title: "Success",
@@ -298,12 +329,12 @@ const ViewStaff = () => {
   }
 
   const handleDeleteStaff = async () => {
-    if (!staffToDelete) return
+    if (!staffToDelete || !staffToDelete.id) return
 
     setSubmitting(true)
     try {
       const response = await axios.delete(`${API_BASE_URL}`, {
-        data: { id: staffToDelete },
+        data: { id: staffToDelete.id },
       })
 
       toast({
@@ -311,13 +342,14 @@ const ViewStaff = () => {
         description: "Staff member archived successfully",
       })
       setDeleteConfirmOpen(false)
+      setStaffToDelete(null)
       fetchStaffData()
       fetchArchivedStaff()
     } catch (error) {
       console.error("Error deleting staff:", error)
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to delete staff member",
+        description: error.response?.data?.error || "Failed to archive staff member",
         variant: "destructive",
       })
     } finally {
@@ -328,13 +360,13 @@ const ViewStaff = () => {
   const resetForm = () => {
     setFormData({
       email: "",
-      password: "",
+      password: "CnergyStaff#1",
       user_type_id: 2, // Always Staff
-      gender_id: 1,
       fname: "",
       mname: "",
       lname: "",
       bday: "",
+      gender_id: 1, // Default to 1 (Male)
     })
     setValidationErrors({}) // Clear validation errors
   }
@@ -345,268 +377,351 @@ const ViewStaff = () => {
   })
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Staff List</CardTitle>
-            <CardDescription>Manage your gym staff</CardDescription>
-          </div>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> Add Staff
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[600px]">
-              <DialogHeader>
-                <DialogTitle>Add New Staff</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleAddStaff}>
-                <Card className="border-0 shadow-none">
-                  <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="lname">Last name</Label>
-                        <Input
-                          id="lname"
-                          name="lname"
-                          value={formData.lname}
-                          onChange={handleInputChange}
-                          required
-                          className={validationErrors.lname ? "border-red-500" : ""}
-                        />
-                        {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="fname">First name</Label>
-                        <Input
-                          id="fname"
-                          name="fname"
-                          value={formData.fname}
-                          onChange={handleInputChange}
-                          required
-                          className={validationErrors.fname ? "border-red-500" : ""}
-                        />
-                        {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="mname">Middle name</Label>
-                        <Input id="mname" name="mname" value={formData.mname || ""} onChange={handleInputChange} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email Address</Label>
-                        <Input
-                          type="email"
-                          id="email"
-                          name="email"
-                          value={formData.email}
-                          onChange={handleInputChange}
-                          required
-                          className={validationErrors.email ? "border-red-500" : ""}
-                        />
-                        {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="password">Password</Label>
-                        <div className="relative">
-                          <Input
-                            type={showPassword ? "text" : "password"}
-                            id="password"
-                            name="password"
-                            value={formData.password || ""}
-                            onChange={handleInputChange}
-                            required
-                            className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
-                          />
-                          <button
-                            type="button"
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                            onClick={() => setShowPassword(!showPassword)}
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-4 w-4 text-gray-400" />
-                            ) : (
-                              <Eye className="h-4 w-4 text-gray-400" />
-                            )}
-                          </button>
-                        </div>
-                        {validationErrors.password && (
-                          <p className="text-sm text-red-500">{validationErrors.password}</p>
-                        )}
-                        <p className="text-xs text-gray-500">
-                          Password must be 8+ characters with uppercase, number, and special character
-                        </p>
-                      </div>
-                    </div>
+    <div className="space-y-6 pb-6">
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200/50">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <CardTitle className="flex items-center text-xl font-bold text-gray-800 mb-2">
+                <div className="p-2 bg-primary/10 rounded-lg mr-3">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                Staff List
+              </CardTitle>
+              <CardDescription className="text-sm text-gray-600 ml-11">
+                Manage your gym staff
+              </CardDescription>
+            </div>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button className="h-10 px-4 font-medium shadow-md hover:shadow-lg transition-all duration-200">
+                  <Plus className="mr-2 h-4 w-4" /> Add Staff
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader className="space-y-3 pb-4 border-b">
+                  <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+                    <User className="h-6 w-6 text-primary" />
+                    Add New Staff
+                  </DialogTitle>
+                  <DialogDescription className="text-base">
+                    Enter the basic details for the new staff member account.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleAddStaff} className="space-y-6 py-4">
+                  <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label htmlFor="bday">Date of Birth</Label>
+                      <Label htmlFor="fname" className="text-sm font-medium">First Name</Label>
                       <Input
-                        type="date"
-                        id="bday"
-                        name="bday"
-                        value={formData.bday}
+                        id="fname"
+                        name="fname"
+                        placeholder="John"
+                        value={formData.fname}
                         onChange={handleInputChange}
                         required
-                        className={validationErrors.bday ? "border-red-500" : ""}
+                        className={`h-11 ${validationErrors.fname ? "border-red-500" : ""}`}
                       />
-                      {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
+                      {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
                     </div>
                     <div className="space-y-2">
-                      <Label>Gender</Label>
-                      <RadioGroup
-                        value={formData.gender_id.toString()}
-                        onValueChange={(value) => handleSelectChange("gender_id", value)}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="1" id="male" />
-                          <Label htmlFor="male">Male</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="2" id="female" />
-                          <Label htmlFor="female">Female</Label>
-                        </div>
-                      </RadioGroup>
+                      <Label htmlFor="mname" className="text-sm font-medium">Middle Name (optional)</Label>
+                      <Input
+                        id="mname"
+                        name="mname"
+                        placeholder="Michael"
+                        value={formData.mname || ""}
+                        onChange={handleInputChange}
+                        className="h-11"
+                      />
                     </div>
-                    <DialogFooter className="pt-4">
-                      <Button variant="outline" type="button" onClick={() => setOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={submitting}>
-                        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                        Submit
-                      </Button>
-                    </DialogFooter>
-                  </CardContent>
-                </Card>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Tabs defaultValue="active" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="active" onClick={fetchStaffData}>
-              Active Staff
-            </TabsTrigger>
-            <TabsTrigger value="archived" onClick={fetchArchivedStaff}>
-              Archived Staff ({archivedStaff.length})
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="active" className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search staff..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lname" className="text-sm font-medium">Last Name</Label>
+                    <Input
+                      id="lname"
+                      name="lname"
+                      placeholder="Doe"
+                      value={formData.lname}
+                      onChange={handleInputChange}
+                      required
+                      className={`h-11 ${validationErrors.lname ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
+                      <Mail className="h-4 w-4" />
+                      Email
+                    </Label>
+                    <Input
+                      type="email"
+                      id="email"
+                      name="email"
+                      placeholder="john@example.com"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      required
+                      className={`h-11 ${validationErrors.email ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-medium flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        id="password"
+                        name="password"
+                        value={formData.password || "CnergyStaff#1"}
+                        readOnly
+                        className="bg-blue-50 border-blue-200 text-blue-900 cursor-not-allowed h-11 pr-36 font-mono"
+                        onFocus={(e) => e.target.blur()}
+                        tabIndex={-1}
+                        onChange={(e) => {
+                          // Always reset to default password if user tries to change it
+                          setFormData({ ...formData, password: "CnergyStaff#1" })
+                        }}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                          Auto-set
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 hover:bg-transparent"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            setShowPassword(!showPassword)
+                          }}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
+                      <p className="text-xs text-blue-800 flex items-start gap-2">
+                        <Shield className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>Standard password is automatically set.</strong> The default password meets all security requirements.
+                        </span>
+                      </p>
+                    </div>
+                    {validationErrors.password && (
+                      <p className="text-sm text-red-500">{validationErrors.password}</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bday" className="text-sm font-medium flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4" />
+                      Date of Birth
+                    </Label>
+                    <Input
+                      type="date"
+                      id="bday"
+                      name="bday"
+                      value={formData.bday}
+                      onChange={handleInputChange}
+                      required
+                      max={new Date().toISOString().split('T')[0]}
+                      className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
+                  </div>
+                  <DialogFooter className="pt-4 border-t gap-3">
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="h-11 px-6"
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={submitting} className="h-11 px-6 bg-primary hover:bg-primary/90">
+                      {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      <User className="mr-2 h-4 w-4" />
+                      Add
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 p-6">
+          <Tabs
+            defaultValue="active"
+            className="w-full"
+            value={activeTab}
+            onValueChange={(value) => {
+              setActiveTab(value)
+              if (value === "active") {
+                fetchStaffData()
+              } else {
+                fetchArchivedStaff()
+              }
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <TabsList className="grid w-auto grid-cols-2 h-11">
+                <TabsTrigger value="active" className="font-medium px-6">
+                  Active Staff
+                </TabsTrigger>
+                <TabsTrigger value="archived" className="font-medium px-6">
+                  Archived
+                </TabsTrigger>
+              </TabsList>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md">
+                {activeTab === "active" ? (
+                  <>
+                    <Users className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">
+                      <span className="font-semibold text-gray-900">{staffList.length}</span> active staff
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-600">
+                      <span className="font-semibold text-gray-900">{archivedStaff.length}</span> archived staff
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
-                      <div className="flex justify-center items-center">
-                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                        <span>Loading staff data...</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredStaff.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
-                      No staff members found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredStaff.map((staff) => (
-                    <TableRow key={staff.id}>
-                      <TableCell>
-                        <button className="hover:underline text-left font-medium" onClick={() => handleUserClick(staff)}>
-                          {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
-                        </button>
-                      </TableCell>
-                      <TableCell>{staff.email}</TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button size="sm" onClick={() => handleEditClick(staff)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Button>
-                          <Button variant="outline" size="sm" onClick={() => handleDeleteClick(staff.id)}>
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Archive
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TabsContent>
+            <TabsContent value="active" className="space-y-4 mt-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search staff..."
+                  className="pl-10 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
 
-          <TabsContent value="archived" className="space-y-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loadingArchived ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
-                      <div className="flex justify-center items-center">
-                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                        <span>Loading archived staff...</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : archivedStaff.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8">
-                      No archived staff members
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  archivedStaff.map((staff) => (
-                    <TableRow key={staff.id}>
-                      <TableCell>
-                        {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
-                      </TableCell>
-                      <TableCell>{staff.email}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => handleRestoreClick(staff.id)}>
-                          <RotateCcw className="mr-2 h-4 w-4" />
-                          Restore
-                        </Button>
-                      </TableCell>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50/50">
+                      <TableHead className="font-semibold text-gray-700">Name</TableHead>
+                      <TableHead className="font-semibold text-gray-700">Email</TableHead>
+                      <TableHead className="font-semibold text-gray-700 text-right">Actions</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TabsContent>
-        </Tabs>
-      </CardContent>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12">
+                          <div className="flex flex-col justify-center items-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                            <span className="text-sm text-muted-foreground">Loading staff data...</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredStaff.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12">
+                          <div className="flex flex-col items-center justify-center">
+                            <Users className="h-10 w-10 text-gray-400 mb-2" />
+                            <p className="text-sm font-medium text-gray-700">No staff members found</p>
+                            <p className="text-xs text-muted-foreground mt-1">Try a different search or add a new staff member</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredStaff.map((staff) => (
+                        <TableRow key={staff.id} className="hover:bg-gray-50/50 transition-colors">
+                          <TableCell>
+                            <button
+                              className="text-left font-medium text-gray-900 transition-colors focus:outline-none focus:underline"
+                              onClick={() => handleUserClick(staff)}
+                            >
+                              {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-gray-600">{staff.email}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end space-x-2">
+                              <Button size="sm" onClick={() => handleEditClick(staff)} className="h-8">
+                                <Edit className="mr-2 h-3.5 w-3.5" />
+                                Edit
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => handleDeleteClick(staff)} className="h-8">
+                                <Archive className="mr-2 h-3.5 w-3.5" />
+                                Archive
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="archived" className="space-y-4 mt-4">
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50/50">
+                      <TableHead className="font-semibold text-gray-700">Name</TableHead>
+                      <TableHead className="font-semibold text-gray-700">Email</TableHead>
+                      <TableHead className="font-semibold text-gray-700 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loadingArchived ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12">
+                          <div className="flex flex-col justify-center items-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                            <span className="text-sm text-muted-foreground">Loading archived staff...</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : archivedStaff.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12">
+                          <div className="flex flex-col items-center justify-center">
+                            <Archive className="h-10 w-10 text-gray-400 mb-2" />
+                            <p className="text-sm font-medium text-gray-700">No archived staff members</p>
+                            <p className="text-xs text-muted-foreground mt-1">Archived staff will appear here</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      archivedStaff.map((staff) => (
+                        <TableRow key={staff.id} className="hover:bg-gray-50/50 transition-colors">
+                          <TableCell className="font-medium text-gray-900">
+                            {`${staff.fname} ${staff.mname ? staff.mname + " " : ""}${staff.lname}`}
+                          </TableCell>
+                          <TableCell className="text-gray-600">{staff.email}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end">
+                              <Button variant="outline" size="sm" onClick={() => handleRestoreClick(staff.id)} className="h-8">
+                                <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                                Restore
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* User Info Modal */}
       <Dialog open={userInfoOpen} onOpenChange={setUserInfoOpen}>
@@ -624,15 +739,9 @@ const ViewStaff = () => {
                 <p className="text-sm font-medium text-muted-foreground">Email</p>
                 <p>{selectedStaff.email}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Gender</p>
-                  <p>{selectedStaff.gender}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Date of Birth</p>
-                  <p>{new Date(selectedStaff.bday).toLocaleDateString()}</p>
-                </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Date of Birth</p>
+                <p>{selectedStaff.bday ? new Date(selectedStaff.bday).toLocaleDateString() : "N/A"}</p>
               </div>
             </div>
           )}
@@ -644,143 +753,220 @@ const ViewStaff = () => {
 
       {/* Edit Staff Modal */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>Edit Staff</DialogTitle>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <Edit className="h-6 w-6 text-primary" />
+              Edit
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Update the staff member's information and account details.
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdateStaff}>
-            <Card className="border-0 shadow-none">
-              <CardContent className="space-y-4 pt-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-lname">Last name</Label>
-                    <Input
-                      id="edit-lname"
-                      name="lname"
-                      value={formData.lname}
-                      onChange={handleInputChange}
-                      required
-                      className={validationErrors.lname ? "border-red-500" : ""}
-                    />
-                    {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-fname">First name</Label>
-                    <Input
-                      id="edit-fname"
-                      name="fname"
-                      value={formData.fname}
-                      onChange={handleInputChange}
-                      required
-                      className={validationErrors.fname ? "border-red-500" : ""}
-                    />
-                    {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-mname">Middle name</Label>
-                    <Input id="edit-mname" name="mname" value={formData.mname || ""} onChange={handleInputChange} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-email">Email Address</Label>
-                  <Input
-                    type="email"
-                    id="edit-email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    required
-                    className={validationErrors.email ? "border-red-500" : ""}
-                  />
-                  {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-password">New Password (leave blank to keep current)</Label>
-                  <div className="relative">
-                    <Input
-                      type={showEditPassword ? "text" : "password"}
-                      id="edit-password"
-                      name="password"
-                      value={formData.password || ""}
-                      onChange={handleInputChange}
-                      className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
-                    />
-                    <button
-                      type="button"
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                      onClick={() => setShowEditPassword(!showEditPassword)}
-                    >
-                      {showEditPassword ? (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                  </div>
-                  {validationErrors.password && <p className="text-sm text-red-500">{validationErrors.password}</p>}
-                  <p className="text-xs text-gray-500">
-                    If changing password: 8+ characters with uppercase, number, and special character
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-bday">Date of Birth</Label>
-                  <Input
-                    type="date"
-                    id="edit-bday"
-                    name="bday"
-                    value={formData.bday}
-                    onChange={handleInputChange}
-                    required
-                    className={validationErrors.bday ? "border-red-500" : ""}
-                  />
-                  {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Gender</Label>
-                  <RadioGroup
-                    value={formData.gender_id.toString()}
-                    onValueChange={(value) => handleSelectChange("gender_id", value)}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="1" id="edit-male" />
-                      <Label htmlFor="edit-male">Male</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="2" id="edit-female" />
-                      <Label htmlFor="edit-female">Female</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-                <DialogFooter className="pt-4">
-                  <Button variant="outline" type="button" onClick={() => setEditOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={submitting}>
-                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Save Changes
-                  </Button>
-                </DialogFooter>
-              </CardContent>
-            </Card>
+          <form onSubmit={handleUpdateStaff} className="space-y-6 py-4">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="edit-fname" className="text-sm font-medium">First Name</Label>
+                <Input
+                  id="edit-fname"
+                  name="fname"
+                  placeholder="John"
+                  value={formData.fname}
+                  onChange={handleInputChange}
+                  required
+                  className={`h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.fname ? "border-red-500" : ""}`}
+                />
+                {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-mname" className="text-sm font-medium">Middle Name (optional)</Label>
+                <Input
+                  id="edit-mname"
+                  name="mname"
+                  placeholder="Michael"
+                  value={formData.mname || ""}
+                  onChange={handleInputChange}
+                  className="h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-lname" className="text-sm font-medium">Last Name</Label>
+              <Input
+                id="edit-lname"
+                name="lname"
+                placeholder="Doe"
+                value={formData.lname}
+                onChange={handleInputChange}
+                required
+                className={`h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.lname ? "border-red-500" : ""}`}
+              />
+              {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email" className="text-sm font-medium flex items-center gap-2">
+                <Mail className="h-4 w-4 text-gray-500" />
+                Email
+              </Label>
+              <Input
+                type="email"
+                id="edit-email"
+                name="email"
+                placeholder="john@example.com"
+                value={formData.email}
+                onChange={handleInputChange}
+                required
+                className={`h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.email ? "border-red-500" : ""}`}
+              />
+              {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-password" className="text-sm font-medium flex items-center gap-2">
+                <Shield className="h-4 w-4 text-gray-500" />
+                New Password (leave blank to keep current)
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showEditPassword ? "text" : "password"}
+                  id="edit-password"
+                  name="password"
+                  placeholder="********"
+                  value={formData.password || ""}
+                  onChange={handleInputChange}
+                  className={`h-11 pr-12 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.password ? "border-red-500" : ""}`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                >
+                  {showEditPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                </Button>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-md p-3 mt-2">
+                <p className="text-xs text-gray-700">
+                  <strong>Password Requirements:</strong> If changing password, it must be at least 8 characters with 1 uppercase letter, 1 number, and 1 special character.
+                </p>
+              </div>
+              {validationErrors.password && <p className="text-sm text-red-500">{validationErrors.password}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-bday" className="text-sm font-medium flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-gray-500" />
+                Date of Birth
+              </Label>
+              <Input
+                type="date"
+                id="edit-bday"
+                name="bday"
+                value={formData.bday}
+                onChange={handleInputChange}
+                required
+                max={new Date().toISOString().split('T')[0]}
+                className={`h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.bday ? "border-red-500" : ""}`}
+              />
+              {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
+            </div>
+            <DialogFooter className="pt-4 border-t gap-3">
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => setEditOpen(false)}
+                className="h-11 px-6 border-gray-300 hover:bg-gray-50"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting} className="h-11 px-6 bg-primary hover:bg-primary/90 shadow-sm hover:shadow-md transition-all duration-200">
+                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Edit className="mr-2 h-4 w-4" />
+                Update
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Confirm Archive</DialogTitle>
+      {/* Archive Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={(open) => {
+        setDeleteConfirmOpen(open)
+        if (!open) {
+          setStaffToDelete(null)
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <Archive className="h-6 w-6 text-amber-600" />
+              Archive Staff Member
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              This action is used when a staff member leaves or is terminated.
+            </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p>Are you sure you want to archive this staff member? They will be hidden from the active list but can be restored later.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)}>
+          {staffToDelete && (
+            <div className="space-y-4 py-4">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <User className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">
+                      {staffToDelete.fname} {staffToDelete.mname ? staffToDelete.mname + " " : ""}{staffToDelete.lname}
+                    </p>
+                    <p className="text-sm text-gray-600 truncate flex items-center gap-1 mt-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {staffToDelete.email}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900 mb-2">What happens when you archive:</p>
+                    <ul className="text-sm text-amber-800 space-y-1.5 list-disc list-inside">
+                      <li>Staff member will be removed from the active staff list</li>
+                      <li>Their account access will be disabled</li>
+                      <li>They can be restored later if needed</li>
+                      <li>All their data will be preserved</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-xs text-blue-800 flex items-start gap-2">
+                  <UserX className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Use this when:</strong> Staff member resigns, leaves the company, or is terminated. This keeps their records for reference while removing active access.
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="pt-4 border-t gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmOpen(false)
+                setStaffToDelete(null)
+              }}
+              className="h-11 px-6"
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDeleteStaff} disabled={submitting}>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteStaff}
+              disabled={submitting}
+              className="h-11 px-6 bg-amber-600 hover:bg-amber-700 text-white"
+            >
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Archive className="mr-2 h-4 w-4" />
               Archive
             </Button>
           </DialogFooter>
@@ -807,7 +993,7 @@ const ViewStaff = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   )
 }
 

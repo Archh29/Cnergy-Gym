@@ -257,28 +257,100 @@ function getStaffActivitiesFromAPI($pdo)
 
 function getStaffPerformance($pdo)
 {
-    $period = $_GET['period'] ?? 'month';
+    // Follow the SAME pattern as getStaffActivitiesFromAPI
+    $filters = [
+        'date_filter' => $_GET['date_filter'] ?? 'all',
+        'month' => $_GET['month'] ?? 'all',
+        'year' => $_GET['year'] ?? 'all',
+        'custom_date' => $_GET['custom_date'] ?? null,
+        'date_from' => $_GET['date_from'] ?? null,
+        'date_to' => $_GET['date_to'] ?? null
+    ];
 
-    // Build date condition based on period
+    // Build date condition - same logic as Activity Logs
     $dateCondition = "";
-    switch ($period) {
-        case 'today':
-            $dateCondition = "DATE(al.timestamp) = CURDATE()";
-            break;
-        case 'week':
-            $dateCondition = "al.timestamp >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
-            break;
-        case 'month':
-            $dateCondition = "MONTH(al.timestamp) = MONTH(CURDATE()) AND YEAR(al.timestamp) = YEAR(CURDATE())";
-            break;
-        case 'year':
-            $dateCondition = "YEAR(al.timestamp) = YEAR(CURDATE())";
-            break;
-        default:
-            $dateCondition = "MONTH(al.timestamp) = MONTH(CURDATE()) AND YEAR(al.timestamp) = YEAR(CURDATE())";
-    }
+    $params = [];
 
-    $stmt = $pdo->prepare("
+    // Handle date filtering - custom date takes priority (same as Activity Logs)
+    if ($filters['date_filter'] === 'custom' && !empty($filters['custom_date'])) {
+        $dateCondition = "DATE(al.timestamp) = ?";
+        $params[] = $filters['custom_date'];
+    } else if ($filters['date_filter'] === 'range') {
+        // Handle custom date range
+        if (!empty($filters['date_from'])) {
+            $dateCondition = "DATE(al.timestamp) >= ?";
+            $params[] = $filters['date_from'];
+        }
+        if (!empty($filters['date_to'])) {
+            if ($dateCondition) {
+                $dateCondition .= " AND DATE(al.timestamp) <= ?";
+            } else {
+                $dateCondition = "DATE(al.timestamp) <= ?";
+            }
+            $params[] = $filters['date_to'];
+        }
+    } else if ($filters['date_filter'] !== 'all') {
+        // Get current Philippines time (same as Activity Logs)
+        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+
+        switch ($filters['date_filter']) {
+            case 'today':
+                $today = $phTime->format('Y-m-d');
+                $dateCondition = "DATE(al.timestamp) = ?";
+                $params[] = $today;
+                break;
+            case 'week':
+                $weekStart = clone $phTime;
+                $weekStart->modify('-' . $phTime->format('w') . ' days')->setTime(0, 0, 0);
+                $dateCondition = "al.timestamp >= ?";
+                $params[] = $weekStart->format('Y-m-d H:i:s');
+                break;
+            case 'month':
+                $month = $phTime->format('Y-m');
+                $dateCondition = "DATE_FORMAT(al.timestamp, '%Y-%m') = ?";
+                $params[] = $month;
+                break;
+            case 'year':
+                $year = $phTime->format('Y');
+                $dateCondition = "YEAR(al.timestamp) = ?";
+                $params[] = $year;
+                break;
+        }
+    } else if ($filters['month'] !== 'all' || $filters['year'] !== 'all') {
+        // Month and year filters (same as Activity Logs)
+        if ($filters['month'] !== 'all' && $filters['month'] !== '' && !empty($filters['month'])) {
+            $dateCondition = "MONTH(al.timestamp) = ?";
+            $params[] = (int) $filters['month'];
+            if ($filters['year'] !== 'all' && $filters['year'] !== '' && !empty($filters['year'])) {
+                $dateCondition .= " AND YEAR(al.timestamp) = ?";
+                $params[] = (int) $filters['year'];
+            }
+        } else if ($filters['year'] !== 'all' && $filters['year'] !== '' && !empty($filters['year'])) {
+            $dateCondition = "YEAR(al.timestamp) = ?";
+            $params[] = (int) $filters['year'];
+        }
+    }
+    // If date_filter is 'all' and month/year are 'all', $dateCondition remains empty = ALL TIME (same as Activity Logs)
+
+    // Debug logging - also output to response for frontend debugging
+    $debugInfo = [
+        'date_filter' => $filters['date_filter'],
+        'month' => $filters['month'],
+        'year' => $filters['year'],
+        'dateCondition' => $dateCondition ?: 'NONE (all time)',
+        'hasWhereClause' => !empty($dateCondition),
+        'sql_where_clause' => $dateCondition ?: 'NO WHERE CLAUSE (all time)',
+        'filters_applied' => $filters
+    ];
+    error_log("=== PERFORMANCE QUERY DEBUG ===");
+    error_log("Date Filter: " . $filters['date_filter']);
+    error_log("Month: " . $filters['month']);
+    error_log("Year: " . $filters['year']);
+    error_log("Date Condition: " . ($dateCondition ?: 'NONE (all time)'));
+    error_log("Has WHERE clause: " . (!empty($dateCondition) ? 'YES' : 'NO'));
+
+    // Build the query with conditional WHERE clause
+    $sql = "
         SELECT 
             COALESCE(u.id, 0) as staff_id,
             COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
@@ -295,15 +367,54 @@ function getStaffPerformance($pdo)
         FROM activity_log al
         LEFT JOIN user u ON al.user_id = u.id
         LEFT JOIN usertype ut ON u.user_type_id = ut.id
-        WHERE $dateCondition
+    ";
+
+    if ($dateCondition) {
+        $sql .= " WHERE $dateCondition";
+    }
+
+    $sql .= "
         GROUP BY COALESCE(u.id, 0), u.fname, u.lname, u.email, ut.type_name
         ORDER BY total_activities DESC
-    ");
+    ";
 
-    $stmt->execute();
+    $stmt = $pdo->prepare($sql);
+
+    if (!empty($params)) {
+        $stmt->execute($params);
+    } else {
+        $stmt->execute();
+    }
     $performance = $stmt->fetchAll();
 
-    echo json_encode(["performance" => $performance]);
+    error_log("Performance Query Result: " . count($performance) . " users found");
+
+    // Calculate total activities for debugging
+    $totalActivities = 0;
+    foreach ($performance as $user) {
+        $totalActivities += (int) ($user['total_activities'] ?? 0);
+    }
+    error_log("Performance Query - Total activities across all users: " . $totalActivities);
+
+    // Also count total rows in activity_log table for comparison
+    try {
+        $countStmt = $pdo->query("SELECT COUNT(*) as total FROM activity_log");
+        $totalRows = $countStmt->fetch()['total'];
+        error_log("Performance Query - Total rows in activity_log table: " . $totalRows);
+    } catch (Exception $e) {
+        error_log("Could not count total rows: " . $e->getMessage());
+    }
+
+    error_log("=== END PERFORMANCE QUERY DEBUG ===");
+    error_log("SQL Query: " . $sql);
+
+    echo json_encode([
+        "performance" => $performance,
+        "debug" => $debugInfo ?? [],
+        "sql_query" => $sql,
+        "total_users" => count($performance),
+        "total_activities" => $totalActivities
+    ]);
 }
 
 function getActivityDetails($pdo)
@@ -482,17 +593,21 @@ function getActivityStats($pdo)
 function getStaffList($pdo)
 {
     try {
+        // Get all users (both admins and staff) - user_type_id 1 = admin, 2 = staff
+        // This ensures both admins and staff are included in the filter dropdown
         $stmt = $pdo->prepare("
-            SELECT 
+            SELECT DISTINCT
                 u.id,
                 u.fname,
                 u.lname,
                 u.email,
-                ut.type_name as user_type
+                COALESCE(ut.type_name, 'user') as user_type,
+                u.user_type_id
             FROM user u
             LEFT JOIN usertype ut ON u.user_type_id = ut.id
-            WHERE u.user_type_id IN (1, 2) AND u.is_deleted = 0
-            ORDER BY u.fname, u.lname
+            WHERE u.user_type_id IN (1, 2)
+            AND (u.is_deleted = 0 OR u.is_deleted IS NULL)
+            ORDER BY u.user_type_id ASC, u.fname ASC, u.lname ASC
         ");
 
         $stmt->execute();

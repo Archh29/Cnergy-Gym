@@ -18,7 +18,10 @@ try {
     exit();
 }
 
-require 'activity_logger.php';
+// Conditionally require activity logger if it exists
+if (file_exists('activity_logger.php')) {
+    require 'activity_logger.php';
+}
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
@@ -46,12 +49,6 @@ function respond($payload, $code = 200)
 try {
     // GET: all members (user_type_id = 4)
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['id'])) {
-        // First, auto-decline pending requests older than 3 days
-        $threeDaysAgo = date('Y-m-d H:i:s', strtotime('-3 days'));
-        $stmt = $pdo->prepare('UPDATE `user` SET account_status = "rejected" WHERE user_type_id = 4 AND account_status = "pending" AND created_at < ?');
-        $stmt->execute([$threeDaysAgo]);
-
-        // Now fetch all members
         $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);
@@ -70,76 +67,109 @@ try {
 
     // POST: add new member
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $input = json_decode(file_get_contents('php://input'), true);
-        if (!$input) {
-            respond(['error' => 'Invalid JSON'], 400);
-        }
-
-        // Check required fields (mname and gender_id are now optional)
-        foreach (['fname', 'lname', 'email', 'password', 'bday'] as $k) {
-            if (!isset($input[$k]) || trim($input[$k]) === '') {
-                respond(['error' => 'Missing required fields: ' . $k], 400);
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            if (!$input) {
+                respond(['error' => 'Invalid JSON'], 400);
             }
-        }
 
-        // CRITICAL: Check if email already exists across ALL user types
-        $stmt = $pdo->prepare('SELECT id, user_type_id FROM `user` WHERE email = ?');
-        $stmt->execute([$input['email']]);
-        $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Log the input for debugging
+            error_log("POST Member Add - Input received: " . json_encode($input));
 
-        if ($existingUser) {
-            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-            $existingUserType = $userTypes[$existingUser['user_type_id']] ?? 'Unknown';
+            // Check required fields (mname and gender_id are now optional)
+            foreach (['fname', 'lname', 'email', 'password', 'bday'] as $k) {
+                if (!isset($input[$k]) || trim($input[$k]) === '') {
+                    respond(['error' => 'Missing required fields: ' . $k], 400);
+                }
+            }
+
+            // CRITICAL: Check if email already exists across ALL user types
+            $stmt = $pdo->prepare('SELECT id, user_type_id FROM `user` WHERE email = ?');
+            $stmt->execute([$input['email']]);
+            $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($existingUser) {
+                $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
+                $existingUserType = $userTypes[$existingUser['user_type_id']] ?? 'Unknown';
+                respond([
+                    'error' => 'Email already exists',
+                    'message' => "Email '{$input['email']}' is already registered as a {$existingUserType}. Please use a different email address."
+                ], 400);
+            }
+
+            // CRITICAL: Check if first name and last name combination already exists (case-insensitive)
+            // This prevents duplicate accounts with the same name but different emails
+            $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ?');
+            $stmt->execute([strtolower($input['fname']), strtolower($input['lname'])]);
+            $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($existingName) {
+                $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
+                $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
+                respond([
+                    'error' => 'Name already exists',
+                    'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
+                ], 400);
+            }
+
+            // Set defaults for optional fields
+            $gender_id = isset($input['gender_id']) ? intval($input['gender_id']) : 1; // Default to Male
+            $account_status = isset($input['account_status']) ? $input['account_status'] : 'approved';
+
+            // Handle middle name - convert null/empty to empty string (database doesn't allow NULL)
+            $mname = '';
+            if (array_key_exists('mname', $input) && $input['mname'] !== null && $input['mname'] !== '') {
+                $trimmed = trim($input['mname']);
+                if ($trimmed !== '') {
+                    $mname = $trimmed;
+                }
+            }
+
+            error_log("POST Member Add - Processed values - fname: {$input['fname']}, mname: '{$mname}', lname: {$input['lname']}, email: {$input['email']}, gender_id: {$gender_id}");
+
+            $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
+                                   VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
+            $stmt->execute([
+                trim($input['fname']),
+                $mname, // Empty string instead of null
+                trim($input['lname']),
+                trim($input['email']),
+                password_hash($input['password'], PASSWORD_DEFAULT),
+                $gender_id,
+                $input['bday'],
+                $account_status
+            ]);
+
+            $newId = $pdo->lastInsertId();
+            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status, created_at FROM `user` WHERE id = ?');
+            $stmt->execute([$newId]);
+            $newMember = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            // Log activity using centralized logger (same as monitor_subscription.php)
+            $staffId = $input['staff_id'] ?? null;
+            error_log("DEBUG Member Add - staffId: " . ($staffId ?? 'NULL') . " from request data");
+            if (function_exists('logStaffActivity')) {
+                logStaffActivity($pdo, $staffId, "Add Member", "New member added - {$input['fname']} {$input['lname']} ({$input['email']})", "Member Management");
+            }
+
+            respond(['message' => 'Member added successfully', 'member' => $newMember], 201);
+        } catch (PDOException $e) {
+            error_log("Database error in member_management.php POST: " . $e->getMessage());
+            error_log("Error code: " . $e->getCode());
+            error_log("Error info: " . print_r($e->errorInfo, true));
             respond([
-                'error' => 'Email already exists',
-                'message' => "Email '{$input['email']}' is already registered as a {$existingUserType}. Please use a different email address."
-            ], 400);
-        }
-
-        // CRITICAL: Check if first name and last name combination already exists (case-insensitive)
-        // This prevents duplicate accounts with the same name but different emails
-        $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ?');
-        $stmt->execute([strtolower($input['fname']), strtolower($input['lname'])]);
-        $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($existingName) {
-            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-            $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
+                'error' => 'Database error',
+                'message' => 'Failed to add member: ' . $e->getMessage(),
+                'details' => $e->getMessage()
+            ], 500);
+        } catch (Exception $e) {
+            error_log("Error in member_management.php POST: " . $e->getMessage());
             respond([
-                'error' => 'Name already exists',
-                'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
-            ], 400);
+                'error' => 'Server error',
+                'message' => 'Failed to add member: ' . $e->getMessage(),
+                'details' => $e->getMessage()
+            ], 500);
         }
-
-        // Set defaults for optional fields
-        $gender_id = isset($input['gender_id']) ? $input['gender_id'] : 1; // Default to Male
-        $account_status = isset($input['account_status']) ? $input['account_status'] : 'approved';
-        $mname = isset($input['mname']) && trim($input['mname']) !== '' ? $input['mname'] : null; // Allow null middle name
-
-        $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
-                               VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
-        $stmt->execute([
-            $input['fname'],
-            $mname,
-            $input['lname'],
-            $input['email'],
-            password_hash($input['password'], PASSWORD_DEFAULT),
-            $gender_id,
-            $input['bday'],
-            $account_status
-        ]);
-
-        $newId = $pdo->lastInsertId();
-        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status, created_at FROM `user` WHERE id = ?');
-        $stmt->execute([$newId]);
-        $newMember = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $input['staff_id'] ?? null;
-        error_log("DEBUG Member Add - staffId: " . ($staffId ?? 'NULL') . " from request data");
-        logStaffActivity($pdo, $staffId, "Add Member", "New member added - {$input['fname']} {$input['lname']} ({$input['email']})", "Member Management");
-
-        respond(['message' => 'Member added successfully', 'member' => $newMember], 201);
     }
 
     // PUT: update member (either status-only or full update)
@@ -171,7 +201,9 @@ try {
             // Log activity using centralized logger (same as monitor_subscription.php)
             $staffId = $input['staff_id'] ?? null;
             error_log("DEBUG Member Status Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
-            logStaffActivity($pdo, $staffId, "Update Member Status", "Member account {$input['account_status']}: {$member['fname']} {$member['lname']} (ID: {$input['id']})", "Member Management");
+            if (function_exists('logStaffActivity')) {
+                logStaffActivity($pdo, $staffId, "Update Member Status", "Member account {$input['account_status']}: {$member['fname']} {$member['lname']} (ID: {$input['id']})", "Member Management");
+            }
 
             respond(['message' => 'Account status updated successfully']);
         }
@@ -220,16 +252,22 @@ try {
         $existing = $stmt->fetch(PDO::FETCH_ASSOC);
         $gender_id = $existing['gender_id']; // Keep existing gender
 
-        // Handle optional middle name
-        $mname = isset($input['mname']) && trim($input['mname']) !== '' ? $input['mname'] : null;
+        // Handle optional middle name - convert null/empty to empty string (database doesn't allow NULL)
+        $mname = '';
+        if (isset($input['mname']) && $input['mname'] !== null && $input['mname'] !== '') {
+            $trimmed = trim($input['mname']);
+            if ($trimmed !== '') {
+                $mname = $trimmed;
+            }
+        }
 
         if (!empty($input['password'])) {
             $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
             $stmt->execute([
-                $input['fname'],
-                $mname,
-                $input['lname'],
-                $input['email'],
+                trim($input['fname']),
+                $mname, // Empty string if not provided
+                trim($input['lname']),
+                trim($input['email']),
                 $input['bday'],
                 password_hash($input['password'], PASSWORD_DEFAULT),
                 $input['id']
@@ -237,10 +275,10 @@ try {
         } else {
             $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
             $stmt->execute([
-                $input['fname'],
-                $mname,
-                $input['lname'],
-                $input['email'],
+                trim($input['fname']),
+                $mname, // Empty string if not provided
+                trim($input['lname']),
+                trim($input['email']),
                 $input['bday'],
                 $input['id']
             ]);
@@ -249,7 +287,9 @@ try {
         // Log activity using centralized logger (same as monitor_subscription.php)
         $staffId = $input['staff_id'] ?? null;
         error_log("DEBUG Member Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
-        logStaffActivity($pdo, $staffId, "Update Member", "Member updated - {$input['fname']} {$input['lname']} (ID: {$input['id']})", "Member Management");
+        if (function_exists('logStaffActivity')) {
+            logStaffActivity($pdo, $staffId, "Update Member", "Member updated - {$input['fname']} {$input['lname']} (ID: {$input['id']})", "Member Management");
+        }
 
         respond(['message' => 'Member updated successfully']);
     }
@@ -378,7 +418,9 @@ try {
                 // Log activity using centralized logger (same as monitor_subscription.php)
                 $staffId = isset($input['staff_id']) ? $input['staff_id'] : null;
                 error_log("DEBUG Member Delete - staffId: " . ($staffId ?? 'NULL') . " from request data");
-                logStaffActivity($pdo, $staffId, "Delete Member", "Member deleted - {$member['fname']} {$member['lname']} (ID: {$memberId})", "Member Management");
+                if (function_exists('logStaffActivity')) {
+                    logStaffActivity($pdo, $staffId, "Delete Member", "Member deleted - {$member['fname']} {$member['lname']} (ID: {$memberId})", "Member Management");
+                }
 
                 respond(['message' => 'Member and all related data deleted successfully']);
 

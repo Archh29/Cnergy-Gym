@@ -47,6 +47,16 @@ import {
   User,
   ShoppingBag,
   CheckCircle,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  UserCheck,
+  LogIn,
+  AlertTriangle,
+  Clock,
+  Store,
+  BarChart3,
 } from "lucide-react"
 
 // API Configuration
@@ -61,10 +71,10 @@ const Sales = ({ userId }) => {
 
   // Filter states
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
-  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in
+  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in, Day Pass
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
-  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in
+  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in, Day Pass
 
   // Calendar states
   const [customDate, setCustomDate] = useState(null)
@@ -89,6 +99,7 @@ const Sales = ({ userId }) => {
   const [stockUpdateProduct, setStockUpdateProduct] = useState(null)
   const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
   const [stockUpdateType, setStockUpdateType] = useState("add")
+  const [isAddOnlyMode, setIsAddOnlyMode] = useState(false)
 
   // Product edit state
   const [editProduct, setEditProduct] = useState(null)
@@ -109,6 +120,13 @@ const Sales = ({ userId }) => {
   const [coachingSalesDialogOpen, setCoachingSalesDialogOpen] = useState(false)
   const [coaches, setCoaches] = useState([])
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
+  const [memberAssignments, setMemberAssignments] = useState({}) // Map of member_id -> assignment details
+  const [coachingStatusFilter, setCoachingStatusFilter] = useState("active") // active or expired
+  const [coachingMonthFilter, setCoachingMonthFilter] = useState("all")
+  const [coachingYearFilter, setCoachingYearFilter] = useState("all")
+  const [coachingServiceTypeFilter, setCoachingServiceTypeFilter] = useState("all") // all, session, monthly
+  const [coachingCurrentPage, setCoachingCurrentPage] = useState(1)
+  const [coachingItemsPerPage] = useState(10)
 
   // Walk-in Sales dialog state
   const [walkinSalesDialogOpen, setWalkinSalesDialogOpen] = useState(false)
@@ -161,6 +179,21 @@ const Sales = ({ userId }) => {
       loadCoaches()
     }
   }, [coachingSalesDialogOpen])
+
+  // Load member assignments when coaching sales dialog opens
+  useEffect(() => {
+    if (coachingSalesDialogOpen) {
+      loadMemberAssignments()
+    } else {
+      setMemberAssignments({})
+      setCoachingCurrentPage(1) // Reset to first page when dialog closes
+    }
+  }, [coachingSalesDialogOpen])
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCoachingCurrentPage(1)
+  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter, coachingStatusFilter])
 
   // Load subscription plans when subscription sales dialog opens
   useEffect(() => {
@@ -219,6 +252,80 @@ const Sales = ({ userId }) => {
     }
   }
 
+  // Calculate member count per coach from sales data
+  const getMemberCountForCoach = (coachId) => {
+    const coachingSales = sales.filter(sale => {
+      const isCoachingSale = sale.sale_type === 'Coaching' ||
+        sale.sale_type === 'Coach Assignment' ||
+        sale.sale_type === 'Coach'
+      return isCoachingSale && sale.coach_id && sale.coach_id.toString() === coachId.toString()
+    })
+
+    // Get unique member IDs
+    const uniqueMemberIds = new Set()
+    coachingSales.forEach(sale => {
+      if (sale.user_id) {
+        uniqueMemberIds.add(sale.user_id)
+      }
+    })
+
+    return uniqueMemberIds.size
+  }
+
+  // Load member assignments to get end dates and days left for each member
+  const loadMemberAssignments = async () => {
+    try {
+      const response = await axios.get(`https://api.cnergy.site/admin_coach.php?action=assigned-members`)
+      if (response.data && response.data.success && response.data.assignments && response.data.assignments.length > 0) {
+        const assignmentsMap = {}
+
+        response.data.assignments.forEach(assignment => {
+          const memberId = assignment.member?.id || assignment.member_id
+          const coachId = assignment.coach?.id || assignment.coach_id
+
+          if (memberId && coachId) {
+            const key = `${memberId}_${coachId}`
+
+            // Only keep the most recent active assignment for each member-coach pair
+            if (!assignmentsMap[key] || assignment.status === 'active') {
+              const endDate = assignment.expires_at || assignment.expiresAt
+              let daysLeft = null
+
+              if (endDate) {
+                const today = new Date()
+                today.setHours(0, 0, 0, 0)
+                const expiry = new Date(endDate)
+                expiry.setHours(0, 0, 0, 0)
+                const diffTime = expiry - today
+                daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+              }
+
+              assignmentsMap[key] = {
+                endDate,
+                daysLeft,
+                startDate: assignment.staff_approved_at || assignment.assignedAt || assignment.created_at,
+                rateType: assignment.rateType || assignment.rate_type || 'monthly',
+                assignmentType: assignment.assignment_type || assignment.rateType || assignment.rate_type || 'monthly'
+              }
+            }
+          }
+        })
+
+        setMemberAssignments(assignmentsMap)
+      }
+    } catch (error) {
+      console.error("Error loading member assignments:", error)
+      setMemberAssignments({})
+    }
+  }
+
+  // Get assignment details for a specific member and coach
+  const getMemberAssignmentDetails = (memberId, coachId) => {
+    if (!memberId || !coachId) return null
+    const key = `${memberId}_${coachId}`
+    return memberAssignments[key] || null
+  }
+
   const loadSubscriptionPlans = async () => {
     try {
       const response = await axios.get("https://api.cnergy.site/monitor_subscription.php?action=plans")
@@ -251,7 +358,12 @@ const Sales = ({ userId }) => {
     try {
       const params = new URLSearchParams()
       if (saleTypeFilter !== "all") {
-        params.append("sale_type", saleTypeFilter)
+        // Map filter values to backend expected values
+        let backendSaleType = saleTypeFilter
+        if (saleTypeFilter === "Day Pass") {
+          backendSaleType = "Guest" // Backend uses "Guest" for day pass
+        }
+        params.append("sale_type", backendSaleType)
       }
       if (dateFilter !== "all") {
         params.append("date_filter", dateFilter)
@@ -286,7 +398,12 @@ const Sales = ({ userId }) => {
       }
 
       if (saleTypeFilter !== "all") {
-        params.append("sale_type", saleTypeFilter)
+        // Map filter values to backend expected values
+        let backendSaleType = saleTypeFilter
+        if (saleTypeFilter === "Day Pass") {
+          backendSaleType = "Guest" // Backend uses "Guest" for day pass
+        }
+        params.append("sale_type", backendSaleType)
       }
 
       if (monthFilter && monthFilter !== "all") {
@@ -339,15 +456,14 @@ const Sales = ({ userId }) => {
     // Check if product already in cart
     const existingItemIndex = cart.findIndex((item) => item.product.id === product.id)
     if (existingItemIndex >= 0) {
-      // Update quantity if product already in cart
+      // Update quantity to the new value (replace, not add)
       const updatedCart = [...cart]
-      const newQuantity = updatedCart[existingItemIndex].quantity + quantity
-      if (newQuantity > product.stock) {
-        alert("Total quantity exceeds available stock!")
+      if (quantity > product.stock) {
+        alert("Quantity exceeds available stock!")
         return
       }
-      updatedCart[existingItemIndex].quantity = newQuantity
-      updatedCart[existingItemIndex].price = product.price * newQuantity
+      updatedCart[existingItemIndex].quantity = quantity
+      updatedCart[existingItemIndex].price = product.price * quantity
       setCart(updatedCart)
     } else {
       // Add new item to cart
@@ -565,12 +681,21 @@ const Sales = ({ userId }) => {
       return
     }
 
+    // Ensure userId is available
+    if (!userId) {
+      alert("User ID is missing. Please refresh the page and try again.")
+      return
+    }
+
     setLoading(true)
     try {
-      const response = await axios.put(`${API_BASE_URL}?action=stock`, {
+      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId}`, {
         product_id: stockUpdateProduct.id,
         quantity: updateQuantity,
         type: stockUpdateType,
+        staff_id: userId,
+      }, {
+        timeout: 30000 // Increase timeout to 30 seconds
       })
 
       if (response.data.success) {
@@ -579,11 +704,43 @@ const Sales = ({ userId }) => {
         setStockUpdateProduct(null)
         setStockUpdateQuantity("")
         setStockUpdateType("add")
+        setIsAddOnlyMode(false)
         await Promise.all([loadProducts(), loadAnalytics()])
       }
     } catch (error) {
       console.error("Error updating stock:", error)
-      alert(error.response?.data?.error || "Error updating stock")
+
+      // Check if it's a timeout but the update might have succeeded
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        // Reload products to check if update actually succeeded
+        await loadProducts()
+        await loadAnalytics()
+
+        // Check if the stock was actually updated
+        const updatedProducts = await axios.get(`${API_BASE_URL}?action=products`)
+        const updatedProduct = updatedProducts.data.products?.find(p => p.id === stockUpdateProduct.id)
+
+        if (updatedProduct) {
+          const expectedStock = stockUpdateType === "add"
+            ? Number.parseInt(stockUpdateProduct.stock) + updateQuantity
+            : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - updateQuantity)
+
+          if (updatedProduct.stock == expectedStock) {
+            // Update actually succeeded, show success
+            setSuccessMessage(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+            setShowSuccessNotification(true)
+            setStockUpdateProduct(null)
+            setStockUpdateQuantity("")
+            setStockUpdateType("add")
+            setIsAddOnlyMode(false)
+            setLoading(false)
+            return
+          }
+        }
+      }
+
+      // Only show error if update actually failed
+      alert(error.response?.data?.error || "Error updating stock. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -705,7 +862,24 @@ const Sales = ({ userId }) => {
       )
 
     // Filter by sale type (this should already be handled by the API, but keeping as backup)
-    const matchesSaleType = saleTypeFilter === "all" || sale.sale_type === saleTypeFilter
+    let matchesSaleType = true
+    if (saleTypeFilter !== "all") {
+      if (saleTypeFilter === "Walk-in") {
+        // Walk-in sales: 'Walk-in' or 'Walkin'
+        matchesSaleType = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin'
+      } else if (saleTypeFilter === "Day Pass") {
+        // Day Pass sales: 'Guest' or 'Day Pass'
+        matchesSaleType = sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+      } else if (saleTypeFilter === "Coach Assignment") {
+        // Coaching sales: 'Coach Assignment', 'Coaching', or 'Coach'
+        matchesSaleType = sale.sale_type === 'Coach Assignment' ||
+          sale.sale_type === 'Coaching' ||
+          sale.sale_type === 'Coach'
+      } else {
+        // Other types: exact match
+        matchesSaleType = sale.sale_type === saleTypeFilter
+      }
+    }
 
     return matchesSearch && matchesSaleType
   })
@@ -723,25 +897,31 @@ const Sales = ({ userId }) => {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Sales Management</CardTitle>
+    <div className="space-y-6">
+      {/* Enhanced Header Card */}
+      <Card className="border-0 shadow-lg bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100">
+        <CardHeader className="pb-4">
+          <div>
+            <CardTitle className="text-3xl font-bold text-gray-900 mb-1">Sales Management</CardTitle>
+            <p className="text-sm text-gray-600">Manage product sales and inventory for CNERGY Gym</p>
+          </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-l font-semibold">Manage product sales and inventory for CNERGY Gym</p>
-        </CardContent>
       </Card>
 
       {/* Quick Stats with Filter */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Analytics Overview</CardTitle>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="analytics-filter">Period:</Label>
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-700 to-gray-800 shadow-sm">
+                <Store className="h-5 w-5 text-white" />
+              </div>
+              <CardTitle className="text-xl font-bold text-gray-900">Sales Overview</CardTitle>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Label htmlFor="analytics-filter" className="text-sm font-medium text-gray-700">Period:</Label>
               <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -753,9 +933,9 @@ const Sales = ({ userId }) => {
               </Select>
 
               {/* Month Filter */}
-              <Label htmlFor="month-filter">Month:</Label>
+              <Label htmlFor="month-filter" className="text-sm font-medium text-gray-700">Month:</Label>
               <Select value={monthFilter} onValueChange={setMonthFilter}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
                   <SelectValue placeholder="Month" />
                 </SelectTrigger>
                 <SelectContent>
@@ -776,9 +956,9 @@ const Sales = ({ userId }) => {
               </Select>
 
               {/* Year Filter */}
-              <Label htmlFor="year-filter">Year:</Label>
+              <Label htmlFor="year-filter" className="text-sm font-medium text-gray-700">Year:</Label>
               <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-24">
+                <SelectTrigger className="w-28 bg-white border-gray-300 shadow-sm">
                   <SelectValue placeholder="Year" />
                 </SelectTrigger>
                 <SelectContent>
@@ -823,93 +1003,141 @@ const Sales = ({ userId }) => {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
-                <span className="text-muted-foreground">₱</span>
+        <CardContent className="pt-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {/* Total Sales Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Total Sales</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <TrendingUp className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-muted-foreground">All sales combined</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.todaysSales)}</div>
+                <p className="text-xs text-gray-600 font-medium">All sales combined</p>
               </CardContent>
             </Card>
 
+            {/* Product Sales Card */}
             <Card
-              className="cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => setProductSalesDialogOpen(true)}
+              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Product Sales</CardTitle>
-                <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Product Sales</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <ShoppingCart className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.productSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">
+                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.productSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-3">
                   {analytics.productsSoldToday || 0} items sold
                 </p>
-                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setProductSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
 
+            {/* Subscription Sales Card */}
             <Card
-              className="cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => setSubscriptionSalesDialogOpen(true)}
+              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Subscription Sales</CardTitle>
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Subscription Sales</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <CreditCard className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.subscriptionSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">Membership revenue</p>
-                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.subscriptionSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-3">Membership revenue</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setSubscriptionSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
 
+            {/* Coaching Sales Card */}
             <Card
-              className="cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => setCoachingSalesDialogOpen(true)}
+              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Coaching Sales</CardTitle>
-                <User className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Coaching Sales</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <UserCheck className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">Coach revenue</p>
-                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-3">Coach revenue</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setCoachingSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
 
+            {/* Walk-in Sales Card */}
             <Card
-              className="cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => setWalkinSalesDialogOpen(true)}
+              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Walk-in Sales</CardTitle>
-                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Walk-in Sales</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <LogIn className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(analytics.walkinSales || 0)}</div>
-                <p className="text-xs text-muted-foreground">Guest/day pass revenue</p>
-                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.walkinSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-3">Guest/day pass revenue</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setWalkinSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
 
+            {/* Low Stock Items Card */}
             <Card
-              className="cursor-pointer hover:bg-accent transition-colors"
-              onClick={() => setLowStockDialogOpen(true)}
+              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Low Stock Items</CardTitle>
+                <div className="p-2 rounded-lg bg-gray-100">
+                  <AlertTriangle className="h-5 w-5 text-gray-600" />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{analytics.lowStockItems}</div>
-                <p className="text-xs text-muted-foreground">Need restocking</p>
-                <p className="text-xs text-blue-600 mt-1">Click to view details</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1">{analytics.lowStockItems}</div>
+                <p className="text-xs text-gray-600 font-medium mb-3">Need restocking</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  onClick={() => setLowStockDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -977,6 +1205,7 @@ const Sales = ({ userId }) => {
                     }
                     value={quantity}
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
+                    onFocus={(e) => e.target.select()}
                     disabled={!selectedProduct}
                   />
                 </div>
@@ -1045,7 +1274,7 @@ const Sales = ({ userId }) => {
                     {cart.length > 0 && (
                       <div className="border-t pt-4 space-y-4">
                         <div className="space-y-2">
-                          <Label>Payment Method *</Label>
+                          <Label>Payment Method</Label>
                           <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                             <SelectTrigger>
                               <SelectValue />
@@ -1060,7 +1289,7 @@ const Sales = ({ userId }) => {
 
                         {paymentMethod === "cash" && (
                           <div className="space-y-2">
-                            <Label>Amount Received (₱) *</Label>
+                            <Label>Amount Received (₱)</Label>
                             <Input
                               type="number"
                               step="0.01"
@@ -1139,9 +1368,9 @@ const Sales = ({ userId }) => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="Product">Product Sales</SelectItem>
                         <SelectItem value="Subscription">Subscription Sales</SelectItem>
-                        <SelectItem value="Coach Assignment">Coach Assignment Sales</SelectItem>
+                        <SelectItem value="Coach Assignment">Coaching Sales</SelectItem>
                         <SelectItem value="Walk-in">Walk-in Sales</SelectItem>
-                        <SelectItem value="Guest">Day Pass Access</SelectItem>
+                        <SelectItem value="Day Pass">Day Pass Access</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1428,7 +1657,11 @@ const Sales = ({ userId }) => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => setStockUpdateProduct(product)}
+                              onClick={() => {
+                                setStockUpdateProduct(product)
+                                setIsAddOnlyMode(false)
+                                setStockUpdateQuantity("")
+                              }}
                               disabled={loading}
                             >
                               <Package className="mr-1 h-3 w-3" />
@@ -1465,53 +1698,113 @@ const Sales = ({ userId }) => {
       </Tabs>
 
       {/* Stock Update Dialog */}
-      <Dialog open={!!stockUpdateProduct} onOpenChange={() => setStockUpdateProduct(null)}>
-        <DialogContent>
+      <Dialog open={!!stockUpdateProduct} onOpenChange={() => {
+        setStockUpdateProduct(null)
+        setIsAddOnlyMode(false)
+        setStockUpdateQuantity("")
+      }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Stock - {stockUpdateProduct?.name}</DialogTitle>
-            <DialogDescription>Current stock: {stockUpdateProduct?.stock} units</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              {isAddOnlyMode ? (
+                <Plus className="h-5 w-5 text-green-600" />
+              ) : (
+                <Package className="h-5 w-5 text-gray-600" />
+              )}
+              {isAddOnlyMode ? "Add Stock" : "Update Stock"} - {stockUpdateProduct?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Current stock: <span className="font-semibold text-gray-900">{stockUpdateProduct?.stock} units</span>
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 py-2">
+            {!isAddOnlyMode && (
             <div className="space-y-2">
-              <Label>Action</Label>
+                <Label className="text-sm font-medium">Action</Label>
               <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
-                <SelectTrigger>
+                  <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="add">Add Stock</SelectItem>
-                  <SelectItem value="remove">Remove Stock</SelectItem>
+                    <SelectItem value="add">
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4 text-green-600" />
+                        <span>Add Stock</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="remove">
+                      <div className="flex items-center gap-2">
+                        <Minus className="h-4 w-4 text-red-600" />
+                        <span>Remove Stock</span>
+                      </div>
+                    </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="space-y-2">
-              <Label>Quantity</Label>
+              <Label className="text-sm font-medium">
+                {isAddOnlyMode ? "Quantity to Add" : "Quantity"}
+              </Label>
               <Input
                 type="number"
                 min="1"
                 value={stockUpdateQuantity}
                 onChange={(e) => setStockUpdateQuantity(e.target.value)}
-                placeholder="Enter quantity"
+                placeholder={isAddOnlyMode ? "Enter quantity to add" : "Enter quantity"}
+                className="text-lg"
+                autoFocus
               />
             </div>
             {stockUpdateQuantity && stockUpdateProduct && (
-              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <p className="text-sm">
-                  <strong>Preview:</strong> {stockUpdateProduct.stock} →{" "}
-                  {stockUpdateType === "add"
-                    ? stockUpdateProduct.stock + Number.parseInt(stockUpdateQuantity || "0")
-                    : Math.max(0, stockUpdateProduct.stock - Number.parseInt(stockUpdateQuantity || "0"))}{" "}
-                  units
-                </p>
+              <div className={`p-4 rounded-lg border-2 ${stockUpdateType === "add" || isAddOnlyMode
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
+                }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-1">Stock Preview</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-semibold text-gray-700">{stockUpdateProduct.stock}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className={`text-xl font-bold ${stockUpdateType === "add" || isAddOnlyMode ? "text-green-700" : "text-red-700"
+                        }`}>
+                        {stockUpdateType === "add" || isAddOnlyMode
+                          ? Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")
+                          : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - Number.parseInt(stockUpdateQuantity || "0"))}
+                      </span>
+                      <span className="text-sm text-gray-600">units</span>
+                    </div>
+                  </div>
+                  {stockUpdateType === "add" || isAddOnlyMode ? (
+                    <Plus className="h-6 w-6 text-green-600" />
+                  ) : (
+                    <Minus className="h-6 w-6 text-red-600" />
+                  )}
+                </div>
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStockUpdateProduct(null)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStockUpdateProduct(null)
+                setIsAddOnlyMode(false)
+                setStockUpdateQuantity("")
+              }}
+            >
               Cancel
             </Button>
-            <Button onClick={handleStockUpdate} disabled={loading}>
-              {loading ? "Updating..." : stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
+            <Button
+              onClick={handleStockUpdate}
+              disabled={loading || !stockUpdateQuantity}
+              className={isAddOnlyMode || stockUpdateType === "add"
+                ? "bg-green-600 hover:bg-green-700 text-white"
+                : "bg-red-600 hover:bg-red-700 text-white"
+              }
+            >
+              {loading ? "Updating..." : isAddOnlyMode || stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1722,70 +2015,124 @@ const Sales = ({ userId }) => {
 
       {/* Low Stock Products Dialog */}
       <Dialog open={lowStockDialogOpen} onOpenChange={setLowStockDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5 text-orange-600" />
+        <DialogContent className="max-w-6xl max-h-[90vh] border-0 shadow-2xl">
+          <DialogHeader className="pb-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <DialogTitle className="text-2xl font-bold text-gray-900">
               Low Stock Products
             </DialogTitle>
-            <DialogDescription>
+                  <DialogDescription className="text-sm text-gray-600 mt-1">
               Products with 10 or fewer items remaining that need restocking
             </DialogDescription>
+                </div>
+              </div>
+              {getLowStockProducts().length > 0 && (
+                <Badge variant="destructive" className="text-base px-4 py-1.5 bg-red-600">
+                  {getLowStockProducts().length} {getLowStockProducts().length === 1 ? 'Item' : 'Items'}
+                </Badge>
+              )}
+            </div>
           </DialogHeader>
-          <div className="overflow-y-auto max-h-[60vh]">
+          <div className="overflow-y-auto max-h-[65vh] -mx-6 px-6">
             {getLowStockProducts().length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50 text-green-600" />
-                <p>All products are well stocked!</p>
+              <div className="text-center py-16">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-50 to-emerald-50 mb-6 shadow-lg">
+                  <CheckCircle className="h-10 w-10 text-green-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">All Products Well Stocked!</h3>
+                <p className="text-gray-600 max-w-md mx-auto">
+                  Great news! All your products have sufficient inventory levels. No restocking needed at this time.
+                </p>
               </div>
             ) : (
+              <div className="py-4">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Product Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Current Stock</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableRow className="bg-gray-50 hover:bg-gray-50">
+                      <TableHead className="font-semibold text-gray-900">Product Name</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Category</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Current Stock</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Price</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Status</TableHead>
+                      <TableHead className="text-right font-semibold text-gray-900">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {getLowStockProducts()
                     .sort((a, b) => a.stock - b.stock)
                     .map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>{product.category}</TableCell>
+                        <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors">
+                          <TableCell className="font-semibold text-gray-900">{product.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                              {product.category}
+                            </Badge>
+                          </TableCell>
                         <TableCell>
                           <Badge
                             variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
-                            className="w-fit"
-                          >
-                            {product.stock} units
+                              className={`w-fit font-semibold ${product.stock === 0
+                                ? "bg-red-600 text-white"
+                                : product.stock <= 5
+                                  ? "bg-red-600 text-white"
+                                  : "bg-orange-100 text-black border-orange-300"
+                                }`}
+                            >
+                              {product.stock} {product.stock === 1 ? 'unit' : 'units'}
                           </Badge>
                         </TableCell>
-                        <TableCell>{formatCurrency(product.price)}</TableCell>
+                          <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
                         <TableCell>
                           {product.stock === 0 ? (
-                            <Badge variant="destructive">Out of Stock</Badge>
+                              <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
+                                Out of Stock
+                              </Badge>
                           ) : product.stock <= 5 ? (
-                            <Badge variant="destructive" className="bg-red-600">
+                              <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
                               Critical
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300">
+                              <Badge variant="outline" className="bg-orange-100 text-black border-orange-300 font-semibold">
                               Low Stock
                             </Badge>
                           )}
+                        </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                setStockUpdateProduct(product)
+                                setStockUpdateType("add")
+                                setStockUpdateQuantity("")
+                                setIsAddOnlyMode(true)
+                                setLowStockDialogOpen(false)
+                              }}
+                              disabled={loading}
+                              className="bg-gray-900 hover:bg-gray-800 text-white font-medium shadow-sm hover:shadow-md transition-all"
+                            >
+                              <Plus className="mr-1.5 h-4 w-4" />
+                              Add Stock
+                            </Button>
                         </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </div>
-          <DialogFooter>
-            <Button onClick={() => setLowStockDialogOpen(false)}>
+          <DialogFooter className="border-t border-gray-200 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setLowStockDialogOpen(false)}
+              className="font-medium border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+            >
               Close
             </Button>
           </DialogFooter>
@@ -1794,29 +2141,28 @@ const Sales = ({ userId }) => {
 
       {/* Success Notification Dialog */}
       <Dialog open={showSuccessNotification} onOpenChange={setShowSuccessNotification}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <div className="p-2 rounded-full bg-green-100">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+        <DialogContent className="max-w-md border-0 shadow-2xl">
+          <div className="flex flex-col items-center text-center py-6 px-4">
+            <div className="p-4 rounded-full bg-gradient-to-br from-green-100 to-emerald-100 mb-4 shadow-lg">
+              <CheckCircle className="h-12 w-12 text-green-600" />
               </div>
-              Success
+            <DialogTitle className="text-2xl font-bold text-gray-900 mb-2">
+              Success!
             </DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-center text-gray-700">{successMessage}</p>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowSuccessNotification(false)}>
-              Close
+            <p className="text-gray-600 mb-6 text-lg">{successMessage}</p>
+            <Button
+              onClick={() => setShowSuccessNotification(false)}
+              className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 text-base font-semibold shadow-md"
+            >
+              Got it!
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
       {/* Coaching Sales Dialog */}
       <Dialog open={coachingSalesDialogOpen} onOpenChange={setCoachingSalesDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
+        <DialogContent className="max-w-7xl max-h-[95vh] w-[95vw]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <User className="h-5 w-5 text-blue-600" />
@@ -1827,40 +2173,449 @@ const Sales = ({ userId }) => {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Coach Filter */}
+            {/* Filters Row */}
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              {/* Left side - Coach Filter */}
             <div className="flex items-center gap-4">
-              <Label htmlFor="coach-filter">Filter by Coach:</Label>
+                <Label htmlFor="coach-filter">By Coach:</Label>
               <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
                 <SelectTrigger className="w-64">
                   <SelectValue placeholder="Select a coach" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Coaches</SelectItem>
-                  {coaches.map((coach) => (
+                    {coaches.map((coach) => {
+                      const memberCount = getMemberCountForCoach(coach.id)
+                      return (
                     <SelectItem key={coach.id} value={coach.id.toString()}>
-                      {coach.name}
+                          {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
                     </SelectItem>
-                  ))}
+                      )
+                    })}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Coaching Sales Table */}
+              {/* Right side - Service Type, Month and Year Filters */}
+              <div className="flex items-center gap-4 flex-wrap">
+                <Label htmlFor="coaching-service-type-filter">Service Type:</Label>
+                <Select value={coachingServiceTypeFilter} onValueChange={setCoachingServiceTypeFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="session">Session</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Label htmlFor="coaching-month-filter">Month:</Label>
+                <Select value={coachingMonthFilter} onValueChange={setCoachingMonthFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Months</SelectItem>
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Label htmlFor="coaching-year-filter">Year:</Label>
+                <Select value={coachingYearFilter} onValueChange={setCoachingYearFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Years</SelectItem>
+                    <SelectItem value="2025">2025</SelectItem>
+                    <SelectItem value="2024">2024</SelectItem>
+                    <SelectItem value="2023">2023</SelectItem>
+                    <SelectItem value="2022">2022</SelectItem>
+                    <SelectItem value="2021">2021</SelectItem>
+                    <SelectItem value="2020">2020</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Coach Member Count Display Card */}
+            {selectedCoachFilter !== "all" && (
+              <Card className="border border-gray-200 bg-white">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 rounded-full bg-gray-100">
+                        <Users className="h-6 w-6 text-gray-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {coaches.find(c => c.id.toString() === selectedCoachFilter)?.name || 'Selected Coach'}
+                        </p>
+                        <p className="text-xs text-gray-600">Total Members</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-gray-900">
+                        {getMemberCountForCoach(selectedCoachFilter)}
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {getMemberCountForCoach(selectedCoachFilter) === 1 ? 'Member' : 'Members'}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Sales Dashboard */}
+            {(() => {
+              const filteredSales = sales.filter((sale) => {
+                const isCoachingSale = sale.sale_type === 'Coaching' ||
+                  sale.sale_type === 'Coach Assignment' ||
+                  sale.sale_type === 'Coach'
+                if (!isCoachingSale) return false
+
+                if (selectedCoachFilter !== "all") {
+                  if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+                }
+
+                if (coachingMonthFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== coachingMonthFilter) return false
+                }
+
+                if (coachingYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== coachingYearFilter) return false
+                }
+
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+
+                // Filter out package sales and N/A entries (broken data)
+                const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                  serviceType === 'package' ? 'package' : 'monthly'
+
+                // Exclude package sales
+                if (normalizedServiceType === 'package') return false
+
+                // Exclude entries with N/A end dates (broken data)
+                if (!assignmentDetails?.endDate) return false
+
+                if (coachingServiceTypeFilter !== "all") {
+                  if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                }
+
+                if (coachingStatusFilter === "active") {
+                  const isActive = assignmentDetails?.daysLeft === null ||
+                    assignmentDetails?.daysLeft === undefined ||
+                    assignmentDetails?.daysLeft >= 0
+                  return isActive
+                } else {
+                  const isExpired = assignmentDetails?.daysLeft !== null &&
+                    assignmentDetails?.daysLeft !== undefined &&
+                    assignmentDetails?.daysLeft < 0
+                  return isExpired
+                }
+              })
+
+              const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const sessionSales = filteredSales.filter(sale => {
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                return serviceType === 'per_session' || serviceType === 'session'
+              })
+              const monthlySales = filteredSales.filter(sale => {
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                const normalizedType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
+                return normalizedType === 'monthly'
+              })
+
+              const sessionTotal = sessionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const monthlyTotal = monthlySales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Card className="border border-gray-200 bg-white">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">Total Sales</p>
+                          <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalSales)}</p>
+                          <p className="text-xs text-gray-600 mt-1">{filteredSales.length} transaction{filteredSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-2 rounded-full bg-gray-100">
+                          <TrendingUp className="h-5 w-5 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">Session Sales</p>
+                          <p className="text-2xl font-bold text-gray-900">{formatCurrency(sessionTotal)}</p>
+                          <p className="text-xs text-gray-600 mt-1">{sessionSales.length} sale{sessionSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-2 rounded-full bg-gray-100">
+                          <Clock className="h-5 w-5 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-gray-700 mb-1">Monthly Sales</p>
+                          <p className="text-2xl font-bold text-gray-900">{formatCurrency(monthlyTotal)}</p>
+                          <p className="text-xs text-gray-600 mt-1">{monthlySales.length} sale{monthlySales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-2 rounded-full bg-gray-100">
+                          <CalendarIcon className="h-5 w-5 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                </div>
+              )
+            })()}
+
+            {/* Active/Expired Tabs */}
+            <Tabs value={coachingStatusFilter} onValueChange={setCoachingStatusFilter} className="w-full">
+              <TabsList className="grid w-full max-w-md grid-cols-2">
+                <TabsTrigger value="active">Active</TabsTrigger>
+                <TabsTrigger value="expired">Expired</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="active" className="mt-4">
+                {/* Active Coaching Sales Table */}
+                {(() => {
+                  const filteredActiveSales = sales.filter((sale) => {
+                    // Filter by coaching sales
+                    const isCoachingSale = sale.sale_type === 'Coaching' ||
+                      sale.sale_type === 'Coach Assignment' ||
+                      sale.sale_type === 'Coach'
+
+                    if (!isCoachingSale) return false
+
+                    // Filter by selected coach if not "all"
+                    if (selectedCoachFilter !== "all") {
+                      if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+                    }
+
+                    // Filter by month if not "all"
+                    if (coachingMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
+                      if (saleMonth.toString() !== coachingMonthFilter) return false
+                    }
+
+                    // Filter by year if not "all"
+                    if (coachingYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== coachingYearFilter) return false
+                    }
+
+                    const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+
+                    // Filter out package sales and N/A entries (broken data)
+                    const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                    const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                      serviceType === 'package' ? 'package' : 'monthly'
+
+                    // Exclude package sales
+                    if (normalizedServiceType === 'package') return false
+
+                    // Exclude entries with N/A end dates (broken data)
+                    if (!assignmentDetails?.endDate) return false
+
+                    if (coachingServiceTypeFilter !== "all") {
+                      if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                    }
+
+                    // Filter by active status
+                    // Active: daysLeft is null, undefined, or >= 0
+                    const isActive = assignmentDetails?.daysLeft === null ||
+                      assignmentDetails?.daysLeft === undefined ||
+                      assignmentDetails?.daysLeft >= 0
+
+                    return isActive
+                  })
+
+                  const totalPages = Math.ceil(filteredActiveSales.length / coachingItemsPerPage)
+                  const startIndex = (coachingCurrentPage - 1) * coachingItemsPerPage
+                  const endIndex = startIndex + coachingItemsPerPage
+                  const paginatedSales = filteredActiveSales.slice(startIndex, endIndex)
+
+                  return (
+                    <>
             <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
                     <TableHead>Member</TableHead>
+                              <TableHead>Service Type</TableHead>
                     <TableHead>Coach</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Payment Method</TableHead>
                     <TableHead>Receipt #</TableHead>
+                              <TableHead>End Date</TableHead>
+                              <TableHead>Days Left</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sales
-                    .filter((sale) => {
+                            {paginatedSales.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                  <p>No active coaching sales found</p>
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              paginatedSales.map((sale) => {
+                                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                                return (
+                                  <TableRow key={sale.id}>
+                                    <TableCell className="font-medium">
+                                      {new Date(sale.sale_date).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell>
+                                      {sale.user_name || 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      {(() => {
+                                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                                        const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
+                                        return (
+                                          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                                            {displayType}
+                                          </Badge>
+                                        )
+                                      })()}
+                                    </TableCell>
+                                    <TableCell>
+                                      {sale.coach_name ? (
+                                        <Badge variant="secondary">{sale.coach_name}</Badge>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">N/A</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">
+                                      {sale.receipt_number || 'N/A'}
+                                    </TableCell>
+                                    <TableCell className="text-sm">
+                                      {assignmentDetails?.endDate
+                                        ? new Date(assignmentDetails.endDate).toLocaleDateString()
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      {assignmentDetails?.daysLeft !== null && assignmentDetails?.daysLeft !== undefined ? (
+                                        <span className={`text-sm font-medium ${assignmentDetails.daysLeft < 7 && assignmentDetails.daysLeft >= 0
+                                          ? 'text-red-600'
+                                          : 'text-green-600'
+                                          }`}>
+                                          {assignmentDetails.daysLeft} day{assignmentDetails.daysLeft !== 1 ? 's' : ''}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">N/A</span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {filteredActiveSales.length > 0 && (
+                        <div className="flex items-center justify-between mt-4">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {startIndex + 1} to {Math.min(endIndex, filteredActiveSales.length)} of {filteredActiveSales.length} results
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCoachingCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={coachingCurrentPage === 1}
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                              Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum
+                                if (totalPages <= 5) {
+                                  pageNum = i + 1
+                                } else if (coachingCurrentPage <= 3) {
+                                  pageNum = i + 1
+                                } else if (coachingCurrentPage >= totalPages - 2) {
+                                  pageNum = totalPages - 4 + i
+                                } else {
+                                  pageNum = coachingCurrentPage - 2 + i
+                                }
+                                return (
+                                  <Button
+                                    key={pageNum}
+                                    variant={coachingCurrentPage === pageNum ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setCoachingCurrentPage(pageNum)}
+                                    className="w-10"
+                                  >
+                                    {pageNum}
+                                  </Button>
+                                )
+                              })}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCoachingCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                              disabled={coachingCurrentPage === totalPages}
+                            >
+                              Next
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </TabsContent>
+
+              <TabsContent value="expired" className="mt-4">
+                {/* Expired Coaching Sales Table */}
+                {(() => {
+                  const filteredExpiredSales = sales.filter((sale) => {
                       // Filter by coaching sales
                       const isCoachingSale = sale.sale_type === 'Coaching' ||
                         sale.sale_type === 'Coach Assignment' ||
@@ -1870,18 +2625,100 @@ const Sales = ({ userId }) => {
 
                       // Filter by selected coach if not "all"
                       if (selectedCoachFilter !== "all") {
-                        return sale.coach_id && sale.coach_id.toString() === selectedCoachFilter
-                      }
+                      if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+                    }
 
-                      return true
-                    })
-                    .map((sale) => (
+                    // Filter by month if not "all"
+                    if (coachingMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
+                      if (saleMonth.toString() !== coachingMonthFilter) return false
+                    }
+
+                    // Filter by year if not "all"
+                    if (coachingYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== coachingYearFilter) return false
+                    }
+
+                    const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+
+                    // Filter out package sales and N/A entries (broken data)
+                    const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                    const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                      serviceType === 'package' ? 'package' : 'monthly'
+
+                    // Exclude package sales
+                    if (normalizedServiceType === 'package') return false
+
+                    // Exclude entries with N/A end dates (broken data)
+                    if (!assignmentDetails?.endDate) return false
+
+                    if (coachingServiceTypeFilter !== "all") {
+                      if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                    }
+
+                    // Filter by expired status
+                    // Expired: daysLeft < 0
+                    const isExpired = assignmentDetails?.daysLeft !== null &&
+                      assignmentDetails?.daysLeft !== undefined &&
+                      assignmentDetails?.daysLeft < 0
+
+                    return isExpired
+                  })
+
+                  const totalPages = Math.ceil(filteredExpiredSales.length / coachingItemsPerPage)
+                  const startIndex = (coachingCurrentPage - 1) * coachingItemsPerPage
+                  const endIndex = startIndex + coachingItemsPerPage
+                  const paginatedSales = filteredExpiredSales.slice(startIndex, endIndex)
+
+                  return (
+                    <>
+                      <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Member</TableHead>
+                              <TableHead>Service Type</TableHead>
+                              <TableHead>Coach</TableHead>
+                              <TableHead>Amount</TableHead>
+                              <TableHead>Payment Method</TableHead>
+                              <TableHead>Receipt #</TableHead>
+                              <TableHead>End Date</TableHead>
+                              <TableHead>Days Expired</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {paginatedSales.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                                  <p>No expired coaching sales found</p>
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              paginatedSales.map((sale) => {
+                                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                                return (
                       <TableRow key={sale.id}>
                         <TableCell className="font-medium">
                           {new Date(sale.sale_date).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
                           {sale.user_name || 'N/A'}
+                        </TableCell>
+                                    <TableCell>
+                                      {(() => {
+                                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                                        const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
+                                        return (
+                                          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                                            {displayType}
+                                          </Badge>
+                                        )
+                                      })()}
                         </TableCell>
                         <TableCell>
                           {sale.coach_name ? (
@@ -1897,17 +2734,86 @@ const Sales = ({ userId }) => {
                         <TableCell className="text-xs text-muted-foreground">
                           {sale.receipt_number || 'N/A'}
                         </TableCell>
+                                    <TableCell className="text-sm">
+                                      {assignmentDetails?.endDate
+                                        ? new Date(assignmentDetails.endDate).toLocaleDateString()
+                                        : 'N/A'}
+                                    </TableCell>
+                                    <TableCell>
+                                      {assignmentDetails?.daysLeft !== null && assignmentDetails?.daysLeft !== undefined && assignmentDetails?.daysLeft < 0 ? (
+                                        <span className="text-sm font-medium text-red-600">
+                                          Expired {Math.abs(assignmentDetails.daysLeft)} day{Math.abs(assignmentDetails.daysLeft) !== 1 ? 's' : ''} ago
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">N/A</span>
+                                      )}
+                        </TableCell>
                       </TableRow>
-                    ))}
+                                )
+                              })
+                            )}
                 </TableBody>
               </Table>
-              {sales.filter(sale => sale.sale_type === 'Coaching' || sale.sale_type === 'Coach Assignment' || sale.sale_type === 'Coach').length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No coaching sales found</p>
                 </div>
-              )}
+
+                      {/* Pagination Controls */}
+                      {filteredExpiredSales.length > 0 && (
+                        <div className="flex items-center justify-between mt-4">
+                          <div className="text-sm text-muted-foreground">
+                            Showing {startIndex + 1} to {Math.min(endIndex, filteredExpiredSales.length)} of {filteredExpiredSales.length} results
             </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCoachingCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={coachingCurrentPage === 1}
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                              Previous
+                            </Button>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNum
+                                if (totalPages <= 5) {
+                                  pageNum = i + 1
+                                } else if (coachingCurrentPage <= 3) {
+                                  pageNum = i + 1
+                                } else if (coachingCurrentPage >= totalPages - 2) {
+                                  pageNum = totalPages - 4 + i
+                                } else {
+                                  pageNum = coachingCurrentPage - 2 + i
+                                }
+                                return (
+                                  <Button
+                                    key={pageNum}
+                                    variant={coachingCurrentPage === pageNum ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setCoachingCurrentPage(pageNum)}
+                                    className="w-10"
+                                  >
+                                    {pageNum}
+                                  </Button>
+                                )
+                              })}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCoachingCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                              disabled={coachingCurrentPage === totalPages}
+                            >
+                              Next
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </TabsContent>
+            </Tabs>
           </div>
           <DialogFooter>
             <Button onClick={() => setCoachingSalesDialogOpen(false)}>

@@ -159,6 +159,18 @@ const SubscriptionMonitor = ({ userId }) => {
     try {
       const response = await axios.get(API_URL)
       if (response.data.success && Array.isArray(response.data.subscriptions)) {
+        console.log("🔍 DEBUG - All subscriptions received:", response.data.subscriptions.length)
+        if (response.data.subscriptions.length > 0) {
+          const firstSub = response.data.subscriptions[0]
+          console.log("🔍 DEBUG - First subscription:")
+          console.log("  - ID:", firstSub.id)
+          console.log("  - created_at:", firstSub.created_at)
+          console.log("  - start_date:", firstSub.start_date)
+          console.log("  - end_date:", firstSub.end_date)
+          console.log("  - plan_name:", firstSub.plan_name)
+          console.log("  - status_name:", firstSub.status_name)
+          console.log("  - Full object:", firstSub)
+        }
         setSubscriptions(response.data.subscriptions)
       }
     } catch (error) {
@@ -170,6 +182,18 @@ const SubscriptionMonitor = ({ userId }) => {
     try {
       const response = await axios.get(`${API_URL}?action=pending`)
       if (response.data.success) {
+        console.log("🔍 DEBUG - Pending subscriptions received:", response.data.data?.length || 0)
+        if (response.data.data && response.data.data.length > 0) {
+          const firstPending = response.data.data[0]
+          console.log("🔍 DEBUG - First pending subscription:")
+          console.log("  - Subscription ID:", firstPending.subscription_id)
+          console.log("  - created_at:", firstPending.created_at)
+          console.log("  - start_date:", firstPending.start_date)
+          console.log("  - end_date:", firstPending.end_date)
+          console.log("  - plan_name:", firstPending.plan_name)
+          console.log("  - status_name:", firstPending.status_name)
+          console.log("  - Full object:", firstPending)
+        }
         setPendingSubscriptions(response.data.data)
       }
     } catch (error) {
@@ -425,9 +449,9 @@ const SubscriptionMonitor = ({ userId }) => {
         currentUserId = parseInt(storedUserId)
         console.log("Using user_id from sessionStorage:", currentUserId)
       } else {
-        setMessage({ 
-          type: "error", 
-          text: "User session not found. Please refresh the page and try again. If the problem persists, please log out and log back in." 
+        setMessage({
+          type: "error",
+          text: "User session not found. Please refresh the page and try again. If the problem persists, please log out and log back in."
         })
         setActionLoading(null)
         return
@@ -691,6 +715,18 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
+  // Calculate quantity/months based on payment amount
+  const calculateMonths = (subscription) => {
+    const amountPaid = parseFloat(subscription.amount_paid || subscription.discounted_price || 0)
+    const planPrice = parseFloat(subscription.price || 0)
+
+    if (planPrice > 0 && amountPaid > 0) {
+      const months = Math.floor(amountPaid / planPrice)
+      return months > 0 ? months : 1
+    }
+    return 1 // Default to 1 month if calculation fails
+  }
+
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
       case "pending_approval":
@@ -715,12 +751,20 @@ const SubscriptionMonitor = ({ userId }) => {
   }
 
   const formatDateTime = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    // Handle both date strings and timestamps
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+
+    // Format in Philippines timezone
+    return date.toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     })
   }
 
@@ -924,7 +968,6 @@ const SubscriptionMonitor = ({ userId }) => {
                     </TableHeader>
                     <TableBody>
                       {pendingSubscriptions.map((subscription) => {
-                        console.log("Rendering subscription row:", subscription);
                         return (
                           <TableRow key={subscription.subscription_id}>
                             <TableCell>
@@ -946,13 +989,30 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableCell>
                               <div>
                                 <div className="font-medium">{subscription.plan_name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {formatCurrency(subscription.price)}/month
-                                </div>
+                                {(() => {
+                                  const months = calculateMonths(subscription)
+                                  return months > 1 ? (
+                                    <div className="text-xs text-blue-600 font-medium mt-1">
+                                      {months} month{months > 1 ? 's' : ''} availed
+                                    </div>
+                                  ) : null
+                                })()}
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="text-sm">{formatDateTime(subscription.created_at)}</div>
+                              <div className="text-sm">
+                                {(() => {
+                                  const rawDate = subscription.created_at
+                                  const formattedDate = formatDateTime(rawDate)
+                                  console.log("🔍 DEBUG - Rendering pending subscription date:")
+                                  console.log("  - Subscription ID:", subscription.subscription_id)
+                                  console.log("  - Raw created_at:", rawDate)
+                                  console.log("  - Type of created_at:", typeof rawDate)
+                                  console.log("  - Formatted date:", formattedDate)
+                                  console.log("  - Full subscription object:", subscription)
+                                  return formattedDate
+                                })()}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="flex items-center gap-1 w-fit">
@@ -977,15 +1037,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                     <CheckCircle className="h-4 w-4" />
                                   )}
                                   Approve
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeclineDialog({ open: true, subscription })}
-                                  disabled={actionLoading === subscription.subscription_id}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  Decline
                                 </Button>
                               </div>
                             </TableCell>
@@ -1075,9 +1126,14 @@ const SubscriptionMonitor = ({ userId }) => {
                           <TableCell>
                             <div>
                               <div className="font-medium">{subscription.plan_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatCurrency(subscription.price)}/month
-                              </div>
+                              {(() => {
+                                const months = calculateMonths(subscription)
+                                return months > 1 ? (
+                                  <div className="text-xs text-blue-600 font-medium mt-1">
+                                    {months} month{months > 1 ? 's' : ''} availed
+                                  </div>
+                                ) : null
+                              })()}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -1411,9 +1467,14 @@ const SubscriptionMonitor = ({ userId }) => {
                           <TableCell>
                             <div>
                               <div className="font-medium">{subscription.plan_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatCurrency(subscription.price)}/month
-                              </div>
+                              {(() => {
+                                const months = calculateMonths(subscription)
+                                return months > 1 ? (
+                                  <div className="text-xs text-blue-600 font-medium mt-1">
+                                    {months} month{months > 1 ? 's' : ''} availed
+                                  </div>
+                                ) : null
+                              })()}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -1459,7 +1520,7 @@ const SubscriptionMonitor = ({ userId }) => {
       {/* Manual Subscription Creation Dialog */}
       <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
         <DialogContent
-          className="max-w-2xl"
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
           onOpenAutoFocus={async (e) => {
             // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
@@ -1480,19 +1541,20 @@ const SubscriptionMonitor = ({ userId }) => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-2">
-                <Label>Member Name *</Label>
+                <Label className="text-sm text-gray-700">Member Name</Label>
                 {currentSubscriptionId ? (
                   <Input
                     value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
                     disabled
                     placeholder="Loading member details..."
+                    className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
                   <Select value={subscriptionForm.user_id} onValueChange={handleUserSelection}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300">
                       <SelectValue placeholder="Select a member" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1506,16 +1568,17 @@ const SubscriptionMonitor = ({ userId }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Plan Name *</Label>
+                <Label className="text-sm text-gray-700">Plan Name</Label>
                 {currentSubscriptionId ? (
                   <Input
                     value={subscriptionForm.plan_name || 'Loading...'}
                     disabled
                     placeholder="Loading plan details..."
+                    className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
                   <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300">
                       <SelectValue placeholder="Select a plan" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1529,19 +1592,30 @@ const SubscriptionMonitor = ({ userId }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Amount to Pay (â‚±) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={subscriptionForm.amount_paid}
-                  onChange={(e) => setSubscriptionForm(prev => ({ ...prev, amount_paid: e.target.value }))}
-                  placeholder="Enter amount"
-                />
+                <Label className="text-sm text-gray-700">Amount to Pay</Label>
+                {currentSubscriptionId ? (
+                  <Input
+                    value={subscriptionForm.amount_paid || '0.00'}
+                    disabled
+                    placeholder="Amount to pay"
+                    className="h-10 text-sm border border-gray-300 bg-gray-50"
+                  />
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={subscriptionForm.amount_paid}
+                    onChange={(e) => setSubscriptionForm(prev => ({ ...prev, amount_paid: e.target.value }))}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="Enter amount"
+                    className="h-10 text-sm border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                )}
               </div>
               <div className="space-y-2">
-                <Label>Payment Method</Label>
+                <Label className="text-sm text-gray-700">Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10 text-sm border border-gray-300">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1554,85 +1628,117 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
 
             {/* Discount Section */}
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-              <h3 className="text-lg font-semibold text-gray-900">Discount Options</h3>
-              <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="text-sm font-medium text-gray-700">Discount Options</h3>
+              <div className="grid grid-cols-3 gap-2.5">
                 {Object.entries(discountConfig).map(([key, config]) => (
-                  <div key={key} className="space-y-2">
-                    <Label className="text-sm font-medium">{config.name}</Label>
-                    <Button
-                      variant={subscriptionForm.discount_type === key ? "default" : "outline"}
-                      className={`w-full h-12 text-sm ${subscriptionForm.discount_type === key
-                        ? "bg-blue-600 hover:bg-blue-700 text-white"
-                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                        }`}
-                      onClick={() => {
-                        setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
-                        // Auto-calculate amount when discount changes
-                        if (subscriptionForm.plan_id) {
-                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
-                          if (selectedPlan) {
-                            const discountedPrice = calculateDiscountedPrice(selectedPlan.price, key)
-                            setSubscriptionForm(prev => ({ ...prev, amount_paid: discountedPrice.toString() }))
-                          }
+                  <Button
+                    key={key}
+                    type="button"
+                    variant={subscriptionForm.discount_type === key ? "default" : "outline"}
+                    className={`h-auto py-2 px-2.5 ${subscriptionForm.discount_type === key
+                      ? "bg-blue-600 hover:bg-blue-700 text-white"
+                      : "bg-white hover:bg-gray-50"
+                      }`}
+                    onClick={() => {
+                      setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
+                      // Auto-calculate amount when discount changes
+                      if (subscriptionForm.plan_id) {
+                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+                        if (selectedPlan) {
+                          const discountedPrice = calculateDiscountedPrice(selectedPlan.price, key)
+                          setSubscriptionForm(prev => ({ ...prev, amount_paid: discountedPrice.toString() }))
                         }
-                      }}
-                    >
-                      <div className="text-center">
-                        <div className="font-semibold">{config.name}</div>
-                        <div className="text-xs opacity-80">{config.description}</div>
-                      </div>
-                    </Button>
-                  </div>
+                      }
+                    }}
+                  >
+                    <div className="flex flex-col items-center w-full">
+                      <span className="text-xs font-medium">{config.name}</span>
+                      <span className={`text-xs mt-0.5 ${subscriptionForm.discount_type === key ? "text-blue-100" : "text-gray-500"}`}>
+                        {config.amount === 0 || !config.amount
+                          ? "No discount"
+                          : `₱${config.amount} off`}
+                      </span>
+                    </div>
+                  </Button>
                 ))}
               </div>
             </div>
 
             {/* Price Breakdown */}
-            {subscriptionForm.plan_id && subscriptionForm.discount_type !== 'regular' && (
-              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                <h4 className="font-semibold text-green-800 mb-2">Price Breakdown</h4>
+            {subscriptionForm.plan_id && (
+              <div className="p-2.5 bg-green-50 rounded-lg border border-green-200">
+                <h4 className="text-green-900 mb-1 text-xs font-medium">Price Breakdown</h4>
                 <div className="text-sm text-green-700 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Original Price:</span>
-                    <span>₱{subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)?.price || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                    <span className="text-red-600">-₱{discountConfig[subscriptionForm.discount_type]?.discount || 0}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
-                    <span>Final Price:</span>
-                    <span>₱{subscriptionForm.amount_paid || 0}</span>
-                  </div>
+                  {(() => {
+                    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+                    const planPrice = parseFloat(selectedPlan?.price || 0)
+                    const amountPaid = parseFloat(subscriptionForm.amount_paid || 0)
+                    const months = planPrice > 0 && amountPaid > 0 ? Math.floor(amountPaid / planPrice) : 1
+                    const discount = discountConfig[subscriptionForm.discount_type]?.discount || 0
+                    const hasDiscount = subscriptionForm.discount_type !== 'regular' && discount > 0
+
+                    return (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Original Price:</span>
+                          <span>
+                            {months > 1 ? (
+                              <span className="font-medium">
+                                ₱{planPrice.toFixed(2)} × {months} month{months > 1 ? 's' : ''} = ₱{(planPrice * months).toFixed(2)}
+                              </span>
+                            ) : (
+                              `₱${planPrice.toFixed(2)}`
+                            )}
+                          </span>
+                        </div>
+                        {hasDiscount && (
+                          <div className="flex justify-between">
+                            <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
+                            <span className="text-red-600">-₱{discount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
+                          <span>Final Price:</span>
+                          <span>₱{amountPaid.toFixed(2)}</span>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             )}
 
             {paymentMethod === "cash" && (
-              <div className="space-y-2">
-                <Label>Amount Received (â‚±)</Label>
+              <div className="space-y-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                <Label className="text-sm text-gray-700">Amount Received</Label>
                 <Input
                   type="number"
                   step="0.01"
                   value={amountReceived}
                   onChange={(e) => setAmountReceived(e.target.value)}
                   placeholder="Enter amount received"
+                  className="h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 {amountReceived && (
-                  <div className="text-sm text-muted-foreground">
-                    Change: â‚±{changeGiven.toFixed(2)}
+                  <div className="mt-2 p-3 bg-white rounded-md border border-green-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-700">Change:</span>
+                      <span className="text-lg font-bold text-green-600">₱{changeGiven.toFixed(2)}</span>
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label>Notes (Optional)</Label>
-              <Input
+            <div className="space-y-1.5">
+              <Label className="text-sm text-gray-700">Notes (Optional)</Label>
+              <Textarea
                 value={transactionNotes}
                 onChange={(e) => setTransactionNotes(e.target.value)}
                 placeholder="Add notes for this transaction"
+                rows={1}
+                className="text-sm border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-none"
               />
             </div>
           </div>
@@ -1652,7 +1758,7 @@ const SubscriptionMonitor = ({ userId }) => {
               }
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {currentSubscriptionId ? "Process Payment & Approve" : "Create Subscription & Process Payment"}
+              Process Payment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1660,71 +1766,63 @@ const SubscriptionMonitor = ({ userId }) => {
 
       {/* Confirmation Modal */}
       <Dialog open={showConfirmationModal} onOpenChange={setShowConfirmationModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
+            <DialogTitle className="flex items-center gap-2 text-green-600 text-lg">
               <CheckCircle className="h-5 w-5" />
               Transaction Successful
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               {confirmationData?.is_approval
-                ? "Subscription has been approved and payment processed successfully"
-                : "Manual subscription has been created and payment processed successfully"
+                ? "Subscription approved and payment processed"
+                : "Subscription created and payment processed"
               }
             </DialogDescription>
           </DialogHeader>
 
           {confirmationData && (
-            <div className="space-y-4">
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <h4 className="font-semibold text-green-800 mb-3">Transaction Details</h4>
-                <div className="space-y-2 text-sm">
+            <div className="space-y-3">
+              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                <h4 className="text-green-800 mb-2 text-sm">Transaction Details</h4>
+                <div className="space-y-1.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Receipt Number:</span>
-                    <span className="font-mono font-semibold">{confirmationData.receipt_number}</span>
+                    <span className="text-gray-600">Receipt:</span>
+                    <span className="font-mono text-xs">{confirmationData.receipt_number}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Member:</span>
-                    <span className="font-medium">{confirmationData.user_name}</span>
+                    <span>{confirmationData.user_name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Plan:</span>
-                    <span className="font-medium">{confirmationData.plan_name}</span>
+                    <span>{confirmationData.plan_name}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between border-t border-green-200 pt-1.5 mt-1.5">
                     <span className="text-gray-600">Amount Paid:</span>
-                    <span className="font-semibold">₱{confirmationData.total_amount?.toFixed(2)}</span>
+                    <span className="text-green-700">₱{confirmationData.total_amount?.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Payment Method:</span>
+                    <span className="text-gray-600">Payment:</span>
                     <span className="capitalize">{confirmationData.payment_method}</span>
                   </div>
                   {confirmationData.payment_method === 'cash' && (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Amount Received:</span>
+                        <span className="text-gray-600">Received:</span>
                         <span>₱{confirmationData.amount_received?.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Change Given:</span>
+                        <span className="text-gray-600">Change:</span>
                         <span>₱{confirmationData.change_given?.toFixed(2)}</span>
                       </div>
                     </>
                   )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Start Date:</span>
-                    <span>{new Date(confirmationData.start_date).toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">End Date:</span>
-                    <span>{new Date(confirmationData.end_date).toLocaleDateString()}</span>
-                  </div>
                 </div>
               </div>
 
-              <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This subscription is now active and the member can start using the gym facilities immediately.
+              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200">
+                <p className="text-xs text-blue-800">
+                  Subscription is now active
                 </p>
               </div>
             </div>
@@ -1739,6 +1837,53 @@ const SubscriptionMonitor = ({ userId }) => {
               className="w-full"
             >
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline Dialog */}
+      <Dialog open={declineDialog.open} onOpenChange={(open) => setDeclineDialog({ open, subscription: open ? declineDialog.subscription : null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Decline Subscription</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for declining this subscription request
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Decline Reason</Label>
+              <Textarea
+                placeholder="Enter reason for declining..."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeclineDialog({ open: false, subscription: null })
+                setDeclineReason("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDecline}
+              disabled={actionLoading === declineDialog.subscription?.subscription_id || !declineReason.trim()}
+            >
+              {actionLoading === declineDialog.subscription?.subscription_id ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Decline Subscription
             </Button>
           </DialogFooter>
         </DialogContent>

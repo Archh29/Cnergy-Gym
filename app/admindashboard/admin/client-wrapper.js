@@ -22,6 +22,7 @@ import GuestManagement from "./guestmanagement"
 import Promotions from "./promotions"
 import Merchandise from "./merchandise"
 import SupportRequests from "./supportrequests"
+import AdminChat from "./admin-chat"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function AdminDashboardClient() {
@@ -46,7 +47,7 @@ export default function AdminDashboardClient() {
           "Content-Type": "application/json"
         }
       })
-      
+
       if (response.status === 401) {
         // 401 means unauthorized - session expired or not authenticated
         // This is expected with third-party cookie restrictions
@@ -60,7 +61,7 @@ export default function AdminDashboardClient() {
         // If no stored user_id, session is truly invalid
         return null
       }
-      
+
       if (!response.ok) {
         // For other errors, try fallback but log the error
         const storedUserId = sessionStorage.getItem("user_id")
@@ -71,7 +72,7 @@ export default function AdminDashboardClient() {
         }
         throw new Error(`Session check failed: ${response.status}`)
       }
-      
+
       const data = await response.json()
       if (data.user_id) {
         setUserId(data.user_id)
@@ -291,6 +292,9 @@ export default function AdminDashboardClient() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Admin Chat - Floating Message Button */}
+      <AdminChat userId={userId} />
     </div>
   )
 }

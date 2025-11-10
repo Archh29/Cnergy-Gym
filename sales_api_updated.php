@@ -267,17 +267,17 @@ function getSalesData($pdo)
 			if (empty($memberName) && !empty($row['subscription_member_fullname'])) {
 				$memberName = trim($row['subscription_member_fullname']);
 			}
-			
+
 			// Get guest name for guest/walk-in sales
 			$guestName = !empty($row['guest_name']) ? trim($row['guest_name']) : null;
-			
+
 			// Get user_id - prefer from sales, fallback to subscription
 			$userId = $row['user_id'] ?? $row['subscription_user_id'] ?? null;
-			
+
 			// Get coach name for coaching sales
 			$coachName = !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null;
-			$coachId = !empty($row['coach_id']) ? (int)$row['coach_id'] : null;
-			
+			$coachId = !empty($row['coach_id']) ? (int) $row['coach_id'] : null;
+
 			// For guest/walk-in sales, use guest_name instead of user_name
 			$displayName = null;
 			if (in_array($row['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
@@ -285,7 +285,7 @@ function getSalesData($pdo)
 			} else {
 				$displayName = $memberName;
 			}
-			
+
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
 				'total_amount' => (float) $row['total_amount'],
@@ -308,7 +308,7 @@ function getSalesData($pdo)
 			// If coach info wasn't set in first row but exists in this row, update it
 			if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
 				$salesGrouped[$saleId]['coach_name'] = trim($row['coach_fullname']);
-				$salesGrouped[$saleId]['coach_id'] = !empty($row['coach_id']) ? (int)$row['coach_id'] : null;
+				$salesGrouped[$saleId]['coach_id'] = !empty($row['coach_id']) ? (int) $row['coach_id'] : null;
 			}
 			// If guest info wasn't set but exists in this row, update it
 			if (empty($salesGrouped[$saleId]['guest_name']) && !empty($row['guest_name'])) {
@@ -327,15 +327,15 @@ function getSalesData($pdo)
 				'price' => (float) $row['detail_price']
 			];
 
-		if ($row['product_id']) {
-			$detail['product_id'] = $row['product_id'];
-			$detail['product'] = [
-				'id' => $row['product_id'],
-				'name' => $row['product_name'],
-				'price' => (float) $row['product_price'],
-				'category' => $row['product_category']
-			];
-		}
+			if ($row['product_id']) {
+				$detail['product_id'] = $row['product_id'];
+				$detail['product'] = [
+					'id' => $row['product_id'],
+					'name' => $row['product_name'],
+					'price' => (float) $row['product_price'],
+					'category' => $row['product_category']
+				];
+			}
 
 			if ($row['subscription_id']) {
 				$detail['subscription_id'] = $row['subscription_id'];
@@ -610,7 +610,9 @@ function createSale($pdo, $data)
 		$staffId = $data['staff_id'] ?? null;
 		error_log("DEBUG Sales - staffId: " . ($staffId ?? 'NULL') . " from request data");
 		error_log("DEBUG Sales - Full request data: " . json_encode($data));
-		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: {$productList} - Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}", "Sales");
+		// Simplified message format
+		$message = "{$productList} • Total: ₱{$data['total_amount']} • Payment: {$paymentMethod} • Receipt: {$receiptNumber}";
+		logStaffActivity($pdo, $staffId, "Process POS Sale", $message, "Sales");
 
 		http_response_code(201);
 		echo json_encode([
@@ -648,12 +650,21 @@ function addProduct($pdo, $data)
 	$productId = $pdo->lastInsertId();
 
 	// Log activity using dedicated logging file
-	$userId = $_SESSION['user_id'] ?? null;
-	$logUrl = "https://api.cnergy.site/log_activity.php?action=Add%20Product&details=" . urlencode("New product added: {$data['name']} - Price: ₱{$data['price']}, Stock: {$data['stock']}, Category: {$category}");
-	if ($userId) {
-		$logUrl .= "&user_id=" . $userId;
+	// Get user_id from request data or GET parameter, fallback to session
+	$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+	// Use logStaffActivity if available, otherwise use log_activity.php
+	// Simplified message format
+	$message = "{$data['name']} • Price: ₱{$data['price']} • Stock: {$data['stock']} • {$category}";
+	if (function_exists('logStaffActivity')) {
+		logStaffActivity($pdo, $userId, "Add Product", $message, "Inventory Management");
+	} else {
+		$logUrl = "https://api.cnergy.site/log_activity.php?action=Add%20Product&details=" . urlencode($message);
+		if ($userId) {
+			$logUrl .= "&user_id=" . $userId;
+		}
+		file_get_contents($logUrl);
 	}
-	file_get_contents($logUrl);
 
 	http_response_code(201);
 	echo json_encode(["success" => "Product added successfully", "product_id" => $productId]);
@@ -686,12 +697,33 @@ function updateProductStock($pdo, $data)
 		$product = $productStmt->fetch();
 		$productName = $product ? $product['name'] : "Product ID: {$productId}";
 
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode("Stock updated for {$productName}: {$type} {$quantity} units");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
+		// Get user_id from request data or GET parameter, fallback to session
+		$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+		// Debug logging to help identify the issue
+		error_log("DEBUG Stock Update - userId: " . ($userId ?? 'NULL') . ", data: " . json_encode($data) . ", GET: " . json_encode($_GET));
+
+		// Use logStaffActivity if available, otherwise use log_activity.php
+		// Simplified message format
+		$actionType = $type === 'add' ? 'add' : 'removed';
+		$message = "{$productName} - {$actionType} {$quantity} units";
+		if (function_exists('logStaffActivity')) {
+			logStaffActivity($pdo, $userId, "Update Stock", $message, "Inventory Management");
+		} else {
+			// Direct insert into activity_log as fallback
+			try {
+				$stmt = $pdo->prepare("INSERT INTO activity_log (user_id, activity, timestamp) VALUES (?, ?, NOW())");
+				$stmt->execute([$userId, "Update Stock: {$message}"]);
+			} catch (Exception $e) {
+				error_log("Failed to log activity directly: " . $e->getMessage());
+				// Fallback to external API
+				$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode($message);
+				if ($userId) {
+					$logUrl .= "&user_id=" . $userId;
+				}
+				file_get_contents($logUrl);
+			}
 		}
-		file_get_contents($logUrl);
 
 		echo json_encode(["success" => "Stock updated successfully"]);
 	} else {
@@ -719,12 +751,22 @@ function updateProduct($pdo, $data)
 
 	if ($stmt->rowCount() > 0) {
 		// Log activity using dedicated logging file
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Product&details=" . urlencode("Product updated: {$data['name']} - Price: ₱{$data['price']}, Category: {$category}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
+		// Get user_id from request data or GET parameter, fallback to session
+		$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+		// Simplified message format
+		$message = "{$data['name']} • Price: ₱{$data['price']} • {$category}";
+
+		// Use logStaffActivity if available, otherwise use log_activity.php
+		if (function_exists('logStaffActivity')) {
+			logStaffActivity($pdo, $userId, "Update Product", $message, "Inventory Management");
+		} else {
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Product&details=" . urlencode($message);
+			if ($userId) {
+				$logUrl .= "&user_id=" . $userId;
+			}
+			file_get_contents($logUrl);
 		}
-		file_get_contents($logUrl);
 
 		echo json_encode(["success" => "Product updated successfully"]);
 	} else {
@@ -768,12 +810,21 @@ function deleteProduct($pdo, $data)
 
 			// Log activity using dedicated logging file
 			$productName = $product['name'];
-			$userId = $_SESSION['user_id'] ?? null;
-			$logUrl = "https://api.cnergy.site/log_activity.php?action=Delete%20Product&details=" . urlencode("Product deleted: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
-			if ($userId) {
-				$logUrl .= "&user_id=" . $userId;
+			// Get user_id from request data or GET parameter, fallback to session
+			$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+			// Use logStaffActivity if available, otherwise use log_activity.php
+			// Simplified message format
+			$message = "{$productName} • Price: ₱{$product['price']} • {$product['category']}";
+			if (function_exists('logStaffActivity')) {
+				logStaffActivity($pdo, $userId, "Delete Product", $message, "Inventory Management");
+			} else {
+				$logUrl = "https://api.cnergy.site/log_activity.php?action=Delete%20Product&details=" . urlencode($message);
+				if ($userId) {
+					$logUrl .= "&user_id=" . $userId;
+				}
+				file_get_contents($logUrl);
 			}
-			file_get_contents($logUrl);
 
 			echo json_encode(["success" => "Product deleted successfully"]);
 		} else {
@@ -874,7 +925,9 @@ function createPOSSale($pdo, $data)
 		$staffId = $data['staff_id'] ?? null;
 		error_log("DEBUG Sales POS - staffId: " . ($staffId ?? 'NULL') . " from request data");
 		error_log("DEBUG Sales POS - Full request data: " . json_encode($data));
-		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}, Change: ₱{$changeGiven}", "Sales");
+		// Simplified message format
+		$message = "Total: ₱{$data['total_amount']} • Payment: {$paymentMethod} • Receipt: {$receiptNumber} • Change: ₱{$changeGiven}";
+		logStaffActivity($pdo, $staffId, "Process POS Sale", $message, "Sales");
 
 		http_response_code(201);
 		echo json_encode([
@@ -928,12 +981,21 @@ function confirmTransaction($pdo, $data)
 		$stmt->execute([$paymentMethod, $changeGiven, $saleId]);
 
 		// Log activity
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Confirm%20Transaction&details=" . urlencode("Transaction confirmed - Sale ID: {$saleId}, Payment: {$paymentMethod}, Change: ₱{$changeGiven}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
+		// Get user_id from request data or GET parameter, fallback to session
+		$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+		// Use logStaffActivity if available, otherwise use log_activity.php
+		// Simplified message format
+		$message = "Sale #{$saleId} • Payment: {$paymentMethod} • Change: ₱{$changeGiven}";
+		if (function_exists('logStaffActivity')) {
+			logStaffActivity($pdo, $userId, "Confirm Transaction", $message, "Sales");
+		} else {
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Confirm%20Transaction&details=" . urlencode($message);
+			if ($userId) {
+				$logUrl .= "&user_id=" . $userId;
+			}
+			file_get_contents($logUrl);
 		}
-		file_get_contents($logUrl);
 
 		echo json_encode([
 			"success" => "Transaction confirmed successfully",
@@ -995,12 +1057,21 @@ function editTransaction($pdo, $data)
 		$pdo->commit();
 
 		// Log activity
-		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Edit%20Transaction&details=" . urlencode("Transaction edited - Sale ID: {$saleId}");
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
+		// Get user_id from request data or GET parameter, fallback to session
+		$userId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+
+		// Use logStaffActivity if available, otherwise use log_activity.php
+		// Simplified message format
+		$message = "Sale #{$saleId}";
+		if (function_exists('logStaffActivity')) {
+			logStaffActivity($pdo, $userId, "Edit Transaction", $message, "Sales");
+		} else {
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Edit%20Transaction&details=" . urlencode($message);
+			if ($userId) {
+				$logUrl .= "&user_id=" . $userId;
+			}
+			file_get_contents($logUrl);
 		}
-		file_get_contents($logUrl);
 
 		echo json_encode([
 			"success" => "Transaction updated successfully",
@@ -1014,7 +1085,8 @@ function editTransaction($pdo, $data)
 	}
 }
 
-function getCoachSales($pdo) {
+function getCoachSales($pdo)
+{
 	// Get all coaches info.
 	$stmt = $pdo->query("SELECT * FROM coaches");
 	$coaches = $stmt->fetchAll();

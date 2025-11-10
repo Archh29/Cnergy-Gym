@@ -24,7 +24,6 @@ import {
   Search,
   Plus,
   Edit,
-  Trash2,
   Activity,
   ChevronLeft,
   ChevronRight,
@@ -36,6 +35,11 @@ import {
   CheckCircle,
   Eye,
   EyeOff,
+  Shield,
+  Mail,
+  CalendarDays,
+  PowerOff,
+  RotateCw,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/addcoach.php"
@@ -68,10 +72,10 @@ const ViewCoach = () => {
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [selectedCoach, setSelectedCoach] = useState(null)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
+  const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false)
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
   const [currentPage, setCurrentPage] = useState(1)
   const [activities, setActivities] = useState([])
@@ -91,6 +95,10 @@ const ViewCoach = () => {
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [selectedSpecialties, setSelectedSpecialties] = useState([])
   const [customSpecialty, setCustomSpecialty] = useState("")
+  const [touchedFields, setTouchedFields] = useState({
+    per_session_rate: false,
+    monthly_rate: false,
+  })
 
   const coachesPerPage = 5
   const indexOfLastCoach = currentPage * coachesPerPage
@@ -105,15 +113,15 @@ const ViewCoach = () => {
     mname: "",
     lname: "",
     email: "",
-    password: "",
+    password: "CnergyCoach#1",
     gender_id: "",
     bday: "",
     user_type_id: 3,
     bio: "",
     specialty: "",
     experience: "",
-    per_session_rate: "",
-    monthly_rate: "",
+    per_session_rate: "300",
+    monthly_rate: "3200",
     certifications: "",
     is_available: true,
     image_url: "",
@@ -153,7 +161,7 @@ const ViewCoach = () => {
 
     // Name validations
     if (!data.fname.trim()) errors.fname = "First name is required"
-    if (!data.mname.trim()) errors.mname = "Middle name is required"
+    // Middle name is optional - no validation needed
     if (!data.lname.trim()) errors.lname = "Last name is required"
 
     // Email validation
@@ -177,13 +185,11 @@ const ViewCoach = () => {
 
     // Date validation
     if (!data.bday) errors.bday = "Date of birth is required"
-    if (!data.gender_id) errors.gender_id = "Please select a gender"
-    if (data.gender_id && ![1, 2].includes(Number.parseInt(data.gender_id))) {
-      errors.gender_id = "Please select a valid gender"
-    }
+    // Gender validation removed - coaches will set it themselves
     if (!data.specialty && selectedSpecialties.length === 0) errors.specialty = "Please specify at least one specialty"
     if (!data.experience) errors.experience = "Please specify experience level"
-    if (!data.per_session_rate) errors.per_session_rate = "Please set a per session rate"
+    // Per session rate has default value (300), so validation not required
+    // Monthly rate has default value (3200), so validation not required
 
     // Package sessions validation
     if (data.package_sessions && (isNaN(data.package_sessions) || data.package_sessions < 1)) {
@@ -207,6 +213,23 @@ const ViewCoach = () => {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }))
+
+    // Mark field as touched if it's one of the rate fields and the value has changed from default
+    if (name === "per_session_rate") {
+      if (value !== "300") {
+        setTouchedFields((prev) => ({
+          ...prev,
+          per_session_rate: true,
+        }))
+      }
+    } else if (name === "monthly_rate") {
+      if (value !== "3200") {
+        setTouchedFields((prev) => ({
+          ...prev,
+          monthly_rate: true,
+        }))
+      }
+    }
 
     // Clear validation error when user starts typing
     if (validationErrors[name]) {
@@ -262,17 +285,17 @@ const ViewCoach = () => {
       mname: "",
       lname: "",
       email: "",
-      password: "",
+      password: "CnergyCoach#1",
       gender_id: "",
       bday: "",
       user_type_id: 3,
       bio: "",
       specialty: "",
       experience: "",
-      per_session_rate: "",
+      per_session_rate: "300",
       package_rate: "",
       package_sessions: "",
-      monthly_rate: "",
+      monthly_rate: "3200",
       certifications: "",
       is_available: true,
       image_url: "",
@@ -280,6 +303,10 @@ const ViewCoach = () => {
     setValidationErrors({})
     setSelectedSpecialties([])
     setCustomSpecialty("")
+    setTouchedFields({
+      per_session_rate: false,
+      monthly_rate: false,
+    })
   }
 
   // Fetch activity logs from backend
@@ -294,23 +321,101 @@ const ViewCoach = () => {
     }
   }
 
-  // Fetch coach statistics from backend
-  const fetchCoachStats = async () => {
+  // Calculate coach statistics from coaches data
+  const fetchCoachStats = () => {
     try {
-      const response = await axios.get(`${API_URL}?stats=true&filter=${activityFilter}`)
-      if (response.data.stats) {
-        setCoachStats(response.data.stats)
-        // Update activities with real data
-        setActivities(response.data.stats.recentActivities || [])
+      // Ensure coaches is an array
+      if (!Array.isArray(coaches)) {
+        setCoachStats({
+          totalCoaches: 0,
+          availableCoaches: 0,
+          averageRating: '0.0',
+          averagePerSessionRate: '0.00',
+          totalClients: 0,
+          specialtyDistribution: [],
+          recentActivities: []
+        })
+        setActivities([])
+        return
       }
+
+      // Calculate stats from the coaches array
+      const activeCoaches = coaches.filter(c => c.account_status !== 'deactivated')
+      const availableCoaches = activeCoaches.filter(c => c.is_available)
+
+      const totalCoaches = activeCoaches.length
+      const availableCount = availableCoaches.length
+
+      // Calculate average rating
+      const ratings = activeCoaches.map(c => parseFloat(c.rating) || 0).filter(r => r > 0)
+      const averageRating = ratings.length > 0
+        ? (ratings.reduce((sum, r) => sum + r, 0) / ratings.length).toFixed(1)
+        : '0.0'
+
+      // Calculate average per session rate
+      const rates = activeCoaches.map(c => parseFloat(c.per_session_rate) || 0).filter(r => r > 0)
+      const averagePerSessionRate = rates.length > 0
+        ? (rates.reduce((sum, r) => sum + r, 0) / rates.length).toFixed(2)
+        : '0.00'
+
+      // Calculate total clients
+      const totalClients = activeCoaches.reduce((sum, c) => sum + (parseInt(c.total_clients) || 0), 0)
+
+      // Calculate specialty distribution
+      const specialtyMap = {}
+      activeCoaches.forEach(coach => {
+        const specialties = coach.specialty ? coach.specialty.split(',').map(s => s.trim()) : []
+        specialties.forEach(spec => {
+          specialtyMap[spec] = (specialtyMap[spec] || 0) + 1
+        })
+      })
+      const specialtyDistribution = Object.entries(specialtyMap)
+        .map(([specialty, count]) => ({ specialty, count }))
+        .sort((a, b) => b.count - a.count)
+
+      // Generate recent activities (mock data based on coach updates)
+      const recentActivities = activeCoaches
+        .slice(0, 10)
+        .map(coach => ({
+          activity: `${coach.fullName} is available for training`,
+          timestamp: new Date().toISOString()
+        }))
+
+      setCoachStats({
+        totalCoaches,
+        availableCoaches: availableCount,
+        averageRating,
+        averagePerSessionRate,
+        totalClients,
+        specialtyDistribution,
+        recentActivities
+      })
+
+      // Update activities
+      setActivities(recentActivities)
     } catch (error) {
-      console.error("Error fetching coach statistics:", error)
+      console.error("Error calculating coach statistics:", error)
+      // Set default stats on error
+      setCoachStats({
+        totalCoaches: 0,
+        availableCoaches: 0,
+        averageRating: '0.0',
+        averagePerSessionRate: '0.00',
+        totalClients: 0,
+        specialtyDistribution: [],
+        recentActivities: []
+      })
     }
   }
 
   // Filter activities based on time period
   const getFilteredActivities = () => {
-    if (activityFilter === 'all') return coachStats.recentActivities
+    const activities = coachStats.recentActivities || []
+    if (!Array.isArray(activities) || activities.length === 0) {
+      return []
+    }
+
+    if (activityFilter === 'all') return activities
 
     const now = new Date()
     const filterDate = new Date()
@@ -329,25 +434,25 @@ const ViewCoach = () => {
         filterDate.setFullYear(now.getFullYear() - 1)
         break
       default:
-        return coachStats.recentActivities
+        return activities
     }
 
-    return coachStats.recentActivities.filter(activity => {
+    return activities.filter(activity => {
+      if (!activity || !activity.timestamp) return false
       const activityDate = new Date(activity.timestamp)
-      return activityDate >= filterDate
+      return !isNaN(activityDate.getTime()) && activityDate >= filterDate
     })
   }
 
   useEffect(() => {
     fetchCoaches()
     fetchActivityLogs()
-    fetchCoachStats()
   }, [])
 
-  // Refetch stats when filter changes
+  // Calculate stats when coaches data changes
   useEffect(() => {
     fetchCoachStats()
-  }, [activityFilter])
+  }, [coaches])
 
   const fetchCoaches = async () => {
     setIsLoading(true)
@@ -400,15 +505,16 @@ const ViewCoach = () => {
     try {
       setIsLoading(true)
 
+      // Always use the standard default password
       // Prepare data for both User and Coaches tables
       const formattedData = {
         // User table data
         fname: formData.fname,
-        mname: formData.mname,
+        mname: formData.mname && formData.mname.trim() !== '' ? formData.mname.trim() : '',
         lname: formData.lname,
         email: formData.email,
-        password: formData.password,
-        gender_id: Number.parseInt(formData.gender_id),
+        password: "CnergyCoach#1", // Always use default password
+        gender_id: 1, // Default to Male (1) - coaches will update it themselves
         bday: formData.bday,
         user_type_id: Number.parseInt(formData.user_type_id),
         failed_attempt: 0,
@@ -417,17 +523,26 @@ const ViewCoach = () => {
         bio: formData.bio || "",
         specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
-        per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
+        per_session_rate: Number.parseFloat(formData.per_session_rate) || 300.0,
         package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
         package_sessions: formData.package_sessions ? Number.parseInt(formData.package_sessions) : null,
-        monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
-        certifications: formData.certifications || "",
-        is_available: formData.is_available,
-        image_url: formData.image_url || "",
+        monthly_rate: Number.parseFloat(formData.monthly_rate) || 3200.0,
+        certifications: "", // Coaches will set this themselves
+        is_available: true, // Default to available - coaches will update it themselves
+        image_url: "", // Coaches will set this themselves
       }
 
       const response = await axios.post(API_URL, formattedData)
       if (response.data.success) {
+        // Format coach's full name for toast notification
+        const fullName = `${formData.fname}${formData.mname ? ` ${formData.mname}` : ''} ${formData.lname}`.trim()
+
+        // Show success toast with better formatting
+        toast({
+          title: "Coach Successfully Added",
+          description: `${fullName} has been added to the system. Email: ${formData.email}. Account is ready to use.`,
+        })
+
         // Refresh coaches list
         const getResponse = await axios.get(API_URL)
         const updatedCoaches = getResponse.data.coaches || []
@@ -447,14 +562,11 @@ const ViewCoach = () => {
 
         setCoaches(enhancedCoaches)
         setFilteredCoaches(enhancedCoaches)
+        resetForm()
         setIsAddDialogOpen(false)
 
-        // Refresh statistics and activity logs
-        await fetchCoachStats()
+        // Refresh activity logs (stats will be recalculated automatically via useEffect)
         await fetchActivityLogs()
-
-        toast({ title: "Success", description: "Coach added successfully!" })
-        resetForm()
       } else {
         // Handle API error response (like email already exists)
         console.error("Coach creation failed:", response.data)
@@ -519,23 +631,23 @@ const ViewCoach = () => {
         id: selectedCoach.id,
         // User table data
         fname: formData.fname,
-        mname: formData.mname,
+        mname: formData.mname && formData.mname.trim() !== '' ? formData.mname.trim() : '',
         lname: formData.lname,
         email: formData.email,
-        gender_id: Number.parseInt(formData.gender_id),
+        gender_id: selectedCoach.gender_id || 1, // Keep existing coach gender_id, default to 1 if not set
         bday: formData.bday,
         user_type_id: Number.parseInt(formData.user_type_id),
-        account_status: formData.account_status,
+        account_status: selectedCoach.account_status || "approved", // Keep existing account_status - use deactivate button to change
 
         // Coaches table data
-        bio: formData.bio || "",
+        bio: selectedCoach.bio || "", // Keep existing bio value - coaches manage it themselves
         specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
         per_session_rate: Number.parseFloat(formData.per_session_rate) || 0.0,
         monthly_rate: formData.monthly_rate ? Number.parseFloat(formData.monthly_rate) : null,
-        certifications: formData.certifications || "",
-        is_available: formData.is_available,
-        image_url: formData.image_url || "",
+        certifications: selectedCoach.certifications || "", // Keep existing certifications - coaches manage it themselves
+        is_available: selectedCoach.is_available !== undefined ? selectedCoach.is_available : true, // Keep existing availability - coaches manage it themselves
+        image_url: selectedCoach.image_url || "", // Keep existing image_url - coaches manage it themselves
       }
 
       console.log("Updating coach with data:", updateData)
@@ -595,9 +707,10 @@ const ViewCoach = () => {
         setCoaches(enhancedCoaches)
         setFilteredCoaches(enhancedCoaches)
         setIsEditDialogOpen(false)
+        setSelectedCoach(null)
+        resetForm()
 
-        // Refresh statistics and activity logs
-        await fetchCoachStats()
+        // Refresh activity logs (stats will be recalculated automatically via useEffect)
         await fetchActivityLogs()
 
         toast({ title: "Success", description: "Coach updated successfully!" })
@@ -627,71 +740,55 @@ const ViewCoach = () => {
     }
   }
 
-  const handleConfirmDelete = async () => {
-    if (!selectedCoach) return
-
-    try {
-      setIsLoading(true)
-      const response = await fetch(`https://api.cnergy.site/addcoach.php?id=${selectedCoach.id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          id: selectedCoach.id,
-        }),
-      })
-
-      const result = await response.json()
-      if (response.ok) {
-        // Refresh the coaches list
-        const getResponse = await fetch("https://api.cnergy.site/addcoach.php")
-        const updatedCoaches = await getResponse.json()
-        const coachesData = updatedCoaches.coaches || []
-        const enhancedCoaches = coachesData.map((coach) => ({
-          ...coach,
-          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
-          bio: coach.bio || "",
-          specialty: coach.specialty || "General Training",
-          experience: coach.experience || "Not specified",
-          rating: coach.rating || 0.0,
-          total_clients: coach.total_clients || 0,
-          per_session_rate: coach.per_session_rate || 0.0,
-          monthly_rate: coach.monthly_rate || 0.0,
-          certifications: coach.certifications || "",
-          is_available: coach.is_available !== undefined ? coach.is_available : true,
-          image_url: coach.image_url || "",
-        }))
-
-        setCoaches(enhancedCoaches)
-        setFilteredCoaches(enhancedCoaches)
-        setIsDeleteDialogOpen(false)
-        setSelectedCoach(null)
-
-        // Refresh statistics and activity logs
-        await fetchCoachStats()
-        await fetchActivityLogs()
-
-        toast({ title: "Success", description: "Coach deleted successfully!" })
-      } else {
-        throw new Error(result.error || result.message || "Failed to delete coach.")
-      }
-    } catch (error) {
-      console.error("Error deleting coach:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete coach. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleOpenAddDialog = () => {
     resetForm()
     setIsAddDialogOpen(true)
   }
+
+  // Ensure form is properly reset when Add Coach dialog opens
+  useEffect(() => {
+    if (isAddDialogOpen) {
+      // Reset form completely when Add dialog opens - clear any edit data
+      setFormData({
+        fname: "",
+        mname: "",
+        lname: "",
+        email: "",
+        password: "CnergyCoach#1",
+        gender_id: "",
+        bday: "",
+        user_type_id: 3,
+        bio: "",
+        specialty: "",
+        experience: "",
+        per_session_rate: "300",
+        package_rate: "",
+        package_sessions: "",
+        monthly_rate: "3200",
+        certifications: "",
+        is_available: true,
+        image_url: "",
+        account_status: "approved",
+      })
+      setSelectedSpecialties([])
+      setCustomSpecialty("")
+      setValidationErrors({})
+      setShowPassword(false)
+      setSelectedCoach(null) // Clear selected coach to ensure no edit data persists
+      setTouchedFields({
+        per_session_rate: false,
+        monthly_rate: false,
+      })
+    }
+  }, [isAddDialogOpen])
+
+  // Clear form data when Edit dialog closes (but not when opening Add dialog)
+  useEffect(() => {
+    if (!isEditDialogOpen && !isAddDialogOpen) {
+      // Only clear selectedCoach if both dialogs are closed
+      setSelectedCoach(null)
+    }
+  }, [isEditDialogOpen, isAddDialogOpen])
 
   const handleEditCoach = (coach) => {
     console.log("Editing coach:", coach)
@@ -731,9 +828,89 @@ const ViewCoach = () => {
     setIsEditDialogOpen(true)
   }
 
-  const handleDeleteCoach = (coach) => {
+
+  const handleDeactivateCoach = (coach) => {
     setSelectedCoach(coach)
-    setIsDeleteDialogOpen(true)
+    setIsDeactivateDialogOpen(true)
+  }
+
+  const handleConfirmDeactivate = async () => {
+    if (!selectedCoach) return
+    setIsLoading(true)
+    try {
+      const newStatus = selectedCoach.account_status === "deactivated" ? "approved" : "deactivated"
+
+      // Get all required fields from selectedCoach for the backend update
+      // The backend requires: id, email, gender_id, fname, lname, bday, and account_status
+      const response = await axios.put(API_URL, {
+        id: selectedCoach.id,
+        email: selectedCoach.email,
+        gender_id: selectedCoach.gender_id || 1,
+        fname: selectedCoach.fname,
+        mname: selectedCoach.mname || "",
+        lname: selectedCoach.lname,
+        bday: selectedCoach.bday,
+        user_type_id: 3,
+        account_status: newStatus,
+        // Include coach-specific fields to maintain data integrity
+        bio: selectedCoach.bio || "",
+        specialty: selectedCoach.specialty || "General Training",
+        experience: selectedCoach.experience || "Not specified",
+        per_session_rate: selectedCoach.per_session_rate || 0.0,
+        monthly_rate: selectedCoach.monthly_rate || 0.0,
+        certifications: selectedCoach.certifications || "",
+        is_available: selectedCoach.is_available !== undefined ? selectedCoach.is_available : true,
+        image_url: selectedCoach.image_url || "",
+      }, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (response.data.success) {
+        // Refresh coaches list
+        const getResponse = await axios.get(API_URL)
+        const updatedCoaches = getResponse.data.coaches || []
+        const enhancedCoaches = updatedCoaches.map((coach) => ({
+          ...coach,
+          fullName: `${coach.fname} ${coach.mname} ${coach.lname}`,
+          bio: coach.bio || "",
+          specialty: coach.specialty || "General Training",
+          experience: coach.experience || "Not specified",
+          rating: coach.rating || 0.0,
+          total_clients: coach.total_clients || 0,
+          per_session_rate: coach.per_session_rate || 0.0,
+          monthly_rate: coach.monthly_rate || 0.0,
+          certifications: coach.certifications || "",
+          is_available: coach.is_available !== undefined ? coach.is_available : true,
+          image_url: coach.image_url || "",
+          account_status: coach.account_status || "approved",
+        }))
+
+        setCoaches(enhancedCoaches)
+        setFilteredCoaches(enhancedCoaches)
+        setIsDeactivateDialogOpen(false)
+        setSelectedCoach(null)
+
+        // Refresh activity logs (stats will be recalculated automatically via useEffect)
+        await fetchActivityLogs()
+
+        toast({
+          title: "Success",
+          description: `Coach account ${newStatus === "deactivated" ? "deactivated" : "reactivated"} successfully!`,
+        })
+      } else {
+        throw new Error(response.data.error || `Failed to ${newStatus === "deactivated" ? "deactivate" : "reactivate"} coach account`)
+      }
+    } catch (error) {
+      console.error("Error updating coach account status:", error)
+      toast({
+        title: "Error",
+        description: `Failed to ${selectedCoach.account_status === "deactivated" ? "reactivate" : "deactivate"} coach account. Please try again.`,
+        variant: "destructive",
+      })
+    }
+    setIsLoading(false)
   }
 
   useEffect(() => {
@@ -771,177 +948,204 @@ const ViewCoach = () => {
   const paginate = (pageNumber) => setCurrentPage(pageNumber)
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="space-y-6 pb-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border-0 shadow-lg">
           <CardContent className="flex items-center p-6">
-            <Users className="h-8 w-8 text-blue-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Total Coaches</p>
-              <p className="text-2xl font-bold">{coachStats.totalCoaches}</p>
+            <div className="p-3 bg-blue-100 rounded-lg mr-4">
+              <Users className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Total Coaches</p>
+              <p className="text-2xl font-bold text-gray-900">{coachStats.totalCoaches}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-lg">
           <CardContent className="flex items-center p-6">
-            <CheckCircle className="h-8 w-8 text-green-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Available</p>
-              <p className="text-2xl font-bold">{coachStats.availableCoaches}</p>
+            <div className="p-3 bg-green-100 rounded-lg mr-4">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Available</p>
+              <p className="text-2xl font-bold text-gray-900">{coachStats.availableCoaches}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-0 shadow-lg">
           <CardContent className="flex items-center p-6">
-            <Star className="h-8 w-8 text-yellow-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Avg Rating</p>
-              <p className="text-2xl font-bold">{coachStats.averageRating}</p>
+            <div className="p-3 bg-yellow-100 rounded-lg mr-4">
+              <Star className="h-6 w-6 text-yellow-600" />
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Avg Per Session</p>
-              <p className="text-2xl font-bold">₱{coachStats.averagePerSessionRate}</p>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Avg Rating</p>
+              <p className="text-2xl font-bold text-gray-900">{coachStats.averageRating}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search and Filters */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
+      {/* Main Coaches List Card */}
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200/50">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <CardTitle>Coaches List</CardTitle>
-              <CardDescription>View and manage all registered coaches</CardDescription>
+              <CardTitle className="flex items-center text-xl font-bold text-gray-800 mb-2">
+                <div className="p-2 bg-primary/10 rounded-lg mr-3">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                Manage Coach
+              </CardTitle>
+              <CardDescription className="text-sm text-gray-600 ml-11">
+                View and manage all registered coaches
+              </CardDescription>
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant={currentView === "archive" ? "default" : "outline"}
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 h-10"
               >
                 <Activity className="h-4 w-4" />
                 {currentView === "active" ? "Archive" : "Active"}
               </Button>
-              <Button onClick={() => setIsAddDialogOpen(true)} className="flex items-center gap-2">
+              <Button onClick={handleOpenAddDialog} className="flex items-center gap-2 h-10 px-4 font-medium shadow-md hover:shadow-lg transition-all duration-200">
                 <Plus className="h-4 w-4" />
                 Add New Coach
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-2 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search coaches by name, email, specialty..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8"
-              />
-            </div>
+        <CardContent className="space-y-5 p-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search coaches by name, email, specialty..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
           </div>
 
           {/* Coaches Table */}
-          <div className="rounded-md border overflow-x-auto">
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
             <Table className="min-w-[800px]">
               <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[200px]">Coach</TableHead>
-                  <TableHead className="min-w-[150px]">Contact</TableHead>
-                  <TableHead className="min-w-[120px]">Specialty</TableHead>
-                  <TableHead className="min-w-[100px]">Experience</TableHead>
-                  <TableHead className="min-w-[100px]">Per Session</TableHead>
-                  <TableHead className="min-w-[120px]">Monthly Plan</TableHead>
-                  <TableHead className="min-w-[80px]">Rating</TableHead>
-                  <TableHead className="min-w-[100px]">Status</TableHead>
-                  <TableHead className="min-w-[120px]">Actions</TableHead>
+                <TableRow className="bg-gray-50/50">
+                  <TableHead className="min-w-[200px] font-semibold text-gray-700">Coach</TableHead>
+                  <TableHead className="min-w-[150px] font-semibold text-gray-700">Contact</TableHead>
+                  <TableHead className="min-w-[120px] font-semibold text-gray-700">Specialty</TableHead>
+                  <TableHead className="min-w-[100px] font-semibold text-gray-700">Experience</TableHead>
+                  <TableHead className="min-w-[100px] font-semibold text-gray-700">Per Session</TableHead>
+                  <TableHead className="min-w-[120px] font-semibold text-gray-700">Monthly Plan</TableHead>
+                  <TableHead className="min-w-[80px] font-semibold text-gray-700">Rating</TableHead>
+                  <TableHead className="min-w-[100px] font-semibold text-gray-700">Status</TableHead>
+                  <TableHead className="min-w-[120px] font-semibold text-gray-700 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
-                      <div className="flex justify-center items-center">
-                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                        <span>Loading coaches...</span>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <div className="flex flex-col justify-center items-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                        <span className="text-sm text-muted-foreground">Loading coaches...</span>
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : currentCoaches.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
-                      No coaches found
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <div className="flex flex-col items-center justify-center">
+                        <Users className="h-10 w-10 text-gray-400 mb-2" />
+                        <p className="text-sm font-medium text-gray-700">No coaches found</p>
+                        <p className="text-xs text-muted-foreground mt-1">Try a different search or add a new coach</p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
                   currentCoaches.map((coach) => (
-                    <TableRow key={coach.id}>
+                    <TableRow key={coach.id} className="hover:bg-gray-50/50 transition-colors">
                       <TableCell>
-                        <div className="flex items-center space-x-2 sm:space-x-3">
+                        <div className="flex items-center space-x-3">
                           {coach.image_url ? (
                             <img
-                              className="h-8 w-8 sm:h-10 sm:w-10 rounded-full object-cover flex-shrink-0"
+                              className="h-10 w-10 rounded-full object-cover flex-shrink-0"
                               src={coach.image_url || "/placeholder.svg"}
                               alt={coach.fullName}
                             />
                           ) : (
-                            <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                              <User className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
+                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                              <User className="h-5 w-5 text-gray-600" />
                             </div>
                           )}
                           <div className="min-w-0">
-                            <div className="font-medium text-sm sm:text-base truncate">{coach.fullName}</div>
-                            <div className="text-xs sm:text-sm text-muted-foreground">{coach.total_clients} clients</div>
+                            <div className="font-medium text-gray-900 truncate">{coach.fullName}</div>
+                            <div className="text-xs text-gray-600">{coach.total_clients} clients</div>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div className="min-w-0">
-                          <div className="font-medium text-sm truncate">{coach.email}</div>
-                          <div className="text-xs text-muted-foreground">{coach.gender}</div>
+                          <div className="font-medium text-sm text-gray-900 truncate">{coach.email}</div>
+                          <div className="text-xs text-gray-600">{coach.gender}</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="text-xs">{coach.specialty}</Badge>
+                        <Badge variant="secondary" className="text-xs bg-gray-100 text-gray-700 border-gray-200">{coach.specialty}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm">{coach.experience}</TableCell>
-                      <TableCell className="text-sm font-medium">₱{coach.per_session_rate}</TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="text-sm text-gray-700">{coach.experience}</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-900">₱{coach.per_session_rate}</TableCell>
+                      <TableCell className="text-sm text-gray-700">
                         {coach.monthly_rate ? (
                           <div>
-                            <div>₱{coach.monthly_rate}</div>
-                            <div className="text-xs text-muted-foreground">(18 sessions)</div>
+                            <div className="font-medium text-gray-900">₱{coach.monthly_rate}</div>
+                            <div className="text-xs text-gray-600">(18 sessions)</div>
                           </div>
-                        ) : '-'}
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <Star className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-400 mr-1" />
-                          <span className="text-sm">{coach.rating.toFixed(1)}</span>
+                          <Star className="h-4 w-4 text-yellow-400 mr-1 fill-yellow-400" />
+                          <span className="text-sm font-medium text-gray-900">{coach.rating.toFixed(1)}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={coach.is_available ? "default" : "secondary"} className="text-xs">
+                        <Badge
+                          variant={coach.is_available ? "default" : "secondary"}
+                          className={`text-xs ${coach.is_available ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-700 border-gray-200'}`}
+                        >
                           {coach.is_available ? "Available" : "Unavailable"}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center space-x-1 sm:space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                            <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-                            <span className="hidden sm:inline ml-1">Edit</span>
+                        <div className="flex justify-end items-center space-x-2">
+                          <Button variant="outline" size="sm" onClick={() => handleEditCoach(coach)} className="h-8">
+                            <Edit className="mr-2 h-3.5 w-3.5" />
+                            Edit
                           </Button>
-                          {currentView === "archive" && (
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteCoach(coach)} className="h-8 w-8 p-0 sm:h-9 sm:w-auto sm:px-3">
-                              <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
-                              <span className="hidden sm:inline ml-1">Delete</span>
+                          {coach.account_status !== "deactivated" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeactivateCoach(coach)}
+                              className="h-8 text-gray-600 hover:text-orange-600 hover:bg-orange-50"
+                              title="Deactivate Account"
+                            >
+                              <PowerOff className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeactivateCoach(coach)}
+                              className="h-8 text-gray-600 hover:text-green-600 hover:bg-green-50"
+                              title="Reactivate Account"
+                            >
+                              <RotateCw className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </div>
@@ -955,10 +1159,11 @@ const ViewCoach = () => {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between space-x-2 py-4">
-              <div className="text-sm text-muted-foreground">
-                Showing {indexOfFirstCoach + 1} to {Math.min(indexOfLastCoach, filteredCoaches.length)} of{" "}
-                {filteredCoaches.length} coaches
+            <div className="flex items-center justify-between space-x-2 pt-4 border-t border-gray-200">
+              <div className="text-sm text-gray-600">
+                Showing <span className="font-semibold text-gray-900">{indexOfFirstCoach + 1}</span> to{" "}
+                <span className="font-semibold text-gray-900">{Math.min(indexOfLastCoach, filteredCoaches.length)}</span> of{" "}
+                <span className="font-semibold text-gray-900">{filteredCoaches.length}</span> coaches
               </div>
               <div className="flex items-center space-x-2">
                 <Button
@@ -966,6 +1171,7 @@ const ViewCoach = () => {
                   size="sm"
                   onClick={() => paginate(currentPage - 1)}
                   disabled={currentPage === 1}
+                  className="h-9"
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Previous
@@ -977,6 +1183,7 @@ const ViewCoach = () => {
                       variant={currentPage === number ? "default" : "outline"}
                       size="sm"
                       onClick={() => paginate(number)}
+                      className="h-9 min-w-[36px]"
                     >
                       {number}
                     </Button>
@@ -987,6 +1194,7 @@ const ViewCoach = () => {
                   size="sm"
                   onClick={() => paginate(currentPage + 1)}
                   disabled={currentPage === totalPages}
+                  className="h-9"
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />
@@ -999,15 +1207,17 @@ const ViewCoach = () => {
 
       {/* Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
+        <Card className="lg:col-span-2 border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200/50">
             <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                <div className="p-1.5 bg-primary/10 rounded-lg">
+                  <Activity className="h-4 w-4 text-primary" />
+                </div>
                 Recent Activity
               </CardTitle>
               <Select value={activityFilter} onValueChange={setActivityFilter}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-32 h-9 border-gray-300">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1020,17 +1230,20 @@ const ViewCoach = () => {
               </Select>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6">
             <div className="h-64 overflow-y-auto space-y-4 pr-2">
               {getFilteredActivities().length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No recent activity</p>
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Activity className="h-10 w-10 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600">No recent activity</p>
+                </div>
               ) : (
                 getFilteredActivities().map((activity, index) => (
-                  <div key={index} className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                  <div key={index} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                    <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm break-words">{activity.activity}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-gray-900 break-words">{activity.activity}</p>
+                      <p className="text-xs text-gray-600 mt-1">
                         {new Date(activity.timestamp).toLocaleString()}
                       </p>
                     </div>
@@ -1041,39 +1254,37 @@ const ViewCoach = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5" />
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-gray-50 to-white border-b border-gray-200/50">
+            <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+              <div className="p-1.5 bg-primary/10 rounded-lg">
+                <Award className="h-4 w-4 text-primary" />
+              </div>
               Quick Stats
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span>Active Coaches:</span>
-                <span className="font-semibold text-green-600">{coachStats.availableCoaches}</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                <span className="text-sm text-gray-700">Active Coaches:</span>
+                <span className="font-semibold text-gray-900">{coachStats.availableCoaches}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Average Rating:</span>
-                <span className="font-semibold text-yellow-600">{coachStats.averageRating}</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                <span className="text-sm text-gray-700">Average Rating:</span>
+                <span className="font-semibold text-gray-900">{coachStats.averageRating}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Total Clients:</span>
-                <span className="font-semibold text-blue-600">{coachStats.totalClients}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Avg Per Session Rate:</span>
-                <span className="font-semibold text-green-600">₱{coachStats.averagePerSessionRate}</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+                <span className="text-sm text-gray-700">Total Clients:</span>
+                <span className="font-semibold text-gray-900">{coachStats.totalClients}</span>
               </div>
               {coachStats.specialtyDistribution.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-sm font-medium mb-2">Top Specialties:</p>
-                  <div className="space-y-1">
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-sm font-medium text-gray-900 mb-3">Top Specialties:</p>
+                  <div className="space-y-2">
                     {coachStats.specialtyDistribution.slice(0, 3).map((specialty, index) => (
-                      <div key={index} className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">{specialty.specialty}</span>
-                        <span className="font-semibold">{specialty.count}</span>
+                      <div key={index} className="flex items-center justify-between text-sm p-2 rounded bg-gray-50">
+                        <span className="text-gray-700">{specialty.specialty}</span>
+                        <span className="font-semibold text-gray-900">{specialty.count}</span>
                       </div>
                     ))}
                   </div>
@@ -1085,149 +1296,159 @@ const ViewCoach = () => {
       </div>
 
       {/* Add Coach Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add New Coach</DialogTitle>
-            <DialogDescription>
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => {
+          setIsAddDialogOpen(open)
+          if (!open) {
+            // Reset form when dialog closes
+            resetForm()
+            setSelectedCoach(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <User className="h-6 w-6 text-primary" />
+              Add New Coach
+            </DialogTitle>
+            <DialogDescription className="text-base">
               Enter the complete details for the new coach. This will create entries in both User and Coaches tables.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleAddCoach} className="space-y-6">
+          <form onSubmit={handleAddCoach} className="space-y-6 py-4">
             {/* Personal Information Section */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">Personal Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fname">First Name*</Label>
-                  <Input
-                    id="fname"
-                    name="fname"
-                    placeholder="John"
-                    value={formData.fname}
-                    onChange={handleInputChange}
-                    className={validationErrors.fname ? "border-red-500" : ""}
-                  />
-                  {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="mname">Middle Name*</Label>
-                  <Input
-                    id="mname"
-                    name="mname"
-                    placeholder="Michael"
-                    value={formData.mname}
-                    onChange={handleInputChange}
-                    className={validationErrors.mname ? "border-red-500" : ""}
-                  />
-                  {validationErrors.mname && <p className="text-sm text-red-500">{validationErrors.mname}</p>}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="fname" className="text-sm font-medium">First Name</Label>
+                    <Input
+                      id="fname"
+                      name="fname"
+                      placeholder="John"
+                      value={formData.fname}
+                      onChange={handleInputChange}
+                      className={`h-11 ${validationErrors.fname ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mname" className="text-sm font-medium">Middle Name (optional)</Label>
+                    <Input
+                      id="mname"
+                      name="mname"
+                      placeholder="Michael"
+                      value={formData.mname || ""}
+                      onChange={handleInputChange}
+                      className={`h-11 ${validationErrors.mname ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.mname && <p className="text-sm text-red-500">{validationErrors.mname}</p>}
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lname">Last Name*</Label>
+                <Label htmlFor="lname" className="text-sm font-medium">Last Name</Label>
                 <Input
                   id="lname"
                   name="lname"
                   placeholder="Doe"
                   value={formData.lname}
                   onChange={handleInputChange}
-                  className={validationErrors.lname ? "border-red-500" : ""}
+                  className={`h-11 ${validationErrors.lname ? "border-red-500" : ""}`}
                 />
                 {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email*</Label>
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  Email
+                </Label>
+                <Input
+                  type="email"
+                  id="email"
+                  name="email"
+                  placeholder="john@example.com"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className={`h-11 ${validationErrors.email ? "border-red-500" : ""}`}
+                />
+                {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Password
+                </Label>
+                <div className="relative">
                   <Input
-                    type="email"
-                    id="email"
-                    name="email"
-                    placeholder="john@example.com"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    className={validationErrors.email ? "border-red-500" : ""}
+                    type={showPassword ? "text" : "password"}
+                    id="password"
+                    name="password"
+                    value={formData.password || "CnergyCoach#1"}
+                    readOnly
+                    className="bg-blue-50 border-blue-200 text-blue-900 cursor-not-allowed h-11 pr-36 font-mono"
+                    onFocus={(e) => e.target.blur()}
+                    tabIndex={-1}
+                    onChange={(e) => {
+                      // Always reset to default password if user tries to change it
+                      setFormData({ ...formData, password: "CnergyCoach#1" })
+                    }}
                   />
-                  {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password*</Label>
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      id="password"
-                      name="password"
-                      placeholder="********"
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
-                    />
-                    <button
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-300">
+                      Auto-set
+                    </Badge>
+                    <Button
                       type="button"
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                      onClick={() => setShowPassword(!showPassword)}
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 hover:bg-transparent"
+                      onClick={(e) => {
+                        e.preventDefault()
+                        setShowPassword(!showPassword)
+                      }}
                     >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <Eye className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
+                      {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+                    </Button>
                   </div>
-                  {validationErrors.password && <p className="text-sm text-red-500">{validationErrors.password}</p>}
-                  <p className="text-xs text-gray-500">
-                    Password must be 8+ characters with uppercase, number, and special character
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-2">
+                  <p className="text-xs text-blue-800 flex items-start gap-2">
+                    <Shield className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <strong>Standard password is automatically set.</strong> The default password meets all security requirements.
+                    </span>
                   </p>
                 </div>
+                {validationErrors.password && <p className="text-sm text-red-500">{validationErrors.password}</p>}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="gender_id">Gender*</Label>
-                  <Select value={formData.gender_id} onValueChange={(value) => handleSelectChange("gender_id", value)}>
-                    <SelectTrigger className={validationErrors.gender_id ? "border-red-500" : ""}>
-                      <SelectValue placeholder="Select gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {genderOptions.map((gender) => (
-                        <SelectItem key={gender.id} value={gender.id}>
-                          {gender.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {validationErrors.gender_id && <p className="text-sm text-red-500">{validationErrors.gender_id}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bday">Date of Birth*</Label>
-                  <Input
-                    type="date"
-                    id="bday"
-                    name="bday"
-                    value={formData.bday}
-                    onChange={handleInputChange}
-                    className={validationErrors.bday ? "border-red-500" : ""}
-                  />
-                  {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="bday" className="text-sm font-medium flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  Date of Birth
+                </Label>
+                <Input
+                  type="date"
+                  id="bday"
+                  name="bday"
+                  value={formData.bday}
+                  onChange={handleInputChange}
+                  max={new Date().toISOString().split('T')[0]}
+                  className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
+                />
+                {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
               </div>
             </div>
 
             {/* Professional Information Section */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">Professional Information</h3>
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  name="bio"
-                  placeholder="Tell us about the coach's background and approach..."
-                  className="min-h-[100px]"
-                  value={formData.bio}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Professional Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="specialty">Specialties*</Label>
+                  <Label htmlFor="specialty" className="text-sm font-medium">Specialties</Label>
 
                   {/* Selected Specialties Display */}
                   {selectedSpecialties.length > 0 && (
@@ -1285,12 +1506,12 @@ const ViewCoach = () => {
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="experience">Experience Level*</Label>
+                  <Label htmlFor="experience" className="text-sm font-medium">Experience Level</Label>
                   <Select
                     value={formData.experience}
                     onValueChange={(value) => handleSelectChange("experience", value)}
                   >
-                    <SelectTrigger className={validationErrors.experience ? "border-red-500" : ""}>
+                    <SelectTrigger className={`h-11 ${validationErrors.experience ? "border-red-500" : ""}`}>
                       <SelectValue placeholder="Select experience" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1304,34 +1525,51 @@ const ViewCoach = () => {
                   {validationErrors.experience && <p className="text-sm text-red-500">{validationErrors.experience}</p>}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="per_session_rate">Per Session Rate (₱)*</Label>
+                  <Label htmlFor="per_session_rate" className="text-sm font-medium">Per Session Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
                     id="per_session_rate"
                     name="per_session_rate"
-                    placeholder="500.00"
+                    placeholder="300.00"
                     value={formData.per_session_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.per_session_rate ? "border-red-500" : ""}
+                    className={`h-11 ${validationErrors.per_session_rate ? "border-red-500" : ""
+                      } ${!touchedFields.per_session_rate && formData.per_session_rate === "300"
+                        ? "text-gray-400"
+                        : "text-gray-900"
+                      }`}
+                    style={{
+                      color: !touchedFields.per_session_rate && formData.per_session_rate === "300"
+                        ? "#9CA3AF"
+                        : "#111827"
+                    }}
                   />
                   {validationErrors.per_session_rate && (
                     <p className="text-sm text-red-500">{validationErrors.per_session_rate}</p>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="monthly_rate">Monthly Plan Rate (₱)</Label>
+                  <Label htmlFor="monthly_rate" className="text-sm font-medium">Monthly Plan Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
                     id="monthly_rate"
                     name="monthly_rate"
-                    placeholder="8000.00"
+                    placeholder="3200.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.monthly_rate ? "border-red-500" : ""}
+                    className={`h-11 ${!touchedFields.monthly_rate && formData.monthly_rate === "3200"
+                      ? "text-gray-400"
+                      : "text-gray-900"
+                      }`}
+                    style={{
+                      color: !touchedFields.monthly_rate && formData.monthly_rate === "3200"
+                        ? "#9CA3AF"
+                        : "#111827"
+                    }}
                   />
                   <p className="text-xs text-gray-500">18 sessions per month</p>
                   {validationErrors.monthly_rate && (
@@ -1339,49 +1577,24 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="image_url">Profile Image URL</Label>
-                  <Input
-                    id="image_url"
-                    name="image_url"
-                    placeholder="https://example.com/image.jpg"
-                    value={formData.image_url}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="certifications">Certifications</Label>
-                <Textarea
-                  id="certifications"
-                  name="certifications"
-                  placeholder="List certifications (e.g., NASM-CPT, ACE, ACSM...)"
-                  value={formData.certifications}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Available for Training</Label>
-                  <div className="text-sm text-muted-foreground">
-                    Set whether this coach is currently available for new clients
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.is_available}
-                  onCheckedChange={(checked) => handleSwitchChange("is_available", checked)}
-                />
-              </div>
             </div>
 
-            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)} className="w-full sm:w-auto">
+            <DialogFooter className="pt-4 border-t gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsAddDialogOpen(false)
+                  resetForm()
+                }}
+                className="h-11 px-6"
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
+              <Button type="submit" disabled={isLoading} className="h-11 px-6 bg-primary hover:bg-primary/90">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Add Coach
+                <User className="mr-2 h-4 w-4" />
+                Add
               </Button>
             </DialogFooter>
           </form>
@@ -1389,57 +1602,77 @@ const ViewCoach = () => {
       </Dialog>
 
       {/* Edit Coach Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Coach</DialogTitle>
-            <DialogDescription>Update the coach's information in both User and Coaches tables.</DialogDescription>
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open)
+          if (!open) {
+            // Clear form data when Edit dialog closes
+            setSelectedCoach(null)
+            resetForm()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
+              <Edit className="h-6 w-6 text-primary" />
+              Edit Coach
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Update the coach's information in both User and Coaches tables.
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleUpdateCoach} className="space-y-6">
+          <form onSubmit={handleUpdateCoach} className="space-y-6 py-4">
             {/* Personal Information Section */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">Personal Information</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-fname">First Name*</Label>
-                  <Input
-                    id="edit-fname"
-                    name="fname"
-                    placeholder="John"
-                    value={formData.fname}
-                    onChange={handleInputChange}
-                    className={validationErrors.fname ? "border-red-500" : ""}
-                  />
-                  {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-mname">Middle Name*</Label>
-                  <Input
-                    id="edit-mname"
-                    name="mname"
-                    placeholder="Michael"
-                    value={formData.mname}
-                    onChange={handleInputChange}
-                    className={validationErrors.mname ? "border-red-500" : ""}
-                  />
-                  {validationErrors.mname && <p className="text-sm text-red-500">{validationErrors.mname}</p>}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-fname">First Name</Label>
+                    <Input
+                      id="edit-fname"
+                      name="fname"
+                      placeholder="John"
+                      value={formData.fname}
+                      onChange={handleInputChange}
+                      className={`h-11 ${validationErrors.fname ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.fname && <p className="text-sm text-red-500">{validationErrors.fname}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-mname">Middle Name (optional)</Label>
+                    <Input
+                      id="edit-mname"
+                      name="mname"
+                      placeholder="Michael"
+                      value={formData.mname || ""}
+                      onChange={handleInputChange}
+                      className={`h-11 ${validationErrors.mname ? "border-red-500" : ""}`}
+                    />
+                    {validationErrors.mname && <p className="text-sm text-red-500">{validationErrors.mname}</p>}
+                  </div>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-lname">Last Name*</Label>
+                <Label htmlFor="edit-lname">Last Name</Label>
                 <Input
                   id="edit-lname"
                   name="lname"
                   placeholder="Doe"
                   value={formData.lname}
                   onChange={handleInputChange}
-                  className={validationErrors.lname ? "border-red-500" : ""}
+                  className={`h-11 ${validationErrors.lname ? "border-red-500" : ""}`}
                 />
                 {validationErrors.lname && <p className="text-sm text-red-500">{validationErrors.lname}</p>}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-email">Email*</Label>
+                  <Label htmlFor="edit-email" className="flex items-center gap-2">
+                    <Mail className="h-4 w-4" />
+                    Email
+                  </Label>
                   <Input
                     type="email"
                     id="edit-email"
@@ -1447,21 +1680,24 @@ const ViewCoach = () => {
                     placeholder="john@example.com"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className={validationErrors.email ? "border-red-500" : ""}
+                    className={`h-11 ${validationErrors.email ? "border-red-500" : ""}`}
                   />
                   {validationErrors.email && <p className="text-sm text-red-500">{validationErrors.email}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-password">New Password (leave blank to keep current)</Label>
+                  <Label htmlFor="edit-password" className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    New Password
+                  </Label>
                   <div className="relative">
                     <Input
                       type={showEditPassword ? "text" : "password"}
                       id="edit-password"
                       name="password"
-                      placeholder="********"
+                      placeholder="Leave blank to keep current"
                       value={formData.password}
                       onChange={handleInputChange}
-                      className={validationErrors.password ? "border-red-500 pr-10" : "pr-10"}
+                      className={`h-11 ${validationErrors.password ? "border-red-500 pr-10" : "pr-10"}`}
                     />
                     <button
                       type="button"
@@ -1481,55 +1717,30 @@ const ViewCoach = () => {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-gender_id">Gender*</Label>
-                  <Select value={formData.gender_id} onValueChange={(value) => handleSelectChange("gender_id", value)}>
-                    <SelectTrigger className={validationErrors.gender_id ? "border-red-500" : ""}>
-                      <SelectValue placeholder="Select gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {genderOptions.map((gender) => (
-                        <SelectItem key={gender.id} value={gender.id}>
-                          {gender.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {validationErrors.gender_id && <p className="text-sm text-red-500">{validationErrors.gender_id}</p>}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-bday">Date of Birth*</Label>
-                  <Input
-                    type="date"
-                    id="edit-bday"
-                    name="bday"
-                    value={formData.bday}
-                    onChange={handleInputChange}
-                    className={validationErrors.bday ? "border-red-500" : ""}
-                  />
-                  {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-bday" className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  Date of Birth
+                </Label>
+                <Input
+                  type="date"
+                  id="edit-bday"
+                  name="bday"
+                  value={formData.bday}
+                  onChange={handleInputChange}
+                  max={new Date().toISOString().split('T')[0]}
+                  className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
+                />
+                {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
               </div>
             </div>
 
             {/* Professional Information Section */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">Professional Information</h3>
-              <div className="space-y-2">
-                <Label htmlFor="edit-bio">Bio</Label>
-                <Textarea
-                  id="edit-bio"
-                  name="bio"
-                  placeholder="Tell us about the coach's background and approach..."
-                  className="min-h-[100px]"
-                  value={formData.bio}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-gray-900">Professional Information</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-specialty">Specialties*</Label>
+                  <Label htmlFor="edit-specialty" className="text-sm font-medium">Specialties</Label>
 
                   {/* Selected Specialties Display */}
                   {selectedSpecialties.length > 0 && (
@@ -1587,12 +1798,12 @@ const ViewCoach = () => {
                   {validationErrors.specialty && <p className="text-sm text-red-500">{validationErrors.specialty}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-experience">Experience Level*</Label>
+                  <Label htmlFor="edit-experience" className="text-sm font-medium">Experience Level</Label>
                   <Select
                     value={formData.experience}
                     onValueChange={(value) => handleSelectChange("experience", value)}
                   >
-                    <SelectTrigger className={validationErrors.experience ? "border-red-500" : ""}>
+                    <SelectTrigger className={`h-11 ${validationErrors.experience ? "border-red-500" : ""}`}>
                       <SelectValue placeholder="Select experience" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1608,7 +1819,7 @@ const ViewCoach = () => {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-per_session_rate">Per Session Rate (₱)*</Label>
+                  <Label htmlFor="edit-per_session_rate" className="text-sm font-medium">Per Session Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -1617,14 +1828,14 @@ const ViewCoach = () => {
                     placeholder="500.00"
                     value={formData.per_session_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.per_session_rate ? "border-red-500" : ""}
+                    className={`h-11 ${validationErrors.per_session_rate ? "border-red-500" : ""}`}
                   />
                   {validationErrors.per_session_rate && (
                     <p className="text-sm text-red-500">{validationErrors.per_session_rate}</p>
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-monthly_rate">Monthly Plan Rate (₱)</Label>
+                  <Label htmlFor="edit-monthly_rate" className="text-sm font-medium">Monthly Plan Rate (₱)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -1633,7 +1844,7 @@ const ViewCoach = () => {
                     placeholder="8000.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
-                    className={validationErrors.monthly_rate ? "border-red-500" : ""}
+                    className="h-11"
                   />
                   <p className="text-xs text-gray-500">18 sessions per month</p>
                   {validationErrors.monthly_rate && (
@@ -1641,119 +1852,132 @@ const ViewCoach = () => {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-image_url">Profile Image URL</Label>
-                  <Input
-                    id="edit-image_url"
-                    name="image_url"
-                    placeholder="https://example.com/image.jpg"
-                    value={formData.image_url}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-certifications">Certifications</Label>
-                <Textarea
-                  id="edit-certifications"
-                  name="certifications"
-                  placeholder="List certifications (e.g., NASM-CPT, ACE, ACSM...)"
-                  value={formData.certifications}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-account_status">Account Status</Label>
-                <Select
-                  value={formData.account_status}
-                  onValueChange={(value) => handleSelectChange("account_status", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="approved">Active</SelectItem>
-                    <SelectItem value="deactivated">Deactivated</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-gray-500">Deactivated coaches will be moved to archive and cannot be assigned to members</p>
-              </div>
-              <div className="flex flex-row items-center justify-between rounded-lg border p-4">
-                <div className="space-y-0.5">
-                  <Label className="text-base">Available for Training</Label>
-                  <div className="text-sm text-muted-foreground">
-                    Set whether this coach is currently available for new clients
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.is_available}
-                  onCheckedChange={(checked) => handleSwitchChange("is_available", checked)}
-                />
-              </div>
             </div>
 
-            <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="w-full sm:w-auto">
+            <DialogFooter className="pt-4 border-t gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditDialogOpen(false)
+                  setSelectedCoach(null)
+                  resetForm()
+                }}
+                className="h-11 px-6"
+              >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isLoading} className="w-full sm:w-auto">
+              <Button type="submit" disabled={isLoading} className="h-11 px-6 bg-primary hover:bg-primary/90">
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Update Coach
+                <Edit className="mr-2 h-4 w-4" />
+                Update
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+      {/* Deactivate/Reactivate Confirmation Dialog */}
+      <Dialog open={isDeactivateDialogOpen} onOpenChange={setIsDeactivateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete Coach</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              {selectedCoach?.account_status === "deactivated" ? (
+                <>
+                  <RotateCw className="h-5 w-5 text-green-600" />
+                  Reactivate Account
+                </>
+              ) : (
+                <>
+                  <PowerOff className="h-5 w-5 text-orange-600" />
+                  Deactivate Account
+                </>
+              )}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this coach? This will remove entries from both User and Coaches tables.
-              This action cannot be undone.
+              {selectedCoach?.account_status === "deactivated"
+                ? "Are you sure you want to reactivate this coach account? The coach will be able to access the system again and can be assigned to members."
+                : "Are you sure you want to deactivate this coach account? The coach will not be able to access the system and cannot be assigned to members until reactivated."}
             </DialogDescription>
           </DialogHeader>
           {selectedCoach && (
-            <div className="border rounded-md p-4 mb-4">
-              <div className="flex items-center space-x-3 mb-2">
-                {selectedCoach.image_url ? (
-                  <img
-                    className="h-12 w-12 rounded-full object-cover"
-                    src={selectedCoach.image_url || "/placeholder.svg"}
-                    alt={selectedCoach.fullName}
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-full bg-gray-300 flex items-center justify-center">
-                    <User className="h-6 w-6 text-gray-600" />
+            <div className="space-y-4">
+              <div className="border rounded-md p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <User className="h-5 w-5 text-primary" />
+                  <div>
+                    <p className="font-medium">{selectedCoach.fullName}</p>
+                    <p className="text-sm text-muted-foreground">{selectedCoach.email}</p>
                   </div>
-                )}
-                <div>
-                  <p className="font-medium">{selectedCoach.fullName}</p>
-                  <p className="text-sm text-muted-foreground">{selectedCoach.email}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Current Status:</span>
+                  </div>
+                  <div>
+                    <Badge
+                      variant={selectedCoach.account_status === "deactivated" ? "secondary" : "default"}
+                      className={selectedCoach.account_status === "deactivated"
+                        ? "bg-gray-50 text-gray-700 border-gray-200"
+                        : "bg-green-50 text-green-700 border-green-200"}
+                    >
+                      {selectedCoach.account_status === "deactivated" ? "Deactivated" : "Active"}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="font-medium">Specialty:</span> {selectedCoach.specialty}
+                  </div>
+                  <div>
+                    <span className="font-medium">Experience:</span> {selectedCoach.experience}
+                  </div>
                 </div>
               </div>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <p>Specialty: {selectedCoach.specialty}</p>
-                <p>Experience: {selectedCoach.experience}</p>
-                <p>Clients: {selectedCoach.total_clients}</p>
-                <p>Rating: {selectedCoach.rating.toFixed(1)}/5.0</p>
+              <div className={`p-4 rounded-md border ${selectedCoach.account_status === "deactivated"
+                ? "bg-green-50 border-green-200"
+                : "bg-orange-50 border-orange-200"
+                }`}>
+                <p className={`text-sm ${selectedCoach.account_status === "deactivated"
+                  ? "text-green-800"
+                  : "text-orange-800"
+                  }`}>
+                  <strong>Note:</strong>{" "}
+                  {selectedCoach.account_status === "deactivated"
+                    ? "Reactivating this account will restore access to the system and allow the coach to be assigned to members again."
+                    : "Deactivating this account will prevent the coach from accessing the system and they cannot be assigned to members. The account can be reactivated at any time."}
+                </p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeactivateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isLoading}>
+            <Button
+              onClick={handleConfirmDeactivate}
+              disabled={isLoading}
+              className={
+                selectedCoach?.account_status === "deactivated"
+                  ? "bg-green-600 hover:bg-green-700"
+                  : "bg-orange-600 hover:bg-orange-700"
+              }
+            >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete Coach
+              {selectedCoach?.account_status === "deactivated" ? (
+                <>
+                  <RotateCw className="mr-2 h-4 w-4" />
+                  Reactivate
+                </>
+              ) : (
+                <>
+                  <PowerOff className="mr-2 h-4 w-4" />
+                  Deactivate
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   )
 }
