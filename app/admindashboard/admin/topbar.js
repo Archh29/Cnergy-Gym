@@ -45,11 +45,26 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
   const fetchUserData = async () => {
     try {
       const response = await fetch("https://api.cnergy.site/session.php", {
-        credentials: "include"
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        }
       })
-      const data = await response.json()
       
-      if (data.authenticated && data.user_id) {
+      // Try to parse response even if status is 401 (expected with third-party cookies)
+      let data = null
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        // Response might not be JSON or might be empty
+        // This is okay - 401 is expected with third-party cookie restrictions
+      }
+      
+      // If we got authenticated data, use it
+      if (data && data.authenticated && data.user_id) {
         // Fetch user details from the database
         const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${data.user_id}`, {
           credentials: "include"
@@ -64,9 +79,31 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
             })
           }
         }
+      } else {
+        // Not authenticated via session - this is expected with third-party cookies
+        // Use userId from props/sessionStorage to fetch user info
+        if (userId) {
+          const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${userId}`, {
+            credentials: "include"
+          })
+          
+          if (userResponse.ok) {
+            const userInfo = await userResponse.json()
+            if (userInfo.success) {
+              setUserData({
+                firstName: userInfo.user.fname || 'Admin',
+                role: userInfo.user.user_type_name || 'Administrator'
+              })
+            }
+          }
+        }
       }
     } catch (error) {
-      console.error("Error fetching user data:", error)
+      // Silently handle errors - 401 is expected with third-party cookie restrictions
+      // Only log actual errors (not 401/network errors)
+      if (error.name !== 'TypeError' && !error.message.includes('401') && !error.message.includes('Failed to fetch')) {
+        console.error("Error fetching user data:", error)
+      }
       // Keep default values on error
     }
   }

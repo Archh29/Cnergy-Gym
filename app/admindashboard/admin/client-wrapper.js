@@ -48,57 +48,58 @@ export default function AdminDashboardClient() {
         }
       })
 
-      if (response.status === 401) {
-        // 401 means unauthorized - session expired or not authenticated
-        // This is expected with third-party cookie restrictions
-        // Fall back to sessionStorage if available
-        const storedUserId = sessionStorage.getItem("user_id")
-        if (storedUserId) {
-          console.log("Session expired (401), using stored user_id:", storedUserId)
-          setUserId(parseInt(storedUserId))
-          return parseInt(storedUserId)
+      // Try to parse response even if status is 401 (expected with third-party cookies)
+      // 401 responses can still have a JSON body
+      let data = null
+      try {
+        // Read response as text first to handle 401 responses
+        const text = await response.text()
+        if (text && text.trim()) {
+          data = JSON.parse(text)
         }
-        // If no stored user_id, session is truly invalid
-        return null
+      } catch (e) {
+        // Response might not be JSON or might be empty
+        // This is okay - 401 is expected with third-party cookie restrictions
       }
 
-      if (!response.ok) {
-        // For other errors, try fallback but log the error
-        const storedUserId = sessionStorage.getItem("user_id")
-        if (storedUserId) {
-          console.warn(`Session check failed (${response.status}), using stored user_id as fallback`)
-          setUserId(parseInt(storedUserId))
-          return parseInt(storedUserId)
-        }
-        throw new Error(`Session check failed: ${response.status}`)
-      }
-
-      const data = await response.json()
-      if (data.user_id) {
+      // Check if authenticated (even if status was 401, response might have data)
+      if (data && data.authenticated === true && data.user_id) {
+        // User is authenticated via session
         setUserId(data.user_id)
         sessionStorage.setItem("user_id", data.user_id)
         return data.user_id
-      } else if (data.error) {
-        console.warn("Session error:", data.error)
-        // Try to use stored user_id as fallback
-        const storedUserId = sessionStorage.getItem("user_id")
-        if (storedUserId) {
-          setUserId(parseInt(storedUserId))
-          return parseInt(storedUserId)
-        }
       }
-    } catch (error) {
-      // Network errors or other exceptions
+
+      // Not authenticated or no user_id in response (this is normal with 401)
+      // Fall back to sessionStorage - this is the primary source when cookies don't work
       const storedUserId = sessionStorage.getItem("user_id")
       if (storedUserId) {
-        console.log("Session API unavailable, using stored user_id:", storedUserId)
+        // Use stored user_id from sessionStorage (set during login)
         setUserId(parseInt(storedUserId))
         return parseInt(storedUserId)
       }
-      // Only log error if we truly have no fallback
-      console.error("Error fetching user info and no fallback available:", error)
+
+      // No user_id available anywhere
+      // This is okay - user might need to log in again
+      return null
+    } catch (error) {
+      // Network errors or other exceptions - try sessionStorage fallback
+      const storedUserId = sessionStorage.getItem("user_id")
+      if (storedUserId) {
+        // Silently use stored user_id - network errors are common
+        setUserId(parseInt(storedUserId))
+        return parseInt(storedUserId)
+      }
+      // Don't log 401 errors or network errors - they're expected
+      // Only log unexpected errors
+      if (error.name !== 'TypeError' && 
+          error.message !== 'Failed to fetch' && 
+          !error.message.includes('401') &&
+          !error.message.includes('Unauthorized')) {
+        console.warn("Error fetching user info:", error.message)
+      }
+      return null
     }
-    return null
   }
 
   useEffect(() => {
@@ -115,16 +116,23 @@ export default function AdminDashboardClient() {
       // Silently handle failures - we already have user_id from sessionStorage
       fetchUserInfo().catch(() => {
         // Silently fail - we have sessionStorage fallback
+        // 401 errors are expected with third-party cookie restrictions
       })
     } else {
       // If no user ID in session, try to get it from API
+      // This is expected after login if login.php didn't return user_id
       fetchUserInfo().then(userId => {
-        if (!userId) {
-          // Only log as warning, not error - user might need to log in again
-          console.warn("Could not retrieve user_id. User may need to log in again.")
+        if (userId) {
+          // Successfully retrieved user_id and stored in sessionStorage
+          return
         }
+        // If we still don't have user_id, that's okay for now
+        // The app can still function, and user_id will be fetched when needed
+        // (e.g., when sending messages in support requests)
+        // Don't show warnings - 401 is expected with third-party cookies
       }).catch(() => {
-        // Silently handle - already logged in fetchUserInfo if needed
+        // Silently handle - fetchUserInfo already handled errors
+        // 401 errors are expected and handled silently
       })
     }
 
@@ -258,7 +266,7 @@ export default function AdminDashboardClient() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} />
+            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} userId={userId} />
           </div>
         </header>
         <main className="flex-1 overflow-auto p-3 sm:p-6">{renderSection()}</main>
