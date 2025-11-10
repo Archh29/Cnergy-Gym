@@ -55,6 +55,8 @@ const AdminChat = ({ userId: propUserId }) => {
     const [isOpen, setIsOpen] = useState(false)
     const [supportTickets, setSupportTickets] = useState([])
     const [selectedTicket, setSelectedTicket] = useState(null)
+    const [selectedUser, setSelectedUser] = useState(null) // Selected user for user detail view
+    const [viewMode, setViewMode] = useState("users") // "users" | "user-tickets" | "conversation"
     const [messages, setMessages] = useState([])
     const [messageInput, setMessageInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
@@ -357,9 +359,19 @@ const AdminChat = ({ userId: propUserId }) => {
     }
 
 
-    // Handle ticket select
+    // Handle user select (show user's tickets)
+    const handleUserSelect = (user) => {
+        setSelectedUser(user)
+        setViewMode("user-tickets")
+        setSelectedTicket(null)
+        setMessages([])
+        setMessageInput("")
+    }
+
+    // Handle ticket select (show conversation)
     const handleTicketSelect = (ticket) => {
         setSelectedTicket(ticket)
+        setViewMode("conversation")
         setMessages([])
         setMessageInput("")
         if (ticket && userId) {
@@ -379,9 +391,20 @@ const AdminChat = ({ userId: propUserId }) => {
 
     // Handle back button
     const handleBack = () => {
-        setSelectedTicket(null)
-        setMessages([])
-        setMessageInput("")
+        if (viewMode === "conversation") {
+            // Go back to user tickets view
+            setViewMode("user-tickets")
+            setSelectedTicket(null)
+            setMessages([])
+            setMessageInput("")
+        } else if (viewMode === "user-tickets") {
+            // Go back to users list
+            setViewMode("users")
+            setSelectedUser(null)
+            setSelectedTicket(null)
+            setMessages([])
+            setMessageInput("")
+        }
     }
 
     // Handle open/close
@@ -389,10 +412,14 @@ const AdminChat = ({ userId: propUserId }) => {
         if (isOpen) {
             setIsOpen(false)
             setSelectedTicket(null)
+            setSelectedUser(null)
+            setViewMode("users")
             setMessages([])
         } else {
             setIsOpen(true)
             setSelectedTicket(null)
+            setSelectedUser(null)
+            setViewMode("users")
             if (userId) {
                 fetchSupportTickets()
             } else {
@@ -405,6 +432,96 @@ const AdminChat = ({ userId: propUserId }) => {
                 setTimeout(() => clearInterval(checkUserId), 5000)
             }
         }
+    }
+
+    // Group tickets by user
+    const groupTicketsByUser = (tickets) => {
+        const userMap = new Map()
+        
+        tickets.forEach(ticket => {
+            const userId = ticket.user_id
+            const userName = ticket.user_name || ticket.user_email || 'Unknown User'
+            const userEmail = ticket.user_email || ''
+            
+            if (!userMap.has(userId)) {
+                userMap.set(userId, {
+                    user_id: userId,
+                    user_name: userName,
+                    user_email: userEmail,
+                    tickets: [],
+                    activeTicketsCount: 0,
+                    totalTicketsCount: 0,
+                    latestTicketTime: null
+                })
+            }
+            
+            const userData = userMap.get(userId)
+            userData.tickets.push(ticket)
+            userData.totalTicketsCount++
+            
+            if (ticket.status === 'pending' || ticket.status === 'in_progress') {
+                userData.activeTicketsCount++
+            }
+            
+            // Track latest ticket time
+            const ticketTime = new Date(ticket.last_message_at || ticket.created_at || 0)
+            if (!userData.latestTicketTime || ticketTime > userData.latestTicketTime) {
+                userData.latestTicketTime = ticketTime
+            }
+        })
+        
+        // Convert to array and sort by latest ticket time
+        return Array.from(userMap.values()).sort((a, b) => {
+            if (!a.latestTicketTime && !b.latestTicketTime) return 0
+            if (!a.latestTicketTime) return 1
+            if (!b.latestTicketTime) return -1
+            return b.latestTicketTime - a.latestTicketTime
+        })
+    }
+
+    // Filter and group users
+    const filteredUsers = () => {
+        const filtered = supportTickets.filter((ticket) => {
+            // Filter by status
+            if (statusFilter !== "all" && ticket.status !== statusFilter) {
+                return false
+            }
+            
+            // Filter by search query
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase()
+                return (
+                    ticket.ticket_number?.toLowerCase().includes(query) ||
+                    ticket.user_name?.toLowerCase().includes(query) ||
+                    ticket.user_email?.toLowerCase().includes(query) ||
+                    ticket.subject?.toLowerCase().includes(query) ||
+                    ticket.message?.toLowerCase().includes(query)
+                )
+            }
+            
+            return true
+        })
+        
+        return groupTicketsByUser(filtered)
+    }
+
+    // Get user's tickets (filtered)
+    const getUserTickets = () => {
+        if (!selectedUser) return []
+        
+        const userTickets = supportTickets.filter(ticket => ticket.user_id === selectedUser.user_id)
+        
+        // Apply status filter if not "all"
+        if (statusFilter !== "all") {
+            return userTickets.filter(ticket => ticket.status === statusFilter)
+        }
+        
+        // Sort by created_at descending
+        return userTickets.sort((a, b) => {
+            const dateA = new Date(a.created_at || a.last_message_at || 0)
+            const dateB = new Date(b.created_at || b.last_message_at || 0)
+            return dateB - dateA
+        })
     }
 
     // Initial load and periodic refresh
@@ -484,27 +601,6 @@ const AdminChat = ({ userId: propUserId }) => {
         return message.user_type_id === 1 || message.user_type_id === 2 || message.sender_type === 'admin' || message.sender_type === 'staff'
     }
 
-    // Filter tickets by search and status
-    const filteredTickets = supportTickets.filter((ticket) => {
-        // Filter by status
-        if (statusFilter !== "all" && ticket.status !== statusFilter) {
-            return false
-        }
-        
-        // Filter by search query
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase()
-            return (
-                ticket.ticket_number?.toLowerCase().includes(query) ||
-                ticket.user_name?.toLowerCase().includes(query) ||
-                ticket.user_email?.toLowerCase().includes(query) ||
-                ticket.subject?.toLowerCase().includes(query) ||
-                ticket.message?.toLowerCase().includes(query)
-            )
-        }
-        
-        return true
-    })
 
     // Calculate total badge count (active tickets)
     const totalBadgeCount = ticketCount > 0 ? ticketCount : 0
@@ -599,105 +695,10 @@ const AdminChat = ({ userId: propUserId }) => {
                         </Button>
                     </div>
 
-                    {!selectedTicket ? (
-                        // List View
+                    {viewMode === "conversation" && selectedTicket ? (
+                        // Conversation View
                         <div className="flex flex-col h-full">
-                            {/* Filters */}
-                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-2">
-                                <div className="relative">
-                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
-                                    <Input
-                                        placeholder="Search..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-8 h-9 text-sm"
-                                    />
-                                </div>
-                                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                    <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue placeholder="All Status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">All Status</SelectItem>
-                                        <SelectItem value="pending">Pending</SelectItem>
-                                        <SelectItem value="in_progress">In Progress</SelectItem>
-                                        <SelectItem value="resolved">Resolved</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {/* Items List */}
-                            <ScrollArea className="flex-1">
-                                {!userId && !userIdLoadingTimeout ? (
-                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
-                                        <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
-                                        <p className="text-xs opacity-75">Loading...</p>
-                                    </div>
-                                ) : isLoading ? (
-                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
-                                        <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
-                                        <p className="text-xs opacity-75">Loading...</p>
-                                    </div>
-                                ) : filteredTickets.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
-                                        <Ticket className="w-10 h-10 mb-3 opacity-30" />
-                                        <p className="text-sm font-medium">No tickets found</p>
-                                        <p className="text-xs mt-2 opacity-75 text-center max-w-xs">
-                                            {searchQuery || statusFilter !== "all"
-                                                ? "Try adjusting your filters"
-                                                : "Support tickets will appear here"}
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                                        {filteredTickets.map((ticket) => (
-                                            <button
-                                                key={`ticket-${ticket.id}`}
-                                                onClick={() => handleTicketSelect(ticket)}
-                                                className={cn(
-                                                    "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                                                    "transition-colors text-left flex items-start gap-3",
-                                                    (ticket.status === 'pending' || ticket.status === 'in_progress') &&
-                                                    "bg-orange-50 dark:bg-orange-900/10"
-                                                )}
-                                            >
-                                                <div className="w-10 h-10 flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                                    <Ticket className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between mb-1 gap-2">
-                                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                                            {ticket.user_name || ticket.user_email || 'Unknown User'}
-                                                        </p>
-                                                        {getStatusBadge(ticket.status)}
-                                                    </div>
-                                                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 truncate">
-                                                        {ticket.subject}
-                                                    </p>
-                                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
-                                                        {ticket.message}
-                                                    </p>
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                            {ticket.ticket_number}
-                                                        </span>
-                                                        {ticket.last_message_at && (
-                                                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                                                {formatDistanceToNow(new Date(ticket.last_message_at), { addSuffix: true })}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </ScrollArea>
-                        </div>
-                    ) : (
-                        // Chat/Ticket View
-                        <div className="flex flex-col h-full">
-                            {/* Header */}
+                            {/* Conversation Header */}
                             <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
                                 <div className="flex items-center justify-between mb-2">
                                     <button
@@ -709,10 +710,10 @@ const AdminChat = ({ userId: propUserId }) => {
                                         </div>
                                         <div className="text-left">
                                             <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                                                {selectedTicket?.user_name || selectedTicket?.user_email || 'Unknown User'}
+                                                {selectedTicket?.subject}
                                             </p>
                                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                {selectedTicket?.subject}
+                                                {selectedTicket?.user_name || selectedTicket?.user_email || 'Unknown User'}
                                             </p>
                                         </div>
                                     </button>
@@ -724,10 +725,10 @@ const AdminChat = ({ userId: propUserId }) => {
                                             value={selectedTicket.status} 
                                             onValueChange={handleUpdateStatus}
                                         >
-                                            <SelectTrigger className="h-7 text-xs w-32">
+                                            <SelectTrigger className="h-7 text-xs w-32" style={{ zIndex: 10 }}>
                                                 <SelectValue />
                                             </SelectTrigger>
-                                            <SelectContent>
+                                            <SelectContent style={{ zIndex: 9999 }}>
                                                 <SelectItem value="pending">Pending</SelectItem>
                                                 <SelectItem value="in_progress">In Progress</SelectItem>
                                                 <SelectItem value="resolved">Resolved</SelectItem>
@@ -844,7 +845,197 @@ const AdminChat = ({ userId: propUserId }) => {
                                 </div>
                             </div>
                         </div>
-                    )}
+                    ) : viewMode === "users" ? (
+                        // Users List View
+                        <div className="flex flex-col h-full">
+                            {/* Filters */}
+                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-2">
+                                <div className="relative">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                                    <Input
+                                        placeholder="Search users..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-8 h-9 text-sm"
+                                    />
+                                </div>
+                                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                    <SelectTrigger className="h-8 text-xs" style={{ zIndex: 10 }}>
+                                        <SelectValue placeholder="All Status" />
+                                    </SelectTrigger>
+                                    <SelectContent style={{ zIndex: 9999 }}>
+                                        <SelectItem value="all">All Status</SelectItem>
+                                        <SelectItem value="pending">Pending</SelectItem>
+                                        <SelectItem value="in_progress">In Progress</SelectItem>
+                                        <SelectItem value="resolved">Resolved</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Users List */}
+                            <ScrollArea className="flex-1">
+                                {!userId && !userIdLoadingTimeout ? (
+                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
+                                        <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
+                                        <p className="text-xs opacity-75">Loading...</p>
+                                    </div>
+                                ) : isLoading ? (
+                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
+                                        <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
+                                        <p className="text-xs opacity-75">Loading...</p>
+                                    </div>
+                                ) : filteredUsers().length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
+                                        <User className="w-10 h-10 mb-3 opacity-30" />
+                                        <p className="text-sm font-medium">No users found</p>
+                                        <p className="text-xs mt-2 opacity-75 text-center max-w-xs">
+                                            {searchQuery || statusFilter !== "all"
+                                                ? "Try adjusting your filters"
+                                                : "Support tickets will appear here"}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {filteredUsers().map((user) => (
+                                            <button
+                                                key={`user-${user.user_id}`}
+                                                onClick={() => handleUserSelect(user)}
+                                                className={cn(
+                                                    "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
+                                                    "transition-colors text-left flex items-start gap-3",
+                                                    user.activeTicketsCount > 0 &&
+                                                    "bg-orange-50 dark:bg-orange-900/10"
+                                                )}
+                                            >
+                                                <Avatar className="w-10 h-10 flex-shrink-0">
+                                                    <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400">
+                                                        {getUserInitials(user.user_name)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1 gap-2">
+                                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                                            {user.user_name}
+                                                        </p>
+                                                        {user.activeTicketsCount > 0 && (
+                                                            <Badge className="bg-orange-500 text-white text-xs px-1.5 py-0.5">
+                                                                {user.activeTicketsCount} active
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
+                                                        {user.user_email}
+                                                    </p>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {user.totalTicketsCount} {user.totalTicketsCount === 1 ? 'ticket' : 'tickets'}
+                                                        </span>
+                                                        {user.latestTicketTime && (
+                                                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                                                Latest: {formatDistanceToNow(user.latestTicketTime, { addSuffix: true })}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </div>
+                    ) : viewMode === "user-tickets" ? (
+                        // User Tickets View
+                        <div className="flex flex-col h-full">
+                            {/* User Info Header */}
+                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+                                <button
+                                    onClick={handleBack}
+                                    className="flex items-center gap-2 mb-2 hover:opacity-80 transition-opacity"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                                        <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div className="text-left">
+                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                                            {selectedUser?.user_name || 'Unknown User'}
+                                        </p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            {selectedUser?.user_email}
+                                        </p>
+                                    </div>
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-600 dark:text-gray-400">Status:</span>
+                                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                        <SelectTrigger className="h-7 text-xs w-32" style={{ zIndex: 10 }}>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent style={{ zIndex: 9999 }}>
+                                            <SelectItem value="all">All Status</SelectItem>
+                                            <SelectItem value="pending">Pending</SelectItem>
+                                            <SelectItem value="in_progress">In Progress</SelectItem>
+                                            <SelectItem value="resolved">Resolved</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            {/* User's Tickets List */}
+                            <ScrollArea className="flex-1">
+                                {getUserTickets().length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
+                                        <Ticket className="w-10 h-10 mb-3 opacity-30" />
+                                        <p className="text-sm font-medium">No tickets found</p>
+                                        <p className="text-xs mt-2 opacity-75 text-center max-w-xs">
+                                            {statusFilter !== "all"
+                                                ? "Try adjusting the status filter"
+                                                : "This user has no tickets"}
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {getUserTickets().map((ticket) => (
+                                            <button
+                                                key={`ticket-${ticket.id}`}
+                                                onClick={() => handleTicketSelect(ticket)}
+                                                className={cn(
+                                                    "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
+                                                    "transition-colors text-left flex items-start gap-3",
+                                                    (ticket.status === 'pending' || ticket.status === 'in_progress') &&
+                                                    "bg-orange-50 dark:bg-orange-900/10"
+                                                )}
+                                            >
+                                                <div className="w-10 h-10 flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                                                    <Ticket className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1 gap-2">
+                                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                                            {ticket.subject}
+                                                        </p>
+                                                        {getStatusBadge(ticket.status)}
+                                                    </div>
+                                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
+                                                        {ticket.message}
+                                                    </p>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {ticket.ticket_number}
+                                                        </span>
+                                                        {ticket.last_message_at && (
+                                                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                                                {formatDistanceToNow(new Date(ticket.last_message_at), { addSuffix: true })}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </div>
+                    ) : null}
                 </div>
             )}
         </>
