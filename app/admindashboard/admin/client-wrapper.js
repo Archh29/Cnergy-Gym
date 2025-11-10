@@ -21,7 +21,6 @@ import Sales from "./sales"
 import GuestManagement from "./guestmanagement"
 import Promotions from "./promotions"
 import Merchandise from "./merchandise"
-import SupportRequests from "./supportrequests"
 import AdminChat from "./admin-chat"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
@@ -219,8 +218,6 @@ export default function AdminDashboardClient() {
         return <Promotions />
       case "Merchandise":
         return <Merchandise />
-      case "SupportRequests":
-        return <SupportRequests />
       default:
         return <Home />
     }
