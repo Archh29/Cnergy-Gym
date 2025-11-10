@@ -126,17 +126,38 @@ const AdminChat = ({ userId: propUserId }) => {
         }
 
         try {
-            const response = await fetch(`${SUPPORT_API_URL}?action=get_all_tickets`)
+            const response = await fetch(`${SUPPORT_API_URL}?action=get_all_tickets`, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            })
             
             if (!response.ok) {
+                const errorText = await response.text()
+                console.error("Error fetching tickets:", response.status, errorText)
                 throw new Error(`HTTP error! status: ${response.status}`)
             }
             
             const data = await response.json()
+            console.log("Support tickets response:", data)
+            
+            // Handle response - can be array directly or wrapped in success
+            let tickets = []
+            if (Array.isArray(data)) {
+                tickets = data
+            } else if (data.success && Array.isArray(data.tickets)) {
+                tickets = data.tickets
+            } else if (data.tickets && Array.isArray(data.tickets)) {
+                tickets = data.tickets
+            }
+            
             // Sort by created_at descending (newest first)
-            const sortedData = Array.isArray(data) 
-                ? data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                : []
+            const sortedData = tickets.sort((a, b) => {
+                const dateA = new Date(a.created_at || a.last_message_at || 0)
+                const dateB = new Date(b.created_at || b.last_message_at || 0)
+                return dateB - dateA
+            })
             
             setSupportTickets(sortedData)
             
@@ -333,21 +354,36 @@ const AdminChat = ({ userId: propUserId }) => {
 
     // Fetch ticket messages
     const fetchTicketMessages = async (ticketId) => {
-        if (!userId) {
+        if (!userId || !ticketId) {
             return
         }
 
         try {
             setIsLoadingMessages(true)
             const adminIdParam = userId ? `&admin_id=${userId}` : ''
-            const response = await fetch(`${SUPPORT_API_URL}?action=get_ticket_messages&ticket_id=${ticketId}${adminIdParam}`)
+            const url = `${SUPPORT_API_URL}?action=get_ticket_messages&ticket_id=${ticketId}${adminIdParam}`
+            console.log("Fetching ticket messages from:", url)
+            
+            const response = await fetch(url, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            })
             
             if (!response.ok) {
+                const errorText = await response.text()
+                console.error("Error fetching ticket messages:", response.status, errorText)
                 throw new Error(`HTTP error! status: ${response.status}`)
             }
             
             const data = await response.json()
+            console.log("Ticket messages response:", data)
+            
             if (data.success && data.messages) {
+                setMessages(data.messages)
+                setTimeout(() => scrollToBottom(), 100)
+            } else if (data.messages && Array.isArray(data.messages)) {
                 setMessages(data.messages)
                 setTimeout(() => scrollToBottom(), 100)
             } else {
@@ -357,7 +393,7 @@ const AdminChat = ({ userId: propUserId }) => {
             console.error("Error fetching ticket messages:", error)
             toast({
                 title: "Error",
-                description: "Failed to fetch messages. Please try again.",
+                description: `Failed to fetch messages: ${error.message}`,
                 variant: "destructive",
             })
             setMessages([])
@@ -379,20 +415,41 @@ const AdminChat = ({ userId: propUserId }) => {
         try {
             // If we have a selected ticket, send via support API
             if (selectedTicket) {
+                const requestBody = {
+                    action: "send_message",
+                    ticket_id: selectedTicket.id,
+                    sender_id: userId,
+                    message: messageText,
+                }
+                
+                console.log("Sending ticket message:", requestBody)
+                
                 const response = await fetch(SUPPORT_API_URL, {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
+                        "Accept": "application/json",
                     },
-                    body: JSON.stringify({
-                        action: "send_message",
-                        ticket_id: selectedTicket.id,
-                        sender_id: userId,
-                        message: messageText,
-                    }),
+                    body: JSON.stringify(requestBody),
                 })
 
+                console.log("Send message response status:", response.status)
+
+                if (!response.ok) {
+                    const errorText = await response.text()
+                    console.error("Error sending message:", response.status, errorText)
+                    let errorMessage = "Failed to send message"
+                    try {
+                        const errorData = JSON.parse(errorText)
+                        errorMessage = errorData.error || errorData.message || errorMessage
+                    } catch (e) {
+                        errorMessage = errorText || `HTTP ${response.status}: ${response.statusText}`
+                    }
+                    throw new Error(errorMessage)
+                }
+
                 const data = await response.json()
+                console.log("Send message response data:", data)
 
                 if (data.success) {
                     // Refresh messages
@@ -404,7 +461,7 @@ const AdminChat = ({ userId: propUserId }) => {
                         description: "Message sent successfully.",
                     })
                 } else {
-                    throw new Error(data.error || "Failed to send message")
+                    throw new Error(data.error || data.message || "Failed to send message")
                 }
             } else if (selectedConversation) {
                 // Regular conversation message
@@ -454,20 +511,41 @@ const AdminChat = ({ userId: propUserId }) => {
         }
 
         try {
+            const requestBody = {
+                action: "update_status",
+                ticket_id: selectedTicket.id,
+                status: newStatus,
+                admin_id: userId,
+            }
+            
+            console.log("Updating ticket status:", requestBody)
+            
             const response = await fetch(SUPPORT_API_URL, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
+                    "Accept": "application/json",
                 },
-                body: JSON.stringify({
-                    action: "update_status",
-                    ticket_id: selectedTicket.id,
-                    status: newStatus,
-                    admin_id: userId,
-                }),
+                body: JSON.stringify(requestBody),
             })
 
+            console.log("Update status response status:", response.status)
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                console.error("Error updating status:", response.status, errorText)
+                let errorMessage = "Failed to update status"
+                try {
+                    const errorData = JSON.parse(errorText)
+                    errorMessage = errorData.error || errorData.message || errorMessage
+                } catch (e) {
+                    errorMessage = errorText || `HTTP ${response.status}: ${response.statusText}`
+                }
+                throw new Error(errorMessage)
+            }
+
             const data = await response.json()
+            console.log("Update status response data:", data)
 
             if (data.success) {
                 setSelectedTicket({ ...selectedTicket, status: newStatus })
@@ -477,7 +555,7 @@ const AdminChat = ({ userId: propUserId }) => {
                     description: `Ticket status updated to ${newStatus.replace('_', ' ')}.`,
                 })
             } else {
-                throw new Error(data.error || "Failed to update status")
+                throw new Error(data.error || data.message || "Failed to update status")
             }
         } catch (error) {
             console.error("Error updating status:", error)

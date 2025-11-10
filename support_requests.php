@@ -1,14 +1,20 @@
 <?php
-header('Content-Type: application/json');
+// Handle OPTIONS preflight request FIRST - before any output
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    header('Access-Control-Max-Age: 86400');
+    http_response_code(200);
+    exit();
+}
+
+// Set CORS headers for actual requests
+header('Content-Type: application/json; charset=UTF-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept, Origin');
 header('Access-Control-Max-Age: 86400');
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
 
 $servername = "localhost";
 $dbname = "u773938685_cnergydb";      
@@ -24,8 +30,23 @@ try {
     exit();
 }
 
-$input = json_decode(file_get_contents("php://input"), true);
-$action = $_GET['action'] ?? ($input['action'] ?? '');
+// Get input from POST body or GET parameters
+$input = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $rawInput = file_get_contents("php://input");
+    if (!empty($rawInput)) {
+        $input = json_decode($rawInput, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $input = [];
+        }
+    }
+}
+
+// Get action from GET, POST body, or form data
+$action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
+
+// Log request for debugging (remove in production)
+error_log("Support Request - Method: " . $_SERVER['REQUEST_METHOD'] . ", Action: " . $action);
 
 try {
     switch ($action) {
