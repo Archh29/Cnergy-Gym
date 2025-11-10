@@ -31,7 +31,7 @@ import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
 
 const API_BASE_URL = "https://api.cnergy.site/messages.php"
-const SUPPORT_API_URL = "https://api.cnergy.site/support_requests.php"
+const SUPPORT_API_URL = "https://api.cnergy.site/support_tickets.php"
 
 const AdminChat = ({ userId: propUserId }) => {
     // Try to get userId from prop, sessionStorage, or state
