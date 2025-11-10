@@ -30,7 +30,6 @@ import { useToast } from "@/components/ui/use-toast"
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns"
 import { cn } from "@/lib/utils"
 
-const API_BASE_URL = "https://api.cnergy.site/messages.php"
 const SUPPORT_API_URL = "https://api.cnergy.site/support_tickets.php"
 
 const AdminChat = ({ userId: propUserId }) => {
@@ -54,21 +53,17 @@ const AdminChat = ({ userId: propUserId }) => {
     })
 
     const [isOpen, setIsOpen] = useState(false)
-    const [conversations, setConversations] = useState([])
     const [supportTickets, setSupportTickets] = useState([])
-    const [selectedConversation, setSelectedConversation] = useState(null)
     const [selectedTicket, setSelectedTicket] = useState(null)
     const [messages, setMessages] = useState([])
     const [messageInput, setMessageInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [isSending, setIsSending] = useState(false)
-    const [unreadCount, setUnreadCount] = useState(0)
     const [ticketCount, setTicketCount] = useState(0)
     const [searchQuery, setSearchQuery] = useState("")
     const [statusFilter, setStatusFilter] = useState("all")
     const [isLoadingMessages, setIsLoadingMessages] = useState(false)
     const [userIdLoadingTimeout, setUserIdLoadingTimeout] = useState(false)
-    const [viewMode, setViewMode] = useState("all") // "all", "messages", "tickets"
     const messagesEndRef = useRef(null)
     const messageInputRef = useRef(null)
     const { toast } = useToast()
@@ -170,185 +165,6 @@ const AdminChat = ({ userId: propUserId }) => {
             console.error("Error fetching support tickets:", error)
             setSupportTickets([])
             setTicketCount(0)
-        }
-    }
-
-    // Fetch conversations - Get all users who have messaged admin
-    const fetchConversations = async () => {
-        if (!userId) {
-            console.log("AdminChat: userId not set yet, skipping fetch")
-            setIsLoading(false)
-            return
-        }
-
-        // Add timeout to prevent stuck loading
-        let timeoutId = null
-
-        try {
-            setIsLoading(true)
-            console.log("AdminChat: Fetching conversations for userId:", userId)
-
-            timeoutId = setTimeout(() => {
-                console.warn("AdminChat: Fetch timeout, setting loading to false")
-                setIsLoading(false)
-            }, 10000) // 10 second timeout
-
-            // Fetch both conversations and tickets
-            await Promise.all([fetchSupportTickets()])
-
-            // First, try to get admin conversations directly from messages table
-            let adminConversations = []
-
-            try {
-                const adminConvResponse = await fetch(
-                    `${API_BASE_URL}?action=get_admin_conversations&admin_id=${userId}`
-                )
-
-                if (adminConvResponse.ok) {
-                    const adminConvData = await adminConvResponse.json()
-                    console.log("AdminChat: Admin conversations response:", adminConvData)
-
-                    if (adminConvData.success && adminConvData.conversations) {
-                        adminConversations = adminConvData.conversations
-                        console.log("AdminChat: Found", adminConversations.length, "admin conversations")
-                    }
-                }
-            } catch (err) {
-                console.log("AdminChat: get_admin_conversations endpoint not available, using fallback:", err)
-            }
-
-            // Fallback: Fetch conversations from the regular conversations endpoint
-            if (adminConversations.length === 0) {
-                console.log("AdminChat: Trying conversations endpoint...")
-                const response = await fetch(
-                    `${API_BASE_URL}?action=conversations&user_id=${userId}`
-                )
-
-                console.log("AdminChat: Conversations response status:", response.status)
-
-                if (!response.ok) {
-                    const errorText = await response.text()
-                    console.error("AdminChat: Failed to fetch conversations:", response.status, errorText)
-                    throw new Error(`Failed to fetch conversations: ${response.status}`)
-                }
-
-                const data = await response.json()
-                console.log("AdminChat: Conversations data:", data)
-
-                if (data.success && data.conversations) {
-                    console.log("AdminChat: Found conversations:", data.conversations.length)
-                    adminConversations = data.conversations.filter((conv) => {
-                        // Show conversations that have messages or unread count
-                        return conv.last_message || conv.unread_count > 0 || conv.last_message_time
-                    })
-                }
-            }
-
-            if (adminConversations.length > 0) {
-                console.log("AdminChat: Processing", adminConversations.length, "conversations")
-
-                // Sort by last message time (most recent first), then by unread count
-                adminConversations.sort((a, b) => {
-                    // First sort by unread count (unread first)
-                    if ((a.unread_count || 0) > 0 && (b.unread_count || 0) === 0) return -1
-                    if ((a.unread_count || 0) === 0 && (b.unread_count || 0) > 0) return 1
-
-                    // Then sort by last message time
-                    if (a.last_message_time && b.last_message_time) {
-                        return new Date(b.last_message_time) - new Date(a.last_message_time)
-                    }
-                    if (a.last_message_time) return -1
-                    if (b.last_message_time) return 1
-
-                    // Finally sort by name
-                    const nameA = `${a.other_user?.fname || ''} ${a.other_user?.lname || ''}`.toLowerCase()
-                    const nameB = `${b.other_user?.fname || ''} ${b.other_user?.lname || ''}`.toLowerCase()
-                    return nameA.localeCompare(nameB)
-                })
-
-                setConversations(adminConversations)
-
-                // Calculate total unread count
-                const totalUnread = adminConversations.reduce(
-                    (sum, conv) => sum + (conv.unread_count || 0),
-                    0
-                )
-                setUnreadCount(totalUnread)
-                console.log("AdminChat: Total unread count:", totalUnread)
-            } else {
-                console.log("AdminChat: No conversations found")
-                setConversations([])
-                setUnreadCount(0)
-            }
-        } catch (error) {
-            console.error("AdminChat: Error fetching conversations:", error)
-            setConversations([])
-            setUnreadCount(0)
-        } finally {
-            if (timeoutId) {
-                clearTimeout(timeoutId)
-            }
-            setIsLoading(false)
-        }
-    }
-
-    // Fetch messages for a conversation
-    const fetchMessages = async (conversationId, otherUserId) => {
-        if (!userId) {
-            console.log("AdminChat: userId not set yet, skipping fetch messages")
-            return
-        }
-
-        try {
-            setIsLoadingMessages(true)
-
-            let url = ""
-
-            if (conversationId === 0) {
-                // Virtual conversation - get messages between admin and user
-                url = `${API_BASE_URL}?action=messages&conversation_id=0&user_id=${userId}&other_user_id=${otherUserId}`
-            } else {
-                // Regular conversation
-                url = `${API_BASE_URL}?action=messages&conversation_id=${conversationId}&user_id=${userId}`
-            }
-
-            console.log("Fetching messages from:", url)
-            const response = await fetch(url)
-
-            if (!response.ok) {
-                const errorText = await response.text()
-                console.error("Failed to fetch messages:", response.status, errorText)
-                throw new Error(`Failed to fetch messages: ${response.status}`)
-            }
-
-            const data = await response.json()
-            console.log("Messages response:", data)
-
-            if (data.success && data.messages) {
-                const filteredMessages = data.messages.filter(msg => {
-                    return (
-                        (msg.sender_id === otherUserId && (msg.receiver_id === userId || msg.receiver_id === 1)) ||
-                        (msg.sender_id === userId && msg.receiver_id === otherUserId)
-                    )
-                })
-
-                setMessages(filteredMessages.length > 0 ? filteredMessages : data.messages)
-                setTimeout(() => scrollToBottom(), 100)
-            } else if (data.success && Array.isArray(data.messages) && data.messages.length === 0) {
-                setMessages([])
-            } else {
-                throw new Error(data.message || "No messages found")
-            }
-        } catch (error) {
-            console.error("Error fetching messages:", error)
-            toast({
-                title: "Error",
-                description: `Failed to load messages: ${error.message}`,
-                variant: "destructive",
-            })
-            setMessages([])
-        } finally {
-            setIsLoadingMessages(false)
         }
     }
 
@@ -463,33 +279,6 @@ const AdminChat = ({ userId: propUserId }) => {
                 } else {
                     throw new Error(data.error || data.message || "Failed to send message")
                 }
-            } else if (selectedConversation) {
-                // Regular conversation message
-                const response = await fetch(`${API_BASE_URL}?action=send_message`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        sender_id: userId,
-                        receiver_id: selectedConversation.other_user.id,
-                        message: messageText,
-                        conversation_id: selectedConversation.id || null,
-                    }),
-                })
-
-                if (!response.ok) {
-                    throw new Error("Failed to send message")
-                }
-
-                const data = await response.json()
-                if (data.success && data.message) {
-                    setMessages((prev) => [...prev, data.message])
-                    fetchConversations()
-                    setTimeout(() => scrollToBottom(), 100)
-                } else {
-                    throw new Error(data.message || "Failed to send message")
-                }
             }
         } catch (error) {
             console.error("Error sending message:", error)
@@ -567,25 +356,29 @@ const AdminChat = ({ userId: propUserId }) => {
         }
     }
 
-    // Handle conversation select
-    const handleConversationSelect = (conversation) => {
-        setSelectedConversation(conversation)
-        setSelectedTicket(null)
-        setMessages([])
-        fetchMessages(conversation.id, conversation.other_user.id)
-    }
 
     // Handle ticket select
     const handleTicketSelect = (ticket) => {
         setSelectedTicket(ticket)
-        setSelectedConversation(null)
         setMessages([])
-        fetchTicketMessages(ticket.id)
+        setMessageInput("")
+        if (ticket && userId) {
+            fetchTicketMessages(ticket.id)
+        }
+    }
+    
+    // Get user initials from name
+    const getUserInitials = (name) => {
+        if (!name) return "U"
+        const parts = name.trim().split(' ')
+        if (parts.length >= 2) {
+            return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase()
+        }
+        return name.charAt(0).toUpperCase() || "U"
     }
 
     // Handle back button
     const handleBack = () => {
-        setSelectedConversation(null)
         setSelectedTicket(null)
         setMessages([])
         setMessageInput("")
@@ -595,56 +388,22 @@ const AdminChat = ({ userId: propUserId }) => {
     const handleToggle = () => {
         if (isOpen) {
             setIsOpen(false)
-            setSelectedConversation(null)
             setSelectedTicket(null)
             setMessages([])
         } else {
             setIsOpen(true)
-            setSelectedConversation(null)
             setSelectedTicket(null)
             if (userId) {
-                fetchConversations()
+                fetchSupportTickets()
             } else {
                 const checkUserId = setInterval(() => {
                     if (userId) {
                         clearInterval(checkUserId)
-                        fetchConversations()
+                        fetchSupportTickets()
                     }
                 }, 500)
                 setTimeout(() => clearInterval(checkUserId), 5000)
             }
-        }
-    }
-
-    // Get all messages from users (not from admin) - Simplified version for unread count
-    const getAllUserMessages = async () => {
-        if (!userId) {
-            return
-        }
-
-        try {
-            const response = await fetch(
-                `${API_BASE_URL}?action=conversations&user_id=${userId}`
-            )
-
-            if (!response.ok) {
-                return
-            }
-
-            const data = await response.json()
-            if (data.success && data.conversations) {
-                const conversationsWithMessages = data.conversations.filter(
-                    (conv) => conv.last_message || conv.unread_count > 0 || conv.last_message_time
-                )
-
-                const totalUnread = conversationsWithMessages.reduce(
-                    (sum, conv) => sum + (conv.unread_count || 0),
-                    0
-                )
-                setUnreadCount(totalUnread)
-            }
-        } catch (error) {
-            console.log("Error fetching user messages:", error)
         }
     }
 
@@ -653,16 +412,10 @@ const AdminChat = ({ userId: propUserId }) => {
         if (!userId) return
 
         if (isOpen) {
-            fetchConversations()
+            fetchSupportTickets()
             const interval = setInterval(() => {
                 if (userId && isOpen) {
-                    fetchConversations()
-                    if (selectedConversation) {
-                        fetchMessages(
-                            selectedConversation.id,
-                            selectedConversation.other_user.id
-                        )
-                    }
+                    fetchSupportTickets()
                     if (selectedTicket) {
                         fetchTicketMessages(selectedTicket.id)
                     }
@@ -671,11 +424,9 @@ const AdminChat = ({ userId: propUserId }) => {
 
             return () => clearInterval(interval)
         } else {
-            getAllUserMessages()
-            fetchSupportTickets() // Also fetch tickets when closed for count
+            fetchSupportTickets() // Fetch tickets when closed for count
             const interval = setInterval(() => {
                 if (userId && !isOpen) {
-                    getAllUserMessages()
                     fetchSupportTickets()
                 }
             }, 30000)
@@ -683,7 +434,7 @@ const AdminChat = ({ userId: propUserId }) => {
             return () => clearInterval(interval)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userId, isOpen, selectedConversation?.id, selectedTicket?.id])
+    }, [userId, isOpen, selectedTicket?.id])
 
     // Handle Enter key to send message
     const handleKeyPress = (e) => {
@@ -710,24 +461,6 @@ const AdminChat = ({ userId: propUserId }) => {
         }
     }
 
-    // Format conversation time
-    const formatConversationTime = (timestamp) => {
-        if (!timestamp) return ""
-        try {
-            const date = new Date(timestamp)
-            return formatDistanceToNow(date, { addSuffix: true })
-        } catch {
-            return ""
-        }
-    }
-
-    // Get user initials
-    const getUserInitials = (user) => {
-        if (!user) return "U"
-        const fname = user?.fname || ""
-        const lname = user?.lname || ""
-        return `${fname.charAt(0)}${lname.charAt(0)}`.toUpperCase() || "U"
-    }
 
     // Get status badge
     const getStatusBadge = (status) => {
@@ -751,16 +484,6 @@ const AdminChat = ({ userId: propUserId }) => {
         return message.user_type_id === 1 || message.user_type_id === 2 || message.sender_type === 'admin' || message.sender_type === 'staff'
     }
 
-    // Filter conversations by search
-    const filteredConversations = conversations.filter((conv) => {
-        if (!searchQuery) return true
-        const query = searchQuery.toLowerCase()
-        const userName = `${conv.other_user?.fname || ''} ${conv.other_user?.lname || ''}`.toLowerCase()
-        const email = conv.other_user?.email?.toLowerCase() || ""
-        const lastMessage = conv.last_message?.toLowerCase() || ""
-        return userName.includes(query) || email.includes(query) || lastMessage.includes(query)
-    })
-
     // Filter tickets by search and status
     const filteredTickets = supportTickets.filter((ticket) => {
         // Filter by status
@@ -783,23 +506,8 @@ const AdminChat = ({ userId: propUserId }) => {
         return true
     })
 
-    // Combine all items for display
-    const allItems = [
-        ...filteredTickets.map(ticket => ({ type: 'ticket', data: ticket })),
-        ...filteredConversations.map(conv => ({ type: 'conversation', data: conv }))
-    ].sort((a, b) => {
-        // Sort by date - most recent first
-        const dateA = a.type === 'ticket' 
-            ? new Date(a.data.created_at || a.data.last_message_at)
-            : new Date(a.data.last_message_time || 0)
-        const dateB = b.type === 'ticket'
-            ? new Date(b.data.created_at || b.data.last_message_at)
-            : new Date(b.data.last_message_time || 0)
-        return dateB - dateA
-    })
-
-    // Calculate total badge count (unread messages + active tickets)
-    const totalBadgeCount = unreadCount + (ticketCount > 0 ? ticketCount : 0)
+    // Calculate total badge count (active tickets)
+    const totalBadgeCount = ticketCount > 0 ? ticketCount : 0
 
     return (
         <>
@@ -830,8 +538,8 @@ const AdminChat = ({ userId: propUserId }) => {
                     cursor: 'pointer',
                     pointerEvents: 'auto'
                 }}
-                aria-label="Messages & Support"
-                title="Messages & Support"
+                aria-label="Support Tickets"
+                title="Support Tickets"
             >
                 <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2} />
                 {totalBadgeCount > 0 && (
@@ -873,11 +581,11 @@ const AdminChat = ({ userId: propUserId }) => {
                         <div className="flex items-center gap-2">
                             <MessageCircle className="w-4 h-4" />
                             <h3 className="font-semibold text-sm">
-                                Messages & Support
+                                Support Tickets
                             </h3>
                             {totalBadgeCount > 0 && (
                                 <Badge className="bg-white text-orange-600 text-xs px-1.5 py-0.5">
-                                    {totalBadgeCount} new
+                                    {totalBadgeCount} active
                                 </Badge>
                             )}
                         </div>
@@ -891,7 +599,7 @@ const AdminChat = ({ userId: propUserId }) => {
                         </Button>
                     </div>
 
-                    {!selectedConversation && !selectedTicket ? (
+                    {!selectedTicket ? (
                         // List View
                         <div className="flex flex-col h-full">
                             {/* Filters */}
@@ -930,105 +638,58 @@ const AdminChat = ({ userId: propUserId }) => {
                                         <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
                                         <p className="text-xs opacity-75">Loading...</p>
                                     </div>
-                                ) : allItems.length === 0 ? (
+                                ) : filteredTickets.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
-                                        <MessageCircle className="w-10 h-10 mb-3 opacity-30" />
-                                        <p className="text-sm font-medium">No items found</p>
+                                        <Ticket className="w-10 h-10 mb-3 opacity-30" />
+                                        <p className="text-sm font-medium">No tickets found</p>
                                         <p className="text-xs mt-2 opacity-75 text-center max-w-xs">
                                             {searchQuery || statusFilter !== "all"
                                                 ? "Try adjusting your filters"
-                                                : "Messages and support tickets will appear here"}
+                                                : "Support tickets will appear here"}
                                         </p>
                                     </div>
                                 ) : (
                                     <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                                        {allItems.map((item) => {
-                                            if (item.type === 'ticket') {
-                                                const ticket = item.data
-                                                return (
-                                                    <button
-                                                        key={`ticket-${ticket.id}`}
-                                                        onClick={() => handleTicketSelect(ticket)}
-                                                        className={cn(
-                                                            "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                                                            "transition-colors text-left flex items-start gap-3",
-                                                            (ticket.status === 'pending' || ticket.status === 'in_progress') &&
-                                                            "bg-orange-50 dark:bg-orange-900/10"
+                                        {filteredTickets.map((ticket) => (
+                                            <button
+                                                key={`ticket-${ticket.id}`}
+                                                onClick={() => handleTicketSelect(ticket)}
+                                                className={cn(
+                                                    "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
+                                                    "transition-colors text-left flex items-start gap-3",
+                                                    (ticket.status === 'pending' || ticket.status === 'in_progress') &&
+                                                    "bg-orange-50 dark:bg-orange-900/10"
+                                                )}
+                                            >
+                                                <div className="w-10 h-10 flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                                                    <Ticket className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between mb-1 gap-2">
+                                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                                            {ticket.user_name || ticket.user_email || 'Unknown User'}
+                                                        </p>
+                                                        {getStatusBadge(ticket.status)}
+                                                    </div>
+                                                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 truncate">
+                                                        {ticket.subject}
+                                                    </p>
+                                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
+                                                        {ticket.message}
+                                                    </p>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {ticket.ticket_number}
+                                                        </span>
+                                                        {ticket.last_message_at && (
+                                                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                                                {formatDistanceToNow(new Date(ticket.last_message_at), { addSuffix: true })}
+                                                            </span>
                                                         )}
-                                                    >
-                                                        <div className="w-10 h-10 flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                                            <Ticket className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center justify-between mb-1 gap-2">
-                                                                <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                                                    {ticket.user_name || ticket.user_email || 'Unknown User'}
-                                                                </p>
-                                                                {getStatusBadge(ticket.status)}
-                                                            </div>
-                                                            <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1 truncate">
-                                                                {ticket.subject}
-                                                            </p>
-                                                            <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
-                                                                {ticket.message}
-                                                            </p>
-                                                            <div className="flex items-center justify-between gap-2">
-                                                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                                    {ticket.ticket_number}
-                                                                </span>
-                                                                {ticket.last_message_at && (
-                                                                    <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                                                        {formatConversationTime(ticket.last_message_at)}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </button>
-                                                )
-                                            } else {
-                                                const conv = item.data
-                                                return (
-                                                    <button
-                                                        key={conv.id || conv.other_user.id}
-                                                        onClick={() => handleConversationSelect(conv)}
-                                                        className={cn(
-                                                            "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                                                            "transition-colors text-left flex items-start gap-3",
-                                                            conv.unread_count > 0 &&
-                                                            "bg-orange-50 dark:bg-orange-900/10"
-                                                        )}
-                                                    >
-                                                        <Avatar className="w-10 h-10 flex-shrink-0">
-                                                            <AvatarFallback className="bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-400">
-                                                                {getUserInitials(conv.other_user)}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center justify-between mb-1">
-                                                                <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                                                    {conv.other_user?.fname} {conv.other_user?.lname}
-                                                                </p>
-                                                                {conv.last_message_time && (
-                                                                    <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0 ml-2">
-                                                                        {formatConversationTime(conv.last_message_time)}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <div className="flex items-center justify-between gap-2">
-                                                                <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
-                                                                    {conv.last_message || "No messages yet"}
-                                                                </p>
-                                                                {conv.unread_count > 0 && (
-                                                                    <Badge className="bg-orange-500 text-white text-xs h-5 min-w-[20px] flex items-center justify-center">
-                                                                        {conv.unread_count}
-                                                                    </Badge>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </button>
-                                                )
-                                            }
-                                        })}
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </ScrollArea>
@@ -1044,34 +705,15 @@ const AdminChat = ({ userId: propUserId }) => {
                                         className="flex items-center gap-2 hover:opacity-80 transition-opacity"
                                     >
                                         <div className="w-8 h-8 rounded-full bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-                                            {selectedTicket ? (
-                                                <Ticket className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                                            ) : (
-                                                <span className="text-xs font-medium text-orange-600 dark:text-orange-400">
-                                                    {getUserInitials(selectedConversation?.other_user)}
-                                                </span>
-                                            )}
+                                            <Ticket className="w-4 h-4 text-orange-600 dark:text-orange-400" />
                                         </div>
                                         <div className="text-left">
-                                            {selectedTicket ? (
-                                                <>
-                                                    <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                                                        {selectedTicket.user_name || selectedTicket.user_email || 'Unknown User'}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                        {selectedTicket.subject}
-                                                    </p>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                                                        {selectedConversation?.other_user?.fname} {selectedConversation?.other_user?.lname}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                        {selectedConversation?.other_user?.email}
-                                                    </p>
-                                                </>
-                                            )}
+                                            <p className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                                                {selectedTicket?.user_name || selectedTicket?.user_email || 'Unknown User'}
+                                            </p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                {selectedTicket?.subject}
+                                            </p>
                                         </div>
                                     </button>
                                 </div>
@@ -1122,13 +764,10 @@ const AdminChat = ({ userId: propUserId }) => {
                                                         isAdmin ? "justify-end" : "justify-start"
                                                     )}
                                                 >
-                                                    {!isAdmin && (
+                                                    {!isAdmin && selectedTicket && (
                                                         <Avatar className="w-7 h-7 flex-shrink-0">
                                                             <AvatarFallback className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs">
-                                                                {selectedTicket 
-                                                                    ? getUserInitials({ fname: selectedTicket.user_name?.split(' ')[0], lname: selectedTicket.user_name?.split(' ')[1] })
-                                                                    : getUserInitials(selectedConversation?.other_user)
-                                                                }
+                                                                {getUserInitials(selectedTicket.user_name || selectedTicket.user_email || '')}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                     )}
@@ -1192,7 +831,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                     />
                                     <Button
                                         onClick={sendMessage}
-                                        disabled={!messageInput.trim() || isSending || (!selectedConversation && !selectedTicket)}
+                                        disabled={!messageInput.trim() || isSending || !selectedTicket}
                                         size="icon"
                                         className="bg-orange-500 hover:bg-orange-600 text-white"
                                     >
