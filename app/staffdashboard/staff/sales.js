@@ -34,6 +34,7 @@ import {
   Trash2,
   Minus,
   Calendar as CalendarIcon,
+  AlertTriangle,
 } from "lucide-react"
 
 // API Configuration
@@ -81,6 +82,10 @@ const Sales = ({ userId }) => {
 
   // Low stock dialog state
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
+
+  // Stock error modal state
+  const [stockErrorModalOpen, setStockErrorModalOpen] = useState(false)
+  const [stockErrorData, setStockErrorData] = useState({ productName: "", availableStock: 0, requestedQuantity: 0 })
 
   // Data from API
   const [sales, setSales] = useState([])
@@ -169,7 +174,12 @@ const Sales = ({ userId }) => {
     }
 
     if (product.stock < quantity) {
-      alert("Insufficient stock!")
+      setStockErrorData({
+        productName: product.name,
+        availableStock: product.stock,
+        requestedQuantity: quantity
+      })
+      setStockErrorModalOpen(true)
       return
     }
 
@@ -180,7 +190,12 @@ const Sales = ({ userId }) => {
       const updatedCart = [...cart]
       const newQuantity = updatedCart[existingItemIndex].quantity + quantity
       if (newQuantity > product.stock) {
-        alert("Total quantity exceeds available stock!")
+        setStockErrorData({
+          productName: product.name,
+          availableStock: product.stock,
+          requestedQuantity: newQuantity
+        })
+        setStockErrorModalOpen(true)
         return
       }
       updatedCart[existingItemIndex].quantity = newQuantity
@@ -218,7 +233,12 @@ const Sales = ({ userId }) => {
     }
 
     if (newQuantity > product.stock) {
-      alert("Quantity exceeds available stock!")
+      setStockErrorData({
+        productName: product.name,
+        availableStock: product.stock,
+        requestedQuantity: newQuantity
+      })
+      setStockErrorModalOpen(true)
       return
     }
 
@@ -502,13 +522,38 @@ const Sales = ({ userId }) => {
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format in Philippines timezone
+    return date.toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     })
+  }
+
+  const formatDateTime = () => {
+    const now = new Date()
+    // Format current date/time in Philippines timezone
+    return {
+      date: now.toLocaleDateString("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+      time: now.toLocaleTimeString("en-US", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    }
   }
 
   const getProductName = (salesDetail) => {
@@ -1317,7 +1362,7 @@ const Sales = ({ userId }) => {
                 <p className="text-sm text-muted-foreground">Point of Sale Receipt</p>
                 <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
                 <p className="text-xs text-muted-foreground">
-                  Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                  Date: {formatDateTime().date} {formatDateTime().time}
                 </p>
               </div>
 
@@ -1432,6 +1477,70 @@ const Sales = ({ userId }) => {
           <DialogFooter>
             <Button onClick={() => setLowStockDialogOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stock Error Modal */}
+      <Dialog open={stockErrorModalOpen} onOpenChange={setStockErrorModalOpen}>
+        <DialogContent className="max-w-md border-0 shadow-2xl">
+          <DialogHeader className="pb-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-3 rounded-full bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <DialogTitle className="text-2xl font-bold text-gray-900">
+                Insufficient Stock
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-base text-gray-600">
+              The requested quantity exceeds the available stock for this product.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Product:</span>
+                <span className="text-sm font-semibold text-gray-900">{stockErrorData.productName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Available Stock:</span>
+                <Badge
+                  variant={stockErrorData.availableStock === 0 ? "destructive" : "secondary"}
+                  className="font-semibold"
+                >
+                  {stockErrorData.availableStock} {stockErrorData.availableStock === 1 ? 'unit' : 'units'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Requested Quantity:</span>
+                <Badge variant="outline" className="font-semibold text-red-600 border-red-300">
+                  {stockErrorData.requestedQuantity} {stockErrorData.requestedQuantity === 1 ? 'unit' : 'units'}
+                </Badge>
+              </div>
+            </div>
+            {stockErrorData.availableStock > 0 && (
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <p className="text-sm text-blue-800">
+                  <strong>Tip:</strong> You can add up to {stockErrorData.availableStock} {stockErrorData.availableStock === 1 ? 'unit' : 'units'} of this product to your cart.
+                </p>
+              </div>
+            )}
+            {stockErrorData.availableStock === 0 && (
+              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                <p className="text-sm text-red-800">
+                  <strong>Note:</strong> This product is currently out of stock. Please restock the inventory before adding it to a sale.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => setStockErrorModalOpen(false)}
+              className="w-full bg-gray-900 hover:bg-gray-800 text-white font-medium"
+            >
+              Understood
             </Button>
           </DialogFooter>
         </DialogContent>

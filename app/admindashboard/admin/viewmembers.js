@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { formatDateToISO, safeDate } from "@/lib/dateUtils"
+import { formatDateToISO, safeDate, formatDateOnlyPH } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -660,35 +660,105 @@ const ViewMembers = ({ userId }) => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-5 text-center border border-blue-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-blue-700 mb-1">{filteredMembers.length}</div>
-              <div className="text-sm font-medium text-blue-600">Total Users</div>
-            </div>
-            <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl p-5 text-center border border-amber-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-amber-700 mb-1">
-                {filteredMembers.filter((m) => m.account_status === "pending").length}
-              </div>
-              <div className="text-sm font-medium text-amber-600">Pending</div>
-            </div>
-            <div className="bg-gradient-to-br from-green-50 to-green-100/50 rounded-xl p-5 text-center border border-green-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-green-700 mb-1">
-                {filteredMembers.filter((m) => m.account_status === "approved").length}
-              </div>
-              <div className="text-sm font-medium text-green-600">Approved</div>
-            </div>
-            <div className="bg-gradient-to-br from-red-50 to-red-100/50 rounded-xl p-5 text-center border border-red-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-red-700 mb-1">
-                {filteredMembers.filter((m) => m.account_status === "rejected").length}
-              </div>
-              <div className="text-sm font-medium text-red-600">Rejected</div>
-            </div>
-            <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 text-center border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-200">
-              <div className="text-3xl font-bold text-gray-700 mb-1">
-                {filteredMembers.filter((m) => m.account_status === "deactivated").length}
-              </div>
-              <div className="text-sm font-medium text-gray-600">Deactivated</div>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <Card
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                setStatusFilter("all")
+                setCurrentView("active")
+              }}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <Users className="h-4 w-4 text-blue-700" />
+                </div>
+                <div className="relative z-10 text-center">
+                  <p className="text-2xl font-bold text-blue-700 mb-0.5">{filteredMembers.length}</p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Users</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-amber-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                setStatusFilter("pending")
+                setCurrentView("active")
+              }}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-amber-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <Clock className="h-4 w-4 text-amber-700" />
+                </div>
+                <div className="relative z-10 text-center">
+                  <p className="text-2xl font-bold text-amber-700 mb-0.5">
+                    {filteredMembers.filter((m) => m.account_status === "pending").length}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                setStatusFilter("approved")
+                setCurrentView("active")
+              }}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-green-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-green-100 to-green-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <CheckCircle className="h-4 w-4 text-green-700" />
+                </div>
+                <div className="relative z-10 text-center">
+                  <p className="text-2xl font-bold text-green-700 mb-0.5">
+                    {filteredMembers.filter((m) => m.account_status === "approved").length}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Approved</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                setStatusFilter("rejected")
+                setCurrentView("active")
+              }}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-red-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-red-100 to-red-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <XCircle className="h-4 w-4 text-red-700" />
+                </div>
+                <div className="relative z-10 text-center">
+                  <p className="text-2xl font-bold text-red-700 mb-0.5">
+                    {filteredMembers.filter((m) => m.account_status === "rejected").length}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Rejected</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              onClick={() => {
+                setStatusFilter("deactivated")
+                setCurrentView("archive")
+              }}
+            >
+              <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-slate-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <PowerOff className="h-4 w-4 text-slate-700" />
+                </div>
+                <div className="relative z-10 text-center">
+                  <p className="text-2xl font-bold text-slate-700 mb-0.5">
+                    {filteredMembers.filter((m) => m.account_status === "deactivated").length}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Deactivated</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </CardContent>
       </Card>
@@ -730,7 +800,7 @@ const ViewMembers = ({ userId }) => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search members by name or email..."
+                placeholder="Search users by name or email..."
                 className="pl-10 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -865,6 +935,9 @@ const ViewMembers = ({ userId }) => {
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="mb-2">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Name</h3>
+              </div>
               {currentMembers.map((member, index) => {
                 const initials = `${member.fname?.[0] || ''}${member.lname?.[0] || ''}`.toUpperCase()
                 return (
@@ -899,7 +972,7 @@ const ViewMembers = ({ userId }) => {
                           {member.created_at && (
                             <div className="flex items-center gap-1 text-xs text-gray-500">
                               <CalendarDays className="h-3 w-3" />
-                              <span>Created: {new Date(member.created_at).toLocaleDateString()}</span>
+                              <span>Created: {formatDateOnlyPH(member.created_at)}</span>
                             </div>
                           )}
                         </div>
@@ -1021,7 +1094,7 @@ const ViewMembers = ({ userId }) => {
                   </div>
                   <div>
                     <span className="font-medium">Birthday:</span>{" "}
-                    {selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}
+                    {selectedMember.bday ? formatDateOnlyPH(selectedMember.bday) : "N/A"}
                   </div>
                   <div className="col-span-2">
                     <span className="font-medium">Current Status:</span> {getStatusBadge(selectedMember.account_status)}

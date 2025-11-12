@@ -21,6 +21,7 @@ import {
   FaTimes,
   FaGift,
   FaBox,
+  FaHeadset,
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
@@ -79,6 +80,7 @@ const Sidebar = ({
     { name: "Promotions", icon: <FaGift className="mr-2 h-4 w-4" /> },
     { name: "Merchandise", icon: <FaBox className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
+    { name: "SupportRequests", icon: <FaHeadset className="mr-2 h-4 w-4" /> },
   ]
 
   return (
@@ -111,11 +113,11 @@ const Sidebar = ({
               variant={activeSection === name ? "secondary" : "ghost"}
               className={`w-full mb-1 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
               onClick={() => handleSectionClick(name)}
-              title={collapsed ? (name === "StaffMonitoring" ? "Activity Logs" : name.replace(/([A-Z])/g, " $1").trim()) : ""}
+              title={collapsed ? (name === "StaffMonitoring" ? "Activity Logs" : name === "SupportRequests" ? "Support Requests" : name.replace(/([A-Z])/g, " $1").trim()) : ""}
             >
               {icon}
               <span className={`text-sm font-medium truncate ${collapsed ? 'lg:hidden' : ''}`}>
-                {name === "StaffMonitoring" ? "Activity Logs" : name.replace(/([A-Z])/g, " $1").trim()}
+                {name === "StaffMonitoring" ? "Activity Logs" : name === "SupportRequests" ? "Support Requests" : name.replace(/([A-Z])/g, " $1").trim()}
               </span>
             </Button>
           ))}

@@ -22,6 +22,7 @@ import GuestManagement from "./guestmanagement"
 import Promotions from "./promotions"
 import Merchandise from "./merchandise"
 import AdminChat from "./admin-chat"
+import SupportRequests from "./supportrequests"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function AdminDashboardClient() {
@@ -218,6 +219,8 @@ export default function AdminDashboardClient() {
         return <Promotions />
       case "Merchandise":
         return <Merchandise />
+      case "SupportRequests":
+        return <SupportRequests />
       default:
         return <Home />
     }
@@ -263,7 +266,13 @@ export default function AdminDashboardClient() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} userId={userId} />
+            <Topbar 
+              searchQuery={searchQuery} 
+              setSearchQuery={setSearchQuery} 
+              userRole={userRole} 
+              userId={userId}
+              onNavigateToSection={setCurrentSection}
+            />
           </div>
         </header>
         <main className="flex-1 overflow-auto p-3 sm:p-6">{renderSection()}</main>

@@ -112,6 +112,10 @@ const Sales = ({ userId }) => {
   // Low stock dialog state
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
 
+  // Stock error modal state
+  const [stockErrorModalOpen, setStockErrorModalOpen] = useState(false)
+  const [stockErrorData, setStockErrorData] = useState({ productName: "", availableStock: 0, requestedQuantity: 0 })
+
   // Success notification state
   const [showSuccessNotification, setShowSuccessNotification] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
@@ -449,7 +453,12 @@ const Sales = ({ userId }) => {
     }
 
     if (product.stock < quantity) {
-      alert("Insufficient stock!")
+      setStockErrorData({
+        productName: product.name,
+        availableStock: product.stock,
+        requestedQuantity: quantity
+      })
+      setStockErrorModalOpen(true)
       return
     }
 
@@ -459,7 +468,12 @@ const Sales = ({ userId }) => {
       // Update quantity to the new value (replace, not add)
       const updatedCart = [...cart]
       if (quantity > product.stock) {
-        alert("Quantity exceeds available stock!")
+        setStockErrorData({
+          productName: product.name,
+          availableStock: product.stock,
+          requestedQuantity: quantity
+        })
+        setStockErrorModalOpen(true)
         return
       }
       updatedCart[existingItemIndex].quantity = quantity
@@ -497,7 +511,12 @@ const Sales = ({ userId }) => {
     }
 
     if (newQuantity > product.stock) {
-      alert("Quantity exceeds available stock!")
+      setStockErrorData({
+        productName: product.name,
+        availableStock: product.stock,
+        requestedQuantity: newQuantity
+      })
+      setStockErrorModalOpen(true)
       return
     }
 
@@ -821,13 +840,51 @@ const Sales = ({ userId }) => {
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format in Philippines timezone
+    return date.toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     })
+  }
+
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format date only in Philippines timezone
+    return date.toLocaleDateString("en-US", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    })
+  }
+
+  const formatDateTime = () => {
+    const now = new Date()
+    // Format current date/time in Philippines timezone
+    return {
+      date: now.toLocaleDateString("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+      time: now.toLocaleTimeString("en-US", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })
+    }
   }
 
   const getProductName = (salesDetail) => {
@@ -1719,13 +1776,13 @@ const Sales = ({ userId }) => {
           </DialogHeader>
           <div className="space-y-4 py-2">
             {!isAddOnlyMode && (
-            <div className="space-y-2">
+              <div className="space-y-2">
                 <Label className="text-sm font-medium">Action</Label>
-              <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
+                <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
                   <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
                     <SelectItem value="add">
                       <div className="flex items-center gap-2">
                         <Plus className="h-4 w-4 text-green-600" />
@@ -1738,9 +1795,9 @@ const Sales = ({ userId }) => {
                         <span>Remove Stock</span>
                       </div>
                     </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
             <div className="space-y-2">
               <Label className="text-sm font-medium">
@@ -1940,7 +1997,7 @@ const Sales = ({ userId }) => {
                 <p className="text-sm text-muted-foreground">Point of Sale Receipt</p>
                 <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
                 <p className="text-xs text-muted-foreground">
-                  Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString()}
+                  Date: {formatDateTime().date} {formatDateTime().time}
                 </p>
               </div>
 
@@ -2024,11 +2081,11 @@ const Sales = ({ userId }) => {
                 </div>
                 <div>
                   <DialogTitle className="text-2xl font-bold text-gray-900">
-              Low Stock Products
-            </DialogTitle>
+                    Low Stock Products
+                  </DialogTitle>
                   <DialogDescription className="text-sm text-gray-600 mt-1">
-              Products with 10 or fewer items remaining that need restocking
-            </DialogDescription>
+                    Products with 10 or fewer items remaining that need restocking
+                  </DialogDescription>
                 </div>
               </div>
               {getLowStockProducts().length > 0 && (
@@ -2051,8 +2108,8 @@ const Sales = ({ userId }) => {
               </div>
             ) : (
               <div className="py-4">
-              <Table>
-                <TableHeader>
+                <Table>
+                  <TableHeader>
                     <TableRow className="bg-gray-50 hover:bg-gray-50">
                       <TableHead className="font-semibold text-gray-900">Product Name</TableHead>
                       <TableHead className="font-semibold text-gray-900">Category</TableHead>
@@ -2060,12 +2117,12 @@ const Sales = ({ userId }) => {
                       <TableHead className="font-semibold text-gray-900">Price</TableHead>
                       <TableHead className="font-semibold text-gray-900">Status</TableHead>
                       <TableHead className="text-right font-semibold text-gray-900">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {getLowStockProducts()
-                    .sort((a, b) => a.stock - b.stock)
-                    .map((product) => (
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {getLowStockProducts()
+                      .sort((a, b) => a.stock - b.stock)
+                      .map((product) => (
                         <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors">
                           <TableCell className="font-semibold text-gray-900">{product.name}</TableCell>
                           <TableCell>
@@ -2073,9 +2130,9 @@ const Sales = ({ userId }) => {
                               {product.category}
                             </Badge>
                           </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
+                          <TableCell>
+                            <Badge
+                              variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
                               className={`w-fit font-semibold ${product.stock === 0
                                 ? "bg-red-600 text-white"
                                 : product.stock <= 5
@@ -2084,24 +2141,24 @@ const Sales = ({ userId }) => {
                                 }`}
                             >
                               {product.stock} {product.stock === 1 ? 'unit' : 'units'}
-                          </Badge>
-                        </TableCell>
+                            </Badge>
+                          </TableCell>
                           <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
-                        <TableCell>
-                          {product.stock === 0 ? (
+                          <TableCell>
+                            {product.stock === 0 ? (
                               <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
                                 Out of Stock
                               </Badge>
-                          ) : product.stock <= 5 ? (
+                            ) : product.stock <= 5 ? (
                               <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
-                              Critical
-                            </Badge>
-                          ) : (
+                                Critical
+                              </Badge>
+                            ) : (
                               <Badge variant="outline" className="bg-orange-100 text-black border-orange-300 font-semibold">
-                              Low Stock
-                            </Badge>
-                          )}
-                        </TableCell>
+                                Low Stock
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant="default"
@@ -2119,11 +2176,11 @@ const Sales = ({ userId }) => {
                               <Plus className="mr-1.5 h-4 w-4" />
                               Add Stock
                             </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
           </div>
@@ -2139,13 +2196,77 @@ const Sales = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
+      {/* Stock Error Modal */}
+      <Dialog open={stockErrorModalOpen} onOpenChange={setStockErrorModalOpen}>
+        <DialogContent className="max-w-md border-0 shadow-2xl">
+          <DialogHeader className="pb-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-3 rounded-full bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <DialogTitle className="text-2xl font-bold text-gray-900">
+                Insufficient Stock
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-base text-gray-600">
+              The requested quantity exceeds the available stock for this product.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-gray-50 rounded-lg p-4 space-y-3 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Product:</span>
+                <span className="text-sm font-semibold text-gray-900">{stockErrorData.productName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Available Stock:</span>
+                <Badge
+                  variant={stockErrorData.availableStock === 0 ? "destructive" : "secondary"}
+                  className="font-semibold"
+                >
+                  {stockErrorData.availableStock} {stockErrorData.availableStock === 1 ? 'unit' : 'units'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Requested Quantity:</span>
+                <Badge variant="outline" className="font-semibold text-red-600 border-red-300">
+                  {stockErrorData.requestedQuantity} {stockErrorData.requestedQuantity === 1 ? 'unit' : 'units'}
+                </Badge>
+              </div>
+            </div>
+            {stockErrorData.availableStock > 0 && (
+              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                <p className="text-sm text-blue-800">
+                  <strong>Tip:</strong> You can add up to {stockErrorData.availableStock} {stockErrorData.availableStock === 1 ? 'unit' : 'units'} of this product to your cart.
+                </p>
+              </div>
+            )}
+            {stockErrorData.availableStock === 0 && (
+              <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                <p className="text-sm text-red-800">
+                  <strong>Note:</strong> This product is currently out of stock. Please restock the inventory before adding it to a sale.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => setStockErrorModalOpen(false)}
+              className="w-full bg-gray-900 hover:bg-gray-800 text-white font-medium"
+            >
+              Understood
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Success Notification Dialog */}
       <Dialog open={showSuccessNotification} onOpenChange={setShowSuccessNotification}>
         <DialogContent className="max-w-md border-0 shadow-2xl">
           <div className="flex flex-col items-center text-center py-6 px-4">
             <div className="p-4 rounded-full bg-gradient-to-br from-green-100 to-emerald-100 mb-4 shadow-lg">
               <CheckCircle className="h-12 w-12 text-green-600" />
-              </div>
+            </div>
             <DialogTitle className="text-2xl font-bold text-gray-900 mb-2">
               Success!
             </DialogTitle>
@@ -2176,25 +2297,25 @@ const Sales = ({ userId }) => {
             {/* Filters Row */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
               {/* Left side - Coach Filter */}
-            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4">
                 <Label htmlFor="coach-filter">By Coach:</Label>
-              <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="Select a coach" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Coaches</SelectItem>
+                <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select a coach" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Coaches</SelectItem>
                     {coaches.map((coach) => {
                       const memberCount = getMemberCountForCoach(coach.id)
                       return (
-                    <SelectItem key={coach.id} value={coach.id.toString()}>
+                        <SelectItem key={coach.id} value={coach.id.toString()}>
                           {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
-                    </SelectItem>
+                        </SelectItem>
                       )
                     })}
-                </SelectContent>
-              </Select>
-            </div>
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* Right side - Service Type, Month and Year Filters */}
               <div className="flex items-center gap-4 flex-wrap">
@@ -2470,22 +2591,22 @@ const Sales = ({ userId }) => {
 
                   return (
                     <>
-            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Member</TableHead>
+                      <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Member</TableHead>
                               <TableHead>Service Type</TableHead>
-                    <TableHead>Coach</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment Method</TableHead>
-                    <TableHead>Receipt #</TableHead>
+                              <TableHead>Coach</TableHead>
+                              <TableHead>Amount</TableHead>
+                              <TableHead>Payment Method</TableHead>
+                              <TableHead>Receipt #</TableHead>
                               <TableHead>End Date</TableHead>
                               <TableHead>Days Left</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
                             {paginatedSales.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
@@ -2499,7 +2620,7 @@ const Sales = ({ userId }) => {
                                 return (
                                   <TableRow key={sale.id}>
                                     <TableCell className="font-medium">
-                                      {new Date(sale.sale_date).toLocaleDateString()}
+                                      {formatDateOnly(sale.sale_date)}
                                     </TableCell>
                                     <TableCell>
                                       {sale.user_name || 'N/A'}
@@ -2531,7 +2652,7 @@ const Sales = ({ userId }) => {
                                     </TableCell>
                                     <TableCell className="text-sm">
                                       {assignmentDetails?.endDate
-                                        ? new Date(assignmentDetails.endDate).toLocaleDateString()
+                                        ? formatDateOnly(assignmentDetails.endDate)
                                         : 'N/A'}
                                     </TableCell>
                                     <TableCell>
@@ -2616,15 +2737,15 @@ const Sales = ({ userId }) => {
                 {/* Expired Coaching Sales Table */}
                 {(() => {
                   const filteredExpiredSales = sales.filter((sale) => {
-                      // Filter by coaching sales
-                      const isCoachingSale = sale.sale_type === 'Coaching' ||
-                        sale.sale_type === 'Coach Assignment' ||
-                        sale.sale_type === 'Coach'
+                    // Filter by coaching sales
+                    const isCoachingSale = sale.sale_type === 'Coaching' ||
+                      sale.sale_type === 'Coach Assignment' ||
+                      sale.sale_type === 'Coach'
 
-                      if (!isCoachingSale) return false
+                    if (!isCoachingSale) return false
 
-                      // Filter by selected coach if not "all"
-                      if (selectedCoachFilter !== "all") {
+                    // Filter by selected coach if not "all"
+                    if (selectedCoachFilter !== "all") {
                       if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
                     }
 
@@ -2702,13 +2823,13 @@ const Sales = ({ userId }) => {
                               paginatedSales.map((sale) => {
                                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
                                 return (
-                      <TableRow key={sale.id}>
-                        <TableCell className="font-medium">
-                          {new Date(sale.sale_date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          {sale.user_name || 'N/A'}
-                        </TableCell>
+                                  <TableRow key={sale.id}>
+                                    <TableCell className="font-medium">
+                                      {new Date(sale.sale_date).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell>
+                                      {sale.user_name || 'N/A'}
+                                    </TableCell>
                                     <TableCell>
                                       {(() => {
                                         const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
@@ -2719,24 +2840,24 @@ const Sales = ({ userId }) => {
                                           </Badge>
                                         )
                                       })()}
-                        </TableCell>
-                        <TableCell>
-                          {sale.coach_name ? (
-                            <Badge variant="secondary">{sale.coach_name}</Badge>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {sale.receipt_number || 'N/A'}
-                        </TableCell>
+                                    </TableCell>
+                                    <TableCell>
+                                      {sale.coach_name ? (
+                                        <Badge variant="secondary">{sale.coach_name}</Badge>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">N/A</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">
+                                      {sale.receipt_number || 'N/A'}
+                                    </TableCell>
                                     <TableCell className="text-sm">
                                       {assignmentDetails?.endDate
-                                        ? new Date(assignmentDetails.endDate).toLocaleDateString()
+                                        ? formatDateOnly(assignmentDetails.endDate)
                                         : 'N/A'}
                                     </TableCell>
                                     <TableCell>
@@ -2747,21 +2868,21 @@ const Sales = ({ userId }) => {
                                       ) : (
                                         <span className="text-sm text-muted-foreground">N/A</span>
                                       )}
-                        </TableCell>
-                      </TableRow>
+                                    </TableCell>
+                                  </TableRow>
                                 )
                               })
                             )}
-                </TableBody>
-              </Table>
-                </div>
+                          </TableBody>
+                        </Table>
+                      </div>
 
                       {/* Pagination Controls */}
                       {filteredExpiredSales.length > 0 && (
                         <div className="flex items-center justify-between mt-4">
                           <div className="text-sm text-muted-foreground">
                             Showing {startIndex + 1} to {Math.min(endIndex, filteredExpiredSales.length)} of {filteredExpiredSales.length} results
-            </div>
+                          </div>
                           <div className="flex items-center gap-2">
                             <Button
                               variant="outline"
@@ -2963,7 +3084,7 @@ const Sales = ({ userId }) => {
                       return (
                         <TableRow key={sale.id}>
                           <TableCell className="font-medium">
-                            {new Date(sale.sale_date).toLocaleDateString()}
+                            {formatDateOnly(sale.sale_date)}
                           </TableCell>
                           <TableCell>
                             {sale.user_name || 'N/A'}
@@ -3079,7 +3200,7 @@ const Sales = ({ userId }) => {
                       // Filter by product sales - sales that have product items OR sale_type is Product
                       const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
                       const isProductSale = sale.sale_type === 'Product'
-                      
+
                       if (!hasProducts && !isProductSale) return false
 
                       // Filter by category if selected
@@ -3094,7 +3215,7 @@ const Sales = ({ userId }) => {
 
                       // Filter by product if selected
                       if (selectedProductFilter !== "all") {
-                        const hasProductMatch = sale.sales_details?.some(detail => 
+                        const hasProductMatch = sale.sales_details?.some(detail =>
                           detail.product_id && detail.product_id.toString() === selectedProductFilter
                         )
                         if (!hasProductMatch) return false
@@ -3111,15 +3232,15 @@ const Sales = ({ userId }) => {
                           const quantity = detail.quantity || 1
                           return `${productName}${quantity > 1 ? ` (x${quantity})` : ''}`
                         }) || []
-                      
-                      const productsDisplay = productDetails.length > 0 
-                        ? productDetails.join(', ') 
+
+                      const productsDisplay = productDetails.length > 0
+                        ? productDetails.join(', ')
                         : 'N/A'
 
                       return (
                         <TableRow key={sale.id}>
                           <TableCell className="font-medium">
-                            {new Date(sale.sale_date).toLocaleDateString()}
+                            {formatDateOnly(sale.sale_date)}
                           </TableCell>
                           <TableCell className="max-w-xs">
                             <div className="text-sm truncate" title={productsDisplay}>
@@ -3142,7 +3263,7 @@ const Sales = ({ userId }) => {
                 const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
                 const isProductSale = sale.sale_type === 'Product'
                 if (!hasProducts && !isProductSale) return false
-                
+
                 if (selectedCategoryFilter !== "all") {
                   const hasCategoryMatch = sale.sales_details?.some(detail => {
                     if (!detail.product_id) return false
@@ -3153,7 +3274,7 @@ const Sales = ({ userId }) => {
                 }
 
                 if (selectedProductFilter !== "all") {
-                  const hasProductMatch = sale.sales_details?.some(detail => 
+                  const hasProductMatch = sale.sales_details?.some(detail =>
                     detail.product_id && detail.product_id.toString() === selectedProductFilter
                   )
                   if (!hasProductMatch) return false
@@ -3161,11 +3282,11 @@ const Sales = ({ userId }) => {
 
                 return true
               }).length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ShoppingCart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No product sales found</p>
-                </div>
-              )}
+                  <div className="text-center py-8 text-muted-foreground">
+                    <ShoppingCart className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No product sales found</p>
+                  </div>
+                )}
             </div>
           </div>
           <DialogFooter>

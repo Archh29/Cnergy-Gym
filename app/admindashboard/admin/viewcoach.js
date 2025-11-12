@@ -950,37 +950,40 @@ const ViewCoach = () => {
   return (
     <div className="space-y-6 pb-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-0 shadow-lg">
-          <CardContent className="flex items-center p-6">
-            <div className="p-3 bg-blue-100 rounded-lg mr-4">
-              <Users className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Users className="h-6 w-6 text-blue-700" />
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Coaches</p>
-              <p className="text-2xl font-bold text-gray-900">{coachStats.totalCoaches}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-lg">
-          <CardContent className="flex items-center p-6">
-            <div className="p-3 bg-green-100 rounded-lg mr-4">
-              <CheckCircle className="h-6 w-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Available</p>
-              <p className="text-2xl font-bold text-gray-900">{coachStats.availableCoaches}</p>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Total Coaches</p>
+              <p className="text-3xl font-bold text-blue-700">{coachStats.totalCoaches}</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-lg">
-          <CardContent className="flex items-center p-6">
-            <div className="p-3 bg-yellow-100 rounded-lg mr-4">
-              <Star className="h-6 w-6 text-yellow-600" />
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-green-100 to-green-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <CheckCircle className="h-6 w-6 text-green-700" />
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Avg Rating</p>
-              <p className="text-2xl font-bold text-gray-900">{coachStats.averageRating}</p>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Available</p>
+              <p className="text-3xl font-bold text-green-700">{coachStats.availableCoaches}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-yellow-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-yellow-100 to-yellow-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Star className="h-6 w-6 text-yellow-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Avg Rating</p>
+              <p className="text-3xl font-bold text-yellow-700">{coachStats.averageRating}</p>
             </div>
           </CardContent>
         </Card>

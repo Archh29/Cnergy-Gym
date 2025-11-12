@@ -290,11 +290,16 @@ const CoachAssignments = ({ userId }) => {
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A"
-    return new Date(dateString).toLocaleDateString("en-US", {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format in Philippines timezone
+    return date.toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     })
   }
 

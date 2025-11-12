@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { formatDateToISO, safeDate } from "@/lib/dateUtils"
+import { formatDateToISO, safeDate, formatDateOnlyPH } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -602,14 +602,20 @@ const ViewMembers = ({ userId }) => {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div
               className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-              onClick={() => setStatusFilter("all")}
+              onClick={() => {
+                setStatusFilter("all")
+                setCurrentView("active")
+              }}
             >
               <div className="text-2xl font-bold text-primary">{filteredMembers.length}</div>
               <div className="text-sm text-muted-foreground">Total Users</div>
             </div>
             <div
               className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-              onClick={() => setStatusFilter("pending")}
+              onClick={() => {
+                setStatusFilter("pending")
+                setCurrentView("active")
+              }}
             >
               <div className="text-2xl font-bold text-yellow-600">
                 {filteredMembers.filter((m) => m.account_status === "pending").length}
@@ -618,7 +624,10 @@ const ViewMembers = ({ userId }) => {
             </div>
             <div
               className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-              onClick={() => setStatusFilter("approved")}
+              onClick={() => {
+                setStatusFilter("approved")
+                setCurrentView("active")
+              }}
             >
               <div className="text-2xl font-bold text-green-600">
                 {filteredMembers.filter((m) => m.account_status === "approved").length}
@@ -627,7 +636,10 @@ const ViewMembers = ({ userId }) => {
             </div>
             <div
               className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-              onClick={() => setStatusFilter("rejected")}
+              onClick={() => {
+                setStatusFilter("rejected")
+                setCurrentView("active")
+              }}
             >
               <div className="text-2xl font-bold text-red-600">
                 {filteredMembers.filter((m) => m.account_status === "rejected").length}
@@ -636,7 +648,10 @@ const ViewMembers = ({ userId }) => {
             </div>
             <div
               className="text-center cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-              onClick={() => setStatusFilter("deactivated")}
+              onClick={() => {
+                setStatusFilter("deactivated")
+                setCurrentView("archive")
+              }}
             >
               <div className="text-2xl font-bold text-gray-600">
                 {filteredMembers.filter((m) => m.account_status === "deactivated").length}
@@ -676,7 +691,7 @@ const ViewMembers = ({ userId }) => {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search members by name or email..."
+                placeholder="Search users by name or email..."
                 className="pl-8"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -799,6 +814,9 @@ const ViewMembers = ({ userId }) => {
             </div>
           ) : (
             <div className="space-y-2">
+              <div className="mb-2">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Name</h3>
+              </div>
               {currentMembers.map((member, index) => (
                 <div
                   key={member.id || `member-${index}`}
@@ -818,7 +836,7 @@ const ViewMembers = ({ userId }) => {
                         <div className="text-sm text-muted-foreground">{member.email}</div>
                         {member.created_at && (
                           <div className="text-xs text-muted-foreground">
-                            Created: {new Date(member.created_at).toLocaleDateString()}
+                            Created: {formatDateOnlyPH(member.created_at)}
                           </div>
                         )}
                       </div>
@@ -908,7 +926,7 @@ const ViewMembers = ({ userId }) => {
                   </div>
                   <div>
                     <span className="font-medium">Birthday:</span>{" "}
-                    {selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}
+                    {selectedMember.bday ? formatDateOnlyPH(selectedMember.bday) : "N/A"}
                   </div>
                   <div className="col-span-2">
                     <span className="font-medium">Current Status:</span> {getStatusBadge(selectedMember.account_status)}

@@ -1,25 +1,12 @@
 <?php
+// Set timezone to Philippines
+date_default_timezone_set('Asia/Manila');
+
 // Enhanced subscription management API - Complete solution for monitoring, approval, and manual creation
-require 'activity_logger.php';
-
-// CORS headers - allow specific origins
-$allowed_origins = [
-    'https://www.cnergy.site',
-    'https://cnergy.site',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000'
-];
-
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowed_origins)) {
-    header("Access-Control-Allow-Origin: $origin");
-} else {
-    header("Access-Control-Allow-Origin: *");
-}
-
+// Set headers for CORS and JSON response
+header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 header("Content-Type: application/json");
 
 // Handle preflight requests
@@ -28,7 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Database configuration - Remote Database
+// Database configuration
+
 $host = "localhost";
 $dbname = "u773938685_cnergydb";
 $username = "u773938685_archh29";
@@ -41,6 +29,8 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
+    // Set MySQL timezone to Philippines
+    $pdo->exec("SET time_zone = '+08:00'");
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode([
@@ -68,8 +58,6 @@ try {
                 getSubscriptionPlans($pdo);
             } elseif ($action === 'users') {
                 getAvailableUsers($pdo);
-            } elseif ($action === 'get-subscription' && isset($_GET['id'])) {
-                getSubscriptionById($pdo, $_GET['id']);
             } elseif ($action === 'available-plans' && isset($_GET['user_id'])) {
                 getAvailablePlansForUser($pdo, $_GET['user_id']);
             } elseif (isset($_GET['user_id'])) {
@@ -82,9 +70,6 @@ try {
             switch ($action) {
                 case 'approve':
                     approveSubscription($pdo, $data);
-                    break;
-                case 'approve_with_payment':
-                    approveSubscriptionWithPayment($pdo, $data);
                     break;
                 case 'decline':
                     declineSubscription($pdo, $data);
@@ -135,22 +120,11 @@ try {
 
 function getAllSubscriptions($pdo)
 {
-    // Get only the most recent subscription per user per plan to prevent duplicates
-    // CRITICAL: Only show subscriptions with confirmed payments
-    // Check if subscription table has created_at column
-    $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
-    $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
-
-    $createdAtSelect = $hasCreatedAt
-        ? "COALESCE(s.created_at, (SELECT sale.sale_date FROM sales sale WHERE sale.receipt_number = s.receipt_number AND sale.sale_type = 'Subscription' ORDER BY sale.sale_date ASC LIMIT 1), (SELECT sale2.sale_date FROM sales sale2 INNER JOIN sales_details sd ON sd.sale_id = sale2.id WHERE sd.subscription_id = s.id ORDER BY sale2.sale_date ASC LIMIT 1), (SELECT pay.payment_date FROM payment pay WHERE pay.subscription_id = s.id ORDER BY pay.payment_date ASC LIMIT 1), NOW())"
-        : "COALESCE((SELECT sale.sale_date FROM sales sale WHERE sale.receipt_number = s.receipt_number AND sale.sale_type = 'Subscription' ORDER BY sale.sale_date ASC LIMIT 1), (SELECT sale2.sale_date FROM sales sale2 INNER JOIN sales_details sd ON sd.sale_id = sale2.id WHERE sd.subscription_id = s.id ORDER BY sale2.sale_date ASC LIMIT 1), (SELECT pay.payment_date FROM payment pay WHERE pay.subscription_id = s.id ORDER BY pay.payment_date ASC LIMIT 1), NOW())";
-
     $stmt = $pdo->query("
-        SELECT s.id, s.start_date, s.end_date, s.discounted_price, s.amount_paid,
+        SELECT s.id, s.start_date, s.end_date, s.discounted_price, s.discount_type, s.amount_paid,
                u.id as user_id, u.fname, u.mname, u.lname, u.email,
                p.id as plan_id, p.plan_name, p.price, p.duration_months,
                st.id as status_id, st.status_name,
-               {$createdAtSelect} as created_at,
                CASE 
                    WHEN st.status_name = 'pending_approval' THEN 'Pending Approval'
                    WHEN st.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
@@ -164,62 +138,33 @@ function getAllSubscriptions($pdo)
         JOIN user u ON s.user_id = u.id
         JOIN member_subscription_plan p ON s.plan_id = p.id
         JOIN subscription_status st ON s.status_id = st.id
-        WHERE s.id IN (
-            SELECT MAX(s2.id) 
-            FROM subscription s2
-            GROUP BY s2.user_id, s2.plan_id
-        )
-        AND s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
-        AND EXISTS (
-            SELECT 1 FROM payment pay 
-            WHERE pay.subscription_id = s.id
-        )  -- CRITICAL: Only show subscriptions with payment records
-        ORDER BY s.id DESC
+        ORDER BY 
+            CASE 
+                WHEN st.status_name = 'pending_approval' THEN 1
+                WHEN st.status_name = 'approved' THEN 2
+                ELSE 3
+            END,
+            s.start_date DESC
     ");
 
     $subscriptions = $stmt->fetchAll();
 
     // Get payment information for each subscription
     foreach ($subscriptions as &$subscription) {
-        try {
-            // First, check if payment table has status column
-            $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
-            $hasStatusColumn = $checkColumnStmt->rowCount() > 0;
+        $paymentStmt = $pdo->prepare("
+            SELECT COUNT(*) as payment_count, SUM(amount) as total_paid
+            FROM payment 
+            WHERE subscription_id = ?
+        ");
+        $paymentStmt->execute([$subscription['id']]);
+        $paymentInfo = $paymentStmt->fetch();
 
-            if ($hasStatusColumn) {
-                // Query with status filter
-                $paymentStmt = $pdo->prepare("
-                    SELECT COUNT(*) as payment_count, SUM(amount) as total_paid
-                    FROM payment 
-                    WHERE subscription_id = ? 
-                    AND status = 'completed'
-                ");
-            } else {
-                // Query without status filter (assume all payments are completed)
-                $paymentStmt = $pdo->prepare("
-                    SELECT COUNT(*) as payment_count, SUM(amount) as total_paid
-                    FROM payment 
-                    WHERE subscription_id = ?
-                ");
-            }
+        $subscription['payments'] = [];
+        $subscription['payment_count'] = $paymentInfo['payment_count'] ?? 0;
+        $subscription['total_paid'] = $paymentInfo['total_paid'] ?? 0;
 
-            $paymentStmt->execute([$subscription['id']]);
-            $paymentInfo = $paymentStmt->fetch();
-
-            $subscription['payments'] = [];
-            $subscription['payment_count'] = $paymentInfo['payment_count'] ?? 0;
-            $subscription['total_paid'] = $paymentInfo['total_paid'] ?? 0;
-
-            // If no payments, set total_paid to 0
-            if (!$subscription['total_paid']) {
-                $subscription['total_paid'] = 0;
-            }
-        } catch (Exception $e) {
-            // If payment table doesn't exist or has issues, set defaults
-            $subscription['payments'] = [];
-            $subscription['payment_count'] = 0;
-            $subscription['total_paid'] = 0;
-        }
+        // Use amount_paid for revenue tracking instead of discounted_price
+        $subscription['revenue_amount'] = $subscription['amount_paid'] ?? $subscription['discounted_price'];
     }
 
     echo json_encode([
@@ -232,167 +177,22 @@ function getAllSubscriptions($pdo)
 
 function getPendingSubscriptions($pdo)
 {
-    // Get only the most recent pending request per user per plan to prevent duplicates
-    // CRITICAL: Only show pending subscriptions that have payment amount set
-    // Check if subscription table has created_at column
-    $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
-    $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
-
-    // IMPORTANT: Always fetch the raw created_at first, then use fallbacks only if needed
-    // Priority: created_at (if valid) > payment_date > sales date > NOW() as last resort
-    // CRITICAL: Never use start_date as request date - it can be a future date
-    
-    // Query to get all available date sources for pending subscriptions
-    // Payment table might have payment_date as DATETIME with time information
     $stmt = $pdo->prepare("
         SELECT s.id as subscription_id, s.start_date, s.end_date,
                u.id as user_id, u.fname, u.mname, u.lname, u.email,
                p.id as plan_id, p.plan_name, p.price, p.duration_months,
                st.id as status_id, st.status_name,
-               " . ($hasCreatedAt ? "s.created_at" : "NULL") . " as raw_created_at,
-               (SELECT pay.payment_date FROM payment pay WHERE pay.subscription_id = s.id ORDER BY pay.payment_date ASC LIMIT 1) as payment_date,
-               (SELECT pay.id FROM payment pay WHERE pay.subscription_id = s.id ORDER BY pay.payment_date ASC LIMIT 1) as payment_id,
-               (SELECT sale.sale_date FROM sales sale WHERE sale.receipt_number = s.receipt_number AND sale.sale_type = 'Subscription' ORDER BY sale.sale_date ASC LIMIT 1) as sale_date,
-               (SELECT sale2.sale_date FROM sales sale2 INNER JOIN sales_details sd ON sd.sale_id = sale2.id WHERE sd.subscription_id = s.id ORDER BY sale2.sale_date ASC LIMIT 1) as sale_details_date
+               s.start_date as created_at
         FROM subscription s
         JOIN user u ON s.user_id = u.id
         JOIN member_subscription_plan p ON s.plan_id = p.id
         JOIN subscription_status st ON s.status_id = st.id
         WHERE st.status_name = 'pending_approval'
-        AND s.amount_paid > 0  -- CRITICAL: Only show pending subscriptions with payment amount
-        AND s.id IN (
-            SELECT MAX(s2.id) 
-            FROM subscription s2
-            JOIN subscription_status st2 ON s2.status_id = st2.id
-            WHERE st2.status_name = 'pending_approval'
-            AND s2.amount_paid > 0  -- CRITICAL: Only consider pending subscriptions with payment
-            GROUP BY s2.user_id, s2.plan_id
-        )
-        ORDER BY s.id DESC
+        ORDER BY s.start_date ASC
     ");
 
     $stmt->execute();
     $pendingSubscriptions = $stmt->fetchAll();
-
-    // Post-process to determine the best created_at value
-    // Only fix dates that are actually problematic (future dates or truly invalid)
-    $currentTime = time();
-    foreach ($pendingSubscriptions as &$subscription) {
-        $rawCreatedAt = $subscription['raw_created_at'] ?? null;
-        $paymentDate = $subscription['payment_date'] ?? null;
-        $saleDate = $subscription['sale_date'] ?? null;
-        $saleDetailsDate = $subscription['sale_details_date'] ?? null;
-        $startDate = $subscription['start_date'] ?? null;
-        
-        // Debug: Log all available date sources
-        error_log("🔍 Subscription #{$subscription['subscription_id']} date sources:");
-        error_log("  - raw_created_at: " . ($rawCreatedAt ?? 'NULL'));
-        error_log("  - payment_date: " . ($paymentDate ?? 'NULL'));
-        error_log("  - sale_date: " . ($saleDate ?? 'NULL'));
-        error_log("  - sale_details_date: " . ($saleDetailsDate ?? 'NULL'));
-        error_log("  - start_date: " . ($startDate ?? 'NULL'));
-        
-        // Determine the best created_at value with proper validation
-        $bestCreatedAt = null;
-        
-        // 1. Try raw created_at first (if it exists and is valid)
-        // This should preserve the original timestamp with time (e.g., 4 PM)
-        if (!empty($rawCreatedAt) && $rawCreatedAt !== '0000-00-00 00:00:00' && $rawCreatedAt !== '0000-00-00') {
-            $rawTimestamp = strtotime($rawCreatedAt);
-            if ($rawTimestamp !== false) {
-                // Only reject if it's clearly in the future (more than 1 day ahead)
-                // Allow some tolerance for timezone differences and same-day requests
-                $oneDayAhead = $currentTime + (24 * 3600);
-                if ($rawTimestamp <= $oneDayAhead) {
-                    // Valid created_at - use it as-is to preserve the original time
-                    $bestCreatedAt = $rawCreatedAt;
-                    error_log("✅ Subscription #{$subscription['subscription_id']} using created_at from DB: {$rawCreatedAt}");
-                } else {
-                    error_log("⚠️ Subscription #{$subscription['subscription_id']} has future created_at: {$rawCreatedAt} (timestamp: {$rawTimestamp}, current: {$currentTime}), will try fallbacks");
-                }
-            } else {
-                error_log("⚠️ Subscription #{$subscription['subscription_id']} has invalid created_at format: {$rawCreatedAt}");
-            }
-        } else {
-            error_log("⚠️ Subscription #{$subscription['subscription_id']} has empty/null created_at: " . ($rawCreatedAt ?? 'NULL'));
-        }
-        
-        // 2. If created_at is invalid/future, try payment_date (might be DATE or DATETIME)
-        if (empty($bestCreatedAt) && !empty($paymentDate)) {
-            $paymentTimestamp = strtotime($paymentDate);
-            if ($paymentTimestamp !== false && $paymentTimestamp <= ($currentTime + (24 * 3600))) {
-                // If payment_date is DATE only (no time), add a default time
-                if (strlen($paymentDate) == 10) {
-                    // It's a DATE field, use noon as default time to avoid confusion
-                    $bestCreatedAt = $paymentDate . ' 12:00:00';
-                } else {
-                    $bestCreatedAt = $paymentDate;
-                }
-                error_log("✅ Subscription #{$subscription['subscription_id']} using payment_date: {$bestCreatedAt}");
-            }
-        }
-        
-        // 3. If still no valid date, try sale_date
-        if (empty($bestCreatedAt) && !empty($saleDate)) {
-            $saleTimestamp = strtotime($saleDate);
-            if ($saleTimestamp !== false && $saleTimestamp <= ($currentTime + (24 * 3600))) {
-                // If sale_date is DATE only (no time), add a default time
-                if (strlen($saleDate) == 10) {
-                    $bestCreatedAt = $saleDate . ' 12:00:00';
-                } else {
-                    $bestCreatedAt = $saleDate;
-                }
-                error_log("✅ Subscription #{$subscription['subscription_id']} using sale_date: {$bestCreatedAt}");
-            }
-        }
-        
-        // 3b. Try sale_details_date as alternative
-        if (empty($bestCreatedAt) && !empty($saleDetailsDate)) {
-            $saleDetailsTimestamp = strtotime($saleDetailsDate);
-            if ($saleDetailsTimestamp !== false && $saleDetailsTimestamp <= ($currentTime + (24 * 3600))) {
-                if (strlen($saleDetailsDate) == 10) {
-                    $bestCreatedAt = $saleDetailsDate . ' 12:00:00';
-                } else {
-                    $bestCreatedAt = $saleDetailsDate;
-                }
-                error_log("✅ Subscription #{$subscription['subscription_id']} using sale_details_date: {$bestCreatedAt}");
-            }
-        }
-        
-        // 4. Last resort: Check if start_date is valid and in the past (but log a warning)
-        if (empty($bestCreatedAt) && !empty($startDate)) {
-            $startTimestamp = strtotime($startDate);
-            if ($startTimestamp !== false && $startTimestamp <= $currentTime) {
-                // Only use start_date if it's in the past and we have no other option
-                // But convert it to datetime format for consistency
-                $bestCreatedAt = $startDate . ' 00:00:00';
-                error_log("⚠️ WARNING: Subscription #{$subscription['subscription_id']} using start_date as created_at fallback (no other dates available)");
-            }
-        }
-        
-        // 5. Final fallback: Current time (only if all else fails)
-        if (empty($bestCreatedAt)) {
-            $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-            $bestCreatedAt = $phTime->format('Y-m-d H:i:s');
-            error_log("⚠️ Subscription #{$subscription['subscription_id']} using current time as created_at (no valid dates found)");
-        }
-        
-        $subscription['created_at'] = $bestCreatedAt;
-        
-        // Remove helper fields that were only used for calculation
-        unset($subscription['raw_created_at'], $subscription['payment_date'], $subscription['payment_id'], 
-              $subscription['sale_date'], $subscription['sale_details_date']);
-    }
-    unset($subscription); // Break reference
-
-    // Debug logging
-    if (count($pendingSubscriptions) > 0) {
-        error_log("🔍 DEBUG getPendingSubscriptions - First subscription:");
-        error_log("  - Subscription ID: " . $pendingSubscriptions[0]['subscription_id']);
-        error_log("  - created_at (final): " . ($pendingSubscriptions[0]['created_at'] ?? 'NULL'));
-        error_log("  - start_date: " . ($pendingSubscriptions[0]['start_date'] ?? 'NULL'));
-        error_log("  - hasCreatedAt column: " . ($hasCreatedAt ? 'YES' : 'NO'));
-    }
 
     echo json_encode([
         "success" => true,
@@ -445,7 +245,8 @@ function getAvailableUsers($pdo)
             mname,
             lname,
             email,
-            account_status
+            account_status,
+            user_type_id
         FROM user 
         WHERE user_type_id = 4 AND account_status = 'approved'
         ORDER BY fname, lname
@@ -460,36 +261,111 @@ function getAvailableUsers($pdo)
     ]);
 }
 
-function getSubscriptionById($pdo, $id)
+function getAvailablePlansForUser($pdo, $user_id)
 {
-    $stmt = $pdo->prepare("
-        SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, s.amount_paid, s.discounted_price,
-               u.fname, u.mname, u.lname, u.email,
-               p.plan_name, p.price, p.duration_months,
-               st.status_name
-        FROM subscription s
-        JOIN user u ON s.user_id = u.id
-        JOIN member_subscription_plan p ON s.plan_id = p.id
-        JOIN subscription_status st ON s.status_id = st.id
-        WHERE s.id = ?
+    try {
+        // Get user's existing active subscriptions
+        $existingStmt = $pdo->prepare("
+            SELECT s.plan_id, s.end_date, ss.status_name, p.plan_name
+            FROM subscription s
+            JOIN subscription_status ss ON s.status_id = ss.id
+            JOIN member_subscription_plan p ON s.plan_id = p.id
+            WHERE s.user_id = ? 
+            AND ss.status_name = 'approved' 
+            AND s.end_date >= CURDATE()
+            ORDER BY s.plan_id
+        ");
+        $existingStmt->execute([$user_id]);
+        $existingSubscriptions = $existingStmt->fetchAll();
+
+        // Check if user has active Plan ID 1 (member fee)
+        $hasActiveMemberFee = false;
+        $activePlanIds = [];
+
+        foreach ($existingSubscriptions as $sub) {
+            $activePlanIds[] = $sub['plan_id'];
+            if ($sub['plan_id'] == 1) {
+                $hasActiveMemberFee = true;
+            }
+        }
+
+        // Get all available plans
+        $allPlansStmt = $pdo->query("
+        SELECT 
+            id,
+            plan_name,
+            price,
+            duration_months,
+            is_member_only,
+            discounted_price
+        FROM member_subscription_plan 
+        ORDER BY price ASC
     ");
+        $allPlans = $allPlansStmt->fetchAll();
 
-    $stmt->execute([$id]);
-    $subscription = $stmt->fetch();
+        // Filter plans based on business rules
+        $availablePlans = [];
 
-    if (!$subscription) {
-        http_response_code(404);
+        foreach ($allPlans as $plan) {
+            $planId = $plan['id'];
+
+            // Skip if user already has active subscription to this plan
+            if (in_array($planId, $activePlanIds)) {
+                continue;
+            }
+
+            // Apply business rules for Plan ID 2 and 3
+            if ($planId == 2) {
+                // Plan ID 2 (Monthly with membership) - only available if user has active Plan ID 1
+                if ($hasActiveMemberFee) {
+                    $availablePlans[] = $plan;
+                }
+            } elseif ($planId == 3) {
+                // Plan ID 3 (Monthly standalone) - only available if user has NO active Plan ID 1
+                if (!$hasActiveMemberFee) {
+                    $availablePlans[] = $plan;
+                }
+            } else {
+                // Other plans (like Plan ID 1) - available if not already subscribed
+                $availablePlans[] = $plan;
+            }
+        }
+
+        // If no plans are available, show all plans except duplicates (fallback)
+        if (empty($availablePlans)) {
+            foreach ($allPlans as $plan) {
+                $planId = $plan['id'];
+                if (!in_array($planId, $activePlanIds)) {
+                    $availablePlans[] = $plan;
+                }
+            }
+        }
+
+        echo json_encode([
+            "success" => true,
+            "available_plans" => $availablePlans,
+            "existing_subscriptions" => $existingSubscriptions,
+            "has_active_member_fee" => $hasActiveMemberFee,
+            "count" => count($availablePlans),
+            "debug_info" => [
+                "user_id" => $user_id,
+                "all_plans_count" => count($allPlans),
+                "active_plan_ids" => $activePlanIds,
+                "all_plans" => $allPlans
+            ]
+        ]);
+    } catch (Exception $e) {
+        error_log("Error in getAvailablePlansForUser: " . $e->getMessage());
         echo json_encode([
             "success" => false,
-            "error" => "Subscription not found"
+            "error" => "Failed to get available plans",
+            "message" => $e->getMessage(),
+            "debug_info" => [
+                "user_id" => $user_id,
+                "error" => $e->getMessage()
+            ]
         ]);
-        return;
     }
-
-    echo json_encode([
-        "success" => true,
-        "subscription" => $subscription
-    ]);
 }
 
 function getUserSubscriptions($pdo, $user_id)
@@ -513,11 +389,6 @@ function getUserSubscriptions($pdo, $user_id)
         JOIN member_subscription_plan p ON s.plan_id = p.id
         JOIN subscription_status ss ON s.status_id = ss.id
         WHERE s.user_id = ?
-        AND s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
-        AND EXISTS (
-            SELECT 1 FROM payment pay 
-            WHERE pay.subscription_id = s.id
-        )  -- CRITICAL: Only show subscriptions with payment records
         ORDER BY s.start_date DESC
     ");
 
@@ -531,90 +402,10 @@ function getUserSubscriptions($pdo, $user_id)
     ]);
 }
 
-function getAvailablePlansForUser($pdo, $user_id)
-{
-    // Get user's active subscriptions with plan details
-    // CRITICAL: Only consider subscriptions with confirmed payments
-    $activeSubscriptionsStmt = $pdo->prepare("
-        SELECT s.plan_id, s.end_date, p.plan_name, ss.status_name
-        FROM subscription s
-        JOIN subscription_status ss ON s.status_id = ss.id
-        JOIN member_subscription_plan p ON s.plan_id = p.id
-        WHERE s.user_id = ? 
-        AND ss.status_name = 'approved' 
-        AND s.end_date >= CURDATE()
-        AND s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
-        AND EXISTS (
-            SELECT 1 FROM payment p 
-            WHERE p.subscription_id = s.id
-        )  -- CRITICAL: Only consider subscriptions with payment records
-        ORDER BY s.plan_id
-    ");
-    $activeSubscriptionsStmt->execute([$user_id]);
-    $activeSubscriptions = $activeSubscriptionsStmt->fetchAll();
-    $activePlanIds = array_column($activeSubscriptions, 'plan_id');
-
-    // Get all subscription plans
-    $plansStmt = $pdo->query("
-        SELECT 
-            id,
-            plan_name,
-            price,
-            duration_months,
-            is_member_only,
-            discounted_price
-        FROM member_subscription_plan 
-        ORDER BY price ASC
-    ");
-    $allPlans = $plansStmt->fetchAll();
-
-    $availablePlans = [];
-    $hasActiveMemberFee = in_array(1, $activePlanIds);
-
-    foreach ($allPlans as $plan) {
-        $planId = $plan['id'];
-        $isPlanActive = in_array($planId, $activePlanIds);
-
-        // Plan 1 (Member Fee) - available if not active
-        if ($planId == 1) {
-            if (!$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
-        }
-        // Plan 2 (Member Plan Monthly) - only available if Plan 1 is active AND Plan 2 is not active
-        elseif ($planId == 2) {
-            if ($hasActiveMemberFee && !$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
-        }
-        // Plan 3 (Non-Member Plan Monthly) - available if no Plan 1 is active AND Plan 3 is not active
-        elseif ($planId == 3) {
-            if (!$hasActiveMemberFee && !$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
-        }
-        // Other plans - available if not active
-        else {
-            if (!$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
-        }
-    }
-
-    echo json_encode([
-        "success" => true,
-        "plans" => $availablePlans,
-        "count" => count($availablePlans),
-        "active_plan_ids" => $activePlanIds,
-        "active_subscriptions" => $activeSubscriptions,
-        "has_active_member_fee" => $hasActiveMemberFee
-    ]);
-}
-
 function createManualSubscription($pdo, $data)
 {
     // Validate required fields
-    $required_fields = ['user_id', 'plan_id', 'start_date', 'amount_paid'];
+    $required_fields = ['user_id', 'plan_id', 'start_date'];
     foreach ($required_fields as $field) {
         if (!isset($data[$field]) || empty($data[$field])) {
             http_response_code(400);
@@ -629,47 +420,11 @@ function createManualSubscription($pdo, $data)
     $user_id = $data['user_id'];
     $plan_id = $data['plan_id'];
     $start_date = $data['start_date'];
-    $payment_amount = floatval($data['amount_paid']); // Frontend sends 'amount_paid'
     $discount_type = $data['discount_type'] ?? 'none';
+    $amount_paid = $data['amount_paid'] ?? null;
+    $payment_method = $data['payment_method'] ?? 'cash';
+    $notes = $data['notes'] ?? '';
     $created_by = $data['created_by'] ?? 'admin';
-
-    // CRITICAL: Validate payment details before creating subscription
-    $paymentMethod = $data['payment_method'] ?? 'cash';
-    $amountReceived = floatval($data['amount_received'] ?? $payment_amount);
-    $transactionStatus = $data['transaction_status'] ?? 'confirmed';
-
-    // Payment validation - prevent unpaid subscriptions from being created
-    if ($payment_amount <= 0) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Invalid payment amount",
-            "message" => "Payment amount must be greater than 0"
-        ]);
-        return;
-    }
-
-    // For cash payments, validate amount received
-    if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Insufficient payment",
-            "message" => "Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more."
-        ]);
-        return;
-    }
-
-    // Validate transaction status
-    if ($transactionStatus !== 'confirmed' && $transactionStatus !== 'completed') {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Payment not confirmed",
-            "message" => "Transaction must be confirmed before creating subscription"
-        ]);
-        return;
-    }
 
     $pdo->beginTransaction();
 
@@ -687,39 +442,34 @@ function createManualSubscription($pdo, $data)
             throw new Exception("User account must be approved first");
 
         // Verify plan exists
-        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months FROM member_subscription_plan WHERE id = ?");
+        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, discounted_price FROM member_subscription_plan WHERE id = ?");
         $planStmt->execute([$plan_id]);
         $plan = $planStmt->fetch();
 
         if (!$plan)
             throw new Exception("Subscription plan not found");
 
-        // Calculate actual months based on payment amount (for advance payments)
-        // If user pays for multiple months, calculate how many months they paid for
-        $planPrice = floatval($plan['price']);
-        $actualMonths = 1; // Default to 1 month
+        // Calculate discounted_price and amount_paid
+        $discounted_price = $plan['discounted_price'] ?? $plan['price'];
 
-        if ($planPrice > 0) {
-            // Calculate how many months the payment covers
-            $monthsPaid = floor($payment_amount / $planPrice);
-            if ($monthsPaid > 0) {
-                $actualMonths = $monthsPaid;
-            } else {
-                // If payment is less than plan price, use plan's duration_months
-                $actualMonths = $plan['duration_months'];
-            }
+        // If discount_type is 'none', amount_paid equals discounted_price
+        if ($discount_type === 'none') {
+            $amount_paid = $discounted_price;
         } else {
-            // If plan price is 0, use plan's duration_months
-            $actualMonths = $plan['duration_months'];
+            // For other discount types, amount_paid must be provided
+            if ($amount_paid === null || $amount_paid === '') {
+                throw new Exception("Amount paid is required when applying discounts");
+            }
+            $amount_paid = (float) $amount_paid;
         }
 
-        // Calculate end date based on actual months paid
+        // Calculate end date
         $start_date_obj = new DateTime($start_date);
         $end_date_obj = clone $start_date_obj;
-        $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
+        $end_date_obj->add(new DateInterval('P' . $plan['duration_months'] . 'M'));
         $end_date = $end_date_obj->format('Y-m-d');
 
-        // Get approved status ID for manual subscriptions
+        // Get approved status ID
         $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
         $statusStmt->execute();
         $status = $statusStmt->fetch();
@@ -728,9 +478,8 @@ function createManualSubscription($pdo, $data)
             throw new Exception("Approved status not found in database");
         }
 
-        // Check for existing active subscriptions to prevent duplicates
-        // CRITICAL: Only consider subscriptions with confirmed payments
-        $existingStmt = $pdo->prepare("
+        // Check for existing active subscriptions to the same plan
+        $duplicateStmt = $pdo->prepare("
             SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
             FROM subscription s 
             JOIN subscription_status ss ON s.status_id = ss.id 
@@ -739,167 +488,70 @@ function createManualSubscription($pdo, $data)
             AND s.plan_id = ?
             AND ss.status_name = 'approved' 
             AND s.end_date >= CURDATE()
-            AND s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
-            AND EXISTS (
-                SELECT 1 FROM payment p 
-                WHERE p.subscription_id = s.id
-            )  -- CRITICAL: Only consider subscriptions with payment records
         ");
-        $existingStmt->execute([$user_id, $plan_id]);
-        $existingSubscription = $existingStmt->fetch();
+        $duplicateStmt->execute([$user_id, $plan_id]);
+        $duplicateSubscription = $duplicateStmt->fetch();
 
-        if ($existingSubscription) {
-            throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
+        if ($duplicateSubscription) {
+            throw new Exception("User already has an active subscription to {$duplicateSubscription['plan_name']} (Plan ID: {$plan_id}). Cannot create duplicate subscription.");
         }
 
-        // Check for existing pending requests to prevent duplicates
-        // CRITICAL: Only consider pending subscriptions with payment amount
-        $pendingStmt = $pdo->prepare("
-            SELECT s.id, s.plan_id, ss.status_name, p.plan_name
+        // Check for existing active subscriptions (for warning)
+        $existingStmt = $pdo->prepare("
+            SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
             FROM subscription s 
             JOIN subscription_status ss ON s.status_id = ss.id 
             JOIN member_subscription_plan p ON s.plan_id = p.id
             WHERE s.user_id = ? 
-            AND s.plan_id = ?
-            AND ss.status_name = 'pending_approval'
-            AND s.amount_paid > 0  -- CRITICAL: Only consider pending subscriptions with payment
+            AND ss.status_name = 'approved' 
+            AND s.end_date >= CURDATE()
+            ORDER BY s.end_date DESC
         ");
-        $pendingStmt->execute([$user_id, $plan_id]);
-        $pendingSubscription = $pendingStmt->fetch();
+        $existingStmt->execute([$user_id]);
+        $existingSubscriptions = $existingStmt->fetchAll();
 
-        if ($pendingSubscription) {
-            throw new Exception("User already has a pending request for this plan: {$pendingSubscription['plan_name']}. Please wait for approval or decline the existing request first.");
-        }
-
-        // POS fields for subscription (already validated above)
-        $changeGiven = max(0, $amountReceived - $payment_amount);
-        $receiptNumber = $data['receipt_number'] ?? generateSubscriptionReceiptNumber($pdo);
-        $cashierId = $data['cashier_id'] ?? null;
-
-        // Create subscription - use Philippines timezone for created_at if column exists
-        $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
-        $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
-
-        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $phTimeString = $phTime->format('Y-m-d H:i:s');
-
-        if ($hasCreatedAt) {
-            $subscriptionStmt = $pdo->prepare("
-                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given, created_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $phTimeString]);
-        } else {
-            $subscriptionStmt = $pdo->prepare("
-                INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
-        }
+        // Create subscription
+        $subscriptionStmt = $pdo->prepare("
+            INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $discounted_price, $discount_type, $amount_paid]);
         $subscription_id = $pdo->lastInsertId();
 
-        // Create payment record - only for confirmed payments
+        // Create payment record
+        $paymentStmt = $pdo->prepare("
+            INSERT INTO payment (subscription_id, amount, payment_date) 
+            VALUES (?, ?, NOW())
+        ");
+        $paymentStmt->execute([$subscription_id, $amount_paid]);
+        $payment_id = $pdo->lastInsertId();
+
+        // Create sales record
+        $salesStmt = $pdo->prepare("
+            INSERT INTO sales (user_id, total_amount, sale_date, sale_type) 
+            VALUES (?, ?, NOW(), 'Subscription')
+        ");
+        $salesStmt->execute([$user_id, $amount_paid]);
+        $sale_id = $pdo->lastInsertId();
+
+        // Create sales details
+        $salesDetailStmt = $pdo->prepare("
+            INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
+            VALUES (?, ?, 1, ?)
+        ");
+        $salesDetailStmt->execute([$sale_id, $subscription_id, $amount_paid]);
+
+        // Log activity (optional - if activity_log table exists)
         try {
-            // Check if payment table has status column
-            $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
-            $hasStatusColumn = $checkColumnStmt->rowCount() > 0;
-
-            // Only create payment record if transaction is confirmed/completed
-            // Use Philippines timezone for accurate timestamp
-            if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
-                $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-                $phTimeString = $phTime->format('Y-m-d H:i:s');
-
-                if ($hasStatusColumn) {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date, status) 
-                        VALUES (?, ?, ?, 'completed')
-                    ");
-                } else {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date) 
-                        VALUES (?, ?, ?)
-                    ");
-                }
-
-                $paymentStmt->execute([$subscription_id, $payment_amount, $phTimeString]);
-                $payment_id = $pdo->lastInsertId();
-            } else {
-                // If payment is not confirmed, don't create payment record
-                $payment_id = null;
-                throw new Exception("Payment not confirmed - subscription creation cancelled");
-            }
+            $activityStmt = $pdo->prepare("
+                INSERT INTO activity_log (user_id, activity, timestamp) 
+                VALUES (?, ?, NOW())
+            ");
+            $activity_message = "Manual subscription created: {$plan['plan_name']} for {$user['fname']} {$user['lname']} by {$created_by}";
+            $activityStmt->execute([null, $activity_message]);
         } catch (Exception $e) {
-            // If payment table doesn't exist or payment not confirmed, rollback transaction
-            if (strpos($e->getMessage(), 'Payment not confirmed') !== false) {
-                throw $e; // Re-throw payment confirmation errors
-            }
-            $payment_id = null;
+            // Activity log is optional, don't fail the transaction
         }
-
-        // Create sales record - only for confirmed payments
-        // Use Philippines timezone for accurate timestamp
-        if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
-            $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-            $phTimeString = $phTime->format('Y-m-d H:i:s');
-
-            $salesStmt = $pdo->prepare("
-                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
-                VALUES (?, ?, ?, 'Subscription', ?, 'confirmed', ?, ?, ?)
-            ");
-            $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
-            $sale_id = $pdo->lastInsertId();
-
-            // Create sales details
-            $salesDetailStmt = $pdo->prepare("
-                INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
-                VALUES (?, ?, 1, ?)
-            ");
-            $salesDetailStmt->execute([$sale_id, $subscription_id, $payment_amount]);
-        } else {
-            $sale_id = null;
-        }
-
-        // Calculate duration in months from payment amount (more accurate than end_date)
-        // This ensures we show the correct duration even if end_date calculation was wrong
-        $planPrice = floatval($plan['price']);
-        $totalMonths = 1; // Default to 1 month
-
-        if ($planPrice > 0) {
-            // Calculate how many months the payment covers
-            $monthsPaid = floor($payment_amount / $planPrice);
-            if ($monthsPaid > 0) {
-                $totalMonths = $monthsPaid;
-            } else {
-                // If payment is less than plan price, use plan's duration_months
-                $totalMonths = $plan['duration_months'];
-            }
-        } else {
-            // If plan price is 0, calculate from dates
-            $start_date_obj = new DateTime($start_date);
-            $end_date_obj = new DateTime($end_date);
-            $interval = $start_date_obj->diff($end_date_obj);
-            $totalMonths = ($interval->y * 12) + $interval->m;
-            if ($interval->d > 0) {
-                $totalMonths += 1; // Round up if there are extra days
-            }
-        }
-
-        // Log activity using centralized logger
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG: Received staff_id: " . ($staffId ?? 'NULL') . " from request data");
-        error_log("DEBUG: Full request data: " . json_encode($data));
-        error_log("DEBUG: Payment amount: {$payment_amount}, Plan price: {$planPrice}, Calculated months: {$totalMonths}");
-        $durationText = $totalMonths > 0 ? " ({$totalMonths} month" . ($totalMonths > 1 ? 's' : '') . ")" : "";
-        logStaffActivity($pdo, $staffId, "Create Manual Subscription", "Manual subscription created: {$plan['plan_name']}{$durationText} for {$user['fname']} {$user['lname']} by {$created_by}", "Subscription Management", [
-            'subscription_id' => $subscription_id,
-            'user_id' => $user_id,
-            'user_name' => $user['fname'] . ' ' . $user['lname'],
-            'plan_name' => $plan['plan_name'],
-            'amount_paid' => $payment_amount,
-            'created_by' => $created_by,
-            'duration_months' => $totalMonths
-        ]);
 
         $pdo->commit();
 
@@ -915,12 +567,13 @@ function createManualSubscription($pdo, $data)
                 "plan_name" => $plan['plan_name'],
                 "start_date" => $start_date,
                 "end_date" => $end_date,
-                "amount_paid" => $payment_amount,
+                "discounted_price" => $discounted_price,
                 "discount_type" => $discount_type,
-                "payment_method" => $paymentMethod,
-                "receipt_number" => $receiptNumber,
-                "change_given" => $changeGiven,
-                "existing_subscription_warning" => $existingSubscription ? "User had an active subscription ending on " . $existingSubscription['end_date'] : null
+                "amount_paid" => $amount_paid,
+                "payment_method" => $payment_method,
+                "notes" => $notes,
+                "existing_subscriptions" => $existingSubscriptions,
+                "existing_subscription_warning" => count($existingSubscriptions) > 0 ? "User has " . count($existingSubscriptions) . " active subscription(s)" : null
             ]
         ]);
 
@@ -950,7 +603,7 @@ function approveSubscription($pdo, $data)
 
     try {
         $checkStmt = $pdo->prepare("
-            SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, st.status_name,
+            SELECT s.id, s.user_id, s.plan_id, st.status_name,
                    u.fname, u.lname, u.email,
                    p.plan_name, p.price
             FROM subscription s
@@ -977,133 +630,7 @@ function approveSubscription($pdo, $data)
         $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
         $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
 
-        // Handle package plan logic - if plan ID 5 is approved, create hidden individual plans
-        if ($subscription['plan_id'] == 5) {
-            // Create hidden individual plans (1 and 2) with same user and dates
-            $individualPlans = [1, 2];
-            foreach ($individualPlans as $planId) {
-                // Check if individual plan already exists for this user and date
-                $existingStmt = $pdo->prepare("
-                    SELECT id FROM subscription 
-                    WHERE user_id = ? AND plan_id = ? AND start_date = ?
-                ");
-                $existingStmt->execute([$subscription['user_id'], $planId, $subscription['start_date']]);
-
-                if (!$existingStmt->fetch()) {
-                    // Create hidden individual plan subscription
-                    $hiddenStmt = $pdo->prepare("
-                        INSERT INTO subscription 
-                        (user_id, plan_id, discount_type, status_id, start_date, end_date, 
-                         discounted_price, amount_paid, payment_method, receipt_number, cashier_id, change_given)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    $hiddenStmt->execute([
-                        $subscription['user_id'],
-                        $planId,
-                        $subscription['discount_type'] ?? 'none',
-                        $approvedStatus['id'], // Same approved status
-                        $subscription['start_date'],
-                        $subscription['end_date'],
-                        $subscription['discounted_price'] ?? null,
-                        0, // Hidden plans show 0 payment
-                        $subscription['payment_method'] ?? 'cash',
-                        $subscription['receipt_number'] ?? null,
-                        $subscription['cashier_id'] ?? null,
-                        $subscription['change_given'] ?? 0
-                    ]);
-                }
-            }
-        }
-
-        // Create payment record when subscription is approved (since approval means payment is received)
-        try {
-            // Check if payment table has status column
-            $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
-            $hasStatusColumn = $checkColumnStmt->rowCount() > 0;
-
-            // Get subscription details for payment amount
-            $subDetailsStmt = $pdo->prepare("
-                SELECT s.discounted_price, s.amount_paid, p.price 
-                FROM subscription s 
-                JOIN member_subscription_plan p ON s.plan_id = p.id 
-                WHERE s.id = ?
-            ");
-            $subDetailsStmt->execute([$subscriptionId]);
-            $subDetails = $subDetailsStmt->fetch();
-
-            $paymentAmount = $subDetails['amount_paid'] ?? $subDetails['discounted_price'] ?? $subDetails['price'] ?? 0;
-
-            if ($hasStatusColumn) {
-                $paymentStmt = $pdo->prepare("
-                    INSERT INTO payment (subscription_id, amount, payment_date, status) 
-                    VALUES (?, ?, NOW(), 'completed')
-                ");
-            } else {
-                $paymentStmt = $pdo->prepare("
-                    INSERT INTO payment (subscription_id, amount, payment_date) 
-                    VALUES (?, ?, NOW())
-                ");
-            }
-
-            $paymentStmt->execute([$subscriptionId, $paymentAmount]);
-
-            // Also create sales record
-            $receiptNumber = generateSubscriptionReceiptNumber($pdo);
-            $salesStmt = $pdo->prepare("
-                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
-                VALUES (?, ?, NOW(), 'Subscription', 'cash', 'confirmed', ?, ?, 0.00)
-            ");
-            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $receiptNumber, $data['staff_id'] ?? null]);
-
-        } catch (Exception $e) {
-            // If payment table doesn't exist or has issues, continue without creating payment
-        }
-
         $pdo->commit();
-
-        // Calculate duration in months from payment amount (more accurate than end_date)
-        $planPrice = floatval($subscription['price']);
-        $paymentAmount = floatval($subscription['amount_paid'] ?? $subscription['discounted_price'] ?? $subscription['price'] ?? 0);
-        $totalMonths = 1; // Default to 1 month
-
-        if ($planPrice > 0 && $paymentAmount > 0) {
-            // Calculate how many months the payment covers
-            $monthsPaid = floor($paymentAmount / $planPrice);
-            if ($monthsPaid > 0) {
-                $totalMonths = $monthsPaid;
-            } else {
-                // If payment is less than plan price, calculate from dates
-                $start_date_obj = new DateTime($subscription['start_date']);
-                $end_date_obj = new DateTime($subscription['end_date']);
-                $interval = $start_date_obj->diff($end_date_obj);
-                $totalMonths = ($interval->y * 12) + $interval->m;
-                if ($interval->d > 0) {
-                    $totalMonths += 1;
-                }
-            }
-        } else {
-            // If plan price is 0, calculate from dates
-            $start_date_obj = new DateTime($subscription['start_date']);
-            $end_date_obj = new DateTime($subscription['end_date']);
-            $interval = $start_date_obj->diff($end_date_obj);
-            $totalMonths = ($interval->y * 12) + $interval->m;
-            if ($interval->d > 0) {
-                $totalMonths += 1;
-            }
-        }
-
-        // Log activity using centralized logger
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Approve Subscription: Payment amount: {$paymentAmount}, Plan price: {$planPrice}, Calculated months: {$totalMonths}");
-        $durationText = $totalMonths > 0 ? " ({$totalMonths} month" . ($totalMonths > 1 ? 's' : '') . ")" : "";
-        logStaffActivity($pdo, $staffId, "Approve Subscription", "Subscription approved: {$subscription['plan_name']}{$durationText} for {$subscription['fname']} {$subscription['lname']} by {$approvedBy}", "Subscription Management", [
-            'subscription_id' => $subscriptionId,
-            'user_id' => $subscription['user_id'],
-            'user_name' => $subscription['fname'] . ' ' . $subscription['lname'],
-            'plan_name' => $subscription['plan_name'],
-            'approved_by' => $approvedBy,
-            'duration_months' => $totalMonths
-        ]);
 
         echo json_encode([
             "success" => true,
@@ -1125,314 +652,6 @@ function approveSubscription($pdo, $data)
         $pdo->rollBack();
         http_response_code(400);
         echo json_encode(["success" => false, "error" => "Approval failed", "message" => $e->getMessage()]);
-    }
-}
-
-function approveSubscriptionWithPayment($pdo, $data)
-{
-    if (!isset($data['subscription_id'])) {
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Missing subscription_id", "message" => "subscription_id is required"]);
-        return;
-    }
-
-    $subscriptionId = $data['subscription_id'];
-    $approvedBy = $data['approved_by'] ?? 'Admin';
-    $paymentMethod = $data['payment_method'] ?? 'cash';
-    $amountReceived = floatval($data['amount_received'] ?? 0);
-    $notes = $data['notes'] ?? '';
-    $receiptNumber = $data['receipt_number'] ?? null; // Allow custom receipt number from frontend
-    $cashierId = $data['cashier_id'] ?? null;
-
-    // Validate payment method
-    $validPaymentMethods = ['cash', 'card', 'digital'];
-    if (!in_array($paymentMethod, $validPaymentMethods)) {
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Invalid payment method", "message" => "Payment method must be one of: " . implode(', ', $validPaymentMethods)]);
-        return;
-    }
-
-    // For cash payments, validate amount received
-    if ($paymentMethod === 'cash' && $amountReceived <= 0) {
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Invalid amount received", "message" => "Amount received must be greater than 0 for cash payments"]);
-        return;
-    }
-
-    // CRITICAL: Validate payment confirmation before approving subscription
-    $transactionStatus = $data['transaction_status'] ?? 'confirmed';
-    if ($transactionStatus !== 'confirmed' && $transactionStatus !== 'completed') {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Payment not confirmed",
-            "message" => "Transaction must be confirmed before approving subscription"
-        ]);
-        return;
-    }
-
-    $pdo->beginTransaction();
-
-    try {
-        $checkStmt = $pdo->prepare("
-            SELECT s.id, s.user_id, s.plan_id, st.status_name,
-                   u.fname, u.lname, u.email,
-                   p.plan_name, p.price, s.amount_paid, s.discounted_price,
-                   s.start_date, s.end_date, s.discount_type, s.payment_method, 
-                   s.receipt_number, s.cashier_id, s.change_given
-            FROM subscription s
-            JOIN subscription_status st ON s.status_id = st.id
-            JOIN user u ON s.user_id = u.id
-            JOIN member_subscription_plan p ON s.plan_id = p.id
-            WHERE s.id = ?
-        ");
-        $checkStmt->execute([$subscriptionId]);
-        $subscription = $checkStmt->fetch();
-
-        if (!$subscription)
-            throw new Exception("Subscription not found.");
-        if ($subscription['status_name'] !== 'pending_approval')
-            throw new Exception("Subscription is not in pending status. Current status: " . $subscription['status_name']);
-
-        $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
-        $statusStmt->execute();
-        $approvedStatus = $statusStmt->fetch();
-
-        if (!$approvedStatus)
-            throw new Exception("Approved status not found in database.");
-
-        // Calculate payment details
-        $paymentAmount = $subscription['amount_paid'] ?? $subscription['discounted_price'] ?? $subscription['price'] ?? 0;
-        $changeGiven = max(0, $amountReceived - $paymentAmount);
-
-        // Generate receipt number if not provided
-        if (empty($receiptNumber)) {
-            $receiptNumber = generateSubscriptionReceiptNumber($pdo);
-        }
-
-        // Check if this is a package plan that needs to be split
-        $isPackagePlan = $subscription['plan_id'] == 5; // Assuming plan ID 5 is the package plan
-
-        if ($isPackagePlan) {
-            // For package plans, keep the package plan visible and create hidden individual plans
-            // First, update the package plan status
-            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-            $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
-
-            // Create hidden individual plans (1 and 2) with same user and dates
-            $individualPlans = [1, 2];
-
-            // Use subscription dates or fallback to current date
-            $startDate = $subscription['start_date'] ?? date('Y-m-d');
-            $endDate = $subscription['end_date'] ?? date('Y-m-d', strtotime('+1 month'));
-
-            foreach ($individualPlans as $planId) {
-                // Check if individual plan already exists for this user and date
-                $existingStmt = $pdo->prepare("
-                    SELECT id FROM subscription 
-                    WHERE user_id = ? AND plan_id = ? AND start_date = ?
-                ");
-                $existingStmt->execute([$subscription['user_id'], $planId, $startDate]);
-
-                if (!$existingStmt->fetch()) {
-                    // Create hidden individual plan subscription
-                    $hiddenStmt = $pdo->prepare("
-                        INSERT INTO subscription 
-                        (user_id, plan_id, discount_type, status_id, start_date, end_date, 
-                         discounted_price, amount_paid, payment_method, receipt_number, cashier_id, change_given)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    $hiddenStmt->execute([
-                        $subscription['user_id'],
-                        $planId,
-                        $subscription['discount_type'] ?? 'none',
-                        $approvedStatus['id'], // Same approved status
-                        $startDate,
-                        $endDate,
-                        $subscription['discounted_price'] ?? null,
-                        0, // Hidden plans show 0 payment
-                        $paymentMethod,
-                        $receiptNumber,
-                        $cashierId,
-                        $changeGiven
-                    ]);
-                }
-            }
-        } else {
-            // For regular plans, just update the status
-            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-            $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
-        }
-
-        // Create payment record with POS data - only for confirmed payments
-        try {
-            // Only create payment record if transaction is confirmed/completed
-            if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
-                // Check payment table columns
-                $checkPaymentColumns = $pdo->query("SHOW COLUMNS FROM payment");
-                $paymentColumns = $checkPaymentColumns->fetchAll(PDO::FETCH_COLUMN);
-
-                $hasStatusColumn = in_array('status', $paymentColumns);
-                $hasPosColumns = in_array('payment_method', $paymentColumns) &&
-                    in_array('receipt_number', $paymentColumns) &&
-                    in_array('cashier_id', $paymentColumns);
-
-                if ($hasStatusColumn && $hasPosColumns) {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date, status, payment_method, receipt_number, cashier_id) 
-                        VALUES (?, ?, NOW(), 'completed', ?, ?, ?)
-                    ");
-                    $paymentStmt->execute([$subscriptionId, $paymentAmount, $paymentMethod, $receiptNumber, $cashierId]);
-                } elseif ($hasPosColumns) {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date, payment_method, receipt_number, cashier_id) 
-                        VALUES (?, ?, NOW(), ?, ?, ?)
-                    ");
-                    $paymentStmt->execute([$subscriptionId, $paymentAmount, $paymentMethod, $receiptNumber, $cashierId]);
-                } elseif ($hasStatusColumn) {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date, status) 
-                        VALUES (?, ?, NOW(), 'completed')
-                    ");
-                    $paymentStmt->execute([$subscriptionId, $paymentAmount]);
-                } else {
-                    $paymentStmt = $pdo->prepare("
-                        INSERT INTO payment (subscription_id, amount, payment_date) 
-                        VALUES (?, ?, NOW())
-                    ");
-                    $paymentStmt->execute([$subscriptionId, $paymentAmount]);
-                }
-            } else {
-                throw new Exception("Payment not confirmed - subscription approval cancelled");
-            }
-
-            // Also create sales record with POS data - only for confirmed payments
-            try {
-                if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
-                    // Check if sales table has POS columns
-                    $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
-                    $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
-
-                    $hasPosColumns = in_array('payment_method', $salesColumns) &&
-                        in_array('amount_received', $salesColumns) &&
-                        in_array('change_given', $salesColumns) &&
-                        in_array('receipt_number', $salesColumns);
-
-                    if ($hasPosColumns) {
-                        $salesStmt = $pdo->prepare("
-                            INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, amount_received, change_given, receipt_number, cashier_id, notes, transaction_status) 
-                            VALUES (?, ?, NOW(), 'Subscription', ?, ?, ?, ?, ?, ?, 'confirmed')
-                        ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
-                    } else {
-                        // Fallback to basic sales record with receipt number
-                        $salesStmt = $pdo->prepare("
-                            INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
-                            VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?)
-                        ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
-                    }
-                }
-            } catch (Exception $e) {
-                // If sales table doesn't exist or has issues, continue without creating sales record
-                error_log("Sales record creation failed: " . $e->getMessage());
-            }
-
-        } catch (Exception $e) {
-            // If payment table doesn't exist or payment not confirmed, rollback transaction
-            if (strpos($e->getMessage(), 'Payment not confirmed') !== false) {
-                throw $e; // Re-throw payment confirmation errors
-            }
-            // If payment table doesn't exist or has issues, continue without creating payment
-        }
-
-        $pdo->commit();
-
-        // Calculate duration in months from payment amount (more accurate than end_date)
-        $planPrice = floatval($subscription['price']);
-        $totalMonths = 1; // Default to 1 month
-
-        if ($planPrice > 0 && $paymentAmount > 0) {
-            // Calculate how many months the payment covers
-            $monthsPaid = floor($paymentAmount / $planPrice);
-            if ($monthsPaid > 0) {
-                $totalMonths = $monthsPaid;
-            } else {
-                // If payment is less than plan price, calculate from dates
-                $start_date_obj = new DateTime($subscription['start_date']);
-                $end_date_obj = new DateTime($subscription['end_date']);
-                $interval = $start_date_obj->diff($end_date_obj);
-                $totalMonths = ($interval->y * 12) + $interval->m;
-                if ($interval->d > 0) {
-                    $totalMonths += 1;
-                }
-            }
-        } else {
-            // If plan price is 0, calculate from dates
-            $start_date_obj = new DateTime($subscription['start_date']);
-            $end_date_obj = new DateTime($subscription['end_date']);
-            $interval = $start_date_obj->diff($end_date_obj);
-            $totalMonths = ($interval->y * 12) + $interval->m;
-            if ($interval->d > 0) {
-                $totalMonths += 1;
-            }
-        }
-
-        // Log activity using centralized logger
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Approve with Payment: Payment amount: {$paymentAmount}, Plan price: {$planPrice}, Calculated months: {$totalMonths}");
-        // Simplified message format with duration
-        $memberName = "{$subscription['fname']} {$subscription['lname']}";
-        $durationText = $totalMonths > 0 ? " ({$totalMonths} month" . ($totalMonths > 1 ? 's' : '') . ")" : "";
-        $message = "{$subscription['plan_name']}{$durationText} for {$memberName} • Payment: {$paymentMethod} • Amount: ₱{$paymentAmount} • Received: ₱{$amountReceived} • Change: ₱{$changeGiven} • Receipt: {$receiptNumber}";
-        logStaffActivity($pdo, $staffId, "Approve Subscription with Payment", $message, "Subscription Management", [
-            'subscription_id' => $subscriptionId,
-            'user_id' => $subscription['user_id'],
-            'user_name' => $subscription['fname'] . ' ' . $subscription['lname'],
-            'plan_name' => $subscription['plan_name'],
-            'approved_by' => $approvedBy,
-            'payment_method' => $paymentMethod,
-            'amount_paid' => $paymentAmount,
-            'amount_received' => $amountReceived,
-            'change_given' => $changeGiven,
-            'receipt_number' => $receiptNumber,
-            'duration_months' => $totalMonths
-        ]);
-
-        $message = $isPackagePlan ?
-            "Package subscription approved and split into individual plans (Membership + Access). Payment processed successfully." :
-            "Subscription approved and payment processed successfully";
-
-        echo json_encode([
-            "success" => true,
-            "subscription_id" => $subscriptionId,
-            "status" => "approved",
-            "message" => $message,
-            "is_package_plan" => $isPackagePlan,
-            "receipt_number" => $receiptNumber,
-            "payment_method" => $paymentMethod,
-            "change_given" => $changeGiven,
-            "data" => [
-                "subscription_id" => $subscriptionId,
-                "user_name" => trim($subscription['fname'] . ' ' . $subscription['lname']),
-                "user_email" => $subscription['email'],
-                "plan_name" => $subscription['plan_name'],
-                "status" => "approved",
-                "approved_at" => date('Y-m-d H:i:s'),
-                "approved_by" => $approvedBy,
-                "payment_method" => $paymentMethod,
-                "amount_paid" => $paymentAmount,
-                "amount_received" => $amountReceived,
-                "change_given" => $changeGiven,
-                "receipt_number" => $receiptNumber,
-                "is_package_plan" => $isPackagePlan
-            ]
-        ]);
-
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        http_response_code(400);
-        echo json_encode(["success" => false, "error" => "Approval with payment failed", "message" => $e->getMessage()]);
     }
 }
 
@@ -1487,17 +706,6 @@ function declineSubscription($pdo, $data)
         $updateStmt->execute([$declinedStatus['id'], $subscriptionId]);
 
         $pdo->commit();
-
-        // Log activity using centralized logger
-        $staffId = $data['staff_id'] ?? null;
-        logStaffActivity($pdo, $staffId, "Decline Subscription", "Subscription declined: {$subscription['plan_name']} for {$subscription['fname']} {$subscription['lname']} by {$declinedBy} - Reason: {$declineReason}", "Subscription Management", [
-            'subscription_id' => $subscriptionId,
-            'user_id' => $subscription['user_id'],
-            'user_name' => $subscription['fname'] . ' ' . $subscription['lname'],
-            'plan_name' => $subscription['plan_name'],
-            'decline_reason' => $declineReason,
-            'declined_by' => $declinedBy
-        ]);
 
         echo json_encode([
             "success" => true,
@@ -1576,19 +784,5 @@ function deleteSubscription($pdo, $data)
         http_response_code(500);
         echo json_encode(["success" => false, "error" => "Delete failed", "message" => $e->getMessage()]);
     }
-}
-
-// POS Functions for Subscriptions
-function generateSubscriptionReceiptNumber($pdo)
-{
-    do {
-        $receiptNumber = 'SUB' . date('Ymd') . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
-
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM sales WHERE receipt_number = ?");
-        $stmt->execute([$receiptNumber]);
-        $count = $stmt->fetchColumn();
-    } while ($count > 0);
-
-    return $receiptNumber;
 }
 ?>

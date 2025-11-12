@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -29,8 +30,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Trash2, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X, Percent } from "lucide-react"
+import { Plus, Archive, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X, Percent, ArchiveRestore, GripVertical, CircleDollarSign } from "lucide-react"
 import { Label } from "@/components/ui/label"
+import { useToast } from "@/components/ui/use-toast"
 
 const API_URL = "https://api.cnergy.site/membership.php"
 
@@ -38,7 +40,6 @@ const SubscriptionPlans = () => {
   const [plans, setPlans] = useState([])
   const [subscriptions, setSubscriptions] = useState([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
   const [discountForm, setDiscountForm] = useState({
     name: "",
@@ -72,22 +73,41 @@ const SubscriptionPlans = () => {
     features: [],
   })
   const [selectedPlanId, setSelectedPlanId] = useState(null)
+  const [selectedPlanName, setSelectedPlanName] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [expiringFilter, setExpiringFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
+  const [showArchived, setShowArchived] = useState(false)
+  const [message, setMessage] = useState(null)
   const [availablePlans, setAvailablePlans] = useState([])
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
+  const [archivedPlanIds, setArchivedPlanIds] = useState(() => {
+    // Load archived plan IDs from localStorage
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('archived-plan-ids')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error('Error parsing archived plan IDs:', e)
+        }
+      }
+    }
+    return []
+  })
+  const { toast } = useToast()
   const [warnings, setWarnings] = useState({
     critical_count: 0,
     warning_count: 0,
     notice_count: 0
   })
+  const [draggedIndex, setDraggedIndex] = useState(null)
   const [analytics, setAnalytics] = useState({
     totalPlans: 0,
     activeSubscriptions: 0,
     monthlyRevenue: 0,
-    averagePlanPrice: 0,
   })
 
   useEffect(() => {
@@ -97,6 +117,15 @@ const SubscriptionPlans = () => {
   useEffect(() => {
     fetchSubscriptions()
   }, [statusFilter, expiringFilter, planFilter])
+
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => {
+        setMessage(null)
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [message])
 
   const loadInitialData = async () => {
     setIsLoading(true)
@@ -113,6 +142,29 @@ const SubscriptionPlans = () => {
     try {
       const response = await axios.get(API_URL)
       if (Array.isArray(response.data.plans)) {
+        console.log("Fetched plans:", response.data.plans)
+        // Log archive status for debugging
+        response.data.plans.forEach(plan => {
+          console.log(`Plan ${plan.id} (${plan.name}): is_archived = ${plan.is_archived} (type: ${typeof plan.is_archived})`)
+        })
+
+        // Sync archived plan IDs from API if available
+        const archivedFromAPI = response.data.plans
+          .filter(plan => plan.is_archived === 1 || plan.is_archived === "1" || plan.is_archived === true)
+          .map(plan => plan.id)
+
+        if (archivedFromAPI.length > 0) {
+          console.log("Found archived plans from API:", archivedFromAPI)
+          setArchivedPlanIds(prev => {
+            // Merge API archived plans with local state
+            const merged = [...new Set([...prev, ...archivedFromAPI])]
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('archived-plan-ids', JSON.stringify(merged))
+            }
+            return merged
+          })
+        }
+
         setPlans(response.data.plans)
         // Update analytics if provided
         if (response.data.analytics) {
@@ -176,20 +228,136 @@ const SubscriptionPlans = () => {
     setIsDialogOpen(true)
   }
 
-  const handleDeleteConfirm = (id) => {
-    setSelectedPlanId(id)
-    setIsDeleteDialogOpen(true)
+  const handleArchiveConfirm = (plan) => {
+    setSelectedPlanId(plan.id)
+    setSelectedPlanName(plan.name)
+    setIsArchiveDialogOpen(true)
   }
 
-  const handleDelete = async () => {
+  const handleArchive = async () => {
+    if (!selectedPlanId) return
+
     setIsLoading(true)
     try {
-      await axios.delete(API_URL, { data: { id: selectedPlanId } })
-      setPlans(plans.filter((plan) => plan.id !== selectedPlanId))
-      setIsDeleteDialogOpen(false)
-      await fetchAnalytics()
+      // Find the plan to get all required fields
+      const planToArchive = plans.find(p => p.id === selectedPlanId)
+      if (!planToArchive) {
+        throw new Error("Plan not found")
+      }
+
+      console.log("Archiving plan:", planToArchive)
+      console.log("Sending data:", {
+        id: planToArchive.id,
+        name: planToArchive.name,
+        price: planToArchive.price,
+        is_member_only: planToArchive.is_member_only || false,
+        duration_months: planToArchive.duration_months || 0,
+        duration_days: planToArchive.duration_days || 0,
+        is_archived: 1
+      })
+
+      const response = await axios.put(API_URL, {
+        id: planToArchive.id,
+        name: planToArchive.name,
+        price: planToArchive.price,
+        is_member_only: planToArchive.is_member_only || false,
+        duration_months: planToArchive.duration_months || 0,
+        duration_days: planToArchive.duration_days || 0,
+        is_archived: 1
+      })
+
+      console.log("Archive response:", response.data)
+      console.log("Archive response data:", JSON.stringify(response.data, null, 2))
+
+      // Check if the response indicates success
+      if (response.data && (response.data.success !== false)) {
+        // Add to local archived list
+        setArchivedPlanIds(prev => {
+          const updated = [...prev, selectedPlanId]
+          // Save to localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('archived-plan-ids', JSON.stringify(updated))
+          }
+          return updated
+        })
+
+        // Force refresh plans to get updated data
+        await fetchPlans()
+        setIsArchiveDialogOpen(false)
+        setSelectedPlanId(null)
+        setSelectedPlanName(null)
+        toast({
+          title: "Plan Archived",
+          description: `"${selectedPlanName}" has been archived successfully.`,
+        })
+      } else {
+        throw new Error(response.data?.message || "Archive request completed but may not have been saved")
+      }
     } catch (error) {
-      console.error("Error deleting plan:", error)
+      console.error("Error archiving plan:", error)
+      console.error("Error response:", error.response)
+      const errorMsg = error.response?.data?.message || error.response?.data?.error || "Failed to archive plan. Please try again."
+      toast({
+        title: "Error",
+        description: errorMsg,
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRestore = async (planId) => {
+    setIsLoading(true)
+    try {
+      // Find the plan to get all required fields
+      const planToRestore = plans.find(p => p.id === planId)
+      if (!planToRestore) {
+        throw new Error("Plan not found")
+      }
+
+      console.log("Restoring plan:", planToRestore)
+
+      const response = await axios.put(API_URL, {
+        id: planToRestore.id,
+        name: planToRestore.name,
+        price: planToRestore.price,
+        is_member_only: planToRestore.is_member_only || false,
+        duration_months: planToRestore.duration_months || 0,
+        duration_days: planToRestore.duration_days || 0,
+        is_archived: 0
+      })
+
+      console.log("Restore response:", response.data)
+
+      if (response.data && (response.data.success !== false)) {
+        // Remove from local archived list
+        setArchivedPlanIds(prev => {
+          const updated = prev.filter(id => id !== planId)
+          // Save to localStorage
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('archived-plan-ids', JSON.stringify(updated))
+          }
+          return updated
+        })
+
+        await fetchPlans()
+        toast({
+          title: "Plan Restored",
+          description: `"${planToRestore.name}" has been restored successfully.`,
+        })
+      } else {
+        throw new Error(response.data?.message || "Restore request completed but may not have been saved")
+      }
+    } catch (error) {
+      console.error("Error restoring plan:", error)
+      console.error("Error response:", error.response)
+      const errorMsg = error.response?.data?.message || error.response?.data?.error || "Failed to restore plan. Please try again."
+      toast({
+        title: "Error",
+        description: errorMsg,
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -224,7 +392,6 @@ const SubscriptionPlans = () => {
 
       await fetchPlans()
       setIsDialogOpen(false)
-      await fetchAnalytics()
     } catch (error) {
       console.error("Error saving plan:", error)
     } finally {
@@ -252,6 +419,28 @@ const SubscriptionPlans = () => {
     setCurrentPlan({ ...currentPlan, features: updatedFeatures })
   }
 
+  const handleDragStart = (index) => {
+    setDraggedIndex(index)
+  }
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault()
+    if (draggedIndex === null || draggedIndex === index) return
+
+    const newFeatures = [...currentPlan.features]
+    const draggedItem = newFeatures[draggedIndex]
+
+    newFeatures.splice(draggedIndex, 1)
+    newFeatures.splice(index, 0, draggedItem)
+
+    setCurrentPlan({ ...currentPlan, features: newFeatures })
+    setDraggedIndex(index)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null)
+  }
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -261,7 +450,17 @@ const SubscriptionPlans = () => {
 
   const filteredPlans = plans.filter((plan) => {
     const planName = (plan.name || "").toLowerCase()
-    return planName.includes(searchQuery.toLowerCase())
+    const matchesSearch = planName.includes(searchQuery.toLowerCase())
+    // Handle different possible values for is_archived (1, "1", true, etc.)
+    // Also check local state if API doesn't return the field
+    const isArchivedFromAPI = plan.is_archived === 1 ||
+      plan.is_archived === "1" ||
+      plan.is_archived === true ||
+      plan.is_archived === "true" ||
+      (plan.is_archived !== undefined && plan.is_archived !== null && plan.is_archived !== 0 && plan.is_archived !== "0" && plan.is_archived !== false)
+    // Use local state as fallback if API doesn't return is_archived
+    const isArchived = isArchivedFromAPI || archivedPlanIds.includes(plan.id)
+    return matchesSearch && (showArchived ? isArchived : !isArchived)
   })
 
   // Filter subscriptions client-side
@@ -299,95 +498,225 @@ const SubscriptionPlans = () => {
   }
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Subscription Management</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-l font-semibold">Manage membership plans and subscriptions for CNERGY Gym</p>
-        </CardContent>
-      </Card>
+    <div className="space-y-6 p-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight">Subscription Plans</h1>
+        <p className="text-muted-foreground">Manage subscription plans for CNERGY GYM</p>
+      </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Plans</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.totalPlans}</div>
-            <p className="text-xs text-muted-foreground">Available membership plans</p>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border hover:shadow-md transition-shadow">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Total Plans</p>
+                <p className="text-2xl font-bold">{analytics.totalPlans}</p>
+                <p className="text-xs text-muted-foreground">Available plans</p>
+              </div>
+              <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <CreditCard className="h-5 w-5 text-blue-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analytics.activeSubscriptions}</div>
-            <p className="text-xs text-muted-foreground">Current active members</p>
+        <Card className="border hover:shadow-md transition-shadow">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Active Subscriptions</p>
+                <p className="text-2xl font-bold">{analytics.activeSubscriptions}</p>
+                <p className="text-xs text-muted-foreground">Premium & standard</p>
+              </div>
+              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <Users className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <span className="text-muted-foreground">₱</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</div>
-            <p className="text-xs text-muted-foreground">From subscriptions</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Average Plan Price</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(analytics.averagePlanPrice)}</div>
-            <p className="text-xs text-muted-foreground">Across all plans</p>
+        <Card className="border hover:shadow-md transition-shadow">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Monthly Revenue</p>
+                <p className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</p>
+                <p className="text-xs text-muted-foreground">From subscriptions</p>
+              </div>
+              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <CircleDollarSign className="h-5 w-5 text-green-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Success/Error Messages */}
+      {message && (
+        <Alert className={message.type === "error" ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50"}>
+          <AlertDescription className={message.type === "error" ? "text-red-800" : "text-green-800"}>
+            {message.text}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Tabs defaultValue="plans" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="plans">Subscriptions</TabsTrigger>
-          <TabsTrigger value="subscriptions">Active Subscriptions</TabsTrigger>
+          <TabsTrigger value="plans" onClick={() => setShowArchived(false)}>Active Plans</TabsTrigger>
+          <TabsTrigger value="archived" onClick={() => setShowArchived(true)}>Archived Plans</TabsTrigger>
         </TabsList>
 
         <TabsContent value="plans">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Subscriptions</CardTitle>
-                <div className="flex items-center gap-4">
-                  <div className="relative w-full max-w-md">
+          <Card className="border shadow-sm">
+            <CardHeader className="pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-xl">Active Plans</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">Manage your membership plans</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="relative w-full sm:w-64">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       type="search"
                       placeholder="Search plans..."
-                      className="pl-8"
+                      className="pl-8 h-9"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline">
+                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline" size="sm" className="h-9">
                       <Percent className="mr-2 h-4 w-4" />
                       Discount
                     </Button>
                     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                       <DialogTrigger asChild>
-                        <Button onClick={handleAdd} disabled={isLoading}>
+                        <Button onClick={handleAdd} disabled={isLoading} size="sm" className="h-9">
                           <Plus className="mr-2 h-4 w-4" />
                           Add Plan
                         </Button>
                       </DialogTrigger>
                     </Dialog>
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="rounded-md border-t">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="font-semibold">Plan Name</TableHead>
+                      <TableHead className="font-semibold">Price</TableHead>
+                      <TableHead className="font-semibold">Duration</TableHead>
+                      <TableHead className="font-semibold">Access Type</TableHead>
+                      <TableHead className="font-semibold">Features</TableHead>
+                      <TableHead className="font-semibold text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPlans.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          {searchQuery ? "No plans found matching your search" : "No membership plans found"}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredPlans.map((plan) => (
+                        <TableRow key={plan.id} className="hover:bg-muted/30 transition-colors">
+                          <TableCell className="font-semibold py-4">{plan.name}</TableCell>
+                          <TableCell className="font-semibold text-lg py-4">{formatCurrency(plan.price)}</TableCell>
+                          <TableCell className="py-4">
+                            {plan.duration_days > 0 ? (
+                              <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+                                {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
+                              </Badge>
+                            ) : plan.duration_months > 0 ? (
+                              <Badge variant="outline" className="border-gray-300">
+                                {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-gray-300">1 Month</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-4">
+                            {plan.is_member_only ? (
+                              <Badge variant="secondary" className="bg-purple-100 text-purple-800">Members Only</Badge>
+                            ) : (
+                              <Badge variant="outline" className="border-gray-300">Public</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-4 max-w-xs">
+                            <div className="space-y-1">
+                              {plan.features?.slice(0, 2).map((feature, index) => (
+                                <div key={index} className="text-sm text-muted-foreground truncate">
+                                  • {feature.feature_name}
+                                </div>
+                              ))}
+                              {plan.features?.length > 2 && (
+                                <div className="text-xs text-muted-foreground font-medium">+{plan.features.length - 2} more</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right py-4">
+                            <div className="flex items-center justify-end gap-2">
+                              {!(plan.is_archived === 1 || plan.is_archived === true) && (
+                                <>
+                                  <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} disabled={isLoading} className="h-8">
+                                    <Edit className="h-3.5 w-3.5 mr-1.5" />
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleArchiveConfirm(plan)}
+                                    disabled={isLoading}
+                                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200 h-8"
+                                  >
+                                    <Archive className="h-3.5 w-3.5 mr-1.5" />
+                                    Archive
+                                  </Button>
+                                </>
+                              )}
+                              {(plan.is_archived === 1 || plan.is_archived === true) && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRestore(plan.id)}
+                                  disabled={isLoading}
+                                  className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 h-8"
+                                >
+                                  <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
+                                  Restore
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="archived">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Archived Plans</CardTitle>
+                <div className="flex items-center gap-4">
+                  <div className="relative w-full max-w-md">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="search"
+                      placeholder="Search archived plans..."
+                      className="pl-8"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
                   </div>
                 </div>
               </div>
@@ -399,22 +728,21 @@ const SubscriptionPlans = () => {
                     <TableHead>Plan Name</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Duration</TableHead>
-                    <TableHead>Member Only</TableHead>
+                    <TableHead>Access Type</TableHead>
                     <TableHead>Features</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredPlans.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        {searchQuery ? "No plans found matching your search" : "No membership plans found"}
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        {searchQuery ? "No archived plans found matching your search" : "No archived plans found"}
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredPlans.map((plan) => (
-                      <TableRow key={plan.id}>
+                      <TableRow key={plan.id} className="opacity-75">
                         <TableCell className="font-medium">{plan.name}</TableCell>
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
                         <TableCell>
@@ -450,247 +778,16 @@ const SubscriptionPlans = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">Active</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} disabled={isLoading}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteConfirm(plan.id)}
-                              disabled={isLoading}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="subscriptions">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Active Subscriptions</CardTitle>
-                <div className="flex items-center gap-4">
-                  {/* Expiration Warnings */}
-                  {(warnings.critical_count > 0 || warnings.warning_count > 0 || warnings.notice_count > 0) && (
-                    <div className="flex items-center gap-2">
-                      {warnings.critical_count > 0 && (
-                        <Badge variant="destructive" className="text-xs">
-                          {warnings.critical_count} Expiring in 3 days
-                        </Badge>
-                      )}
-                      {warnings.warning_count > 0 && (
-                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
-                          {warnings.warning_count} Expiring in 7 days
-                        </Badge>
-                      )}
-                      {warnings.notice_count > 0 && (
-                        <Badge variant="outline" className="text-xs">
-                          {warnings.notice_count} Expiring in 14 days
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Filters */}
-              <div className="space-y-4 mt-4">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="status-filter" className="text-sm font-medium text-gray-900 dark:text-gray-100">Status:</Label>
-                    <select
-                      id="status-filter"
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value)}
-                      className="px-3 py-1 border rounded-md text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
-                    >
-                      <option value="all">All</option>
-                      <option value="active">Active</option>
-                      <option value="expiring">Expiring</option>
-                      <option value="expired">Expired</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Plan Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Filter by Plan:</span>
-                  <Button
-                    variant={planFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPlanFilter("all")}
-                  >
-                    All Plans
-                  </Button>
-                  {availablePlans.map((plan) => (
-                    <Button
-                      key={plan.id}
-                      variant={planFilter === plan.id.toString() ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPlanFilter(plan.id.toString())}
-                    >
-                      {plan.plan_name}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>End Date</TableHead>
-                    <TableHead>Days Left</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Amount Paid</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSubscriptions.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        No subscriptions found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredSubscriptions.map((subscription) => (
-                      <TableRow key={subscription.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{subscription.member_name}</div>
-                            <div className="text-sm text-muted-foreground">{subscription.member_email}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{subscription.plan_name}</TableCell>
-                        <TableCell>{new Date(subscription.start_date).toLocaleDateString()}</TableCell>
-                        <TableCell>{new Date(subscription.end_date).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {(() => {
-                              const status = subscription.computed_status || subscription.status_name
-
-                              // For cancelled, rejected, or expired subscriptions, show appropriate status
-                              if (status === 'cancelled') {
-                                return (
-                                  <span className="font-medium text-gray-600">
-                                    Cancelled
-                                  </span>
-                                )
-                              }
-
-                              if (status === 'rejected') {
-                                return (
-                                  <span className="font-medium text-red-600">
-                                    Rejected
-                                  </span>
-                                )
-                              }
-
-                              if (status === 'expired') {
-                                return (
-                                  <span className="font-medium text-red-600">
-                                    Expired
-                                  </span>
-                                )
-                              }
-
-                              // For active subscriptions, show days until expiry
-                              return (
-                                <span className={`font-medium ${subscription.expiry_status === 'expired' ? 'text-red-600' :
-                                  subscription.days_until_expiry < 0 ? 'text-red-600' :
-                                    subscription.expiry_status === 'critical' ? 'text-red-600' :
-                                      subscription.expiry_status === 'warning' ? 'text-orange-600' :
-                                        subscription.expiry_status === 'notice' ? 'text-yellow-600' :
-                                          'text-green-600'
-                                  }`}>
-                                  {subscription.days_until_expiry < 0 ?
-                                    `Expired ${Math.abs(subscription.days_until_expiry)} ${Math.abs(subscription.days_until_expiry) === 1 ? 'day' : 'days'} ago` :
-                                    `${subscription.days_until_expiry} days`
-                                  }
-                                </span>
-                              )
-                            })()}
-
-                            {/* Status badges for active subscriptions only */}
-                            {(() => {
-                              const status = subscription.computed_status || subscription.status_name
-                              if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
-                                return null
-                              }
-
-                              return (
-                                <>
-                                  {subscription.expiry_status === 'expired' && (
-                                    <Badge variant="destructive" className="text-xs">Expired</Badge>
-                                  )}
-                                  {subscription.expiry_status === 'critical' && (
-                                    <Badge variant="destructive" className="text-xs">Critical</Badge>
-                                  )}
-                                  {subscription.expiry_status === 'warning' && (
-                                    <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">Warning</Badge>
-                                  )}
-                                  {subscription.expiry_status === 'notice' && (
-                                    <Badge variant="outline" className="text-xs">Notice</Badge>
-                                  )}
-                                </>
-                              )
-                            })()}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {(() => {
-                            const status = subscription.computed_status || subscription.status_name
-                            // Show "Active" for approved subscriptions that are not expired
-                            const isActive = status === 'approved' && subscription.days_until_expiry >= 0
-
-                            return (
-                              <Badge
-                                variant={
-                                  isActive ? 'default' :
-                                    status === 'pending_approval' ? 'secondary' :
-                                      status === 'rejected' ? 'destructive' :
-                                        status === 'expired' ? 'destructive' :
-                                          'outline'
-                                }
-                                className={isActive ? 'bg-green-100 text-green-800 border-green-200' : ''}
-                              >
-                                {isActive ? 'ACTIVE' : status.replace('_', ' ').toUpperCase()}
-                              </Badge>
-                            )
-                          })()}
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {(() => {
-                            const status = subscription.computed_status || subscription.status_name
-                            // Show 0 for cancelled, rejected, or expired subscriptions
-                            if (status === 'cancelled' || status === 'rejected' || status === 'expired') {
-                              return formatCurrency(0)
-                            }
-                            return formatCurrency(subscription.amount_paid)
-                          })()}
-                          {subscription.discount_type !== 'none' && (
-                            <div className="text-xs text-muted-foreground">
-                              {subscription.discount_type} discount
-                            </div>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestore(plan.id)}
+                            disabled={isLoading}
+                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                          >
+                            <ArchiveRestore className="mr-2 h-4 w-4" />
+                            Restore
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -745,16 +842,22 @@ const SubscriptionPlans = () => {
                     id="duration_months"
                     type="number"
                     min="0"
-                    value={currentPlan.duration_months}
+                    value={currentPlan.duration_months === 0 ? "" : currentPlan.duration_months}
+                    onFocus={(e) => {
+                      if (currentPlan.duration_months === 0) {
+                        e.target.select();
+                      }
+                    }}
                     onChange={(e) => {
-                      const months = parseInt(e.target.value) || 0;
+                      const value = e.target.value;
+                      const months = value === "" ? 0 : parseInt(value) || 0;
                       setCurrentPlan({
                         ...currentPlan,
                         duration_months: months,
                         duration_days: months > 0 ? 0 : currentPlan.duration_days
                       });
                     }}
-                    placeholder="0 for day pass plans"
+                    placeholder="0"
                     className={currentPlan.duration_months > 0 ? "border-green-500 bg-green-50" : ""}
                   />
                   <p className="text-xs text-muted-foreground">Leave as 0 for day pass plans</p>
@@ -768,16 +871,22 @@ const SubscriptionPlans = () => {
                     id="duration_days"
                     type="number"
                     min="0"
-                    value={currentPlan.duration_days}
+                    value={currentPlan.duration_days === 0 ? "" : currentPlan.duration_days}
+                    onFocus={(e) => {
+                      if (currentPlan.duration_days === 0) {
+                        e.target.select();
+                      }
+                    }}
                     onChange={(e) => {
-                      const days = parseInt(e.target.value) || 0;
+                      const value = e.target.value;
+                      const days = value === "" ? 0 : parseInt(value) || 0;
                       setCurrentPlan({
                         ...currentPlan,
                         duration_days: days,
                         duration_months: days > 0 ? 0 : currentPlan.duration_months
                       });
                     }}
-                    placeholder="0 for monthly plans"
+                    placeholder="0"
                     className={currentPlan.duration_days > 0 ? "border-blue-500 bg-blue-50" : ""}
                   />
                   <p className="text-xs text-muted-foreground">Leave as 0 for monthly plans</p>
@@ -811,9 +920,24 @@ const SubscriptionPlans = () => {
 
               <div className="space-y-3 max-h-60 overflow-y-auto">
                 {currentPlan.features.map((feature, index) => (
-                  <div key={index} className="border rounded-lg p-3 space-y-3">
+                  <div
+                    key={index}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    className={`border rounded-lg p-3 space-y-3 transition-all ${draggedIndex === index ? 'opacity-50 bg-muted' : 'hover:bg-muted/50'
+                      }`}
+                  >
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Feature {index + 1}</Label>
+                      <div className="flex items-center gap-2">
+                        <div
+                          draggable
+                          onDragStart={() => handleDragStart(index)}
+                          onDragEnd={handleDragEnd}
+                          className="cursor-move p-1 hover:bg-muted rounded"
+                        >
+                          <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <Label className="text-sm font-medium">Feature</Label>
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -868,30 +992,53 @@ const SubscriptionPlans = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
+        <AlertDialogContent className="sm:max-w-md">
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the selected membership plan and all its
-              features.
+            <div className="flex items-center gap-3 mb-2">
+              <div className="h-12 w-12 rounded-full bg-orange-100 flex items-center justify-center">
+                <Archive className="h-6 w-6 text-orange-600" />
+              </div>
+              <AlertDialogTitle className="text-xl">Archive Plan</AlertDialogTitle>
+            </div>
+            <AlertDialogDescription asChild>
+              <div className="text-base space-y-3 pt-2 text-muted-foreground">
+                <p>
+                  Are you sure you want to archive <span className="font-semibold text-gray-900">"{selectedPlanName}"</span>?
+                </p>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 space-y-2">
+                  <p className="text-sm text-orange-900">
+                    <strong>What happens when you archive:</strong>
+                  </p>
+                  <ul className="text-sm text-orange-800 space-y-1 list-disc list-inside">
+                    <li>This plan will be hidden from new subscriptions</li>
+                    <li>Existing active subscriptions will continue to work</li>
+                    <li>You can restore this plan anytime from the Archived Plans tab</li>
+                  </ul>
+                </div>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel disabled={isLoading} className="mt-2 sm:mt-0">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleArchive}
+              className="bg-orange-600 text-white hover:bg-orange-700 focus:ring-orange-600"
               disabled={isLoading}
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
+                  Archiving...
                 </>
               ) : (
-                "Delete"
+                <>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive Plan
+                </>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

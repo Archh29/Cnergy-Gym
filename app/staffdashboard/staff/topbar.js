@@ -20,6 +20,9 @@ import {
   ShoppingCart,
   Package,
   UserCheck,
+  MessageSquare,
+  Headphones,
+  ArrowRight,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/adminnotification.php"
@@ -48,13 +51,13 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         credentials: "include"
       })
       const data = await response.json()
-      
+
       if (data.authenticated && data.user_id) {
         // Fetch user details from the database
         const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${data.user_id}`, {
           credentials: "include"
         })
-        
+
         if (userResponse.ok) {
           const userInfo = await userResponse.json()
           if (userInfo.success) {
@@ -161,64 +164,112 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
   }
 
   const getNotificationIcon = (typeName, message) => {
-    const iconClass = "h-4 w-4"
-    
+    const iconClass = "h-4 w-4 flex-shrink-0"
+
     // Handle undefined/null values
     if (!message) message = ""
     if (!typeName) typeName = ""
-    
-    if (message.includes("registration") || message.includes("joined")) return <Users className={`${iconClass} text-blue-500`} />
-    if (message.includes("Payment") || message.includes("paid")) return <CreditCard className={`${iconClass} text-green-500`} />
-    if (message.includes("Sale") || message.includes("sold")) return <ShoppingCart className={`${iconClass} text-purple-500`} />
-    if (message.includes("stock") || message.includes("Stock")) return <Package className={`${iconClass} text-orange-500`} />
-    if (message.includes("Staff") || message.includes("account")) return <UserCheck className={`${iconClass} text-indigo-500`} />
-    if (message.includes("Product") || message.includes("added") || message.includes("updated")) return <Package className={`${iconClass} text-green-500`} />
+
+    // Use neutral gray for all icons, subtle accent only for important types
+    const defaultColor = "text-gray-600 dark:text-gray-400"
+
+    // Support ticket notifications
+    if (message.includes("support") || message.includes("ticket") || message.includes("request") || message.toLowerCase().includes("support ticket")) {
+      return <Headphones className={`${iconClass} ${defaultColor}`} />
+    }
+
+    if (message.includes("registration") || message.includes("joined") || message.includes("new member")) {
+      return <Users className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("Payment") || message.includes("paid") || message.includes("payment")) {
+      return <CreditCard className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("Sale") || message.includes("sold") || message.includes("purchase")) {
+      return <ShoppingCart className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("stock") || message.includes("Stock") || message.includes("inventory")) {
+      return <Package className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("Staff") || message.includes("account") || message.includes("employee")) {
+      return <UserCheck className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("Product") || message.includes("added") || message.includes("updated") || message.includes("merchandise")) {
+      return <Package className={`${iconClass} ${defaultColor}`} />
+    }
+    if (message.includes("message") || message.includes("chat")) {
+      return <MessageSquare className={`${iconClass} ${defaultColor}`} />
+    }
 
     switch (typeName.toLowerCase()) {
-      case "info": return <Info className={`${iconClass} text-blue-500`} />
-      case "warning": return <AlertTriangle className={`${iconClass} text-yellow-500`} />
-      case "error": return <AlertCircle className={`${iconClass} text-red-500`} />
-      case "success": return <CheckCircle className={`${iconClass} text-green-500`} />
-      default: return <Bell className={`${iconClass} text-gray-500`} />
+      case "info": return <Info className={`${iconClass} ${defaultColor}`} />
+      case "warning": return <AlertTriangle className={`${iconClass} text-amber-600 dark:text-amber-500`} />
+      case "error": return <AlertCircle className={`${iconClass} text-red-600 dark:text-red-500`} />
+      case "success": return <CheckCircle className={`${iconClass} text-green-600 dark:text-green-500`} />
+      default: return <Bell className={`${iconClass} ${defaultColor}`} />
     }
   }
 
-  const getNotificationBgColor = (typeName, isUnread) => {
-    if (!isUnread) return "bg-white hover:bg-gray-50"
-    
-    // Handle undefined/null values
-    if (!typeName) typeName = ""
-    
-    switch (typeName.toLowerCase()) {
-      case "info": return "bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-400"
-      case "warning": return "bg-yellow-50 hover:bg-yellow-100 border-l-4 border-yellow-400"
-      case "error": return "bg-red-50 hover:bg-red-100 border-l-4 border-red-400"
-      case "success": return "bg-green-50 hover:bg-green-100 border-l-4 border-green-400"
-      default: return "bg-gray-50 hover:bg-gray-100 border-l-4 border-gray-400"
+  const getNotificationBgColor = (typeName, isUnread, message) => {
+    // Read notifications - subtle gray
+    if (!isUnread) {
+      return "bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 border border-gray-200 dark:border-gray-700"
     }
+
+    // Unread notifications - subtle accent with left border
+    return "bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 border-l-2 border-gray-400 dark:border-gray-600 border-r border-t border-b border-gray-200 dark:border-gray-700"
+  }
+
+  const formatNotificationMessage = (message) => {
+    if (!message) return "No message available"
+
+    // Capitalize first letter
+    const formatted = message.charAt(0).toUpperCase() + message.slice(1)
+
+    // Truncate long messages
+    if (formatted.length > 100) {
+      return formatted.substring(0, 100) + "..."
+    }
+
+    return formatted
   }
 
   const formatTimestamp = (timestamp) => {
+    if (!timestamp) return "Unknown time"
     const date = new Date(timestamp)
     const now = new Date()
-    const diffInMinutes = (now - date) / (1000 * 60)
+    const diffInSeconds = (now - date) / 1000
+    const diffInMinutes = diffInSeconds / 60
     const diffInHours = diffInMinutes / 60
     const diffInDays = diffInHours / 24
-    if (diffInMinutes < 1) return "Just now"
-    if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)}m ago`
-    if (diffInHours < 24) return `${Math.floor(diffInHours)}h ago`
-    if (diffInDays < 7) return `${Math.floor(diffInDays)}d ago`
-    return date.toLocaleDateString()
+
+    if (diffInSeconds < 60) return "Just now"
+    if (diffInMinutes < 60) return `${Math.floor(diffInMinutes)} min ago`
+    if (diffInHours < 24) return `${Math.floor(diffInHours)} hour${Math.floor(diffInHours) !== 1 ? 's' : ''} ago`
+    if (diffInDays < 7) return `${Math.floor(diffInDays)} day${Math.floor(diffInDays) !== 1 ? 's' : ''} ago`
+    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} week${Math.floor(diffInDays / 7) !== 1 ? 's' : ''} ago`
+    // Format in Philippines timezone
+    return date.toLocaleDateString('en-US', {
+      timeZone: 'Asia/Manila',
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    })
   }
 
   return (
     <div className="flex items-center gap-4">
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative hover:bg-gray-100 transition-colors">
-            <Bell className="h-5 w-5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 rounded-lg h-9 w-9"
+          >
+            <Bell className="h-5 w-5 text-gray-700 dark:text-gray-300" />
             {unreadCount > 0 && (
-              <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center text-xs p-0 animate-pulse">
+              <Badge
+                className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] p-0 font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-2 border-white dark:border-gray-900"
+              >
                 {unreadCount > 99 ? "99+" : unreadCount}
               </Badge>
             )}
@@ -227,17 +278,31 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
         <DropdownMenuContent
           align="end"
-          className="w-96 max-h-[500px] p-0 shadow-xl border-0 rounded-xl overflow-hidden"
+          className="w-[420px] max-h-[600px] p-0 shadow-2xl border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-900"
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-t-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-lg">Staff Notifications</h3>
-                <p className="text-blue-100 text-sm">{unreadCount > 0 ? `${unreadCount} unread messages` : "All caught up!"}</p>
+          <div className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-5 py-4 rounded-t-xl">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-gray-200 dark:bg-gray-700 rounded-lg">
+                  <Bell className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-base text-gray-900 dark:text-white tracking-tight">Notifications</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
+                    {unreadCount > 0
+                      ? `${unreadCount} new notification${unreadCount !== 1 ? 's' : ''}`
+                      : "All caught up!"}
+                  </p>
+                </div>
               </div>
               {unreadCount > 0 && (
-                <Button variant="ghost" size="sm" onClick={markAllAsRead} className="text-white hover:bg-white/20 text-xs">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={markAllAsRead}
+                  className="text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 text-xs h-7 px-3 rounded-md transition-colors"
+                >
                   Mark all read
                 </Button>
               )}
@@ -245,86 +310,107 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
           </div>
 
           {/* Notification List */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-              <span className="ml-2 text-gray-500">Loading notifications...</span>
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-12">
-              <Bell className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 font-medium">No notifications yet</p>
-              <p className="text-gray-400 text-sm">We'll notify you when something happens</p>
-            </div>
-          ) : (
-            <div className="max-h-[300px] overflow-y-auto">
-              <div className="p-2 space-y-2">
-                {notifications.map((notification) => (
-                  <div
-                    key={notification.id}
-                    className={`${getNotificationBgColor(notification.type_name, notification.status_name === "Unread")} rounded-lg p-3 transition-all duration-200 cursor-pointer hover:shadow-sm group border`}
-                    onClick={() => { if (notification.status_name === "Unread") markAsRead(notification.id) }}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="flex-shrink-0 mt-0.5">
-                        {getNotificationIcon(notification.type_name, notification.message)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">
-                            {notification.type_name || 'Notification'}
-                          </span>
-                          {notification.status_name === "Unread" && (
-                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
-                          )}
+          <ScrollArea className="max-h-[400px]">
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 px-4">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400 text-sm">Loading notifications...</p>
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="text-center py-16 px-4">
+                <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+                  <Bell className="h-10 w-10 text-gray-400" />
+                </div>
+                <p className="text-gray-700 dark:text-gray-300 font-semibold text-base mb-1">No notifications</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm">You're all caught up! Check back later for updates.</p>
+              </div>
+            ) : (
+              <div className="p-3 space-y-2">
+                {notifications.map((notification) => {
+                  const isUnread = notification.status_name === "Unread"
+                  const isSupportTicket = notification.message?.toLowerCase().includes("support") || notification.message?.toLowerCase().includes("ticket")
+
+                  return (
+                    <div
+                      key={notification.id}
+                      className={`${getNotificationBgColor(notification.type_name, isUnread, notification.message)} rounded-lg p-3.5 transition-all duration-200 cursor-pointer group`}
+                      onClick={() => {
+                        if (isUnread) {
+                          markAsRead(notification.id)
+                        }
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 mt-0.5">
+                          <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md">
+                            {getNotificationIcon(notification.type_name, notification.message)}
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-900 leading-snug mb-2 line-clamp-2">
-                          {notification.message || 'No message'}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">
-                            {formatTimestamp(notification.timestamp)}
-                          </span>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {notification.status_name === "Unread" && (
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                                {isSupportTicket ? 'Support Request' : (notification.type_name || 'Notification')}
+                              </span>
+                              {isUnread && (
+                                <div className="w-1.5 h-1.5 bg-gray-900 dark:bg-gray-100 rounded-full"></div>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed mb-2 font-normal">
+                            {formatNotificationMessage(notification.message)}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {formatTimestamp(notification.timestamp)}
+                            </span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {isUnread && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    markAsRead(notification.id)
+                                  }}
+                                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+                                  title="Mark as read"
+                                >
+                                  <Check className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+                                </Button>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={(e) => { e.stopPropagation(); markAsRead(notification.id) }}
-                                className="h-6 w-6 p-0 hover:bg-green-100"
-                                title="Mark as read"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deleteNotification(notification.id)
+                                }}
+                                className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+                                title="Delete notification"
                               >
-                                <Check className="h-3 w-3 text-green-600" />
+                                <X className="h-3.5 w-3.5 text-gray-500 dark:text-gray-500" />
                               </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => { e.stopPropagation(); deleteNotification(notification.id) }}
-                              className="h-6 w-6 p-0 hover:bg-red-100"
-                              title="Delete notification"
-                            >
-                              <X className="h-3 w-3 text-red-600" />
-                            </Button>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-            </div>
-          )}
+            )}
+          </ScrollArea>
 
           {/* Footer */}
           {notifications.length > 0 && (
-            <div className="border-t bg-gray-50 p-3 rounded-b-xl">
+            <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-b-xl">
               <Button
                 variant="ghost"
-                className="w-full text-sm text-gray-600 hover:text-gray-900"
+                className="w-full text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700"
                 onClick={() => setIsOpen(false)}
               >
-                View all notifications
+                Close
               </Button>
             </div>
           )}
@@ -333,15 +419,15 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
       {/* User Avatar */}
       <div className="flex items-center gap-3">
-        <div className="text-right">
-          <p className="text-sm font-medium text-gray-900 dark:text-white">{userData.firstName}</p>
-          <p className="text-xs text-gray-500">{userData.role}</p>
+        <div className="text-right hidden sm:block">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">{userData.firstName}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
         </div>
         <div className="relative">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-md">
-            <span className="text-white font-semibold">{userData.firstName?.charAt(0) || "S"}</span>
+          <div className="w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+            <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "S"}</span>
           </div>
-          <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
+          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
         </div>
       </div>
     </div>

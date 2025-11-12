@@ -425,9 +425,9 @@ const SubscriptionMonitor = ({ userId }) => {
         currentUserId = parseInt(storedUserId)
         console.log("Using user_id from sessionStorage:", currentUserId)
       } else {
-        setMessage({ 
-          type: "error", 
-          text: "User session not found. Please refresh the page and try again. If the problem persists, please log out and log back in." 
+        setMessage({
+          type: "error",
+          text: "User session not found. Please refresh the page and try again. If the problem persists, please log out and log back in."
         })
         setActionLoading(null)
         return
@@ -707,7 +707,12 @@ const SubscriptionMonitor = ({ userId }) => {
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format date only in Philippines timezone
+    return date.toLocaleDateString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -715,12 +720,18 @@ const SubscriptionMonitor = ({ userId }) => {
   }
 
   const formatDateTime = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format date and time in Philippines timezone
+    return date.toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     })
   }
 
@@ -915,7 +926,7 @@ const SubscriptionMonitor = ({ userId }) => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Member</TableHead>
+                        <TableHead>Name</TableHead>
                         <TableHead>Plan</TableHead>
                         <TableHead>Requested</TableHead>
                         <TableHead>Status</TableHead>
@@ -1038,7 +1049,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Member</TableHead>
+                      <TableHead>Name</TableHead>
                       <TableHead>Plan</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Start Date</TableHead>
@@ -1145,7 +1156,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Member</TableHead>
+                      <TableHead>Name</TableHead>
                       <TableHead>Plan</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Start Date</TableHead>
@@ -1252,7 +1263,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Member</TableHead>
+                      <TableHead>Name</TableHead>
                       <TableHead>Plan</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Start Date</TableHead>
@@ -1374,7 +1385,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Member</TableHead>
+                      <TableHead>Name</TableHead>
                       <TableHead>Plan</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Start Date</TableHead>
@@ -1713,11 +1724,11 @@ const SubscriptionMonitor = ({ userId }) => {
                   )}
                   <div className="flex justify-between">
                     <span className="text-gray-600">Start Date:</span>
-                    <span>{new Date(confirmationData.start_date).toLocaleDateString()}</span>
+                    <span>{formatDate(confirmationData.start_date)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">End Date:</span>
-                    <span>{new Date(confirmationData.end_date).toLocaleDateString()}</span>
+                    <span>{formatDate(confirmationData.end_date)}</span>
                   </div>
                 </div>
               </div>

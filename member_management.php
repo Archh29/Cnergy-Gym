@@ -5,22 +5,19 @@ $dbname = "u773938685_cnergydb";
 $username = "u773938685_archh29";
 $password = "Gwapoko385@";
 
+// Connect to database
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    // Ensure proper UTF-8 encoding for special characters like peso sign
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+    ]);
+    // Ensure proper UTF-8 encoding
     $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
 } catch (PDOException $e) {
-    error_log('Member Management Database connection failed: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(["error" => "Database connection failed: " . $e->getMessage()]);
-    exit();
-}
-
-// Conditionally require activity logger if it exists
-if (file_exists('activity_logger.php')) {
-    require 'activity_logger.php';
+    error_log("Database connection failed in member_management.php: " . $e->getMessage());
+    echo json_encode(["error" => "Database connection failed"]);
+    exit;
 }
 
 header("Access-Control-Allow-Origin: *");
@@ -28,435 +25,205 @@ header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
 
-// Ensure PDO throws exceptions so we can return proper JSON errors
-if (isset($pdo) && $pdo instanceof PDO) {
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-}
-
-// Handle CORS preflight
+// Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
     exit;
 }
 
-function respond($payload, $code = 200)
-{
-    http_response_code($code);
-    echo json_encode($payload);
-    exit;
+// Get all members
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['id'])) {
+    try {
+        // Updated to include account_status - using lowercase 'user' table name
+        $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status FROM user WHERE user_type_id = 4');
+        $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode($members);
+        exit;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Database error in member_management.php GET: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error']);
+        exit;
+    }
 }
 
-try {
-    // GET: all members (user_type_id = 4)
-    if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['id'])) {
-        $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
-        $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        respond($members);
-    }
-
-    // GET: single member by id
-    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
-        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE id = ?');
+// Get a single member by ID
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
+    try {
+        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status FROM user WHERE id = ?');
         $stmt->execute([$_GET['id']]);
         $member = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$member) {
-            respond(['error' => 'Member not found'], 404);
+            http_response_code(404);
+            echo json_encode(['error' => 'Member not found']);
+            exit;
         }
-        respond($member);
+        echo json_encode($member);
+        exit;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Database error in member_management.php GET by ID: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error']);
+        exit;
     }
+}
 
-    // POST: add new member
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        try {
-            $input = json_decode(file_get_contents('php://input'), true);
-            if (!$input) {
-                respond(['error' => 'Invalid JSON'], 400);
-            }
-
-            // Log the input for debugging
-            error_log("POST Member Add - Input received: " . json_encode($input));
-
-            // Check required fields (mname and gender_id are now optional)
-            foreach (['fname', 'lname', 'email', 'password', 'bday'] as $k) {
-                if (!isset($input[$k]) || trim($input[$k]) === '') {
-                    respond(['error' => 'Missing required fields: ' . $k], 400);
-                }
-            }
-
-            // CRITICAL: Check if email already exists across ALL user types
-            $stmt = $pdo->prepare('SELECT id, user_type_id FROM `user` WHERE email = ?');
-            $stmt->execute([$input['email']]);
-            $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($existingUser) {
-                $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-                $existingUserType = $userTypes[$existingUser['user_type_id']] ?? 'Unknown';
-                respond([
-                    'error' => 'Email already exists',
-                    'message' => "Email '{$input['email']}' is already registered as a {$existingUserType}. Please use a different email address."
-                ], 400);
-            }
-
-            // CRITICAL: Check if first name and last name combination already exists (case-insensitive)
-            // This prevents duplicate accounts with the same name but different emails
-            $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ?');
-            $stmt->execute([strtolower($input['fname']), strtolower($input['lname'])]);
-            $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($existingName) {
-                $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-                $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
-                respond([
-                    'error' => 'Name already exists',
-                    'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
-                ], 400);
-            }
-
-            // Set defaults for optional fields
-            $gender_id = isset($input['gender_id']) ? intval($input['gender_id']) : 1; // Default to Male
-            $account_status = isset($input['account_status']) ? $input['account_status'] : 'approved';
-
-            // Handle middle name - convert null/empty to empty string (database doesn't allow NULL)
-            $mname = '';
-            if (array_key_exists('mname', $input) && $input['mname'] !== null && $input['mname'] !== '') {
-                $trimmed = trim($input['mname']);
-                if ($trimmed !== '') {
-                    $mname = $trimmed;
-                }
-            }
-
-            error_log("POST Member Add - Processed values - fname: {$input['fname']}, mname: '{$mname}', lname: {$input['lname']}, email: {$input['email']}, gender_id: {$gender_id}");
-
-            $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
-                                   VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string instead of null
-                trim($input['lname']),
-                trim($input['email']),
-                password_hash($input['password'], PASSWORD_DEFAULT),
-                $gender_id,
-                $input['bday'],
-                $account_status
-            ]);
-
-            $newId = $pdo->lastInsertId();
-            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status, created_at FROM `user` WHERE id = ?');
-            $stmt->execute([$newId]);
-            $newMember = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            // Log activity using centralized logger (same as monitor_subscription.php)
-            $staffId = $input['staff_id'] ?? null;
-            error_log("DEBUG Member Add - staffId: " . ($staffId ?? 'NULL') . " from request data");
-            if (function_exists('logStaffActivity')) {
-                logStaffActivity($pdo, $staffId, "Add Member", "New member added - {$input['fname']} {$input['lname']} ({$input['email']})", "Member Management");
-            }
-
-            respond(['message' => 'Member added successfully', 'member' => $newMember], 201);
-        } catch (PDOException $e) {
-            error_log("Database error in member_management.php POST: " . $e->getMessage());
-            error_log("Error code: " . $e->getCode());
-            error_log("Error info: " . print_r($e->errorInfo, true));
-            respond([
-                'error' => 'Database error',
-                'message' => 'Failed to add member: ' . $e->getMessage(),
-                'details' => $e->getMessage()
-            ], 500);
-        } catch (Exception $e) {
-            error_log("Error in member_management.php POST: " . $e->getMessage());
-            respond([
-                'error' => 'Server error',
-                'message' => 'Failed to add member: ' . $e->getMessage(),
-                'details' => $e->getMessage()
-            ], 500);
+// Add a new member
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!$input) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid JSON']);
+            exit;
         }
-    }
 
-    // PUT: update member (either status-only or full update)
-    if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+        // Validate required fields
+        if (!isset($input['fname'], $input['mname'], $input['lname'], $input['email'], $input['password'], $input['gender_id'], $input['bday'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing required fields']);
+            exit;
+        }
+
+        // Set default account status if not provided
+        $account_status = isset($input['account_status']) ? $input['account_status'] : 'pending';
+
+        // Insert with all required fields including account_status
+        // Note: Using lowercase 'user' table name to match database schema
+        $stmt = $pdo->prepare('INSERT INTO user (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
+                               VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
+        $stmt->execute([
+            $input['fname'],
+            $input['mname'],
+            $input['lname'],
+            $input['email'],
+            password_hash($input['password'], PASSWORD_DEFAULT),
+            $input['gender_id'],
+            $input['bday'],
+            $account_status
+        ]);
+
+        // Fetch the newly added member
+        $newMemberId = $pdo->lastInsertId();
+        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status FROM user WHERE id = ?');
+        $stmt->execute([$newMemberId]);
+        $newMember = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        echo json_encode(['message' => 'Member added successfully', 'member' => $newMember]);
+        exit;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Database error in member_management.php POST: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in member_management.php POST: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
+    }
+}
+
+// Update a member
+if ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+    try {
         $rawInput = file_get_contents('php://input');
         error_log("Raw Input: " . $rawInput);
         $input = json_decode($rawInput, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            respond(['error' => 'Invalid JSON format', 'details' => json_last_error_msg()], 400);
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid JSON format', 'details' => json_last_error_msg()]);
+            exit;
         }
 
-        // Status-only update
-        if (isset($input['id'], $input['account_status']) && !isset($input['fname'], $input['mname'], $input['lname'], $input['email'], $input['gender_id'], $input['bday'])) {
-            error_log("DEBUG: Status-only update detected for ID: " . $input['id'] . ", Status: " . $input['account_status']);
-
-            // Get member details for logging
-            $stmt = $pdo->prepare('SELECT fname, lname FROM `user` WHERE id = ?');
-            $stmt->execute([$input['id']]);
-            $member = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$member) {
-                respond(['error' => 'Member not found'], 404);
-            }
-
-            $stmt = $pdo->prepare('UPDATE `user` SET account_status = ? WHERE id = ?');
+        // Check if this is just an account status update
+        if (isset($input['id']) && isset($input['account_status']) && count($input) == 2) {
+            // Simple account status update - using lowercase 'user' table name
+            $stmt = $pdo->prepare('UPDATE user SET account_status = ? WHERE id = ?');
             $stmt->execute([$input['account_status'], $input['id']]);
-
-            // Log activity using centralized logger (same as monitor_subscription.php)
-            $staffId = $input['staff_id'] ?? null;
-            error_log("DEBUG Member Status Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
-            if (function_exists('logStaffActivity')) {
-                logStaffActivity($pdo, $staffId, "Update Member Status", "Member account {$input['account_status']}: {$member['fname']} {$member['lname']} (ID: {$input['id']})", "Member Management");
-            }
-
-            respond(['message' => 'Account status updated successfully']);
+            echo json_encode(['message' => 'Account status updated successfully']);
+            exit;
         }
 
-        // Full update requires core fields (mname, gender_id and account_status are not editable by admin)
-        error_log("DEBUG: Full update detected. Input keys: " . implode(', ', array_keys($input)));
-        // Check required fields (mname is optional)
-        foreach (['id', 'fname', 'lname', 'email', 'bday'] as $k) {
-            if (!isset($input[$k]) || ($k !== 'id' && trim($input[$k]) === '')) {
-                error_log("DEBUG: Missing required field: " . $k);
-                respond(['error' => 'Missing required fields: ' . $k], 400);
-            }
+        // Full member update - validate required fields
+        if (!isset($input['id'], $input['fname'], $input['mname'], $input['lname'], $input['email'], $input['gender_id'], $input['bday'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Missing required fields']);
+            exit;
         }
 
-        // Check if email already exists (excluding current user)
-        $stmt = $pdo->prepare('SELECT id, user_type_id, fname, lname FROM `user` WHERE email = ? AND id != ?');
-        $stmt->execute([$input['email'], $input['id']]);
-        $existingEmail = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Update query with all required fields including account_status - using lowercase 'user' table name
+        $query = 'UPDATE user SET fname = ?, mname = ?, lname = ?, email = ?, gender_id = ?, bday = ?, account_status = ? WHERE id = ?';
+        $params = [
+            $input['fname'],
+            $input['mname'],
+            $input['lname'],
+            $input['email'],
+            $input['gender_id'],
+            $input['bday'],
+            isset($input['account_status']) ? $input['account_status'] : 'pending',
+            $input['id']
+        ];
 
-        if ($existingEmail) {
-            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-            $existingUserType = $userTypes[$existingEmail['user_type_id']] ?? 'Unknown';
-            respond([
-                'error' => 'Email already exists',
-                'message' => "Email '{$input['email']}' is already used by {$existingEmail['fname']} {$existingEmail['lname']} (Type: {$existingUserType}). Please use a different email."
-            ], 400);
-        }
-
-        // Check if name combination already exists (excluding current user)
-        $stmt = $pdo->prepare('SELECT id, email, user_type_id FROM `user` WHERE LOWER(fname) = ? AND LOWER(lname) = ? AND id != ?');
-        $stmt->execute([strtolower($input['fname']), strtolower($input['lname']), $input['id']]);
-        $existingName = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($existingName) {
-            $userTypes = [1 => 'Admin', 2 => 'Staff', 3 => 'Coach', 4 => 'Member'];
-            $existingUserType = $userTypes[$existingName['user_type_id']] ?? 'Unknown';
-            respond([
-                'error' => 'Name already exists',
-                'message' => "A user with the name '{$input['fname']} {$input['lname']}' already exists (Email: {$existingName['email']}, Type: {$existingUserType}). Please use a different name or contact support if this is the same person."
-            ], 400);
-        }
-
-        // Get existing gender_id from database
-        $stmt = $pdo->prepare('SELECT gender_id FROM `user` WHERE id = ?');
-        $stmt->execute([$input['id']]);
-        $existing = $stmt->fetch(PDO::FETCH_ASSOC);
-        $gender_id = $existing['gender_id']; // Keep existing gender
-
-        // Handle optional middle name - convert null/empty to empty string (database doesn't allow NULL)
-        $mname = '';
-        if (isset($input['mname']) && $input['mname'] !== null && $input['mname'] !== '') {
-            $trimmed = trim($input['mname']);
-            if ($trimmed !== '') {
-                $mname = $trimmed;
-            }
-        }
-
+        // Add password to update if provided
         if (!empty($input['password'])) {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string if not provided
-                trim($input['lname']),
-                trim($input['email']),
+            $query = 'UPDATE user SET fname = ?, mname = ?, lname = ?, email = ?, gender_id = ?, bday = ?, account_status = ?, password = ? WHERE id = ?';
+            $params = [
+                $input['fname'],
+                $input['mname'],
+                $input['lname'],
+                $input['email'],
+                $input['gender_id'],
                 $input['bday'],
+                isset($input['account_status']) ? $input['account_status'] : 'pending',
                 password_hash($input['password'], PASSWORD_DEFAULT),
                 $input['id']
-            ]);
-        } else {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string if not provided
-                trim($input['lname']),
-                trim($input['email']),
-                $input['bday'],
-                $input['id']
-            ]);
+            ];
         }
 
-        // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $input['staff_id'] ?? null;
-        error_log("DEBUG Member Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
-        if (function_exists('logStaffActivity')) {
-            logStaffActivity($pdo, $staffId, "Update Member", "Member updated - {$input['fname']} {$input['lname']} (ID: {$input['id']})", "Member Management");
-        }
-
-        respond(['message' => 'Member updated successfully']);
+        $stmt = $pdo->prepare($query);
+        $stmt->execute($params);
+        echo json_encode(['message' => 'Member updated successfully']);
+        exit;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Database error in member_management.php PUT: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in member_management.php PUT: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
     }
+}
 
-    // DELETE: delete member with proper foreign key handling
-    if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
-        try {
-            error_log("DELETE request received");
-            // Handle both URL parameter (?id=15) and JSON input
-            $memberId = null;
-
-            if (isset($_GET['id'])) {
-                // URL parameter format: DELETE /member_management.php?id=15
-                $memberId = $_GET['id'];
-            } else {
-                // JSON input format
-                $input = json_decode(file_get_contents('php://input'), true);
-                if ($input && isset($input['id'])) {
-                    $memberId = $input['id'];
-                }
-            }
-
-            if (!$memberId || !is_numeric($memberId)) {
-                respond(['error' => 'Invalid or missing member ID'], 400);
-            }
-
-            // Get member details for logging before deletion
-            $stmt = $pdo->prepare('SELECT fname, lname FROM `user` WHERE id = ?');
-            $stmt->execute([$memberId]);
-            $member = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$member) {
-                respond(['error' => 'Member not found'], 404);
-            }
-
-            $pdo->beginTransaction();
-
-            try {
-                // Disable foreign key checks temporarily
-                $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
-
-                // Delete all related records first (in correct order to avoid foreign key constraints)
-                // Use try-catch for each deletion to handle cases where tables don't exist
-
-                // 1. Delete coach assignments (if member was assigned to coaches)
-                try {
-                    $deleteCoachAssignments = $pdo->prepare("DELETE FROM coach_member_list WHERE member_id = ?");
-                    $deleteCoachAssignments->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete coach assignments: " . $e->getMessage());
-                }
-
-                // 2. Delete notifications
-                try {
-                    $deleteNotifications = $pdo->prepare("DELETE FROM notification WHERE user_id = ?");
-                    $deleteNotifications->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete notifications: " . $e->getMessage());
-                }
-
-                // 3. Delete attendance records
-                try {
-                    $deleteAttendance = $pdo->prepare("DELETE FROM attendance WHERE user_id = ?");
-                    $deleteAttendance->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete attendance: " . $e->getMessage());
-                }
-
-                // 4. Delete subscription records
-                try {
-                    $deleteSubscriptions = $pdo->prepare("DELETE FROM subscriptions WHERE user_id = ?");
-                    $deleteSubscriptions->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete subscriptions: " . $e->getMessage());
-                }
-
-                // 5. Delete sales records (if member made purchases)
-                try {
-                    $deleteSales = $pdo->prepare("DELETE FROM sales WHERE user_id = ?");
-                    $deleteSales->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete sales: " . $e->getMessage());
-                }
-
-                // 6. Delete payment records
-                try {
-                    $deletePayments = $pdo->prepare("DELETE FROM payments WHERE user_id = ?");
-                    $deletePayments->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete payments: " . $e->getMessage());
-                }
-
-                // 7. Delete member schedules
-                try {
-                    $deleteSchedules = $pdo->prepare("DELETE FROM member_schedules WHERE user_id = ?");
-                    $deleteSchedules->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete member schedules: " . $e->getMessage());
-                }
-
-                // 8. Delete member sessions
-                try {
-                    $deleteSessions = $pdo->prepare("DELETE FROM member_sessions WHERE user_id = ?");
-                    $deleteSessions->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete member sessions: " . $e->getMessage());
-                }
-
-                // 9. Delete from Members table (if it exists)
-                try {
-                    $deleteMember = $pdo->prepare("DELETE FROM members WHERE user_id = ?");
-                    $deleteMember->execute([$memberId]);
-                } catch (PDOException $e) {
-                    error_log("Warning: Could not delete from members table: " . $e->getMessage());
-                }
-
-                // 10. Finally delete from User table
-                $stmt = $pdo->prepare('DELETE FROM `user` WHERE id = ? AND user_type_id = 4');
-                $stmt->execute([$memberId]);
-
-                // Re-enable foreign key checks
-                $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
-
-                $pdo->commit();
-
-                // Log activity using centralized logger (same as monitor_subscription.php)
-                $staffId = isset($input['staff_id']) ? $input['staff_id'] : null;
-                error_log("DEBUG Member Delete - staffId: " . ($staffId ?? 'NULL') . " from request data");
-                if (function_exists('logStaffActivity')) {
-                    logStaffActivity($pdo, $staffId, "Delete Member", "Member deleted - {$member['fname']} {$member['lname']} (ID: {$memberId})", "Member Management");
-                }
-
-                respond(['message' => 'Member and all related data deleted successfully']);
-
-            } catch (PDOException $e) {
-                $pdo->rollBack();
-                error_log('Member deletion error: ' . $e->getMessage());
-                error_log('Member deletion error code: ' . $e->getCode());
-                error_log('Member deletion error info: ' . print_r($e->errorInfo, true));
-
-                // Provide more specific error message based on error code
-                $errorMessage = 'Failed to delete member. ';
-                if ($e->getCode() == 23000) {
-                    $errorMessage .= 'This member has related data that prevents deletion. All related records have been attempted to be removed.';
-                } else {
-                    $errorMessage .= 'Database error occurred during deletion.';
-                }
-
-                respond([
-                    'error' => 'Database error: ' . $e->getMessage(),
-                    'message' => $errorMessage,
-                    'error_code' => $e->getCode()
-                ], 500);
-            }
-        } catch (Exception $e) {
-            error_log('DELETE section error: ' . $e->getMessage());
-            respond(['error' => 'Unexpected error: ' . $e->getMessage()], 500);
+// Delete a member
+if ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!$input || !isset($input['id'])) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid JSON or missing id']);
+            exit;
         }
+
+        // Using lowercase 'user' table name
+        $stmt = $pdo->prepare('DELETE FROM user WHERE id = ?');
+        $stmt->execute([$input['id']]);
+        echo json_encode(['message' => 'Member deleted successfully']);
+        exit;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Database error in member_management.php DELETE: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in member_management.php DELETE: " . $e->getMessage());
+        echo json_encode(['error' => 'Server error', 'details' => $e->getMessage()]);
+        exit;
     }
-
-    // If we reach here, it means the request didn't match any of the expected patterns
-    error_log("DEBUG: PUT request didn't match expected patterns. Input: " . json_encode($input));
-    respond(['error' => 'Invalid request format'], 400);
-
-    respond(['error' => 'Method not allowed'], 405);
-} catch (Throwable $e) {
-    error_log('API error: ' . $e->getMessage());
-    respond(['error' => 'Server error'], 500);
 }
 ?>

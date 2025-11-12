@@ -28,6 +28,7 @@ import {
   User,
   CreditCard,
   Receipt,
+  Calendar,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -36,6 +37,8 @@ const SubscriptionMonitor = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
+  const [monthFilter, setMonthFilter] = useState("all")
+  const [yearFilter, setYearFilter] = useState("all")
   const [subscriptions, setSubscriptions] = useState([])
   const [pendingSubscriptions, setPendingSubscriptions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -709,7 +712,7 @@ const SubscriptionMonitor = ({ userId }) => {
       case "declined":
         return "bg-red-100 text-red-800 border-red-200"
       case "expired":
-        return "bg-gray-100 text-gray-800 border-gray-200"
+        return "bg-red-100 text-red-700 border-red-300"
       default:
         return "bg-blue-100 text-blue-800 border-blue-200"
     }
@@ -737,13 +740,20 @@ const SubscriptionMonitor = ({ userId }) => {
         return <CheckCircle className="h-3 w-3" />
       case "declined":
         return <XCircle className="h-3 w-3" />
+      case "expired":
+        return <XCircle className="h-3 w-3" />
       default:
         return <Clock className="h-3 w-3" />
     }
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    if (!dateString) return "N/A"
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return "N/A"
+    // Format date only in Philippines timezone
+    return date.toLocaleDateString("en-US", {
+      timeZone: "Asia/Manila",
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -773,6 +783,18 @@ const SubscriptionMonitor = ({ userId }) => {
       style: "currency",
       currency: "PHP",
     }).format(amount)
+  }
+
+  // Calculate days left until end date
+  const calculateDaysLeft = (endDate) => {
+    if (!endDate) return null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setHours(0, 0, 0, 0)
+    const diffTime = end.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays
   }
 
   // Get analytics
@@ -826,7 +848,70 @@ const SubscriptionMonitor = ({ userId }) => {
       const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
       const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
 
-      return matchesSearch && matchesStatus && matchesPlan
+      // Month filter logic
+      let matchesMonth = true
+      if (monthFilter !== "all" && subscription.start_date) {
+        const subscriptionDate = new Date(subscription.start_date)
+        const today = new Date()
+        const currentMonth = today.getMonth()
+        const currentYear = today.getFullYear()
+
+        if (monthFilter === "this_month") {
+          matchesMonth = subscriptionDate.getMonth() === currentMonth &&
+            subscriptionDate.getFullYear() === currentYear
+        } else if (monthFilter === "last_3_months") {
+          const threeMonthsAgo = new Date(today)
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+          matchesMonth = subscriptionDate >= threeMonthsAgo && subscriptionDate <= today
+        } else {
+          // Specific month (1-12)
+          const monthNum = parseInt(monthFilter)
+          if (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
+            // If year filter is set, use that year, otherwise check all years
+            if (yearFilter !== "all") {
+              let targetYear = currentYear
+              if (yearFilter === "this_year") {
+                targetYear = currentYear
+              } else if (yearFilter === "last_year") {
+                targetYear = currentYear - 1
+              } else if (yearFilter === "last_last_year") {
+                targetYear = currentYear - 2
+              } else {
+                targetYear = parseInt(yearFilter)
+              }
+              matchesMonth = subscriptionDate.getMonth() === monthNum - 1 &&
+                subscriptionDate.getFullYear() === targetYear
+            } else {
+              // Just match the month in any year
+              matchesMonth = subscriptionDate.getMonth() === monthNum - 1
+            }
+          }
+        }
+      }
+
+      // Year filter logic
+      let matchesYear = true
+      if (yearFilter !== "all" && subscription.start_date) {
+        const subscriptionDate = new Date(subscription.start_date)
+        const today = new Date()
+        const currentYear = today.getFullYear()
+
+        if (yearFilter === "this_year") {
+          matchesYear = subscriptionDate.getFullYear() === currentYear
+        } else if (yearFilter === "last_year") {
+          matchesYear = subscriptionDate.getFullYear() === currentYear - 1
+        } else if (yearFilter === "last_last_year") {
+          matchesYear = subscriptionDate.getFullYear() === currentYear - 2
+        } else {
+          // Specific year (numeric string)
+          const yearNum = parseInt(yearFilter)
+          if (!isNaN(yearNum)) {
+            matchesYear = subscriptionDate.getFullYear() === yearNum
+          }
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesPlan && matchesMonth && matchesYear
     })
   }
 
@@ -858,42 +943,54 @@ const SubscriptionMonitor = ({ userId }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <Users className="h-8 w-8 text-blue-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Total Requests</p>
-              <p className="text-2xl font-bold">{analytics.total}</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Users className="h-6 w-6 text-slate-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Total Requests</p>
+              <p className="text-3xl font-bold text-slate-900">{analytics.total}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <CheckCircle className="h-8 w-8 text-green-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Active</p>
-              <p className="text-2xl font-bold">{analytics.active}</p>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-green-100 to-green-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <CheckCircle className="h-6 w-6 text-green-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Active</p>
+              <p className="text-3xl font-bold text-green-700">{analytics.active}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <Clock className="h-8 w-8 text-orange-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Expiring Soon</p>
-              <p className="text-2xl font-bold">{analytics.expiringSoon}</p>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Clock className="h-6 w-6 text-orange-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Expiring Soon</p>
+              <p className="text-3xl font-bold text-orange-700">{analytics.expiringSoon}</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="flex items-center p-6">
-            <XCircle className="h-8 w-8 text-red-600" />
-            <div className="ml-4">
-              <p className="text-sm font-medium text-muted-foreground">Expired</p>
-              <p className="text-2xl font-bold">{analytics.expired}</p>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-red-100 to-red-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <XCircle className="h-6 w-6 text-red-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Expired</p>
+              <p className="text-3xl font-bold text-red-700">{analytics.expired}</p>
             </div>
           </CardContent>
         </Card>
@@ -913,63 +1010,172 @@ const SubscriptionMonitor = ({ userId }) => {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                Monitor Subscription
-                <Badge variant="outline">{analytics.pending} pending</Badge>
-              </CardTitle>
-              <CardDescription>Monitor subscription status and track upcoming expirations</CardDescription>
+      <Card className="border-0 shadow-xl bg-white overflow-hidden">
+        <CardHeader className="bg-gradient-to-r from-slate-50 via-white to-slate-50 border-b border-slate-200/60 px-6 py-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 shadow-md">
+                <CreditCard className="h-6 w-6 text-slate-700" />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-3 text-2xl font-bold text-slate-900 mb-1">
+                  Monitor Subscription
+                  <Badge variant="outline" className="ml-2 bg-gradient-to-r from-yellow-50 to-yellow-100 text-yellow-700 border-yellow-300 font-semibold shadow-sm">
+                    {analytics.pending} pending
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-slate-600 font-medium">Monitor subscription status and track upcoming expirations</CardDescription>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={fetchAllData} variant="outline" size="sm">
+            <div className="flex gap-3">
+              <Button onClick={fetchAllData} variant="outline" size="sm" className="shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Refresh
               </Button>
-              <Button onClick={() => {
-                resetSubscriptionForm()
-                setIsCreateSubscriptionDialogOpen(true)
-              }} size="sm" className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="h-4 w-4 mr-2" />
+              <button
+                onClick={() => {
+                  resetSubscriptionForm()
+                  setIsCreateSubscriptionDialogOpen(true)
+                }}
+                style={{
+                  backgroundColor: '#000000',
+                  color: '#ffffff',
+                  border: 'none'
+                }}
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold h-9 px-4 shadow-lg hover:shadow-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#111827'
+                  e.currentTarget.style.transform = 'translateY(-1px)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#000000'
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                <Plus className="h-4 w-4" />
                 Assign Subscription
-              </Button>
+              </button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-6 bg-slate-50/30">
           <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="all">All ({analytics.total})</TabsTrigger>
-              <TabsTrigger value="pending">Pending ({analytics.pending})</TabsTrigger>
-              <TabsTrigger value="active">Active ({analytics.active})</TabsTrigger>
-              <TabsTrigger value="upcoming">Upcoming ({analytics.expiringSoon})</TabsTrigger>
-              <TabsTrigger value="expired">Expired ({analytics.expired})</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-5 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
+              <TabsTrigger value="all" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-100 data-[state=active]:to-slate-50 data-[state=active]:shadow-md data-[state=active]:text-slate-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-slate-200">
+                All ({analytics.total})
+              </TabsTrigger>
+              <TabsTrigger value="pending" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-50 data-[state=active]:to-yellow-100/50 data-[state=active]:shadow-md data-[state=active]:text-yellow-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-yellow-200">
+                Pending ({analytics.pending})
+              </TabsTrigger>
+              <TabsTrigger value="active" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-50 data-[state=active]:to-green-100/50 data-[state=active]:shadow-md data-[state=active]:text-green-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-green-200">
+                Active ({analytics.active})
+              </TabsTrigger>
+              <TabsTrigger value="upcoming" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-orange-50 data-[state=active]:to-orange-100/50 data-[state=active]:shadow-md data-[state=active]:text-orange-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-orange-200">
+                Upcoming ({analytics.expiringSoon})
+              </TabsTrigger>
+              <TabsTrigger value="expired" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-50 data-[state=active]:to-red-100/50 data-[state=active]:shadow-md data-[state=active]:text-red-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-red-200">
+                Expired ({analytics.expired})
+              </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="pending" className="space-y-4">
-              {!pendingSubscriptions || pendingSubscriptions.length === 0 ? (
+            <TabsContent value="pending" className="space-y-4 mt-6">
+              {/* Filters */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="pending-plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                      <SelectTrigger className="w-40" id="pending-plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Right side - Month and Year Filters */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Label htmlFor="pending-month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-40" id="pending-month-filter">
+                        <SelectValue placeholder="All Months" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Label htmlFor="pending-year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-32" id="pending-year-filter">
+                        <SelectValue placeholder="All Years" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
+                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
+                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {!filterSubscriptions(pendingSubscriptions) || filterSubscriptions(pendingSubscriptions).length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No pending subscription requests</p>
                 </div>
               ) : (
-                <div className="rounded-md border">
+                <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead>Member</TableHead>
-                        <TableHead>Plan</TableHead>
-                        <TableHead>Requested</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
+                      <TableRow className="bg-gradient-to-r from-yellow-50 to-yellow-100/50 hover:bg-yellow-100 border-b-2 border-yellow-200">
+                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Requested</TableHead>
+                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingSubscriptions.map((subscription) => {
+                      {filterSubscriptions(pendingSubscriptions).map((subscription) => {
                         return (
-                          <TableRow key={subscription.subscription_id}>
+                          <TableRow key={subscription.subscription_id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                             <TableCell>
                               <div className="flex items-center gap-3">
                                 <Avatar className="h-10 w-10">
@@ -1049,64 +1255,107 @@ const SubscriptionMonitor = ({ userId }) => {
               )}
             </TabsContent>
 
-            <TabsContent value="active" className="space-y-4">
+            <TabsContent value="active" className="space-y-4 mt-6">
               {/* Filters */}
-              <div className="flex flex-col gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search members, emails, or plans..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {/* Plan Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Filter by Plan:</span>
-                  <Button
-                    variant={planFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPlanFilter("all")}
-                  >
-                    All Plans
-                  </Button>
-                  {subscriptionPlans.map((plan) => (
-                    <Button
-                      key={plan.id}
-                      variant={planFilter === plan.plan_name ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPlanFilter(plan.plan_name)}
-                    >
-                      {plan.plan_name}
-                    </Button>
-                  ))}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="active-plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                      <SelectTrigger className="w-40" id="active-plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Right side - Month and Year Filters */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Label htmlFor="active-month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-40" id="active-month-filter">
+                        <SelectValue placeholder="All Months" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Label htmlFor="active-year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-32" id="active-year-filter">
+                        <SelectValue placeholder="All Years" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
+                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
+                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
               {/* Active Subscriptions Table */}
-              <div className="rounded-md border">
+              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Total Paid</TableHead>
+                    <TableRow className="bg-gradient-to-r from-green-50 to-green-100/50 hover:bg-green-100 border-b-2 border-green-200">
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!filterSubscriptions(activeSubscriptions) || filterSubscriptions(activeSubscriptions).length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           No active subscriptions found
                         </TableCell>
                       </TableRow>
                     ) : (
                       filterSubscriptions(activeSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id}>
+                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-10 w-10">
@@ -1124,14 +1373,15 @@ const SubscriptionMonitor = ({ userId }) => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <div>
+                            <div className="flex items-center gap-2 flex-wrap">
                               <div className="font-medium">{subscription.plan_name}</div>
                               {(() => {
                                 const months = calculateMonths(subscription)
                                 return months > 1 ? (
-                                  <div className="text-xs text-blue-600 font-medium mt-1">
-                                    {months} month{months > 1 ? 's' : ''} availed
-                                  </div>
+                                  <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    {months} month{months > 1 ? 's' : ''}
+                                  </Badge>
                                 ) : null
                               })()}
                             </div>
@@ -1151,6 +1401,36 @@ const SubscriptionMonitor = ({ userId }) => {
                             <div className="font-medium">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
+                            {(() => {
+                              const daysLeft = calculateDaysLeft(subscription.end_date)
+                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
+                              if (daysLeft < 0) {
+                                return (
+                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
+                                  </Badge>
+                                )
+                              }
+                              // For day 1 session, don't show orange warning
+                              if (isDay1Session) {
+                                return (
+                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                  </Badge>
+                                )
+                              }
+                              // For other plans, show orange if 7 days or less
+                              return (
+                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                  'bg-green-100 text-green-700 border-green-300'
+                                  }`}>
+                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                </Badge>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell>
                             <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
                           </TableCell>
                         </TableRow>
@@ -1161,64 +1441,107 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </TabsContent>
 
-            <TabsContent value="upcoming" className="space-y-4">
+            <TabsContent value="upcoming" className="space-y-4 mt-6">
               {/* Filters */}
-              <div className="flex flex-col gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search members, emails, or plans..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {/* Plan Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Filter by Plan:</span>
-                  <Button
-                    variant={planFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPlanFilter("all")}
-                  >
-                    All Plans
-                  </Button>
-                  {subscriptionPlans.map((plan) => (
-                    <Button
-                      key={plan.id}
-                      variant={planFilter === plan.plan_name ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPlanFilter(plan.plan_name)}
-                    >
-                      {plan.plan_name}
-                    </Button>
-                  ))}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="upcoming-plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                      <SelectTrigger className="w-40" id="upcoming-plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Right side - Month and Year Filters */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Label htmlFor="upcoming-month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-40" id="upcoming-month-filter">
+                        <SelectValue placeholder="All Months" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Label htmlFor="upcoming-year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-32" id="upcoming-year-filter">
+                        <SelectValue placeholder="All Years" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
+                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
+                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
               {/* Upcoming Expiration Subscriptions Table */}
-              <div className="rounded-md border">
+              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Total Paid</TableHead>
+                    <TableRow className="bg-gradient-to-r from-orange-50 to-orange-100/50 hover:bg-orange-100 border-b-2 border-orange-200">
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!filterSubscriptions(expiringSoonSubscriptions) || filterSubscriptions(expiringSoonSubscriptions).length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           No subscriptions expiring within 7 days
                         </TableCell>
                       </TableRow>
                     ) : (
                       filterSubscriptions(expiringSoonSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id}>
+                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-10 w-10">
@@ -1258,6 +1581,36 @@ const SubscriptionMonitor = ({ userId }) => {
                             <div className="font-medium text-orange-600">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
+                            {(() => {
+                              const daysLeft = calculateDaysLeft(subscription.end_date)
+                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
+                              if (daysLeft < 0) {
+                                return (
+                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
+                                  </Badge>
+                                )
+                              }
+                              // For day 1 session, don't show orange warning
+                              if (isDay1Session) {
+                                return (
+                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                  </Badge>
+                                )
+                              }
+                              // For other plans, show orange if 7 days or less
+                              return (
+                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                  'bg-green-100 text-green-700 border-green-300'
+                                  }`}>
+                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                </Badge>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell>
                             <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
                           </TableCell>
                         </TableRow>
@@ -1268,64 +1621,107 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </TabsContent>
 
-            <TabsContent value="expired" className="space-y-4">
+            <TabsContent value="expired" className="space-y-4 mt-6">
               {/* Filters */}
-              <div className="flex flex-col gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search members, emails, or plans..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {/* Plan Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Filter by Plan:</span>
-                  <Button
-                    variant={planFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPlanFilter("all")}
-                  >
-                    All Plans
-                  </Button>
-                  {subscriptionPlans.map((plan) => (
-                    <Button
-                      key={plan.id}
-                      variant={planFilter === plan.plan_name ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPlanFilter(plan.plan_name)}
-                    >
-                      {plan.plan_name}
-                    </Button>
-                  ))}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="expired-plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                      <SelectTrigger className="w-40" id="expired-plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Right side - Month and Year Filters */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Label htmlFor="expired-month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-40" id="expired-month-filter">
+                        <SelectValue placeholder="All Months" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Label htmlFor="expired-year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-32" id="expired-year-filter">
+                        <SelectValue placeholder="All Years" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
+                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
+                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
               {/* Expired Subscriptions Table */}
-              <div className="rounded-md border">
+              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Total Paid</TableHead>
+                    <TableRow className="bg-gradient-to-r from-red-50 to-red-100/50 hover:bg-red-100 border-b-2 border-red-200">
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!filterSubscriptions(expiredSubscriptions) || filterSubscriptions(expiredSubscriptions).length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           No expired subscriptions found
                         </TableCell>
                       </TableRow>
                     ) : (
                       filterSubscriptions(expiredSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id}>
+                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-10 w-10">
@@ -1365,6 +1761,36 @@ const SubscriptionMonitor = ({ userId }) => {
                             <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
                           </TableCell>
                           <TableCell>
+                            {(() => {
+                              const daysLeft = calculateDaysLeft(subscription.end_date)
+                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
+                              if (daysLeft < 0) {
+                                return (
+                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
+                                  </Badge>
+                                )
+                              }
+                              // For day 1 session, don't show orange warning
+                              if (isDay1Session) {
+                                return (
+                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                  </Badge>
+                                )
+                              }
+                              // For other plans, show orange if 7 days or less
+                              return (
+                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                  'bg-green-100 text-green-700 border-green-300'
+                                  }`}>
+                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                </Badge>
+                              )
+                            })()}
+                          </TableCell>
+                          <TableCell>
                             <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
                           </TableCell>
                         </TableRow>
@@ -1375,79 +1801,107 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </TabsContent>
 
-            <TabsContent value="all" className="space-y-4">
+            <TabsContent value="all" className="space-y-4 mt-6">
               {/* Filters */}
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                    <Input
-                      placeholder="Search members, emails, or plans..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                      <SelectTrigger className="w-40" id="plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="Filter by status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="pending_approval">Pending</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="declined">Declined</SelectItem>
-                      <SelectItem value="expired">Expired</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Plan Filter Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">Filter by Plan:</span>
-                  <Button
-                    variant={planFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPlanFilter("all")}
-                  >
-                    All Plans
-                  </Button>
-                  {subscriptionPlans.map((plan) => (
-                    <Button
-                      key={plan.id}
-                      variant={planFilter === plan.plan_name ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPlanFilter(plan.plan_name)}
-                    >
-                      {plan.plan_name}
-                    </Button>
-                  ))}
+
+                  {/* Right side - Month and Year Filters */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <Label htmlFor="month-filter">Month:</Label>
+                    <Select value={monthFilter} onValueChange={setMonthFilter}>
+                      <SelectTrigger className="w-40" id="month-filter">
+                        <SelectValue placeholder="All Months" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Months</SelectItem>
+                        <SelectItem value="this_month">This Month</SelectItem>
+                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                        <SelectItem value="1">January</SelectItem>
+                        <SelectItem value="2">February</SelectItem>
+                        <SelectItem value="3">March</SelectItem>
+                        <SelectItem value="4">April</SelectItem>
+                        <SelectItem value="5">May</SelectItem>
+                        <SelectItem value="6">June</SelectItem>
+                        <SelectItem value="7">July</SelectItem>
+                        <SelectItem value="8">August</SelectItem>
+                        <SelectItem value="9">September</SelectItem>
+                        <SelectItem value="10">October</SelectItem>
+                        <SelectItem value="11">November</SelectItem>
+                        <SelectItem value="12">December</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Label htmlFor="year-filter">Year:</Label>
+                    <Select value={yearFilter} onValueChange={setYearFilter}>
+                      <SelectTrigger className="w-32" id="year-filter">
+                        <SelectValue placeholder="All Years" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
+                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
+                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
+                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
               {/* All Subscriptions Table */}
-              <div className="rounded-md border">
+              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Member</TableHead>
-                      <TableHead>Plan</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Start Date</TableHead>
-                      <TableHead>End Date</TableHead>
-                      <TableHead>Total Paid</TableHead>
+                    <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {!filteredSubscriptions || filteredSubscriptions.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           {!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredSubscriptions.map((subscription) => (
-                        <TableRow key={subscription.id}>
+                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-10 w-10">
@@ -1465,14 +1919,15 @@ const SubscriptionMonitor = ({ userId }) => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <div>
+                            <div className="flex items-center gap-2 flex-wrap">
                               <div className="font-medium">{subscription.plan_name}</div>
                               {(() => {
                                 const months = calculateMonths(subscription)
                                 return months > 1 ? (
-                                  <div className="text-xs text-blue-600 font-medium mt-1">
-                                    {months} month{months > 1 ? 's' : ''} availed
-                                  </div>
+                                  <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
+                                    <Calendar className="h-3 w-3 mr-1" />
+                                    {months} month{months > 1 ? 's' : ''}
+                                  </Badge>
                                 ) : null
                               })()}
                             </div>
@@ -1490,6 +1945,36 @@ const SubscriptionMonitor = ({ userId }) => {
                           </TableCell>
                           <TableCell>
                             <div className="font-medium">{formatDate(subscription.end_date)}</div>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              const daysLeft = calculateDaysLeft(subscription.end_date)
+                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
+                              if (daysLeft < 0) {
+                                return (
+                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
+                                  </Badge>
+                                )
+                              }
+                              // For day 1 session, don't show orange warning
+                              if (isDay1Session) {
+                                return (
+                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                  </Badge>
+                                )
+                              }
+                              // For other plans, show orange if 7 days or less
+                              return (
+                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                  'bg-green-100 text-green-700 border-green-300'
+                                  }`}>
+                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                                </Badge>
+                              )
+                            })()}
                           </TableCell>
                           <TableCell>
                             <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
