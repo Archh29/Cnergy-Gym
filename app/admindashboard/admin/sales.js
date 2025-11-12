@@ -34,6 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
+import { useToast } from "@/components/ui/use-toast"
 import {
   Plus,
   ShoppingCart,
@@ -48,6 +49,9 @@ import {
   ShoppingBag,
   CheckCircle,
   Users,
+  Filter,
+  Hash,
+  Layers,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -57,6 +61,13 @@ import {
   Clock,
   Store,
   BarChart3,
+  Archive,
+  RotateCcw,
+  X,
+  XCircle,
+  Receipt,
+  Ticket,
+  FileText,
 } from "lucide-react"
 
 // API Configuration
@@ -71,10 +82,22 @@ const Sales = ({ userId }) => {
 
   // Filter states
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
-  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in, Day Pass
+  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Day Pass
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
-  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Walk-in, Day Pass
+  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Day Pass
+  const [allSalesDayPassMethodFilter, setAllSalesDayPassMethodFilter] = useState("all") // all, with_account, without_account
+
+  // Product Inventory filter states
+  const [productSearchQuery, setProductSearchQuery] = useState("")
+  const [productStockStatusFilter, setProductStockStatusFilter] = useState("all") // all, in_stock, low_stock, out_of_stock
+  const [productPriceRangeFilter, setProductPriceRangeFilter] = useState("all") // all, low, medium, high
+
+  // Pagination states
+  const [allSalesCurrentPage, setAllSalesCurrentPage] = useState(1)
+  const [allSalesItemsPerPage] = useState(15) // 15 entries per page for All Sales
+  const [inventoryCurrentPage, setInventoryCurrentPage] = useState(1)
+  const [inventoryItemsPerPage] = useState(20) // 20 entries per page for Product Inventory
 
   // Calendar states
   const [customDate, setCustomDate] = useState(null)
@@ -105,9 +128,13 @@ const Sales = ({ userId }) => {
   const [editProduct, setEditProduct] = useState(null)
   const [editProductData, setEditProductData] = useState({ name: "", price: "", category: "Uncategorized" })
 
-  // Delete confirmation dialog state
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [productToDelete, setProductToDelete] = useState(null)
+  // Archive/Restore state
+  const [showArchived, setShowArchived] = useState(false)
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [productToArchive, setProductToArchive] = useState(null)
+
+  // Toast notifications
+  const { toast } = useToast()
 
   // Low stock dialog state
   const [lowStockDialogOpen, setLowStockDialogOpen] = useState(false)
@@ -125,25 +152,61 @@ const Sales = ({ userId }) => {
   const [coaches, setCoaches] = useState([])
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
   const [memberAssignments, setMemberAssignments] = useState({}) // Map of member_id -> assignment details
-  const [coachingStatusFilter, setCoachingStatusFilter] = useState("active") // active or expired
+  const [coachingStatusFilter, setCoachingStatusFilter] = useState("all") // all, active, or expired
   const [coachingMonthFilter, setCoachingMonthFilter] = useState("all")
   const [coachingYearFilter, setCoachingYearFilter] = useState("all")
+  const [coachingCustomDate, setCoachingCustomDate] = useState(null)
+  const [coachingUseCustomDate, setCoachingUseCustomDate] = useState(false)
   const [coachingServiceTypeFilter, setCoachingServiceTypeFilter] = useState("all") // all, session, monthly
   const [coachingCurrentPage, setCoachingCurrentPage] = useState(1)
   const [coachingItemsPerPage] = useState(10)
 
-  // Walk-in Sales dialog state
-  const [walkinSalesDialogOpen, setWalkinSalesDialogOpen] = useState(false)
+
+  // Total Sales dialog state
+  const [totalSalesDialogOpen, setTotalSalesDialogOpen] = useState(false)
+  const [totalSalesSearchQuery, setTotalSalesSearchQuery] = useState("")
+  const [totalSalesTypeFilter, setTotalSalesTypeFilter] = useState("all")
+  const [totalSalesMonthFilter, setTotalSalesMonthFilter] = useState("all")
+  const [totalSalesYearFilter, setTotalSalesYearFilter] = useState("all")
+  const [totalSalesCustomDate, setTotalSalesCustomDate] = useState(null)
+  const [totalSalesUseCustomDate, setTotalSalesUseCustomDate] = useState(false)
+  const [totalSalesCurrentPage, setTotalSalesCurrentPage] = useState(1)
+  const [totalSalesItemsPerPage] = useState(10)
+  const [totalSalesSubscriptionPlans, setTotalSalesSubscriptionPlans] = useState([])
+  const [totalSalesSubscriptionTypeFilter, setTotalSalesSubscriptionTypeFilter] = useState("all") // all, regular, day_pass, or plan_id
+  const [dayPassMethodFilter, setDayPassMethodFilter] = useState("all") // all, with_account, without_account
+  const [dayPassTypeFilter, setDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
+  const [totalSalesCategoryFilter, setTotalSalesCategoryFilter] = useState("all") // all, or category name
+  const [totalSalesProductFilter, setTotalSalesProductFilter] = useState("all") // all, or product id
+  const [totalSalesCoaches, setTotalSalesCoaches] = useState([])
+  const [totalSalesCoachFilter, setTotalSalesCoachFilter] = useState("all") // all, or coach id
+  const [totalSalesServiceTypeFilter, setTotalSalesServiceTypeFilter] = useState("all") // all, session, monthly
 
   // Product Sales dialog state
   const [productSalesDialogOpen, setProductSalesDialogOpen] = useState(false)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("all")
   const [selectedProductFilter, setSelectedProductFilter] = useState("all")
+  const [productSalesSearchQuery, setProductSalesSearchQuery] = useState("")
+  const [productSalesMonthFilter, setProductSalesMonthFilter] = useState("all")
+  const [productSalesYearFilter, setProductSalesYearFilter] = useState("all")
+  const [productSalesCustomDate, setProductSalesCustomDate] = useState(null)
+  const [productSalesUseCustomDate, setProductSalesUseCustomDate] = useState(false)
+  const [productSalesCurrentPage, setProductSalesCurrentPage] = useState(1)
+  const [productSalesItemsPerPage] = useState(10)
 
   // Subscription Sales dialog state
   const [subscriptionSalesDialogOpen, setSubscriptionSalesDialogOpen] = useState(false)
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
   const [selectedPlanFilter, setSelectedPlanFilter] = useState("all")
+  const [subscriptionDetails, setSubscriptionDetails] = useState({}) // Map of sale_id -> subscription details
+  const [subscriptionStatusFilter, setSubscriptionStatusFilter] = useState("all") // all, active, or expired
+  const [subscriptionMonthFilter, setSubscriptionMonthFilter] = useState("all")
+  const [subscriptionYearFilter, setSubscriptionYearFilter] = useState("all")
+  const [subscriptionCustomDate, setSubscriptionCustomDate] = useState(null)
+  const [subscriptionUseCustomDate, setSubscriptionUseCustomDate] = useState(false)
+  const [subscriptionDayPassTypeFilter, setSubscriptionDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
+  const [subscriptionCurrentPage, setSubscriptionCurrentPage] = useState(1)
+  const [subscriptionItemsPerPage] = useState(10)
 
   // Data from API
   const [sales, setSales] = useState([])
@@ -156,7 +219,6 @@ const Sales = ({ userId }) => {
     productSales: 0,
     subscriptionSales: 0,
     coachAssignmentSales: 0,
-    walkinSales: 0,
     totalSales: 0,
     totalProductSales: 0,
     totalSubscriptionSales: 0,
@@ -197,7 +259,77 @@ const Sales = ({ userId }) => {
   // Reset to first page when filters change
   useEffect(() => {
     setCoachingCurrentPage(1)
-  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter, coachingStatusFilter])
+  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter])
+
+  // Reset to first page when total sales dialog filters change
+  useEffect(() => {
+    setTotalSalesCurrentPage(1)
+  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter])
+
+  // Reset filters when total sales dialog closes
+  useEffect(() => {
+    if (!totalSalesDialogOpen) {
+      setTotalSalesSearchQuery("")
+      setTotalSalesTypeFilter("all")
+      setTotalSalesMonthFilter("all")
+      setTotalSalesYearFilter("all")
+      setTotalSalesCustomDate(null)
+      setTotalSalesUseCustomDate(false)
+      setTotalSalesCurrentPage(1)
+      setTotalSalesSubscriptionTypeFilter("all")
+      setDayPassMethodFilter("all")
+      setDayPassTypeFilter("all")
+      setTotalSalesCategoryFilter("all")
+      setTotalSalesProductFilter("all")
+      setTotalSalesCoachFilter("all")
+      setTotalSalesServiceTypeFilter("all")
+    }
+  }, [totalSalesDialogOpen])
+
+  // Reset day pass method filter when type filter changes away from Day Pass
+  // Reset subscription type and day pass method filters when type changes away from Subscription
+  // Reset product filters when type filter changes away from Product
+  useEffect(() => {
+    if (totalSalesTypeFilter !== "Subscription") {
+      setTotalSalesSubscriptionTypeFilter("all")
+      setDayPassMethodFilter("all")
+      setDayPassTypeFilter("all")
+    }
+    if (totalSalesTypeFilter !== "Product") {
+      setTotalSalesCategoryFilter("all")
+      setTotalSalesProductFilter("all")
+    }
+    if (totalSalesTypeFilter !== "Coach Assignment") {
+      setTotalSalesCoachFilter("all")
+      setTotalSalesServiceTypeFilter("all")
+    }
+  }, [totalSalesTypeFilter])
+
+  // Reset day pass method filter when sale type filter changes away from Day Pass in All Sales tab
+  useEffect(() => {
+    if (saleTypeFilter !== "Day Pass") {
+      setAllSalesDayPassMethodFilter("all")
+    }
+  }, [saleTypeFilter])
+
+  // Reset to first page when product sales dialog filters change
+  useEffect(() => {
+    setProductSalesCurrentPage(1)
+  }, [selectedCategoryFilter, selectedProductFilter, productSalesMonthFilter, productSalesYearFilter, productSalesUseCustomDate, productSalesCustomDate, productSalesSearchQuery])
+
+  // Reset filters when product sales dialog closes
+  useEffect(() => {
+    if (!productSalesDialogOpen) {
+      setSelectedCategoryFilter("all")
+      setSelectedProductFilter("all")
+      setProductSalesSearchQuery("")
+      setProductSalesMonthFilter("all")
+      setProductSalesYearFilter("all")
+      setProductSalesCustomDate(null)
+      setProductSalesUseCustomDate(false)
+      setProductSalesCurrentPage(1)
+    }
+  }, [productSalesDialogOpen])
 
   // Load subscription plans when subscription sales dialog opens
   useEffect(() => {
@@ -205,6 +337,29 @@ const Sales = ({ userId }) => {
       loadSubscriptionPlans()
     }
   }, [subscriptionSalesDialogOpen])
+
+  // Load subscription plans when total sales dialog opens
+  useEffect(() => {
+    if (totalSalesDialogOpen) {
+      loadTotalSalesSubscriptionPlans()
+      loadTotalSalesCoaches()
+    }
+  }, [totalSalesDialogOpen])
+
+  // Load subscription details when modal opens and sales are available
+  useEffect(() => {
+    if (subscriptionSalesDialogOpen && sales.length > 0) {
+      loadSubscriptionDetails()
+    } else if (!subscriptionSalesDialogOpen) {
+      setSubscriptionDetails({})
+      setSubscriptionCurrentPage(1) // Reset to first page when dialog closes
+    }
+  }, [subscriptionSalesDialogOpen, sales])
+
+  // Reset to first page when subscription filters change
+  useEffect(() => {
+    setSubscriptionCurrentPage(1)
+  }, [selectedPlanFilter, subscriptionMonthFilter, subscriptionYearFilter, subscriptionDayPassTypeFilter])
 
   // Calculate total sales with discount consideration
   const calculateTotalSales = (salesData) => {
@@ -233,13 +388,19 @@ const Sales = ({ userId }) => {
 
   const loadProducts = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=products`)
+      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`)
       console.log("Products loaded:", response.data.products)
       setProducts(response.data.products || [])
     } catch (error) {
       console.error("Error loading products:", error)
     }
   }
+
+  // Reload products when archive view changes
+  useEffect(() => {
+    loadProducts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchived])
 
   const loadCoaches = async () => {
     try {
@@ -253,6 +414,23 @@ const Sales = ({ userId }) => {
       }
     } catch (error) {
       console.error("Error loading coaches:", error)
+    }
+  }
+
+  const loadTotalSalesCoaches = async () => {
+    try {
+      const response = await axios.get("https://api.cnergy.site/addcoach.php")
+      if (response.data && response.data.coaches) {
+        const coaches = response.data.coaches.map(coach => ({
+          id: coach.id,
+          name: `${coach.fname} ${coach.mname || ''} ${coach.lname}`.trim(),
+          fullName: `${coach.fname} ${coach.mname || ''} ${coach.lname}`.trim()
+        }))
+        setTotalSalesCoaches(coaches)
+        console.log("Loaded coaches for All Sales:", coaches)
+      }
+    } catch (error) {
+      console.error("Error loading coaches for All Sales:", error)
     }
   }
 
@@ -330,15 +508,192 @@ const Sales = ({ userId }) => {
     return memberAssignments[key] || null
   }
 
+  // Calculate time remaining with hours when 1 day or less
+  const calculateTimeRemaining = (endDate, daysLeft) => {
+    if (daysLeft === null || daysLeft === undefined || !endDate) return null
+
+    // If expired, return null (will be handled separately)
+    if (daysLeft < 0) return null
+
+    const now = new Date()
+    const end = new Date(endDate)
+    end.setHours(23, 59, 59, 999) // Set to end of day
+    const diffTime = end.getTime() - now.getTime()
+
+    if (diffTime < 0) return null
+
+    const totalHours = Math.floor(diffTime / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+    // If 1 day or less remaining, show hours
+    if (diffDays <= 1) {
+      return { type: 'hours', days: diffDays, hours: totalHours }
+    }
+
+    // Otherwise show days using the passed daysLeft value (more accurate)
+    return { type: 'days', days: daysLeft }
+  }
+
+  // Load subscription details to get end dates and status for each subscription sale
+  const loadSubscriptionDetails = async () => {
+    try {
+      // Get all subscription sales
+      const subscriptionSales = sales.filter(sale => sale.sale_type === 'Subscription')
+
+      if (subscriptionSales.length === 0) {
+        setSubscriptionDetails({})
+        return
+      }
+
+      // Fetch all subscriptions from API
+      const response = await axios.get(`https://api.cnergy.site/monitor_subscription.php`)
+      if (!response.data || !response.data.success || !response.data.subscriptions) {
+        setSubscriptionDetails({})
+        return
+      }
+
+      const allSubscriptions = response.data.subscriptions
+      const detailsMap = {}
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      // Process each subscription sale
+      subscriptionSales.forEach(sale => {
+        let matchedSubscription = null
+
+        // Method 1: Try to match by subscription_id from sales_details
+        if (sale.sales_details && sale.sales_details.length > 0) {
+          for (const detail of sale.sales_details) {
+            if (detail.subscription_id) {
+              matchedSubscription = allSubscriptions.find(sub =>
+                sub.id === detail.subscription_id ||
+                sub.id.toString() === detail.subscription_id.toString()
+              )
+              if (matchedSubscription) break
+            }
+          }
+        }
+
+        // Method 2: If no match, try to match by user_id, plan_id, and sale_date proximity
+        if (!matchedSubscription && sale.user_id) {
+          const saleDate = new Date(sale.sale_date)
+          saleDate.setHours(0, 0, 0, 0)
+
+          // Find subscriptions for this user
+          const userSubscriptions = allSubscriptions.filter(sub =>
+            sub.user_id === sale.user_id ||
+            sub.user_id?.toString() === sale.user_id?.toString()
+          )
+
+          // Try to match by plan_id if available
+          if (sale.plan_id) {
+            matchedSubscription = userSubscriptions.find(sub => {
+              if (sub.plan_id === sale.plan_id || sub.plan_id?.toString() === sale.plan_id?.toString()) {
+                // Check if sale_date is close to subscription start_date (within 7 days)
+                const subStartDate = new Date(sub.start_date)
+                subStartDate.setHours(0, 0, 0, 0)
+                const daysDiff = Math.abs((saleDate - subStartDate) / (1000 * 60 * 60 * 24))
+                return daysDiff <= 7
+              }
+              return false
+            })
+          }
+
+          // Method 3: If still no match, try to match by plan_name and date
+          if (!matchedSubscription && sale.plan_name) {
+            matchedSubscription = userSubscriptions.find(sub => {
+              if (sub.plan_name === sale.plan_name || sub.plan?.plan_name === sale.plan_name) {
+                const subStartDate = new Date(sub.start_date)
+                subStartDate.setHours(0, 0, 0, 0)
+                const daysDiff = Math.abs((saleDate - subStartDate) / (1000 * 60 * 60 * 24))
+                return daysDiff <= 7
+              }
+              return false
+            })
+          }
+
+          // Method 4: If still no match, find the most recent subscription for this user
+          // that started before or on the sale date
+          if (!matchedSubscription && userSubscriptions.length > 0) {
+            matchedSubscription = userSubscriptions
+              .filter(sub => {
+                const subStartDate = new Date(sub.start_date)
+                subStartDate.setHours(0, 0, 0, 0)
+                return subStartDate <= saleDate
+              })
+              .sort((a, b) => new Date(b.start_date) - new Date(a.start_date))[0]
+          }
+        }
+
+        // If we found a match, calculate days left and store details
+        if (matchedSubscription) {
+          const endDate = matchedSubscription.end_date
+          let daysLeft = null
+
+          if (endDate) {
+            const expiry = new Date(endDate)
+            expiry.setHours(0, 0, 0, 0)
+            const diffTime = expiry - today
+            daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+          }
+
+          // Get user name from subscription (fname, mname, lname)
+          let userName = null
+          if (matchedSubscription.fname || matchedSubscription.lname) {
+            const nameParts = []
+            if (matchedSubscription.fname) nameParts.push(matchedSubscription.fname)
+            if (matchedSubscription.mname) nameParts.push(matchedSubscription.mname)
+            if (matchedSubscription.lname) nameParts.push(matchedSubscription.lname)
+            userName = nameParts.join(' ').trim()
+          }
+
+          detailsMap[sale.id] = {
+            endDate: endDate,
+            daysLeft: daysLeft,
+            status: matchedSubscription.display_status || matchedSubscription.status_name || 'unknown',
+            planName: matchedSubscription.plan_name || sale.plan_name || 'Unknown Plan',
+            userName: userName || null,
+            userId: matchedSubscription.user_id || sale.user_id || null
+          }
+        } else {
+          // If no match found, still create an entry but mark it as unknown
+          // This ensures all subscription sales are shown even if we can't match them
+          detailsMap[sale.id] = {
+            endDate: null,
+            daysLeft: null,
+            status: 'unknown',
+            planName: sale.plan_name || 'Unknown Plan',
+            userName: null,
+            userId: sale.user_id || null
+          }
+        }
+      })
+
+      setSubscriptionDetails(detailsMap)
+    } catch (error) {
+      console.error("Error loading subscription details:", error)
+      // On error, still set empty map so UI doesn't break
+      setSubscriptionDetails({})
+    }
+  }
+
+  // Get subscription details for a sale
+  const getSubscriptionDetails = (saleId) => {
+    return subscriptionDetails[saleId] || null
+  }
+
   const loadSubscriptionPlans = async () => {
     try {
       const response = await axios.get("https://api.cnergy.site/monitor_subscription.php?action=plans")
       if (response.data && response.data.plans) {
         const plans = response.data.plans.map(plan => ({
           id: plan.id,
-          name: plan.plan_name
+          name: plan.plan_name,
+          duration_days: plan.duration_days || 0,
+          duration_months: plan.duration_months || 0
         }))
         setSubscriptionPlans(plans)
+        console.log("Loaded subscription plans:", plans)
       }
     } catch (error) {
       console.error("Error loading subscription plans:", error)
@@ -348,12 +703,49 @@ const Sales = ({ userId }) => {
         if (altResponse.data && altResponse.data.plans) {
           const plans = altResponse.data.plans.map(plan => ({
             id: plan.id,
-            name: plan.plan_name
+            name: plan.plan_name,
+            duration_days: plan.duration_days || 0,
+            duration_months: plan.duration_months || 0
           }))
           setSubscriptionPlans(plans)
+          console.log("Loaded subscription plans from alternative endpoint:", plans)
         }
       } catch (altError) {
         console.error("Error loading subscription plans from alternative endpoint:", altError)
+      }
+    }
+  }
+
+  const loadTotalSalesSubscriptionPlans = async () => {
+    try {
+      const response = await axios.get("https://api.cnergy.site/monitor_subscription.php?action=plans")
+      if (response.data && response.data.plans) {
+        const plans = response.data.plans.map(plan => ({
+          id: plan.id,
+          name: plan.plan_name,
+          duration_days: plan.duration_days || 0,
+          duration_months: plan.duration_months || 0
+        }))
+        setTotalSalesSubscriptionPlans(plans)
+        console.log("Loaded subscription plans for All Sales:", plans)
+      }
+    } catch (error) {
+      console.error("Error loading subscription plans for All Sales:", error)
+      // If that endpoint doesn't work, try fetching from monitor_subscription
+      try {
+        const altResponse = await axios.get("https://api.cnergy.site/monitor_subscription.php")
+        if (altResponse.data && altResponse.data.plans) {
+          const plans = altResponse.data.plans.map(plan => ({
+            id: plan.id,
+            name: plan.plan_name,
+            duration_days: plan.duration_days || 0,
+            duration_months: plan.duration_months || 0
+          }))
+          setTotalSalesSubscriptionPlans(plans)
+          console.log("Loaded subscription plans from alternative endpoint for All Sales:", plans)
+        }
+      } catch (altError) {
+        console.error("Error loading subscription plans from alternative endpoint for All Sales:", altError)
       }
     }
   }
@@ -427,7 +819,6 @@ const Sales = ({ userId }) => {
           productSales: 0,
           subscriptionSales: 0,
           coachAssignmentSales: 0,
-          walkinSales: 0,
           totalSales: 0,
           totalProductSales: 0,
           totalSubscriptionSales: 0,
@@ -607,7 +998,7 @@ const Sales = ({ userId }) => {
         })),
         payment_method: paymentMethod,
         amount_received: receivedAmount,
-        notes: transactionNotes
+        notes: ""
       }
 
       const response = await axios.post(`${API_BASE_URL}?action=pos_sale&staff_id=${userId}`, saleData)
@@ -795,31 +1186,58 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const handleDeleteProduct = async () => {
-    if (!productToDelete) return
+  const handleArchiveProduct = async () => {
+    if (!productToArchive) return
 
     setLoading(true)
     try {
       const response = await axios.delete(`${API_BASE_URL}?action=product`, {
-        data: { id: productToDelete.id }
+        data: { id: productToArchive.id }
       })
 
       if (response.data.success) {
-        setDeleteDialogOpen(false)
-        setProductToDelete(null)
+        const productName = productToArchive.name
+        setArchiveDialogOpen(false)
+        setProductToArchive(null)
         await loadProducts()
+        toast({
+          title: "Product Archived Successfully",
+          description: `"${productName}" has been archived and hidden from active inventory. You can restore it anytime.`,
+        })
       }
     } catch (error) {
-      console.error("Error deleting product:", error)
-      alert(error.response?.data?.error || "Error deleting product")
+      console.error("Error archiving product:", error)
+      alert(error.response?.data?.error || "Error archiving product")
     } finally {
       setLoading(false)
     }
   }
 
-  const openDeleteDialog = (product) => {
-    setProductToDelete(product)
-    setDeleteDialogOpen(true)
+  const handleRestoreProduct = async (product) => {
+    setLoading(true)
+    try {
+      const response = await axios.put(`${API_BASE_URL}?action=restore`, {
+        id: product.id
+      })
+
+      if (response.data.success) {
+        await loadProducts()
+        toast({
+          title: "Product Restored Successfully",
+          description: `"${product.name}" has been restored and is now visible in active inventory.`,
+        })
+      }
+    } catch (error) {
+      console.error("Error restoring product:", error)
+      alert(error.response?.data?.error || "Error restoring product")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openArchiveDialog = (product) => {
+    setProductToArchive(product)
+    setArchiveDialogOpen(true)
   }
 
   const openEditDialog = (product) => {
@@ -887,11 +1305,150 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const getProductName = (salesDetail) => {
-    if (salesDetail.product) {
+  // Calculate months for subscription (similar to monitoring subscription)
+  const calculateSubscriptionMonths = (subscription, sale = null) => {
+    // First check duration_months from plan (most accurate)
+    if (subscription?.duration_months) {
+      return subscription.duration_months
+    }
+    if (sale?.duration_months) {
+      return sale.duration_months
+    }
+
+    // Fallback: Calculate from amount paid and plan price
+    const amountPaid = subscription?.amount_paid ||
+      subscription?.discounted_price ||
+      sale?.subscription_amount_paid ||
+      sale?.subscription_discounted_price ||
+      sale?.total_amount ||
+      0
+
+    const planPrice = subscription?.plan_price ||
+      sale?.plan_price ||
+      0
+
+    if (planPrice > 0 && amountPaid > 0) {
+      const months = Math.floor(amountPaid / planPrice)
+      return months > 0 ? months : 1
+    }
+    return 1
+  }
+
+  const getProductName = (salesDetail, sale = null) => {
+    // Product sales
+    if (salesDetail?.product) {
       return salesDetail.product.name
     }
-    return salesDetail.subscription_id ? "Subscription Plan" : "Unknown Item"
+
+    // Check subscription details first (most reliable for Day Pass subscriptions)
+    let subscriptionDetail = null
+    if (sale?.id) {
+      subscriptionDetail = getSubscriptionDetails(sale.id)
+      if (subscriptionDetail?.planName) {
+        const planNameLower = subscriptionDetail.planName.toLowerCase()
+        if (planNameLower.includes('day pass') ||
+          planNameLower.includes('daypass') ||
+          planNameLower.includes('walk-in') ||
+          planNameLower.includes('walkin')) {
+          return "Day Pass"
+        }
+      }
+    }
+
+    // Check if this is a Day Pass subscription sale (user with account)
+    // Day Pass subscriptions have plan_id that matches Day Pass plan or plan_name contains "day pass"
+    const isDayPassSubscription = sale?.sale_type === 'Subscription' && (
+      // Check by plan_id against subscriptionPlans array
+      (sale.plan_id && subscriptionPlans && subscriptionPlans.length > 0 && subscriptionPlans.find(p =>
+        p.id.toString() === sale.plan_id.toString() && (
+          (p.name && (
+            p.name.toLowerCase().includes('day pass') ||
+            p.name.toLowerCase().includes('daypass') ||
+            p.name.toLowerCase().includes('walk-in') ||
+            p.name.toLowerCase().includes('walkin')
+          )) ||
+          (p.duration_days && p.duration_days > 0 && (!p.duration_months || p.duration_months === 0))
+        )
+      )) ||
+      // Check by plan_name from sale object
+      (sale.plan_name && (
+        sale.plan_name.toLowerCase().includes('day pass') ||
+        sale.plan_name.toLowerCase().includes('daypass') ||
+        sale.plan_name.toLowerCase().includes('walk-in') ||
+        sale.plan_name.toLowerCase().includes('walkin')
+      )) ||
+      // Check by subscription in sales detail
+      (salesDetail?.subscription && salesDetail.subscription.plan_name && (
+        salesDetail.subscription.plan_name.toLowerCase().includes('day pass') ||
+        salesDetail.subscription.plan_name.toLowerCase().includes('daypass') ||
+        salesDetail.subscription.plan_name.toLowerCase().includes('walk-in') ||
+        salesDetail.subscription.plan_name.toLowerCase().includes('walkin')
+      )) ||
+      // Check by plan_id characteristics (duration_days > 0, duration_months === 0)
+      (sale.plan_id && subscriptionPlans && subscriptionPlans.length > 0) && (() => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
+        return plan && plan.duration_days && plan.duration_days > 0 &&
+          (!plan.duration_months || plan.duration_months === 0)
+      })()
+    )
+
+    // If Day Pass subscription, return "Day Pass"
+    if (isDayPassSubscription) {
+      return "Day Pass"
+    }
+
+    // Get plan name from multiple sources
+    let planName = null
+    let subscription = null
+
+    // 1. Check subscription in sales detail
+    if (salesDetail?.subscription) {
+      subscription = salesDetail.subscription
+      planName = subscription.plan_name
+    }
+
+    // 2. Check sale level plan_name (set by API)
+    if (!planName && sale?.plan_name) {
+      planName = sale.plan_name
+    }
+
+    // 3. Check subscription details (already checked above, but use planName if not Day Pass)
+    if (!planName && subscriptionDetail?.planName) {
+      planName = subscriptionDetail.planName
+    }
+
+    // 4. If we have a subscription_id but no plan_name, check sale object
+    if (!planName && (salesDetail?.subscription_id || sale?.sale_type === 'Subscription')) {
+      planName = sale?.plan_name || "Subscription Plan"
+    }
+
+    // If we found a plan name, calculate and display months
+    // Don't show "12 months" since that's the default/given duration
+    if (planName) {
+      const months = calculateSubscriptionMonths(subscription, sale)
+      // Only show months if it's not 12 (since 12 months is the default)
+      if (months > 1 && months !== 12) {
+        return `${planName} (${months} months)`
+      }
+      return planName
+    }
+
+    // Guest/Walk-in/Day Pass sales (without account)
+    if (sale?.guest_name || sale?.sale_type === "Walk-in" || sale?.sale_type === "Walkin" || sale?.sale_type === "Guest" || sale?.sale_type === "Day Pass") {
+      return "Day Pass"
+    }
+
+    // Coaching sales
+    if (sale?.coach_name || sale?.sale_type === "Coaching" || sale?.sale_type === "Coach Assignment" || sale?.sale_type === "Coach") {
+      return "Coaching"
+    }
+
+    // Fallback
+    if (salesDetail?.subscription_id || sale?.sale_type === 'Subscription') {
+      return "Subscription Plan"
+    }
+
+    return "Unknown Item"
   }
 
   const getUniqueCategories = () => {
@@ -900,33 +1457,88 @@ const Sales = ({ userId }) => {
   }
 
   const getFilteredProducts = () => {
-    if (categoryFilter === "all") {
-      return products
+    let filtered = products
+
+    // Filter by category
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter(product => product.category === categoryFilter)
     }
-    return products.filter(product => product.category === categoryFilter)
+
+    // Filter by stock status
+    if (productStockStatusFilter !== "all") {
+      if (productStockStatusFilter === "in_stock") {
+        filtered = filtered.filter(product => product.stock > 10)
+      } else if (productStockStatusFilter === "low_stock") {
+        filtered = filtered.filter(product => product.stock > 0 && product.stock <= 10)
+      } else if (productStockStatusFilter === "out_of_stock") {
+        filtered = filtered.filter(product => product.stock === 0)
+      }
+    }
+
+    // Filter by price range
+    if (productPriceRangeFilter !== "all") {
+      if (productPriceRangeFilter === "low") {
+        filtered = filtered.filter(product => product.price < 100)
+      } else if (productPriceRangeFilter === "medium") {
+        filtered = filtered.filter(product => product.price >= 100 && product.price < 500)
+      } else if (productPriceRangeFilter === "high") {
+        filtered = filtered.filter(product => product.price >= 500)
+      }
+    }
+
+    // Filter by search query
+    if (productSearchQuery) {
+      const query = productSearchQuery.toLowerCase()
+      filtered = filtered.filter(product =>
+        product.name.toLowerCase().includes(query) ||
+        product.category.toLowerCase().includes(query) ||
+        product.price.toString().includes(query)
+      )
+    }
+
+    return filtered
   }
 
   const getLowStockProducts = () => {
-    return products.filter(product => product.stock <= 10)
+    return products.filter(product =>
+      product.stock <= 10 &&
+      (product.is_archived === 0 || product.is_archived === false || !product.is_archived)
+    )
   }
 
   const filteredSales = sales.filter((sale) => {
     // Filter by search query
     const matchesSearch = searchQuery === "" ||
-      sale.sale_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sale.sales_details.some(detail =>
-        detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+      sale.sale_type?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.plan_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.user_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.guest_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sale.coach_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
+        (detail.product && detail.product.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(searchQuery.toLowerCase()))
+      ))
 
     // Filter by sale type (this should already be handled by the API, but keeping as backup)
     let matchesSaleType = true
     if (saleTypeFilter !== "all") {
-      if (saleTypeFilter === "Walk-in") {
-        // Walk-in sales: 'Walk-in' or 'Walkin'
-        matchesSaleType = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin'
-      } else if (saleTypeFilter === "Day Pass") {
-        // Day Pass sales: 'Guest' or 'Day Pass'
-        matchesSaleType = sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+      if (saleTypeFilter === "Day Pass") {
+        // Day Pass sales: combine all types - 'Walk-in', 'Walkin', 'Guest', or 'Day Pass'
+        const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+        if (!isDayPass) {
+          matchesSaleType = false
+        } else {
+          // Additional filter for day pass method
+          if (allSalesDayPassMethodFilter !== "all") {
+            if (allSalesDayPassMethodFilter === "with_account") {
+              // Day pass with account - has user_id
+              matchesSaleType = sale.user_id !== null && sale.user_id !== undefined
+            } else if (allSalesDayPassMethodFilter === "without_account") {
+              // Day pass without account - no user_id
+              matchesSaleType = sale.user_id === null || sale.user_id === undefined
+            }
+          }
+        }
       } else if (saleTypeFilter === "Coach Assignment") {
         // Coaching sales: 'Coach Assignment', 'Coaching', or 'Coach'
         matchesSaleType = sale.sale_type === 'Coach Assignment' ||
@@ -940,6 +1552,28 @@ const Sales = ({ userId }) => {
 
     return matchesSearch && matchesSaleType
   })
+
+  // Pagination for All Sales tab
+  const allSalesTotalPages = Math.max(1, Math.ceil(filteredSales.length / allSalesItemsPerPage))
+  const allSalesStartIndex = (allSalesCurrentPage - 1) * allSalesItemsPerPage
+  const allSalesEndIndex = allSalesStartIndex + allSalesItemsPerPage
+  const paginatedAllSales = filteredSales.slice(allSalesStartIndex, allSalesEndIndex)
+
+  // Pagination for Product Inventory
+  const filteredProducts = getFilteredProducts()
+  const inventoryTotalPages = Math.max(1, Math.ceil(filteredProducts.length / inventoryItemsPerPage))
+  const inventoryStartIndex = (inventoryCurrentPage - 1) * inventoryItemsPerPage
+  const inventoryEndIndex = inventoryStartIndex + inventoryItemsPerPage
+  const paginatedProducts = filteredProducts.slice(inventoryStartIndex, inventoryEndIndex)
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setAllSalesCurrentPage(1)
+  }, [searchQuery, saleTypeFilter, allSalesDayPassMethodFilter, dateFilter])
+
+  useEffect(() => {
+    setInventoryCurrentPage(1)
+  }, [productSearchQuery, categoryFilter, productStockStatusFilter, productPriceRangeFilter, showArchived])
 
 
   if (loading && sales.length === 0) {
@@ -1061,40 +1695,46 @@ const Sales = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent className="pt-6">
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {/* Total Sales Card */}
-            <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white">
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700">Total Sales</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <TrendingUp className="h-5 w-5 text-gray-600" />
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <TrendingUp className="h-5 w-5 text-gray-700" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.todaysSales)}</div>
-                <p className="text-xs text-gray-600 font-medium">All sales combined</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.todaysSales)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">All sales combined</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setTotalSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
               </CardContent>
             </Card>
 
             {/* Product Sales Card */}
-            <Card
-              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
-            >
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700">Product Sales</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <ShoppingCart className="h-5 w-5 text-gray-600" />
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <ShoppingCart className="h-5 w-5 text-gray-700" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.productSales || 0)}</div>
-                <p className="text-xs text-gray-600 font-medium mb-3">
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.productSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">
                   {analytics.productsSoldToday || 0} items sold
                 </p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
                   onClick={() => setProductSalesDialogOpen(true)}
                 >
                   View Details
@@ -1103,22 +1743,20 @@ const Sales = ({ userId }) => {
             </Card>
 
             {/* Subscription Sales Card */}
-            <Card
-              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
-            >
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700">Subscription Sales</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <CreditCard className="h-5 w-5 text-gray-600" />
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <CreditCard className="h-5 w-5 text-gray-700" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.subscriptionSales || 0)}</div>
-                <p className="text-xs text-gray-600 font-medium mb-3">Membership revenue</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.subscriptionSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Subscription revenue</p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
                   onClick={() => setSubscriptionSalesDialogOpen(true)}
                 >
                   View Details
@@ -1127,22 +1765,20 @@ const Sales = ({ userId }) => {
             </Card>
 
             {/* Coaching Sales Card */}
-            <Card
-              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
-            >
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700">Coaching Sales</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <UserCheck className="h-5 w-5 text-gray-600" />
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <UserCheck className="h-5 w-5 text-gray-700" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
-                <p className="text-xs text-gray-600 font-medium mb-3">Coach revenue</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Coach revenue</p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
                   onClick={() => setCoachingSalesDialogOpen(true)}
                 >
                   View Details
@@ -1150,47 +1786,21 @@ const Sales = ({ userId }) => {
               </CardContent>
             </Card>
 
-            {/* Walk-in Sales Card */}
-            <Card
-              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                <CardTitle className="text-sm font-semibold text-gray-700">Walk-in Sales</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <LogIn className="h-5 w-5 text-gray-600" />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{formatCurrency(analytics.walkinSales || 0)}</div>
-                <p className="text-xs text-gray-600 font-medium mb-3">Guest/day pass revenue</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
-                  onClick={() => setWalkinSalesDialogOpen(true)}
-                >
-                  View Details
-                </Button>
-              </CardContent>
-            </Card>
-
             {/* Low Stock Items Card */}
-            <Card
-              className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white"
-            >
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700">Low Stock Items</CardTitle>
-                <div className="p-2 rounded-lg bg-gray-100">
-                  <AlertTriangle className="h-5 w-5 text-gray-600" />
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <AlertTriangle className="h-5 w-5 text-gray-700" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1">{analytics.lowStockItems}</div>
-                <p className="text-xs text-gray-600 font-medium mb-3">Need restocking</p>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{analytics.lowStockItems}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Need restocking</p>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full text-black border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
                   onClick={() => setLowStockDialogOpen(true)}
                 >
                   View Details
@@ -1204,7 +1814,7 @@ const Sales = ({ userId }) => {
       <Tabs defaultValue="sales" className="space-y-4">
         <TabsList>
           <TabsTrigger value="sales">New Sale</TabsTrigger>
-          <TabsTrigger value="history">Sales History</TabsTrigger>
+          <TabsTrigger value="history">All Sales</TabsTrigger>
           <TabsTrigger value="products">Product Inventory</TabsTrigger>
         </TabsList>
 
@@ -1212,15 +1822,23 @@ const Sales = ({ userId }) => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Product Selection */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Add Products to Cart</CardTitle>
+            <Card className="border-2 border-gray-200 shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-100">
+                    <ShoppingBag className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <CardTitle className="text-xl font-bold text-gray-900">Add Products to Cart</CardTitle>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5 pt-6">
                 <div className="space-y-2">
-                  <Label>Filter by Category</Label>
+                  <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <Filter className="h-4 w-4 text-gray-500" />
+                    Filter by Category
+                  </Label>
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
                       <SelectValue placeholder="All Categories" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1235,15 +1853,31 @@ const Sales = ({ userId }) => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Select Product</Label>
+                  <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <Package className="h-4 w-4 text-gray-500" />
+                    Select Product
+                  </Label>
                   <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
                       <SelectValue placeholder="Choose a product" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[300px]">
                       {getFilteredProducts() && getFilteredProducts().length > 0 ? getFilteredProducts().map((product) => (
-                        <SelectItem key={product.id} value={product.id.toString()} disabled={product.stock === 0}>
-                          {product.name} - {formatCurrency(product.price)} ({product.stock} in stock) [{product.category}]
+                        <SelectItem key={product.id} value={product.id.toString()} disabled={product.stock === 0} className="py-3">
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex flex-col flex-1 min-w-0">
+                              <span className="font-semibold text-gray-900 truncate">{product.name}</span>
+                              <span className="text-xs text-gray-500">{product.category} • {formatCurrency(product.price)}</span>
+                            </div>
+                            <span className={`ml-3 text-xs font-medium px-2 py-1 rounded ${product.stock === 0
+                              ? 'bg-red-100 text-red-700'
+                              : product.stock <= 5
+                                ? 'bg-orange-100 text-orange-700'
+                                : 'bg-green-100 text-green-700'
+                              }`}>
+                              {product.stock === 0 ? 'Out' : `${product.stock} left`}
+                            </span>
+                          </div>
                         </SelectItem>
                       )) : (
                         <SelectItem value="no-products" disabled>No products available</SelectItem>
@@ -1253,7 +1887,10 @@ const Sales = ({ userId }) => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Quantity</Label>
+                  <Label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <Hash className="h-4 w-4 text-gray-500" />
+                    Quantity
+                  </Label>
                   <Input
                     type="number"
                     min="1"
@@ -1264,66 +1901,108 @@ const Sales = ({ userId }) => {
                     onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
                     onFocus={(e) => e.target.select()}
                     disabled={!selectedProduct}
+                    className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold"
                   />
+                  {selectedProduct && (
+                    <p className="text-xs text-gray-500">
+                      Max available: {products.find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))?.stock || 0} units
+                    </p>
+                  )}
                 </div>
 
-                <Button onClick={addToCart} className="w-full" disabled={!selectedProduct || loading}>
-                  <Plus className="mr-2 h-4 w-4" />
+                <Button
+                  onClick={addToCart}
+                  className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md hover:shadow-lg transition-all duration-200"
+                  disabled={!selectedProduct || loading}
+                >
+                  <Plus className="mr-2 h-5 w-5" />
                   Add to Cart
                 </Button>
               </CardContent>
             </Card>
 
             {/* Shopping Cart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Shopping Cart ({cart.length} items)</CardTitle>
+            <Card className="border-2 border-gray-200 shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-green-100">
+                      <ShoppingCart className="h-5 w-5 text-green-600" />
+                    </div>
+                    <CardTitle className="text-xl font-bold text-gray-900">Shopping Cart</CardTitle>
+                  </div>
+                  <Badge variant="secondary" className="text-base px-3 py-1 bg-green-100 text-green-700 border-green-300">
+                    {cart.length} {cart.length === 1 ? 'item' : 'items'}
+                  </Badge>
+                </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-6">
                 {cart.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">No items in cart</p>
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <div className="p-4 rounded-full bg-gray-100 mb-4">
+                      <ShoppingCart className="h-12 w-12 text-gray-400" />
+                    </div>
+                    <p className="text-lg font-medium text-gray-600 mb-2">No items in cart</p>
+                    <p className="text-sm text-gray-500 text-center">Add products from the left panel to get started</p>
+                  </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="max-h-64 overflow-y-auto space-y-2">
+                    <div className="max-h-64 overflow-y-auto space-y-3">
                       {cart.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex-1">
-                            <h4 className="font-medium">{item.product?.name || 'Unknown Product'}</h4>
-                            <p className="text-sm text-muted-foreground">{formatCurrency(item.product?.price || 0)} each</p>
+                        <div key={index} className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-xl bg-gradient-to-r from-gray-50 to-white hover:shadow-md transition-all duration-200">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-semibold text-gray-900 mb-1 truncate">{item.product?.name || 'Unknown Product'}</h4>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm text-gray-600">{formatCurrency(item.product?.price || 0)} each</p>
+                              <span className="text-gray-400">•</span>
+                              <Badge variant="outline" className="text-xs bg-gray-50 text-gray-900 border-gray-300">
+                                {item.product?.category || 'N/A'}
+                              </Badge>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3 mx-4">
+                            <div className="flex items-center gap-2 bg-white border-2 border-gray-300 rounded-lg p-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 hover:bg-gray-100"
+                                onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                              >
+                                <Minus className="h-4 w-4" />
+                              </Button>
+                              <span className="w-10 text-center font-semibold text-gray-900">{item.quantity}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 hover:bg-gray-100"
+                                onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
+                              className="h-8 w-8 p-0 hover:bg-red-700"
+                              onClick={() => removeFromCart(item.product.id)}
                             >
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <span className="w-8 text-center">{item.quantity}</span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                            <Button variant="destructive" size="sm" onClick={() => removeFromCart(item.product.id)}>
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
 
-                          <div className="text-right ml-4">
-                            <p className="font-medium">{formatCurrency(item.price)}</p>
+                          <div className="text-right min-w-[80px]">
+                            <p className="font-bold text-lg text-gray-900">{formatCurrency(item.price)}</p>
+                            <p className="text-xs text-gray-500">Qty: {item.quantity}</p>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div className="border-t pt-4">
-                      <div className="flex justify-between items-center text-lg font-bold">
-                        <span>Total:</span>
-                        <span>{formatCurrency(getTotalAmount())}</span>
+                    <div className="border-t-2 border-gray-300 pt-4 mt-4">
+                      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                        <span className="text-xl font-bold text-gray-900">Total:</span>
+                        <span className="text-2xl font-bold text-green-700">{formatCurrency(getTotalAmount())}</span>
                       </div>
                     </div>
 
@@ -1338,8 +2017,7 @@ const Sales = ({ userId }) => {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="cash">Cash</SelectItem>
-                              <SelectItem value="card">Card</SelectItem>
-                              <SelectItem value="digital">Digital Payment</SelectItem>
+                              <SelectItem value="gcash">Gcash</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -1362,14 +2040,6 @@ const Sales = ({ userId }) => {
                           </div>
                         )}
 
-                        <div className="space-y-2">
-                          <Label>Transaction Notes (Optional)</Label>
-                          <Input
-                            value={transactionNotes}
-                            onChange={(e) => setTransactionNotes(e.target.value)}
-                            placeholder="Add notes for this transaction"
-                          />
-                        </div>
                       </div>
                     )}
 
@@ -1388,53 +2058,74 @@ const Sales = ({ userId }) => {
         </TabsContent>
 
         <TabsContent value="history">
-          <Card>
-            <CardHeader>
+          <Card className="border-2 border-gray-200 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-gray-200">
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-4">
-                    <CardTitle>Sales History</CardTitle>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span>Showing {filteredSales.length} of {sales.length} sales</span>
-                      {saleTypeFilter !== "all" && (
-                        <Badge variant="outline" className="text-xs">
-                          {saleTypeFilter} only
-                        </Badge>
-                      )}
+                    <div className="p-2 rounded-lg bg-purple-100">
+                      <TrendingUp className="h-5 w-5 text-purple-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-2xl font-bold text-gray-900">All Sales</CardTitle>
+                      <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+                        <span>Showing {filteredSales.length} of {sales.length} sales (Page {allSalesCurrentPage} of {allSalesTotalPages})</span>
+                        {saleTypeFilter !== "all" && (
+                          <Badge variant="outline" className="text-xs bg-purple-100 text-purple-700 border-purple-300">
+                            {saleTypeFilter} only
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="relative w-full max-w-md">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
                       type="search"
                       placeholder="Search sales..."
-                      className="pl-8"
+                      className="pl-10 h-11 border-2 border-gray-300 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 flex-wrap pt-2">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="sale-type-filter">Sale Type:</Label>
+                    <Label htmlFor="sale-type-filter" className="text-sm font-semibold text-gray-700">Sale Type:</Label>
                     <Select value={saleTypeFilter} onValueChange={setSaleTypeFilter}>
-                      <SelectTrigger className="w-40">
+                      <SelectTrigger className="w-44 h-10 border-2 border-gray-300 focus:border-purple-500">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="Product">Product Sales</SelectItem>
-                        <SelectItem value="Subscription">Subscription Sales</SelectItem>
-                        <SelectItem value="Coach Assignment">Coaching Sales</SelectItem>
-                        <SelectItem value="Walk-in">Walk-in Sales</SelectItem>
-                        <SelectItem value="Day Pass">Day Pass Access</SelectItem>
+                        <SelectItem value="Product">Product</SelectItem>
+                        <SelectItem value="Subscription">Subscription</SelectItem>
+                        <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
+                        <SelectItem value="Day Pass">Day Pass</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Day Pass Method Filter - Only show when Day Pass is selected in All Sales tab */}
+                  {saleTypeFilter === "Day Pass" && (
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="day-pass-method-filter" className="text-sm font-semibold text-gray-700">Method:</Label>
+                      <Select value={allSalesDayPassMethodFilter} onValueChange={setAllSalesDayPassMethodFilter}>
+                        <SelectTrigger className="w-[180px] h-10 border-2 border-gray-300 focus:border-purple-500">
+                          <SelectValue placeholder="All Methods" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Methods</SelectItem>
+                          <SelectItem value="with_account">Member Request</SelectItem>
+                          <SelectItem value="without_account">Guest Request</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="month-filter">Month:</Label>
+                    <Label htmlFor="month-filter" className="text-sm font-semibold text-gray-700">Month:</Label>
                     <Select value={monthFilter} onValueChange={setMonthFilter}>
-                      <SelectTrigger className="w-32">
+                      <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-purple-500">
                         <SelectValue placeholder="Month" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1455,23 +2146,21 @@ const Sales = ({ userId }) => {
                     </Select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="year-filter">Year:</Label>
+                    <Label htmlFor="year-filter" className="text-sm font-semibold text-gray-700">Year:</Label>
                     <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-24">
+                      <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-purple-500">
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Years</SelectItem>
-                        <SelectItem value="2024">2024</SelectItem>
-                        <SelectItem value="2023">2023</SelectItem>
-                        <SelectItem value="2022">2022</SelectItem>
-                        <SelectItem value="2021">2021</SelectItem>
-                        <SelectItem value="2020">2020</SelectItem>
+                        {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-
-                  {/* Custom Date Picker */}
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -1479,7 +2168,7 @@ const Sales = ({ userId }) => {
                         className={cn(
                           "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
                           useCustomDate
-                            ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                            ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 shadow-md"
                             : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
                         )}
                       >
@@ -1494,7 +2183,6 @@ const Sales = ({ userId }) => {
                         onSelect={(date) => {
                           setCustomDate(date)
                           setUseCustomDate(!!date)
-                          // Clear month/year filters when custom date is selected
                           if (date) {
                             setMonthFilter("all")
                             setYearFilter("all")
@@ -1504,7 +2192,6 @@ const Sales = ({ userId }) => {
                       />
                     </PopoverContent>
                   </Popover>
-
                   {useCustomDate && customDate && (
                     <Button
                       variant="outline"
@@ -1521,236 +2208,522 @@ const Sales = ({ userId }) => {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Items</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Payment</TableHead>
-                    <TableHead>Receipt</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Total Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSales.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        No sales found matching your search
-                      </TableCell>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50 hover:bg-gray-50">
+                      <TableHead className="font-semibold text-gray-900">Plan/Product</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Customer</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Type</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Payment</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Receipt</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Date</TableHead>
+                      <TableHead className="text-right font-semibold text-gray-900">Total Amount</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredSales.map((sale) => (
-                      <TableRow key={sale.id}>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {sale.sales_details.map((detail, index) => (
-                              <div key={index} className="text-sm">
-                                {getProductName(detail)}
-                                {detail.quantity && ` (${detail.quantity}x)`}
-                              </div>
-                            ))}
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSales.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-12">
+                          <div className="flex flex-col items-center justify-center">
+                            <div className="p-3 rounded-full bg-gray-100 mb-3">
+                              <Search className="h-8 w-8 text-gray-400" />
+                            </div>
+                            <p className="text-lg font-medium text-gray-600 mb-1">No sales found</p>
+                            <p className="text-sm text-gray-500">Try adjusting your filters or search query</p>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={
-                            sale.sale_type === "Product" ? "outline" :
-                              sale.sale_type === "Guest" ? "default" :
-                                "secondary"
-                          }>
-                            {sale.sale_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <Badge variant="outline" className="text-xs">
-                              {sale.payment_method || "N/A"}
-                            </Badge>
-                            {sale.change_given > 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                Change: {formatCurrency(sale.change_given)}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-xs font-mono">
-                            {sale.receipt_number || "N/A"}
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatDate(sale.sale_date)}</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(sale.total_amount)}</TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                    ) : (
+                      paginatedAllSales.map((sale) => (
+                        <TableRow key={sale.id} className="hover:bg-gray-50 transition-colors">
+                          <TableCell className="py-4">
+                            <div className="space-y-2">
+                              {sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0 ? (
+                                sale.sales_details.map((detail, index) => (
+                                  <div key={index} className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-semibold text-gray-900">
+                                      {getProductName(detail, sale)}
+                                    </span>
+                                    {!detail.subscription_id && detail.quantity && detail.quantity > 1 && (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 font-medium">
+                                        {detail.quantity}x
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="text-sm font-semibold text-gray-900">
+                                  {getProductName({}, sale)}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="space-y-1">
+                              {sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach" ? (
+                                <div className="text-sm font-medium text-gray-900">
+                                  {sale.user_name || "N/A"}
+                                </div>
+                              ) : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin" ? (
+                                <div className="text-sm font-medium text-gray-900">
+                                  {sale.guest_name || sale.user_name || "Guest"}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-500 italic">
+                                  N/A
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <Badge variant="outline" className="font-medium bg-gray-50 text-gray-900 border-gray-300">
+                              {(() => {
+                                // For day pass sales, show "Day Pass" if user has account, "Guest" if no account
+                                const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+                                if (isDayPass) {
+                                  return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                                }
+                                return sale.sale_type
+                              })()}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="space-y-1">
+                              <Badge variant="outline" className="text-xs font-medium bg-gray-50 text-gray-700 border-gray-300">
+                                {sale.payment_method || "N/A"}
+                              </Badge>
+                              {sale.change_given > 0 && (
+                                <div className="text-xs text-gray-600 font-medium">
+                                  Change: {formatCurrency(sale.change_given)}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="text-xs font-mono font-medium text-gray-700">
+                              {sale.receipt_number || "N/A"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4 font-medium text-gray-700">{formatDate(sale.sale_date)}</TableCell>
+                          <TableCell className="text-right py-4 font-bold text-lg text-gray-900">{formatCurrency(sale.total_amount)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Pagination Controls for All Sales */}
+              {filteredSales.length > 0 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white mb-6">
+                  <div className="text-sm text-gray-500">
+                    {filteredSales.length} {filteredSales.length === 1 ? 'entry' : 'entries'} total
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAllSalesCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={allSalesCurrentPage === 1}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md min-w-[100px] text-center">
+                      Page {allSalesCurrentPage} of {allSalesTotalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAllSalesCurrentPage(prev => Math.min(allSalesTotalPages, prev + 1))}
+                      disabled={allSalesCurrentPage === allSalesTotalPages}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="products">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-medium">Product Inventory</h3>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Product
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add New Product</DialogTitle>
-                    <DialogDescription>Add a new product to your inventory</DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Product Name</Label>
+          <Card className="border-2 border-gray-200 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-gray-200">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="p-2 rounded-lg bg-orange-100">
+                      <Package className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-2xl font-bold text-gray-900">Product Inventory</CardTitle>
+                      <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+                        <span>Showing {filteredProducts.length} of {products.length} {showArchived ? "archived" : "active"} products (Page {inventoryCurrentPage} of {inventoryTotalPages})</span>
+                        {(categoryFilter !== "all" || productStockStatusFilter !== "all" || productPriceRangeFilter !== "all" || productSearchQuery) && (
+                          <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
+                            Filtered
+                          </Badge>
+                        )}
+                        {showArchived && (
+                          <Badge variant="outline" className="text-xs bg-gray-100 text-gray-700 border-gray-300">
+                            Archived
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button className="h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 shadow-md hover:shadow-lg transition-all duration-200">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Add Product
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-md">
+                      <DialogHeader className="space-y-3 pb-4 border-b border-gray-200">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-gray-100">
+                            <Plus className="h-5 w-5 text-gray-600" />
+                          </div>
+                          <div>
+                            <DialogTitle className="text-xl font-bold text-gray-900">Add New Product</DialogTitle>
+                            <DialogDescription className="text-sm text-gray-600 mt-1">
+                              Add a new product to your inventory
+                            </DialogDescription>
+                          </div>
+                        </div>
+                      </DialogHeader>
+                      <div className="space-y-5 py-4">
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Package className="h-4 w-4 text-gray-500" />
+                            Product Name
+                          </Label>
+                          <Input
+                            value={newProduct.name}
+                            onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+                            placeholder="Enter product name"
+                            className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Hash className="h-4 w-4 text-gray-500" />
+                            Price (₱)
+                          </Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={newProduct.price}
+                            onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
+                            placeholder="Enter price"
+                            className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 text-lg font-semibold"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Hash className="h-4 w-4 text-gray-500" />
+                            Initial Stock
+                          </Label>
+                          <Input
+                            type="number"
+                            value={newProduct.stock}
+                            onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
+                            placeholder="Enter stock quantity"
+                            className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                            <Filter className="h-4 w-4 text-gray-500" />
+                            Category
+                          </Label>
+                          <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
+                            <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-gray-500">
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Uncategorized">Uncategorized</SelectItem>
+                              <SelectItem value="Beverages">Beverages</SelectItem>
+                              <SelectItem value="Supplements">Supplements</SelectItem>
+                              <SelectItem value="Snacks">Snacks</SelectItem>
+                              <SelectItem value="Merch/Apparel">Merch/Apparel</SelectItem>
+                              <SelectItem value="Accessories">Accessories</SelectItem>
+                              <SelectItem value="Equipment">Equipment</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <DialogFooter className="pt-4 border-t border-gray-200">
+                        <Button
+                          variant="outline"
+                          onClick={() => setNewProduct({ name: "", price: "", stock: "", category: "Uncategorized" })}
+                          className="h-11 border-2 border-gray-300 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleAddProduct}
+                          disabled={loading}
+                          className="h-11 bg-gray-900 hover:bg-gray-800 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                        >
+                          {loading ? "Adding..." : "Add"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <div className="space-y-3 pt-2">
+                  {/* Archive Toggle and Search Row */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    {/* Archive Toggle */}
+                    <Button
+                      variant={showArchived ? "default" : "outline"}
+                      onClick={() => setShowArchived(!showArchived)}
+                      className={`h-10 border-2 transition-all duration-200 ${showArchived
+                        ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600 shadow-md"
+                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                        }`}
+                    >
+                      {showArchived ? (
+                        <>
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          View Active Products
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="mr-2 h-4 w-4" />
+                          View Archived Products
+                        </>
+                      )}
+                    </Button>
+                    {/* Search */}
+                    <div className="relative flex-1 min-w-[250px] max-w-md">
+                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                       <Input
-                        value={newProduct.name}
-                        onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
-                        placeholder="Enter product name"
+                        type="search"
+                        placeholder="Search products..."
+                        className="pl-10 h-10 border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                        value={productSearchQuery}
+                        onChange={(e) => setProductSearchQuery(e.target.value)}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Price (₱)</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={newProduct.price}
-                        onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                        placeholder="Enter price"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Initial Stock</Label>
-                      <Input
-                        type="number"
-                        value={newProduct.stock}
-                        onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
-                        placeholder="Enter stock quantity"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Category</Label>
-                      <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
+                  </div>
+                  {/* Filter Row */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    {/* Category Filter */}
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="product-category-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                        <Filter className="h-4 w-4 inline mr-1" />
+                        Category:
+                      </Label>
+                      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <SelectTrigger className="w-44 h-10 border-2 border-gray-300 focus:border-orange-500">
+                          <SelectValue placeholder="All Categories" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Uncategorized">Uncategorized</SelectItem>
-                          <SelectItem value="Beverages">Beverages</SelectItem>
-                          <SelectItem value="Supplements">Supplements</SelectItem>
-                          <SelectItem value="Snacks">Snacks</SelectItem>
-                          <SelectItem value="Merch/Apparel">Merch/Apparel</SelectItem>
-                          <SelectItem value="Accessories">Accessories</SelectItem>
-                          <SelectItem value="Equipment">Equipment</SelectItem>
+                          <SelectItem value="all">All Categories</SelectItem>
+                          {getUniqueCategories().map((category) => (
+                            <SelectItem key={category} value={category}>
+                              {category}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Stock Status Filter */}
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="stock-status-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                        Stock Status:
+                      </Label>
+                      <Select value={productStockStatusFilter} onValueChange={setProductStockStatusFilter}>
+                        <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-orange-500">
+                          <SelectValue placeholder="All Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="in_stock">In Stock (&gt;10)</SelectItem>
+                          <SelectItem value="low_stock">Low Stock (1-10)</SelectItem>
+                          <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Price Range Filter */}
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="price-range-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                        Price Range:
+                      </Label>
+                      <Select value={productPriceRangeFilter} onValueChange={setProductPriceRangeFilter}>
+                        <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-orange-500">
+                          <SelectValue placeholder="All Prices" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Prices</SelectItem>
+                          <SelectItem value="low">Low (&lt;₱100)</SelectItem>
+                          <SelectItem value="medium">Medium (₱100-₱500)</SelectItem>
+                          <SelectItem value="high">High (&gt;₱500)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
-                  <DialogFooter>
-                    <Button onClick={handleAddProduct} disabled={loading}>
-                      {loading ? "Adding..." : "Add Product"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="product-category-filter">Filter by Category:</Label>
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {getUniqueCategories().map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                </div>
               </div>
-            </div>
-
-            <Card>
-              <CardContent className="p-0">
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Product Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Stock</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+                    <TableRow className="bg-gray-50 hover:bg-gray-50">
+                      <TableHead className="font-semibold text-gray-900">Product Name</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Category</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Price</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Stock</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Status</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {getFilteredProducts().map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{product.category}</Badge>
-                        </TableCell>
-                        <TableCell>{formatCurrency(product.price)}</TableCell>
-                        <TableCell>{product.stock}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={product.stock > 10 ? "outline" : product.stock > 0 ? "secondary" : "destructive"}
-                          >
-                            {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setStockUpdateProduct(product)
-                                setIsAddOnlyMode(false)
-                                setStockUpdateQuantity("")
-                              }}
-                              disabled={loading}
-                            >
-                              <Package className="mr-1 h-3 w-3" />
-                              Stock
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openEditDialog(product)}
-                              disabled={loading}
-                            >
-                              <Edit className="mr-1 h-3 w-3" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => openDeleteDialog(product)}
-                              disabled={loading}
-                            >
-                              <Trash2 className="mr-1 h-3 w-3" />
-                              Delete
-                            </Button>
+                    {filteredProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12">
+                          <div className="flex flex-col items-center justify-center">
+                            <div className="p-3 rounded-full bg-gray-100 mb-3">
+                              <Package className="h-8 w-8 text-gray-400" />
+                            </div>
+                            <p className="text-lg font-medium text-gray-600 mb-1">No products found</p>
+                            <p className="text-sm text-gray-500">Try adjusting your filters or search query</p>
                           </div>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      paginatedProducts.map((product) => (
+                        <TableRow key={product.id} className="hover:bg-gray-50 transition-colors">
+                          <TableCell className="py-4 font-medium text-gray-900">{product.name}</TableCell>
+                          <TableCell className="py-4">
+                            <Badge variant="outline" className="bg-gray-50 text-gray-900 border-gray-300">{product.category}</Badge>
+                          </TableCell>
+                          <TableCell className="py-4 font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
+                          <TableCell className="py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-gray-900">{product.stock}</span>
+                              {product.stock <= 5 && product.stock > 0 && (
+                                <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
+                                  Low
+                                </Badge>
+                              )}
+                              {product.stock === 0 && (
+                                <Badge variant="destructive" className="text-xs">
+                                  Out
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <Badge
+                              variant={product.stock > 10 ? "outline" : product.stock > 0 ? "secondary" : "destructive"}
+                              className={`font-medium ${product.stock > 10
+                                ? "bg-green-100 text-green-700 border-green-300"
+                                : product.stock > 0
+                                  ? "bg-orange-100 text-orange-700 border-orange-300"
+                                  : "bg-red-100 text-red-700 border-red-300"
+                                }`}
+                            >
+                              {product.stock > 10 ? "In Stock" : product.stock > 0 ? "Low Stock" : "Out of Stock"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setStockUpdateProduct(product)
+                                  setIsAddOnlyMode(false)
+                                  setStockUpdateQuantity("")
+                                }}
+                                disabled={loading}
+                                className="border-2 hover:bg-gray-100"
+                              >
+                                <Package className="mr-1 h-3 w-3" />
+                                Stock
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openEditDialog(product)}
+                                disabled={loading}
+                                className="border-2 hover:bg-blue-50"
+                              >
+                                <Edit className="mr-1 h-3 w-3" />
+                                Edit
+                              </Button>
+                              {!showArchived ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openArchiveDialog(product)}
+                                  disabled={loading}
+                                  className="border-2 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                >
+                                  <Archive className="mr-1 h-3 w-3" />
+                                  Archive
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRestoreProduct(product)}
+                                  disabled={loading}
+                                  className="border-2 border-green-300 text-green-700 hover:bg-green-50"
+                                >
+                                  <RotateCcw className="mr-1 h-3 w-3" />
+                                  Restore
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+              {/* Pagination Controls for Product Inventory */}
+              {filteredProducts.length > 0 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white mb-6">
+                  <div className="text-sm text-gray-500">
+                    {filteredProducts.length} {filteredProducts.length === 1 ? 'entry' : 'entries'} total
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInventoryCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={inventoryCurrentPage === 1}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md min-w-[100px] text-center">
+                      Page {inventoryCurrentPage} of {inventoryTotalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setInventoryCurrentPage(prev => Math.min(inventoryTotalPages, prev + 1))}
+                      disabled={inventoryCurrentPage === inventoryTotalPages}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -1761,25 +2734,39 @@ const Sales = ({ userId }) => {
         setStockUpdateQuantity("")
       }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {isAddOnlyMode ? (
-                <Plus className="h-5 w-5 text-green-600" />
-              ) : (
-                <Package className="h-5 w-5 text-gray-600" />
-              )}
-              {isAddOnlyMode ? "Add Stock" : "Update Stock"} - {stockUpdateProduct?.name}
-            </DialogTitle>
-            <DialogDescription>
-              Current stock: <span className="font-semibold text-gray-900">{stockUpdateProduct?.stock} units</span>
-            </DialogDescription>
+          <DialogHeader className="space-y-3 pb-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${isAddOnlyMode || stockUpdateType === "add" ? "bg-green-100" : "bg-blue-100"}`}>
+                {isAddOnlyMode ? (
+                  <Plus className="h-5 w-5 text-green-600" />
+                ) : (
+                  <Package className={`h-5 w-5 ${stockUpdateType === "add" ? "text-green-600" : "text-blue-600"}`} />
+                )}
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-gray-900">
+                  {isAddOnlyMode ? "Add Stock" : "Update Stock"}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-gray-600 mt-1">
+                  {stockUpdateProduct?.name}
+                </DialogDescription>
+              </div>
+            </div>
+            <div className="pt-2">
+              <p className="text-sm text-gray-600">
+                Current stock: <span className="font-bold text-gray-900">{stockUpdateProduct?.stock} units</span>
+              </p>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-5 py-4">
             {!isAddOnlyMode && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Action</Label>
+                <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  Action
+                </Label>
                 <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-blue-500">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1800,7 +2787,8 @@ const Sales = ({ userId }) => {
               </div>
             )}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">
+              <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Hash className="h-4 w-4 text-gray-500" />
                 {isAddOnlyMode ? "Quantity to Add" : "Quantity"}
               </Label>
               <Input
@@ -1809,40 +2797,48 @@ const Sales = ({ userId }) => {
                 value={stockUpdateQuantity}
                 onChange={(e) => setStockUpdateQuantity(e.target.value)}
                 placeholder={isAddOnlyMode ? "Enter quantity to add" : "Enter quantity"}
-                className="text-lg"
+                className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold"
                 autoFocus
               />
             </div>
             {stockUpdateQuantity && stockUpdateProduct && (
-              <div className={`p-4 rounded-lg border-2 ${stockUpdateType === "add" || isAddOnlyMode
-                ? "bg-green-50 border-green-200"
-                : "bg-red-50 border-red-200"
+              <div className={`p-5 rounded-xl border-2 shadow-sm ${stockUpdateType === "add" || isAddOnlyMode
+                ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-200"
+                : "bg-gradient-to-r from-red-50 to-rose-50 border-red-200"
                 }`}>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1">Stock Preview</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-semibold text-gray-700">{stockUpdateProduct.stock}</span>
-                      <span className="text-gray-400">→</span>
-                      <span className={`text-xl font-bold ${stockUpdateType === "add" || isAddOnlyMode ? "text-green-700" : "text-red-700"
-                        }`}>
-                        {stockUpdateType === "add" || isAddOnlyMode
-                          ? Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")
-                          : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - Number.parseInt(stockUpdateQuantity || "0"))}
-                      </span>
-                      <span className="text-sm text-gray-600">units</span>
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Stock Preview</p>
+                    <div className="flex items-center gap-3">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 mb-1">Current</p>
+                        <span className="text-2xl font-bold text-gray-700">{stockUpdateProduct.stock}</span>
+                      </div>
+                      <span className="text-2xl text-gray-400">→</span>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 mb-1">New</p>
+                        <span className={`text-3xl font-bold ${stockUpdateType === "add" || isAddOnlyMode ? "text-green-700" : "text-red-700"
+                          }`}>
+                          {stockUpdateType === "add" || isAddOnlyMode
+                            ? Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")
+                            : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - Number.parseInt(stockUpdateQuantity || "0"))}
+                        </span>
+                      </div>
+                      <span className="text-sm font-medium text-gray-600">units</span>
                     </div>
                   </div>
-                  {stockUpdateType === "add" || isAddOnlyMode ? (
-                    <Plus className="h-6 w-6 text-green-600" />
-                  ) : (
-                    <Minus className="h-6 w-6 text-red-600" />
-                  )}
+                  <div className={`p-3 rounded-lg ${stockUpdateType === "add" || isAddOnlyMode ? "bg-green-100" : "bg-red-100"}`}>
+                    {stockUpdateType === "add" || isAddOnlyMode ? (
+                      <Plus className="h-6 w-6 text-green-700" />
+                    ) : (
+                      <Minus className="h-6 w-6 text-red-700" />
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="pt-4 border-t border-gray-200">
             <Button
               variant="outline"
               onClick={() => {
@@ -1850,16 +2846,17 @@ const Sales = ({ userId }) => {
                 setIsAddOnlyMode(false)
                 setStockUpdateQuantity("")
               }}
+              className="h-11 border-2 border-gray-300 hover:bg-gray-50"
             >
               Cancel
             </Button>
             <Button
               onClick={handleStockUpdate}
               disabled={loading || !stockUpdateQuantity}
-              className={isAddOnlyMode || stockUpdateType === "add"
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-red-600 hover:bg-red-700 text-white"
-              }
+              className={`h-11 shadow-md hover:shadow-lg transition-all duration-200 ${isAddOnlyMode || stockUpdateType === "add"
+                ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
+                : "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
+                }`}
             >
               {loading ? "Updating..." : isAddOnlyMode || stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
             </Button>
@@ -1869,34 +2866,54 @@ const Sales = ({ userId }) => {
 
       {/* Edit Product Dialog */}
       <Dialog open={!!editProduct} onOpenChange={() => setEditProduct(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Product - {editProduct?.name}</DialogTitle>
-            <DialogDescription>Update product information</DialogDescription>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="space-y-3 pb-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-gray-100">
+                <Edit className="h-5 w-5 text-gray-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-gray-900">Edit Product</DialogTitle>
+                <DialogDescription className="text-sm text-gray-600 mt-1">
+                  {editProduct?.name}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-5 py-4">
             <div className="space-y-2">
-              <Label>Product Name</Label>
+              <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Package className="h-4 w-4 text-gray-500" />
+                Product Name
+              </Label>
               <Input
                 value={editProductData.name}
                 onChange={(e) => setEditProductData({ ...editProductData, name: e.target.value })}
                 placeholder="Enter product name"
+                className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
               />
             </div>
             <div className="space-y-2">
-              <Label>Price (₱)</Label>
+              <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Hash className="h-4 w-4 text-gray-500" />
+                Price (₱)
+              </Label>
               <Input
                 type="number"
                 step="0.01"
                 value={editProductData.price}
                 onChange={(e) => setEditProductData({ ...editProductData, price: e.target.value })}
                 placeholder="Enter price"
+                className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 text-lg font-semibold"
               />
             </div>
             <div className="space-y-2">
-              <Label>Category</Label>
+              <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <Filter className="h-4 w-4 text-gray-500" />
+                Category
+              </Label>
               <Select value={editProductData.category} onValueChange={(value) => setEditProductData({ ...editProductData, category: value })}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-gray-500">
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1911,12 +2928,20 @@ const Sales = ({ userId }) => {
               </Select>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditProduct(null)}>
+          <DialogFooter className="pt-4 border-t border-gray-200">
+            <Button
+              variant="outline"
+              onClick={() => setEditProduct(null)}
+              className="h-11 border-2 border-gray-300 hover:bg-gray-50"
+            >
               Cancel
             </Button>
-            <Button onClick={handleEditProduct} disabled={loading}>
-              {loading ? "Updating..." : "Update Product"}
+            <Button
+              onClick={handleEditProduct}
+              disabled={loading}
+              className="h-11 bg-gray-900 hover:bg-gray-800 text-white shadow-md hover:shadow-lg transition-all duration-200"
+            >
+              {loading ? "Updating..." : "Update"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1962,13 +2987,6 @@ const Sales = ({ userId }) => {
                     <span>{formatCurrency(changeGiven)}</span>
                   </div>
                 </>
-              )}
-              {transactionNotes && (
-                <div className="pt-2">
-                  <p className="text-sm">
-                    <strong>Notes:</strong> {transactionNotes}
-                  </p>
-                </div>
               )}
             </div>
           </div>
@@ -2024,13 +3042,6 @@ const Sales = ({ userId }) => {
                 )}
               </div>
 
-              {transactionNotes && (
-                <div className="border-t pt-2">
-                  <p className="text-sm">
-                    <strong>Notes:</strong> {transactionNotes}
-                  </p>
-                </div>
-              )}
 
               <div className="text-center pt-4">
                 <p className="text-sm text-muted-foreground">Thank you for your business!</p>
@@ -2045,51 +3056,82 @@ const Sales = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      {/* Archive Confirmation Dialog */}
+      <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
         <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-destructive" />
-              Delete Product
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <span className="font-semibold text-foreground">&quot;{productToDelete?.name}&quot;</span>? This action cannot be undone.
-            </AlertDialogDescription>
+          <AlertDialogHeader className="space-y-3 pb-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-100">
+                <Archive className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <AlertDialogTitle className="text-xl font-bold text-gray-900">Archive Product</AlertDialogTitle>
+                <AlertDialogDescription className="text-sm text-gray-600 mt-1">
+                  {productToArchive?.name}
+                </AlertDialogDescription>
+              </div>
+            </div>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-gray-700">
+              Are you sure you want to archive <span className="font-semibold text-gray-900">&quot;{productToArchive?.name}&quot;</span>?
+            </p>
+            <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
+                <div className="space-y-2 text-sm text-orange-800">
+                  <p className="font-semibold">Important Notes:</p>
+                  <ul className="list-disc list-inside space-y-1 text-orange-700">
+                    <li>This product will be hidden from active inventory</li>
+                    <li>Sales data will be preserved</li>
+                    <li>You can restore this product later</li>
+                    <li>This action does not delete the product</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter className="pt-4 border-t border-gray-200">
+            <AlertDialogCancel className="h-11 border-2 border-gray-300 hover:bg-gray-50" disabled={loading}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteProduct}
+              onClick={handleArchiveProduct}
               disabled={loading}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
             >
-              {loading ? "Deleting..." : "Delete"}
+              {loading ? "Archiving..." : (
+                <>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive Product
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
+
       {/* Low Stock Products Dialog */}
       <Dialog open={lowStockDialogOpen} onOpenChange={setLowStockDialogOpen}>
         <DialogContent className="max-w-6xl max-h-[90vh] border-0 shadow-2xl">
-          <DialogHeader className="pb-4 border-b border-gray-200">
+          <DialogHeader className="pb-6 border-b border-gray-100">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200">
-                  <AlertTriangle className="h-6 w-6 text-red-600" />
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                  <Package className="h-6 w-6 text-gray-600" />
                 </div>
                 <div>
-                  <DialogTitle className="text-2xl font-bold text-gray-900">
+                  <DialogTitle className="text-2xl font-semibold text-gray-900">
                     Low Stock Products
                   </DialogTitle>
-                  <DialogDescription className="text-sm text-gray-600 mt-1">
+                  <DialogDescription className="text-sm text-gray-500 mt-1.5">
                     Products with 10 or fewer items remaining that need restocking
                   </DialogDescription>
                 </div>
               </div>
               {getLowStockProducts().length > 0 && (
-                <Badge variant="destructive" className="text-base px-4 py-1.5 bg-red-600">
+                <Badge variant="outline" className="text-sm px-3 py-1.5 bg-gray-50 text-gray-700 border-gray-200 font-medium">
                   {getLowStockProducts().length} {getLowStockProducts().length === 1 ? 'Item' : 'Items'}
                 </Badge>
               )}
@@ -2098,7 +3140,7 @@ const Sales = ({ userId }) => {
           <div className="overflow-y-auto max-h-[65vh] -mx-6 px-6">
             {getLowStockProducts().length === 0 ? (
               <div className="text-center py-16">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-50 to-emerald-50 mb-6 shadow-lg">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-50 mb-6">
                   <CheckCircle className="h-10 w-10 text-green-600" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">All Products Well Stocked!</h3>
@@ -2110,51 +3152,39 @@ const Sales = ({ userId }) => {
               <div className="py-4">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50 hover:bg-gray-50">
-                      <TableHead className="font-semibold text-gray-900">Product Name</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Category</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Current Stock</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Price</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Status</TableHead>
-                      <TableHead className="text-right font-semibold text-gray-900">Action</TableHead>
+                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-b border-gray-100">
+                      <TableHead className="font-medium text-gray-700">Product Name</TableHead>
+                      <TableHead className="font-medium text-gray-700">Category</TableHead>
+                      <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
+                      <TableHead className="font-medium text-gray-700">Price</TableHead>
+                      <TableHead className="font-medium text-gray-700">Status</TableHead>
+                      <TableHead className="text-right font-medium text-gray-700">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {getLowStockProducts()
                       .sort((a, b) => a.stock - b.stock)
                       .map((product) => (
-                        <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors">
-                          <TableCell className="font-semibold text-gray-900">{product.name}</TableCell>
+                        <TableRow key={product.id} className="hover:bg-gray-50/30 transition-colors border-b border-gray-50">
+                          <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                            <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 font-normal">
                               {product.category}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              variant={product.stock === 0 ? "destructive" : product.stock <= 5 ? "destructive" : "secondary"}
-                              className={`w-fit font-semibold ${product.stock === 0
-                                ? "bg-red-600 text-white"
-                                : product.stock <= 5
-                                  ? "bg-red-600 text-white"
-                                  : "bg-orange-100 text-black border-orange-300"
-                                }`}
-                            >
+                            <span className="text-sm font-medium text-gray-700">
                               {product.stock} {product.stock === 1 ? 'unit' : 'units'}
-                            </Badge>
+                            </span>
                           </TableCell>
                           <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
                           <TableCell>
-                            {product.stock === 0 ? (
-                              <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
-                                Out of Stock
-                              </Badge>
-                            ) : product.stock <= 5 ? (
-                              <Badge variant="destructive" className="bg-red-600 text-white font-semibold">
-                                Critical
+                            {product.stock === 0 || product.stock <= 5 ? (
+                              <Badge className="bg-red-500 text-white font-medium border-0">
+                                {product.stock === 0 ? 'Out of Stock' : 'Critical'}
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="bg-orange-100 text-black border-orange-300 font-semibold">
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium">
                                 Low Stock
                               </Badge>
                             )}
@@ -2184,11 +3214,11 @@ const Sales = ({ userId }) => {
               </div>
             )}
           </div>
-          <DialogFooter className="border-t border-gray-200 pt-4">
+          <DialogFooter className="border-t border-gray-100 pt-4">
             <Button
               variant="outline"
               onClick={() => setLowStockDialogOpen(false)}
-              className="font-medium border-gray-300 hover:bg-gray-50 hover:border-gray-400"
+              className="font-medium border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700"
             >
               Close
             </Button>
@@ -2283,24 +3313,37 @@ const Sales = ({ userId }) => {
 
       {/* Coaching Sales Dialog */}
       <Dialog open={coachingSalesDialogOpen} onOpenChange={setCoachingSalesDialogOpen}>
-        <DialogContent className="max-w-7xl max-h-[95vh] w-[95vw]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <User className="h-5 w-5 text-blue-600" />
-              Coaching Sales Details
-            </DialogTitle>
-            <DialogDescription>
-              View all coaching sales by coach with detailed transaction information
-            </DialogDescription>
+        <DialogContent className="max-w-[80vw] w-[80vw] max-h-[85vh] overflow-hidden flex flex-col [&>button]:hidden">
+          <DialogHeader className="pb-3 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                  <User className="h-5 w-5 text-gray-700" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900">Coaching Sales Details</DialogTitle>
+                  <DialogDescription className="text-sm text-gray-600 mt-0.5">
+                    View all coaching sales by coach with detailed transaction information
+                  </DialogDescription>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCoachingSalesDialogOpen(false)}
+                className="h-8 w-8 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-600" />
+              </Button>
+            </div>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Filters Row */}
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              {/* Left side - Coach Filter */}
-              <div className="flex items-center gap-4">
-                <Label htmlFor="coach-filter">By Coach:</Label>
+          <div className="space-y-4 pt-4 flex-1 overflow-hidden flex flex-col">
+            {/* Filters Row - All in One Row */}
+            <div className="flex items-center gap-4 flex-wrap bg-gradient-to-r from-gray-50 to-gray-50/50 p-3 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="coach-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">By Coach:</Label>
                 <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
-                  <SelectTrigger className="w-64">
+                  <SelectTrigger className="w-48 h-10 border-2 border-gray-300 focus:border-blue-500">
                     <SelectValue placeholder="Select a coach" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2317,11 +3360,10 @@ const Sales = ({ userId }) => {
                 </Select>
               </div>
 
-              {/* Right side - Service Type, Month and Year Filters */}
-              <div className="flex items-center gap-4 flex-wrap">
-                <Label htmlFor="coaching-service-type-filter">Service Type:</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="coaching-service-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Service:</Label>
                 <Select value={coachingServiceTypeFilter} onValueChange={setCoachingServiceTypeFilter}>
-                  <SelectTrigger className="w-40">
+                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500">
                     <SelectValue placeholder="All Types" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2330,10 +3372,18 @@ const Sales = ({ userId }) => {
                     <SelectItem value="monthly">Monthly</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
 
-                <Label htmlFor="coaching-month-filter">Month:</Label>
-                <Select value={coachingMonthFilter} onValueChange={setCoachingMonthFilter}>
-                  <SelectTrigger className="w-40">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="coaching-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
+                <Select value={coachingMonthFilter} onValueChange={(value) => {
+                  setCoachingMonthFilter(value)
+                  if (value !== "all") {
+                    setCoachingCustomDate(null)
+                    setCoachingUseCustomDate(false)
+                  }
+                }}>
+                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={coachingUseCustomDate}>
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2352,46 +3402,97 @@ const Sales = ({ userId }) => {
                     <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
 
-                <Label htmlFor="coaching-year-filter">Year:</Label>
-                <Select value={coachingYearFilter} onValueChange={setCoachingYearFilter}>
-                  <SelectTrigger className="w-32">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="coaching-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
+                <Select value={coachingYearFilter} onValueChange={(value) => {
+                  setCoachingYearFilter(value)
+                  if (value !== "all") {
+                    setCoachingCustomDate(null)
+                    setCoachingUseCustomDate(false)
+                  }
+                }}>
+                  <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={coachingUseCustomDate}>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Years</SelectItem>
-                    <SelectItem value="2025">2025</SelectItem>
-                    <SelectItem value="2024">2024</SelectItem>
-                    <SelectItem value="2023">2023</SelectItem>
-                    <SelectItem value="2022">2022</SelectItem>
-                    <SelectItem value="2021">2021</SelectItem>
-                    <SelectItem value="2020">2020</SelectItem>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Label htmlFor="coaching-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
+                <Input
+                  id="coaching-date-filter"
+                  type="date"
+                  value={coachingCustomDate ? format(coachingCustomDate, "yyyy-MM-dd") : ""}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value
+                    if (selectedDate) {
+                      const date = new Date(selectedDate + "T00:00:00")
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+
+                      if (date.getTime() <= today.getTime()) {
+                        setCoachingCustomDate(date)
+                        setCoachingUseCustomDate(true)
+                        setCoachingMonthFilter("all")
+                        setCoachingYearFilter("all")
+                      }
+                    } else {
+                      setCoachingCustomDate(null)
+                      setCoachingUseCustomDate(false)
+                    }
+                  }}
+                  className="h-10 text-sm border-2 border-gray-300 focus:border-blue-500 rounded-lg"
+                  placeholder="Select date"
+                />
+                {coachingUseCustomDate && coachingCustomDate && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      setCoachingCustomDate(null)
+                      setCoachingUseCustomDate(false)
+                    }}
+                    className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
 
             {/* Coach Member Count Display Card */}
             {selectedCoachFilter !== "all" && (
-              <Card className="border border-gray-200 bg-white">
+              <Card className="border border-gray-200 bg-white shadow-sm flex-shrink-0">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-full bg-gray-100">
-                        <Users className="h-6 w-6 text-gray-600" />
+                    <div className="flex items-center gap-4">
+                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                        <Users className="h-6 w-6 text-gray-700" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
+                        <p className="text-sm font-semibold text-gray-900">
                           {coaches.find(c => c.id.toString() === selectedCoachFilter)?.name || 'Selected Coach'}
                         </p>
-                        <p className="text-xs text-gray-600">Total Members</p>
+                        <p className="text-xs text-gray-600 font-medium mt-0.5">Total Members</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-3xl font-bold text-gray-900">
                         {getMemberCountForCoach(selectedCoachFilter)}
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-gray-600 mt-1 font-medium">
                         {getMemberCountForCoach(selectedCoachFilter) === 1 ? 'Member' : 'Members'}
                       </p>
                     </div>
@@ -2402,7 +3503,8 @@ const Sales = ({ userId }) => {
 
             {/* Sales Dashboard */}
             {(() => {
-              const filteredSales = sales.filter((sale) => {
+              // Calculate statistics based on current filters (including status filter)
+              const filteredSalesForStats = sales.filter((sale) => {
                 const isCoachingSale = sale.sale_type === 'Coaching' ||
                   sale.sale_type === 'Coach Assignment' ||
                   sale.sale_type === 'Coach'
@@ -2412,13 +3514,23 @@ const Sales = ({ userId }) => {
                   if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
                 }
 
-                if (coachingMonthFilter !== "all") {
+                // Handle custom date first (highest priority)
+                if (coachingUseCustomDate && coachingCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
+                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                  if (saleDateStr !== customDateStr) return false
+                } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
+                  // Specific month and year
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
+                } else if (coachingMonthFilter !== "all") {
                   const saleDate = new Date(sale.sale_date)
                   const saleMonth = saleDate.getMonth() + 1
                   if (saleMonth.toString() !== coachingMonthFilter) return false
-                }
-
-                if (coachingYearFilter !== "all") {
+                } else if (coachingYearFilter !== "all") {
                   const saleDate = new Date(sale.sale_date)
                   const saleYear = saleDate.getFullYear().toString()
                   if (saleYear !== coachingYearFilter) return false
@@ -2441,26 +3553,17 @@ const Sales = ({ userId }) => {
                   if (normalizedServiceType !== coachingServiceTypeFilter) return false
                 }
 
-                if (coachingStatusFilter === "active") {
-                  const isActive = assignmentDetails?.daysLeft === null ||
-                    assignmentDetails?.daysLeft === undefined ||
-                    assignmentDetails?.daysLeft >= 0
-                  return isActive
-                } else {
-                  const isExpired = assignmentDetails?.daysLeft !== null &&
-                    assignmentDetails?.daysLeft !== undefined &&
-                    assignmentDetails?.daysLeft < 0
-                  return isExpired
-                }
+                // Status filter removed - show all sales
+                return true
               })
 
-              const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-              const sessionSales = filteredSales.filter(sale => {
+              const totalSales = filteredSalesForStats.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const sessionSales = filteredSalesForStats.filter(sale => {
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 return serviceType === 'per_session' || serviceType === 'session'
               })
-              const monthlySales = filteredSales.filter(sale => {
+              const monthlySales = filteredSalesForStats.filter(sale => {
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 const normalizedType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
@@ -2471,47 +3574,47 @@ const Sales = ({ userId }) => {
               const monthlyTotal = monthlySales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
 
               return (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Card className="border border-gray-200 bg-white">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-shrink-0">
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-medium text-gray-700 mb-1">Total Sales</p>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Total Sales</p>
                           <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalSales)}</p>
-                          <p className="text-xs text-gray-600 mt-1">{filteredSales.length} transaction{filteredSales.length !== 1 ? 's' : ''}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">{filteredSalesForStats.length} transaction{filteredSalesForStats.length !== 1 ? 's' : ''}</p>
                         </div>
-                        <div className="p-2 rounded-full bg-gray-100">
-                          <TrendingUp className="h-5 w-5 text-gray-600" />
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <TrendingUp className="h-5 w-5 text-gray-700" />
                         </div>
                       </div>
                     </CardContent>
                   </Card>
 
-                  <Card className="border border-gray-200 bg-white">
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-medium text-gray-700 mb-1">Session Sales</p>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Session Sales</p>
                           <p className="text-2xl font-bold text-gray-900">{formatCurrency(sessionTotal)}</p>
-                          <p className="text-xs text-gray-600 mt-1">{sessionSales.length} sale{sessionSales.length !== 1 ? 's' : ''}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">{sessionSales.length} sale{sessionSales.length !== 1 ? 's' : ''}</p>
                         </div>
-                        <div className="p-2 rounded-full bg-gray-100">
-                          <Clock className="h-5 w-5 text-gray-600" />
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <Clock className="h-5 w-5 text-gray-700" />
                         </div>
                       </div>
                     </CardContent>
                   </Card>
 
-                  <Card className="border border-gray-200 bg-white">
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-medium text-gray-700 mb-1">Monthly Sales</p>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Monthly Sales</p>
                           <p className="text-2xl font-bold text-gray-900">{formatCurrency(monthlyTotal)}</p>
-                          <p className="text-xs text-gray-600 mt-1">{monthlySales.length} sale{monthlySales.length !== 1 ? 's' : ''}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">{monthlySales.length} sale{monthlySales.length !== 1 ? 's' : ''}</p>
                         </div>
-                        <div className="p-2 rounded-full bg-gray-100">
-                          <CalendarIcon className="h-5 w-5 text-gray-600" />
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <CalendarIcon className="h-5 w-5 text-gray-700" />
                         </div>
                       </div>
                     </CardContent>
@@ -2522,778 +3625,2765 @@ const Sales = ({ userId }) => {
             })()}
 
             {/* Active/Expired Tabs */}
-            <Tabs value={coachingStatusFilter} onValueChange={setCoachingStatusFilter} className="w-full">
-              <TabsList className="grid w-full max-w-md grid-cols-2">
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="expired">Expired</TabsTrigger>
-              </TabsList>
+            {/* Coaching Sales Table */}
+            {(() => {
+              const filteredSales = sales.filter((sale) => {
+                // Filter by coaching sales
+                const isCoachingSale = sale.sale_type === 'Coaching' ||
+                  sale.sale_type === 'Coach Assignment' ||
+                  sale.sale_type === 'Coach'
 
-              <TabsContent value="active" className="mt-4">
-                {/* Active Coaching Sales Table */}
-                {(() => {
-                  const filteredActiveSales = sales.filter((sale) => {
-                    // Filter by coaching sales
-                    const isCoachingSale = sale.sale_type === 'Coaching' ||
-                      sale.sale_type === 'Coach Assignment' ||
-                      sale.sale_type === 'Coach'
+                if (!isCoachingSale) return false
 
-                    if (!isCoachingSale) return false
+                // Filter by selected coach if not "all"
+                if (selectedCoachFilter !== "all") {
+                  if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+                }
 
-                    // Filter by selected coach if not "all"
-                    if (selectedCoachFilter !== "all") {
-                      if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
-                    }
+                // Handle custom date first (highest priority)
+                if (coachingUseCustomDate && coachingCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
+                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                  if (saleDateStr !== customDateStr) return false
+                } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
+                  // Specific month and year
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
+                } else if (coachingMonthFilter !== "all") {
+                  // Filter by month if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
+                  if (saleMonth.toString() !== coachingMonthFilter) return false
+                } else if (coachingYearFilter !== "all") {
+                  // Filter by year if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== coachingYearFilter) return false
+                }
 
-                    // Filter by month if not "all"
-                    if (coachingMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
-                      if (saleMonth.toString() !== coachingMonthFilter) return false
-                    }
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
 
-                    // Filter by year if not "all"
-                    if (coachingYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== coachingYearFilter) return false
-                    }
+                // Filter out package sales and N/A entries (broken data)
+                const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                  serviceType === 'package' ? 'package' : 'monthly'
 
-                    const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                // Exclude package sales
+                if (normalizedServiceType === 'package') return false
 
-                    // Filter out package sales and N/A entries (broken data)
-                    const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
-                    const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
-                      serviceType === 'package' ? 'package' : 'monthly'
+                // Exclude entries with N/A end dates (broken data)
+                if (!assignmentDetails?.endDate) return false
 
-                    // Exclude package sales
-                    if (normalizedServiceType === 'package') return false
+                if (coachingServiceTypeFilter !== "all") {
+                  if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                }
 
-                    // Exclude entries with N/A end dates (broken data)
-                    if (!assignmentDetails?.endDate) return false
+                // Status filter removed - show all sales
+                return true
+              })
 
-                    if (coachingServiceTypeFilter !== "all") {
-                      if (normalizedServiceType !== coachingServiceTypeFilter) return false
-                    }
+              const totalPages = Math.ceil(filteredSales.length / coachingItemsPerPage)
+              const startIndex = (coachingCurrentPage - 1) * coachingItemsPerPage
+              const endIndex = startIndex + coachingItemsPerPage
+              const paginatedSales = filteredSales.slice(startIndex, endIndex)
 
-                    // Filter by active status
-                    // Active: daysLeft is null, undefined, or >= 0
-                    const isActive = assignmentDetails?.daysLeft === null ||
-                      assignmentDetails?.daysLeft === undefined ||
-                      assignmentDetails?.daysLeft >= 0
-
-                    return isActive
-                  })
-
-                  const totalPages = Math.ceil(filteredActiveSales.length / coachingItemsPerPage)
-                  const startIndex = (coachingCurrentPage - 1) * coachingItemsPerPage
-                  const endIndex = startIndex + coachingItemsPerPage
-                  const paginatedSales = filteredActiveSales.slice(startIndex, endIndex)
-
-                  return (
-                    <>
-                      <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead>Member</TableHead>
-                              <TableHead>Service Type</TableHead>
-                              <TableHead>Coach</TableHead>
-                              <TableHead>Amount</TableHead>
-                              <TableHead>Payment Method</TableHead>
-                              <TableHead>Receipt #</TableHead>
-                              <TableHead>End Date</TableHead>
-                              <TableHead>Days Left</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {paginatedSales.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                  <p>No active coaching sales found</p>
+              return (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg shadow-sm bg-white">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-b border-gray-200">
+                          <TableHead className="font-semibold text-gray-900">Date</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Name</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Service Type</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Coach</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Amount</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Payment Method</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Receipt #</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedSales.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                              <div className="flex flex-col items-center justify-center">
+                                <div className="p-3 rounded-full bg-gray-100 mb-3">
+                                  <User className="h-8 w-8 text-gray-400" />
+                                </div>
+                                <p className="text-lg font-medium text-gray-600 mb-1">No coaching sales found</p>
+                                <p className="text-sm text-gray-500">Try adjusting your filters</p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          paginatedSales.map((sale) => {
+                            const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                            return (
+                              <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
+                                <TableCell className="font-medium text-gray-900 py-3">
+                                  {formatDateOnly(sale.sale_date)}
+                                </TableCell>
+                                <TableCell className="text-gray-700 py-3">
+                                  {sale.user_name || 'N/A'}
+                                </TableCell>
+                                <TableCell className="py-3">
+                                  {(() => {
+                                    const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                                    const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
+                                    return (
+                                      <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300 font-medium">
+                                        {displayType}
+                                      </Badge>
+                                    )
+                                  })()}
+                                </TableCell>
+                                <TableCell className="py-3">
+                                  {sale.coach_name ? (
+                                    <Badge variant="secondary" className="font-medium">{sale.coach_name}</Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">N/A</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-semibold text-gray-900 py-3">{formatCurrency(sale.total_amount)}</TableCell>
+                                <TableCell className="py-3">
+                                  <Badge variant="outline" className="font-medium">{sale.payment_method || 'Cash'}</Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-gray-600 font-mono py-3">
+                                  {sale.receipt_number || 'N/A'}
                                 </TableCell>
                               </TableRow>
-                            ) : (
-                              paginatedSales.map((sale) => {
-                                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
-                                return (
-                                  <TableRow key={sale.id}>
-                                    <TableCell className="font-medium">
-                                      {formatDateOnly(sale.sale_date)}
-                                    </TableCell>
-                                    <TableCell>
-                                      {sale.user_name || 'N/A'}
-                                    </TableCell>
-                                    <TableCell>
-                                      {(() => {
-                                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
-                                        const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
-                                        return (
-                                          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
-                                            {displayType}
-                                          </Badge>
-                                        )
-                                      })()}
-                                    </TableCell>
-                                    <TableCell>
-                                      {sale.coach_name ? (
-                                        <Badge variant="secondary">{sale.coach_name}</Badge>
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">N/A</span>
-                                      )}
-                                    </TableCell>
-                                    <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                                    <TableCell>
-                                      <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">
-                                      {sale.receipt_number || 'N/A'}
-                                    </TableCell>
-                                    <TableCell className="text-sm">
-                                      {assignmentDetails?.endDate
-                                        ? formatDateOnly(assignmentDetails.endDate)
-                                        : 'N/A'}
-                                    </TableCell>
-                                    <TableCell>
-                                      {assignmentDetails?.daysLeft !== null && assignmentDetails?.daysLeft !== undefined ? (
-                                        <span className={`text-sm font-medium ${assignmentDetails.daysLeft < 7 && assignmentDetails.daysLeft >= 0
-                                          ? 'text-red-600'
-                                          : 'text-green-600'
-                                          }`}>
-                                          {assignmentDetails.daysLeft} day{assignmentDetails.daysLeft !== 1 ? 's' : ''}
-                                        </span>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground">N/A</span>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })
-                            )}
-                          </TableBody>
-                        </Table>
+                            )
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {filteredSales.length > 0 && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 flex-shrink-0">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {startIndex + 1} to {Math.min(endIndex, filteredSales.length)} of {filteredSales.length} results
                       </div>
-
-                      {/* Pagination Controls */}
-                      {filteredActiveSales.length > 0 && (
-                        <div className="flex items-center justify-between mt-4">
-                          <div className="text-sm text-muted-foreground">
-                            Showing {startIndex + 1} to {Math.min(endIndex, filteredActiveSales.length)} of {filteredActiveSales.length} results
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCoachingCurrentPage(prev => Math.max(1, prev - 1))}
-                              disabled={coachingCurrentPage === 1}
-                            >
-                              <ChevronLeft className="h-4 w-4" />
-                              Previous
-                            </Button>
-                            <div className="flex items-center gap-1">
-                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                let pageNum
-                                if (totalPages <= 5) {
-                                  pageNum = i + 1
-                                } else if (coachingCurrentPage <= 3) {
-                                  pageNum = i + 1
-                                } else if (coachingCurrentPage >= totalPages - 2) {
-                                  pageNum = totalPages - 4 + i
-                                } else {
-                                  pageNum = coachingCurrentPage - 2 + i
-                                }
-                                return (
-                                  <Button
-                                    key={pageNum}
-                                    variant={coachingCurrentPage === pageNum ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => setCoachingCurrentPage(pageNum)}
-                                    className="w-10"
-                                  >
-                                    {pageNum}
-                                  </Button>
-                                )
-                              })}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCoachingCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                              disabled={coachingCurrentPage === totalPages}
-                            >
-                              Next
-                              <ChevronRight className="h-4 w-4" />
-                            </Button>
-                          </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCoachingCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={coachingCurrentPage === 1}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Previous
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum
+                            if (totalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (coachingCurrentPage <= 3) {
+                              pageNum = i + 1
+                            } else if (coachingCurrentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i
+                            } else {
+                              pageNum = coachingCurrentPage - 2 + i
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={coachingCurrentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCoachingCurrentPage(pageNum)}
+                                className="w-10"
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
                         </div>
-                      )}
-                    </>
-                  )
-                })()}
-              </TabsContent>
-
-              <TabsContent value="expired" className="mt-4">
-                {/* Expired Coaching Sales Table */}
-                {(() => {
-                  const filteredExpiredSales = sales.filter((sale) => {
-                    // Filter by coaching sales
-                    const isCoachingSale = sale.sale_type === 'Coaching' ||
-                      sale.sale_type === 'Coach Assignment' ||
-                      sale.sale_type === 'Coach'
-
-                    if (!isCoachingSale) return false
-
-                    // Filter by selected coach if not "all"
-                    if (selectedCoachFilter !== "all") {
-                      if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
-                    }
-
-                    // Filter by month if not "all"
-                    if (coachingMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
-                      if (saleMonth.toString() !== coachingMonthFilter) return false
-                    }
-
-                    // Filter by year if not "all"
-                    if (coachingYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== coachingYearFilter) return false
-                    }
-
-                    const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
-
-                    // Filter out package sales and N/A entries (broken data)
-                    const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
-                    const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
-                      serviceType === 'package' ? 'package' : 'monthly'
-
-                    // Exclude package sales
-                    if (normalizedServiceType === 'package') return false
-
-                    // Exclude entries with N/A end dates (broken data)
-                    if (!assignmentDetails?.endDate) return false
-
-                    if (coachingServiceTypeFilter !== "all") {
-                      if (normalizedServiceType !== coachingServiceTypeFilter) return false
-                    }
-
-                    // Filter by expired status
-                    // Expired: daysLeft < 0
-                    const isExpired = assignmentDetails?.daysLeft !== null &&
-                      assignmentDetails?.daysLeft !== undefined &&
-                      assignmentDetails?.daysLeft < 0
-
-                    return isExpired
-                  })
-
-                  const totalPages = Math.ceil(filteredExpiredSales.length / coachingItemsPerPage)
-                  const startIndex = (coachingCurrentPage - 1) * coachingItemsPerPage
-                  const endIndex = startIndex + coachingItemsPerPage
-                  const paginatedSales = filteredExpiredSales.slice(startIndex, endIndex)
-
-                  return (
-                    <>
-                      <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead>Member</TableHead>
-                              <TableHead>Service Type</TableHead>
-                              <TableHead>Coach</TableHead>
-                              <TableHead>Amount</TableHead>
-                              <TableHead>Payment Method</TableHead>
-                              <TableHead>Receipt #</TableHead>
-                              <TableHead>End Date</TableHead>
-                              <TableHead>Days Expired</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {paginatedSales.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                                  <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                                  <p>No expired coaching sales found</p>
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              paginatedSales.map((sale) => {
-                                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
-                                return (
-                                  <TableRow key={sale.id}>
-                                    <TableCell className="font-medium">
-                                      {new Date(sale.sale_date).toLocaleDateString()}
-                                    </TableCell>
-                                    <TableCell>
-                                      {sale.user_name || 'N/A'}
-                                    </TableCell>
-                                    <TableCell>
-                                      {(() => {
-                                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
-                                        const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
-                                        return (
-                                          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
-                                            {displayType}
-                                          </Badge>
-                                        )
-                                      })()}
-                                    </TableCell>
-                                    <TableCell>
-                                      {sale.coach_name ? (
-                                        <Badge variant="secondary">{sale.coach_name}</Badge>
-                                      ) : (
-                                        <span className="text-xs text-muted-foreground">N/A</span>
-                                      )}
-                                    </TableCell>
-                                    <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                                    <TableCell>
-                                      <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">
-                                      {sale.receipt_number || 'N/A'}
-                                    </TableCell>
-                                    <TableCell className="text-sm">
-                                      {assignmentDetails?.endDate
-                                        ? formatDateOnly(assignmentDetails.endDate)
-                                        : 'N/A'}
-                                    </TableCell>
-                                    <TableCell>
-                                      {assignmentDetails?.daysLeft !== null && assignmentDetails?.daysLeft !== undefined && assignmentDetails?.daysLeft < 0 ? (
-                                        <span className="text-sm font-medium text-red-600">
-                                          Expired {Math.abs(assignmentDetails.daysLeft)} day{Math.abs(assignmentDetails.daysLeft) !== 1 ? 's' : ''} ago
-                                        </span>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground">N/A</span>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })
-                            )}
-                          </TableBody>
-                        </Table>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCoachingCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={coachingCurrentPage === totalPages}
+                        >
+                          Next
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
                       </div>
-
-                      {/* Pagination Controls */}
-                      {filteredExpiredSales.length > 0 && (
-                        <div className="flex items-center justify-between mt-4">
-                          <div className="text-sm text-muted-foreground">
-                            Showing {startIndex + 1} to {Math.min(endIndex, filteredExpiredSales.length)} of {filteredExpiredSales.length} results
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCoachingCurrentPage(prev => Math.max(1, prev - 1))}
-                              disabled={coachingCurrentPage === 1}
-                            >
-                              <ChevronLeft className="h-4 w-4" />
-                              Previous
-                            </Button>
-                            <div className="flex items-center gap-1">
-                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                let pageNum
-                                if (totalPages <= 5) {
-                                  pageNum = i + 1
-                                } else if (coachingCurrentPage <= 3) {
-                                  pageNum = i + 1
-                                } else if (coachingCurrentPage >= totalPages - 2) {
-                                  pageNum = totalPages - 4 + i
-                                } else {
-                                  pageNum = coachingCurrentPage - 2 + i
-                                }
-                                return (
-                                  <Button
-                                    key={pageNum}
-                                    variant={coachingCurrentPage === pageNum ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => setCoachingCurrentPage(pageNum)}
-                                    className="w-10"
-                                  >
-                                    {pageNum}
-                                  </Button>
-                                )
-                              })}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setCoachingCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                              disabled={coachingCurrentPage === totalPages}
-                            >
-                              Next
-                              <ChevronRight className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
-              </TabsContent>
-            </Tabs>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
-          <DialogFooter>
-            <Button onClick={() => setCoachingSalesDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Walk-in Sales Dialog */}
-      <Dialog open={walkinSalesDialogOpen} onOpenChange={setWalkinSalesDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5 text-blue-600" />
-              Walk-in Sales Details
-            </DialogTitle>
-            <DialogDescription>
-              View all walk-in and guest/day pass sales with detailed transaction information
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Walk-in Sales Table */}
-            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Guest Name</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment Method</TableHead>
-                    <TableHead>Receipt #</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sales
-                    .filter((sale) => {
-                      // Filter by walk-in sales
-                      const isWalkinSale = sale.sale_type === 'Walk-in' ||
-                        sale.sale_type === 'Walkin' ||
-                        sale.sale_type === 'Guest' ||
-                        sale.sale_type === 'Day Pass'
-
-                      return isWalkinSale
-                    })
-                    .map((sale) => (
-                      <TableRow key={sale.id}>
-                        <TableCell className="font-medium">
-                          {new Date(sale.sale_date).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          {sale.guest_name || sale.user_name || 'N/A'}
-                        </TableCell>
-                        <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {sale.receipt_number || 'N/A'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-              {sales.filter(sale => sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass').length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <ShoppingBag className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No walk-in sales found</p>
+      {/* Total Sales Dialog */}
+      <Dialog open={totalSalesDialogOpen} onOpenChange={setTotalSalesDialogOpen}>
+        <DialogContent className="max-w-[90vw] w-[90vw] max-h-[92vh] h-[92vh] flex flex-col p-0 gap-0 rounded-xl overflow-hidden [&>button]:hidden">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b bg-gradient-to-r from-blue-50/50 to-indigo-50/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100/60">
+                  <Receipt className="h-5 w-5 text-blue-700/80" />
                 </div>
-              )}
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900">All Sales Details</DialogTitle>
+                  <DialogDescription className="text-sm text-gray-600 mt-1">
+                    Comprehensive view of all sales
+                  </DialogDescription>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTotalSalesDialogOpen(false)}
+                className="h-8 w-8 rounded-full hover:bg-gray-200/80 transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-600" />
+              </Button>
             </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden flex flex-col px-6 pt-4 pb-6 space-y-4">
+            {/* Filters Row */}
+            <div className="flex items-center gap-3 flex-wrap pb-3 border-b">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="search"
+                  placeholder="Search sales..."
+                  className="pl-10 h-9 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400"
+                  value={totalSalesSearchQuery}
+                  onChange={(e) => setTotalSalesSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select value={totalSalesTypeFilter} onValueChange={setTotalSalesTypeFilter}>
+                  <SelectTrigger className="w-[140px] h-9 text-sm">
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="Product">Product</SelectItem>
+                    <SelectItem value="Subscription">Subscription</SelectItem>
+                    <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Subscription Type Filter - Only show when Subscription is selected */}
+                {totalSalesTypeFilter === "Subscription" && (
+                  <Select value={totalSalesSubscriptionTypeFilter} onValueChange={(value) => {
+                    setTotalSalesSubscriptionTypeFilter(value)
+                    // Check if selected plan is Day Pass
+                    const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === value)
+                    const isDayPassPlan = selectedPlan && (
+                      selectedPlan.name.toLowerCase().includes('day pass') ||
+                      selectedPlan.name.toLowerCase().includes('daypass') ||
+                      selectedPlan.name.toLowerCase().includes('walk-in') ||
+                      selectedPlan.name.toLowerCase().includes('walkin') ||
+                      selectedPlan.name.toLowerCase().includes('guest') ||
+                      (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                      selectedPlan.name.toLowerCase() === 'day pass'
+                    )
+                    if (!isDayPassPlan && value !== "all") {
+                      setDayPassMethodFilter("all")
+                      setDayPassTypeFilter("all")
+                    }
+                  }}>
+                    <SelectTrigger className="w-[200px] h-9 text-sm">
+                      <SelectValue placeholder="All Plans" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Plans</SelectItem>
+                      {totalSalesSubscriptionPlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id.toString()}>
+                          {plan.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Day Pass Type Filter - Only show when Subscription > Day Pass plan is selected */}
+                {totalSalesTypeFilter === "Subscription" && (() => {
+                  const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter)
+                  const isDayPassPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('day pass') ||
+                    selectedPlan.name.toLowerCase().includes('daypass') ||
+                    selectedPlan.name.toLowerCase().includes('walk-in') ||
+                    selectedPlan.name.toLowerCase().includes('walkin') ||
+                    selectedPlan.name.toLowerCase().includes('guest') ||
+                    (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                    selectedPlan.name.toLowerCase() === 'day pass'
+                  )
+                  return isDayPassPlan
+                })() && (
+                    <Select value={dayPassTypeFilter} onValueChange={setDayPassTypeFilter}>
+                      <SelectTrigger className="w-[160px] h-9 text-sm">
+                        <SelectValue placeholder="All Types" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="day_pass">Subscription</SelectItem>
+                        <SelectItem value="guest">Guest</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+
+                {/* Category Filter - Only show when Product is selected */}
+                {totalSalesTypeFilter === "Product" && (
+                  <Select value={totalSalesCategoryFilter} onValueChange={(value) => {
+                    setTotalSalesCategoryFilter(value)
+                    setTotalSalesProductFilter("all") // Reset product filter when category changes
+                  }}>
+                    <SelectTrigger className="w-[160px] h-9 text-sm">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {getUniqueCategories().map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Product Filter - Only show when Product is selected */}
+                {totalSalesTypeFilter === "Product" && (
+                  <Select value={totalSalesProductFilter} onValueChange={setTotalSalesProductFilter}>
+                    <SelectTrigger className="w-[180px] h-9 text-sm">
+                      <SelectValue placeholder="All Products" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      {products
+                        .filter(p => totalSalesCategoryFilter === "all" || p.category === totalSalesCategoryFilter)
+                        .map((product) => (
+                          <SelectItem key={product.id} value={product.id.toString()}>
+                            {product.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Coach Filter - Only show when Coach Assignment is selected */}
+                {totalSalesTypeFilter === "Coach Assignment" && (
+                  <Select value={totalSalesCoachFilter} onValueChange={setTotalSalesCoachFilter}>
+                    <SelectTrigger className="w-[180px] h-9 text-sm">
+                      <SelectValue placeholder="All Coaches" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Coaches</SelectItem>
+                      {totalSalesCoaches.map((coach) => (
+                        <SelectItem key={coach.id} value={coach.id.toString()}>
+                          {coach.name || coach.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Service Type Filter - Only show when Coach Assignment is selected */}
+                {totalSalesTypeFilter === "Coach Assignment" && (
+                  <Select value={totalSalesServiceTypeFilter} onValueChange={setTotalSalesServiceTypeFilter}>
+                    <SelectTrigger className="w-[140px] h-9 text-sm">
+                      <SelectValue placeholder="All Services" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Services</SelectItem>
+                      <SelectItem value="session">Session</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+
+                <Select value={totalSalesMonthFilter} onValueChange={setTotalSalesMonthFilter}>
+                  <SelectTrigger className="w-[130px] h-9 text-sm">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Months</SelectItem>
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={totalSalesYearFilter} onValueChange={setTotalSalesYearFilter}>
+                  <SelectTrigger className="w-[100px] h-9 text-sm">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Years</SelectItem>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={totalSalesCustomDate ? format(totalSalesCustomDate, "yyyy-MM-dd") : ""}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+
+                        if (date.getTime() <= today.getTime()) {
+                          setTotalSalesCustomDate(date)
+                          setTotalSalesUseCustomDate(true)
+                          setTotalSalesMonthFilter("all")
+                          setTotalSalesYearFilter("all")
+                        }
+                      } else {
+                        setTotalSalesCustomDate(null)
+                        setTotalSalesUseCustomDate(false)
+                      }
+                    }}
+                    className="h-9 text-sm w-[140px] border-gray-300"
+                    placeholder="Select date"
+                  />
+                  {totalSalesUseCustomDate && totalSalesCustomDate && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        setTotalSalesCustomDate(null)
+                        setTotalSalesUseCustomDate(false)
+                      }}
+                      className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Sales Dashboard Summary Cards */}
+            {(() => {
+              const filteredSales = sales.filter((sale) => {
+                // Filter by search query
+                const matchesSearch = totalSalesSearchQuery === "" ||
+                  sale.sale_type?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.plan_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.user_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.guest_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.coach_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
+                    (detail.product && detail.product.name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase())) ||
+                    (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()))
+                  ))
+
+                // Filter by sale type
+                let matchesSaleType = true
+                if (totalSalesTypeFilter !== "all") {
+                  if (totalSalesTypeFilter === "Product") {
+                    // Check if sale has products or is a product sale
+                    const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                    const isProductSale = sale.sale_type === 'Product'
+
+                    if (!hasProducts && !isProductSale) {
+                      matchesSaleType = false
+                    } else {
+                      // Filter by category if selected
+                      if (totalSalesCategoryFilter !== "all") {
+                        const hasCategoryMatch = sale.sales_details?.some(detail => {
+                          if (!detail.product_id) return false
+                          const product = detail.product || products.find(p => p.id === detail.product_id)
+                          return product?.category === totalSalesCategoryFilter
+                        })
+                        if (!hasCategoryMatch) {
+                          matchesSaleType = false
+                        }
+                      }
+
+                      // Filter by product if selected
+                      if (totalSalesProductFilter !== "all" && matchesSaleType) {
+                        const hasProductMatch = sale.sales_details?.some(detail =>
+                          detail.product_id && detail.product_id.toString() === totalSalesProductFilter
+                        )
+                        if (!hasProductMatch) {
+                          matchesSaleType = false
+                        }
+                      }
+                    }
+                  } else if (totalSalesTypeFilter === "Subscription") {
+                    // Must be a subscription sale or Day Pass guest sale
+                    if (sale.sale_type === 'Subscription') {
+                      // It's a subscription sale, now check subscription type filter
+                      if (totalSalesSubscriptionTypeFilter !== "all") {
+                        // Check if this sale's plan_id matches the selected plan
+                        const salePlanId = sale.plan_id?.toString()
+                        const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                        if (salePlanId !== selectedPlanId) {
+                          // Also check sales_details for nested subscription plans
+                          const matchesInDetails = sale.sales_details && Array.isArray(sale.sales_details) &&
+                            sale.sales_details.some(detail =>
+                              detail.subscription?.plan_id?.toString() === selectedPlanId
+                            )
+
+                          if (!matchesInDetails) {
+                            matchesSaleType = false
+                          } else {
+                            // Matches in details, check Day Pass type filter
+                            const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                            const isDayPassPlan = selectedPlan && (
+                              selectedPlan.name.toLowerCase().includes('day pass') ||
+                              selectedPlan.name.toLowerCase().includes('daypass') ||
+                              selectedPlan.name.toLowerCase().includes('walk-in') ||
+                              selectedPlan.name.toLowerCase().includes('walkin') ||
+                              selectedPlan.name.toLowerCase().includes('guest') ||
+                              (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                              selectedPlan.name.toLowerCase() === 'day pass'
+                            )
+
+                            if (isDayPassPlan) {
+                              // Apply Day Pass type filter (Day Pass vs Guest)
+                              if (dayPassTypeFilter === "guest") {
+                                matchesSaleType = false // This is a subscription sale, not a guest sale
+                              }
+                              // Apply method filter
+                              if (dayPassMethodFilter === "without_account") {
+                                matchesSaleType = false // Subscription sales always have account
+                              }
+                            }
+                          }
+                        } else {
+                          // Plan matches, check if it's a Day Pass plan and apply filters
+                          const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                          const isDayPassPlan = selectedPlan && (
+                            selectedPlan.name.toLowerCase().includes('day pass') ||
+                            selectedPlan.name.toLowerCase().includes('daypass') ||
+                            selectedPlan.name.toLowerCase().includes('walk-in') ||
+                            selectedPlan.name.toLowerCase().includes('walkin') ||
+                            selectedPlan.name.toLowerCase().includes('guest') ||
+                            (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                            selectedPlan.name.toLowerCase() === 'day pass'
+                          )
+
+                          if (isDayPassPlan) {
+                            // Apply Day Pass type filter (Day Pass vs Guest)
+                            if (dayPassTypeFilter === "guest") {
+                              matchesSaleType = false // This is a subscription sale, not a guest sale
+                            }
+                            // Apply method filter
+                            if (dayPassMethodFilter === "without_account") {
+                              matchesSaleType = false // Subscription sales always have account
+                            }
+                          }
+                        }
+                      }
+                      // If "all", show all subscription sales (no additional filtering)
+                    } else {
+                      // Check if it's a Day Pass guest sale (Guest, Walk-in, etc.) - include when Day Pass plan is selected
+                      if (totalSalesSubscriptionTypeFilter !== "all") {
+                        const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter.toString())
+                        const isDayPassPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('day pass') ||
+                          selectedPlan.name.toLowerCase().includes('daypass') ||
+                          selectedPlan.name.toLowerCase().includes('walk-in') ||
+                          selectedPlan.name.toLowerCase().includes('walkin') ||
+                          selectedPlan.name.toLowerCase().includes('guest') ||
+                          (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                          selectedPlan.name.toLowerCase() === 'day pass'
+                        )
+
+                        if (isDayPassPlan) {
+                          // Check if this is a Guest/Walk-in/Day Pass sale
+                          const isGuestSale = sale.sale_type === 'Guest' ||
+                            sale.sale_type === 'Walk-in' ||
+                            sale.sale_type === 'Walkin' ||
+                            sale.sale_type === 'Day Pass' ||
+                            sale.guest_name
+
+                          if (isGuestSale) {
+                            // Check if plan_id matches (if available), or include all Guest sales for Day Pass plan
+                            const salePlanId = sale.plan_id?.toString()
+                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                            if (salePlanId && salePlanId !== selectedPlanId) {
+                              matchesSaleType = false
+                            } else {
+                              // Apply Day Pass type filter (Day Pass vs Guest)
+                              if (dayPassTypeFilter === "day_pass") {
+                                matchesSaleType = false // This is a guest sale, not a Day Pass subscription
+                              }
+                              // Additional filter for day pass method
+                              if (dayPassMethodFilter !== "all") {
+                                if (dayPassMethodFilter === "with_account") {
+                                  matchesSaleType = sale.user_id !== null && sale.user_id !== undefined
+                                } else if (dayPassMethodFilter === "without_account") {
+                                  matchesSaleType = sale.user_id === null || sale.user_id === undefined
+                                }
+                              }
+                            }
+                          } else {
+                            matchesSaleType = false
+                          }
+                        } else {
+                          matchesSaleType = false
+                        }
+                      } else {
+                        matchesSaleType = false
+                      }
+                    }
+                  } else if (totalSalesTypeFilter === "Coach Assignment") {
+                    const isCoachingSale = sale.sale_type === 'Coach Assignment' ||
+                      sale.sale_type === 'Coaching' ||
+                      sale.sale_type === 'Coach'
+
+                    if (!isCoachingSale) {
+                      matchesSaleType = false
+                    } else {
+                      // Filter by coach if selected
+                      if (totalSalesCoachFilter !== "all") {
+                        if (!sale.coach_id || sale.coach_id.toString() !== totalSalesCoachFilter) {
+                          matchesSaleType = false
+                        }
+                      }
+
+                      // Filter by service type if selected
+                      if (totalSalesServiceTypeFilter !== "all" && matchesSaleType) {
+                        // Normalize service type from sale data
+                        const serviceType = sale.service_type || sale.coaching_type || ''
+                        const normalizedServiceType = serviceType.toLowerCase().includes('session') ? 'session' :
+                          serviceType.toLowerCase().includes('monthly') ? 'monthly' : ''
+
+                        if (normalizedServiceType !== totalSalesServiceTypeFilter) {
+                          matchesSaleType = false
+                        }
+                      }
+                    }
+                  } else {
+                    matchesSaleType = sale.sale_type === totalSalesTypeFilter
+                  }
+                }
+
+                // Filter by month
+                if (totalSalesMonthFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== totalSalesMonthFilter) return false
+                }
+
+                // Filter by year
+                if (totalSalesYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== totalSalesYearFilter) return false
+                }
+
+                // Filter by custom date
+                if (totalSalesUseCustomDate && totalSalesCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  saleDate.setHours(0, 0, 0, 0)
+                  const customDate = new Date(totalSalesCustomDate)
+                  customDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const customDateStr = customDate.toISOString().split('T')[0]
+                  if (saleDateStr !== customDateStr) return false
+                }
+
+                return matchesSearch && matchesSaleType
+              })
+
+              const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const productSales = filteredSales.filter(s => s.sale_type === 'Product')
+              // Subscription sales - includes regular subscriptions and Day Pass subscriptions/guest sales when filtered
+              const subscriptionSales = filteredSales.filter(s => {
+                if (s.sale_type === 'Subscription') return true
+                // Include Day Pass guest sales when Subscription > Day Pass is selected
+                if (totalSalesTypeFilter === "Subscription" && totalSalesSubscriptionTypeFilter === "day_pass") {
+                  return s.sale_type === 'Walk-in' || s.sale_type === 'Walkin' || s.sale_type === 'Guest' || s.sale_type === 'Day Pass' || s.guest_name
+                }
+                return false
+              })
+              const coachingSales = filteredSales.filter(s =>
+                s.sale_type === 'Coaching' || s.sale_type === 'Coach Assignment' || s.sale_type === 'Coach'
+              )
+              // Day Pass sales - includes both guest sales and Day Pass subscription sales
+              const dayPassSales = filteredSales.filter(s => {
+                // Day Pass guest sales
+                if (s.sale_type === 'Walk-in' || s.sale_type === 'Walkin' || s.sale_type === 'Guest' || s.sale_type === 'Day Pass' || s.guest_name) {
+                  return true
+                }
+                // Day Pass subscription sales
+                if (s.sale_type === 'Subscription') {
+                  return (s.plan_name && (
+                    s.plan_name.toLowerCase().includes('day pass') ||
+                    s.plan_name.toLowerCase().includes('daypass') ||
+                    s.plan_name.toLowerCase().includes('walk-in') ||
+                    s.plan_name.toLowerCase().includes('walkin')
+                  )) || (s.sales_details && Array.isArray(s.sales_details) && s.sales_details.some(detail =>
+                    detail.subscription?.plan_name && (
+                      detail.subscription.plan_name.toLowerCase().includes('day pass') ||
+                      detail.subscription.plan_name.toLowerCase().includes('daypass') ||
+                      detail.subscription.plan_name.toLowerCase().includes('walk-in') ||
+                      detail.subscription.plan_name.toLowerCase().includes('walkin')
+                    )
+                  ))
+                }
+                return false
+              })
+
+              const productTotal = productSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              const dayPassTotal = dayPassSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+              return (
+                <div className="grid grid-cols-5 gap-3">
+                  <Card className="border-2 border-blue-400/60 bg-gradient-to-br from-blue-50/40 to-indigo-50/20 shadow-sm hover:shadow transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Total</p>
+                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(totalSales)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{filteredSales.length} transaction{filteredSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-blue-100/60 ml-2 flex-shrink-0">
+                          <Receipt className="h-4 w-4 text-blue-700/80" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Product</p>
+                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(productTotal)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{productSales.length} sale{productSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
+                          <ShoppingCart className="h-4 w-4 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Subscription</p>
+                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(subscriptionTotal)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{subscriptionSales.length} sale{subscriptionSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
+                          <CreditCard className="h-4 w-4 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Coaching</p>
+                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(coachingTotal)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{coachingSales.length} sale{coachingSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
+                          <UserCheck className="h-4 w-4 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Day Pass</p>
+                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(dayPassTotal)}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{dayPassSales.length} sale{dayPassSales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
+                          <Ticket className="h-4 w-4 text-gray-600" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            })()}
+
+            {/* All Sales Table */}
+            {(() => {
+              const filteredSales = sales.filter((sale) => {
+                // Filter by search query
+                const matchesSearch = totalSalesSearchQuery === "" ||
+                  sale.sale_type?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.plan_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.user_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.guest_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  sale.coach_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                  (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
+                    (detail.product && detail.product.name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase())) ||
+                    (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()))
+                  ))
+
+                // Filter by sale type
+                let matchesSaleType = true
+                if (totalSalesTypeFilter !== "all") {
+                  if (totalSalesTypeFilter === "Product") {
+                    // Check if sale has products or is a product sale
+                    const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                    const isProductSale = sale.sale_type === 'Product'
+
+                    if (!hasProducts && !isProductSale) {
+                      matchesSaleType = false
+                    } else {
+                      // Filter by category if selected
+                      if (totalSalesCategoryFilter !== "all") {
+                        const hasCategoryMatch = sale.sales_details?.some(detail => {
+                          if (!detail.product_id) return false
+                          const product = detail.product || products.find(p => p.id === detail.product_id)
+                          return product?.category === totalSalesCategoryFilter
+                        })
+                        if (!hasCategoryMatch) {
+                          matchesSaleType = false
+                        }
+                      }
+
+                      // Filter by product if selected
+                      if (totalSalesProductFilter !== "all" && matchesSaleType) {
+                        const hasProductMatch = sale.sales_details?.some(detail =>
+                          detail.product_id && detail.product_id.toString() === totalSalesProductFilter
+                        )
+                        if (!hasProductMatch) {
+                          matchesSaleType = false
+                        }
+                      }
+                    }
+                  } else if (totalSalesTypeFilter === "Subscription") {
+                    // Must be a subscription sale or Day Pass guest sale
+                    if (sale.sale_type === 'Subscription') {
+                      // It's a subscription sale, now check subscription type filter
+                      if (totalSalesSubscriptionTypeFilter !== "all") {
+                        // Check if this sale's plan_id matches the selected plan
+                        const salePlanId = sale.plan_id?.toString()
+                        const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                        if (salePlanId !== selectedPlanId) {
+                          // Also check sales_details for nested subscription plans
+                          const matchesInDetails = sale.sales_details && Array.isArray(sale.sales_details) &&
+                            sale.sales_details.some(detail =>
+                              detail.subscription?.plan_id?.toString() === selectedPlanId
+                            )
+
+                          if (!matchesInDetails) {
+                            matchesSaleType = false
+                          } else {
+                            // Matches in details, check Day Pass type filter
+                            const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                            const isDayPassPlan = selectedPlan && (
+                              selectedPlan.name.toLowerCase().includes('day pass') ||
+                              selectedPlan.name.toLowerCase().includes('daypass') ||
+                              selectedPlan.name.toLowerCase().includes('walk-in') ||
+                              selectedPlan.name.toLowerCase().includes('walkin') ||
+                              selectedPlan.name.toLowerCase().includes('guest') ||
+                              (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                              selectedPlan.name.toLowerCase() === 'day pass'
+                            )
+
+                            if (isDayPassPlan) {
+                              // Apply Day Pass type filter (Day Pass vs Guest)
+                              if (dayPassTypeFilter === "guest") {
+                                matchesSaleType = false // This is a subscription sale, not a guest sale
+                              }
+                              // Apply method filter
+                              if (dayPassMethodFilter === "without_account") {
+                                matchesSaleType = false // Subscription sales always have account
+                              }
+                            }
+                          }
+                        } else {
+                          // Plan matches, check if it's a Day Pass plan and apply filters
+                          const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                          const isDayPassPlan = selectedPlan && (
+                            selectedPlan.name.toLowerCase().includes('day pass') ||
+                            selectedPlan.name.toLowerCase().includes('daypass') ||
+                            selectedPlan.name.toLowerCase().includes('walk-in') ||
+                            selectedPlan.name.toLowerCase().includes('walkin') ||
+                            selectedPlan.name.toLowerCase().includes('guest') ||
+                            (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                            selectedPlan.name.toLowerCase() === 'day pass'
+                          )
+
+                          if (isDayPassPlan) {
+                            // Apply Day Pass type filter (Day Pass vs Guest)
+                            if (dayPassTypeFilter === "guest") {
+                              matchesSaleType = false // This is a subscription sale, not a guest sale
+                            }
+                            // Apply method filter
+                            if (dayPassMethodFilter === "without_account") {
+                              matchesSaleType = false // Subscription sales always have account
+                            }
+                          }
+                        }
+                      }
+                      // If "all", show all subscription sales (no additional filtering)
+                    } else {
+                      // Check if it's a Day Pass guest sale (Guest, Walk-in, etc.) - include when Day Pass plan is selected
+                      if (totalSalesSubscriptionTypeFilter !== "all") {
+                        const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter.toString())
+                        const isDayPassPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('day pass') ||
+                          selectedPlan.name.toLowerCase().includes('daypass') ||
+                          selectedPlan.name.toLowerCase().includes('walk-in') ||
+                          selectedPlan.name.toLowerCase().includes('walkin') ||
+                          selectedPlan.name.toLowerCase().includes('guest') ||
+                          (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                          selectedPlan.name.toLowerCase() === 'day pass'
+                        )
+
+                        if (isDayPassPlan) {
+                          // Check if this is a Guest/Walk-in/Day Pass sale
+                          const isGuestSale = sale.sale_type === 'Guest' ||
+                            sale.sale_type === 'Walk-in' ||
+                            sale.sale_type === 'Walkin' ||
+                            sale.sale_type === 'Day Pass' ||
+                            sale.guest_name
+
+                          if (isGuestSale) {
+                            // Check if plan_id matches (if available), or include all Guest sales for Day Pass plan
+                            const salePlanId = sale.plan_id?.toString()
+                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                            if (salePlanId && salePlanId !== selectedPlanId) {
+                              matchesSaleType = false
+                            } else {
+                              // Apply Day Pass type filter (Day Pass vs Guest)
+                              if (dayPassTypeFilter === "day_pass") {
+                                matchesSaleType = false // This is a guest sale, not a Day Pass subscription
+                              }
+                              // Additional filter for day pass method
+                              if (dayPassMethodFilter !== "all") {
+                                if (dayPassMethodFilter === "with_account") {
+                                  matchesSaleType = sale.user_id !== null && sale.user_id !== undefined
+                                } else if (dayPassMethodFilter === "without_account") {
+                                  matchesSaleType = sale.user_id === null || sale.user_id === undefined
+                                }
+                              }
+                            }
+                          } else {
+                            matchesSaleType = false
+                          }
+                        } else {
+                          matchesSaleType = false
+                        }
+                      } else {
+                        matchesSaleType = false
+                      }
+                    }
+                  } else if (totalSalesTypeFilter === "Coach Assignment") {
+                    const isCoachingSale = sale.sale_type === 'Coach Assignment' ||
+                      sale.sale_type === 'Coaching' ||
+                      sale.sale_type === 'Coach'
+
+                    if (!isCoachingSale) {
+                      matchesSaleType = false
+                    } else {
+                      // Filter by coach if selected
+                      if (totalSalesCoachFilter !== "all") {
+                        if (!sale.coach_id || sale.coach_id.toString() !== totalSalesCoachFilter) {
+                          matchesSaleType = false
+                        }
+                      }
+
+                      // Filter by service type if selected
+                      if (totalSalesServiceTypeFilter !== "all" && matchesSaleType) {
+                        // Normalize service type from sale data
+                        const serviceType = sale.service_type || sale.coaching_type || ''
+                        const normalizedServiceType = serviceType.toLowerCase().includes('session') ? 'session' :
+                          serviceType.toLowerCase().includes('monthly') ? 'monthly' : ''
+
+                        if (normalizedServiceType !== totalSalesServiceTypeFilter) {
+                          matchesSaleType = false
+                        }
+                      }
+                    }
+                  } else {
+                    matchesSaleType = sale.sale_type === totalSalesTypeFilter
+                  }
+                }
+
+                // Filter by month
+                if (totalSalesMonthFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== totalSalesMonthFilter) return false
+                }
+
+                // Filter by year
+                if (totalSalesYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== totalSalesYearFilter) return false
+                }
+
+                // Filter by custom date
+                if (totalSalesUseCustomDate && totalSalesCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  saleDate.setHours(0, 0, 0, 0)
+                  const customDate = new Date(totalSalesCustomDate)
+                  customDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const customDateStr = customDate.toISOString().split('T')[0]
+                  if (saleDateStr !== customDateStr) return false
+                }
+
+                return matchesSearch && matchesSaleType
+              })
+
+              const totalPages = Math.ceil(filteredSales.length / totalSalesItemsPerPage)
+              const startIndex = (totalSalesCurrentPage - 1) * totalSalesItemsPerPage
+              const endIndex = startIndex + totalSalesItemsPerPage
+              const paginatedSales = filteredSales.slice(startIndex, endIndex)
+
+              return (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-auto border rounded-lg bg-white">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-gray-50 z-10">
+                        <TableRow className="hover:bg-gray-50">
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Plan/Product</TableHead>
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Customer</TableHead>
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Type</TableHead>
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Payment</TableHead>
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Receipt</TableHead>
+                          <TableHead className="font-semibold text-gray-900 text-xs py-3">Date</TableHead>
+                          <TableHead className="text-right font-semibold text-gray-900 text-xs py-3">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedSales.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-12">
+                              <div className="flex flex-col items-center justify-center">
+                                <div className="p-3 rounded-full bg-gray-100 mb-3">
+                                  <Search className="h-6 w-6 text-gray-400" />
+                                </div>
+                                <p className="text-sm font-medium text-gray-600 mb-1">No sales found</p>
+                                <p className="text-xs text-gray-500">Try adjusting your filters</p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          paginatedSales.map((sale) => (
+                            <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b">
+                              <TableCell className="py-2.5">
+                                <div className="space-y-1">
+                                  {sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0 ? (
+                                    sale.sales_details.map((detail, index) => (
+                                      <div key={index} className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-medium text-gray-900">
+                                          {getProductName(detail, sale)}
+                                        </span>
+                                        {!detail.subscription_id && detail.quantity && detail.quantity > 1 && (
+                                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                            {detail.quantity}x
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <span className="text-xs font-medium text-gray-900">
+                                      {getProductName({}, sale)}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <div className="text-xs font-medium text-gray-900 truncate max-w-[150px]">
+                                  {sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach"
+                                    ? (sale.user_name || "N/A")
+                                    : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin"
+                                      ? (sale.guest_name || sale.user_name || "Guest")
+                                      : "N/A"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium bg-gray-50 text-gray-700 border-gray-300">
+                                  {(() => {
+                                    // For day pass sales, show "Day Pass" if user has account, "Guest" if no account
+                                    const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+                                    if (isDayPass) {
+                                      return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                                    }
+                                    return sale.sale_type
+                                  })()}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <div className="space-y-0.5">
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium bg-gray-50 text-gray-700 border-gray-300">
+                                    {sale.payment_method || "N/A"}
+                                  </Badge>
+                                  {sale.change_given > 0 && (
+                                    <div className="text-[10px] text-gray-600">
+                                      Change: {formatCurrency(sale.change_given)}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <div className="text-[10px] font-mono text-gray-600">
+                                  {sale.receipt_number || "N/A"}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-2.5 text-xs text-gray-700">{formatDate(sale.sale_date)}</TableCell>
+                              <TableCell className="text-right py-2.5 font-semibold text-sm text-gray-900">{formatCurrency(sale.total_amount)}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {filteredSales.length > 0 && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                      <div className="text-xs text-gray-600">
+                        Showing {startIndex + 1} to {Math.min(endIndex, filteredSales.length)} of {filteredSales.length}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTotalSalesCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={totalSalesCurrentPage === 1}
+                          className="h-8 px-2 text-xs"
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                          Prev
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum
+                            if (totalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (totalSalesCurrentPage <= 3) {
+                              pageNum = i + 1
+                            } else if (totalSalesCurrentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i
+                            } else {
+                              pageNum = totalSalesCurrentPage - 2 + i
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={totalSalesCurrentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setTotalSalesCurrentPage(pageNum)}
+                                className="h-8 w-8 p-0 text-xs"
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTotalSalesCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={totalSalesCurrentPage === totalPages}
+                          className="h-8 px-2 text-xs"
+                        >
+                          Next
+                          <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
-          <DialogFooter>
-            <Button onClick={() => setWalkinSalesDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Subscription Sales Dialog */}
       <Dialog open={subscriptionSalesDialogOpen} onOpenChange={setSubscriptionSalesDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-blue-600" />
-              Subscription Sales Details
-            </DialogTitle>
-            <DialogDescription>
-              View all subscription and membership sales with detailed transaction information
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* Plan Filter */}
-            <div className="flex items-center gap-4">
-              <Label htmlFor="plan-filter">Filter by Plan:</Label>
-              <Select value={selectedPlanFilter} onValueChange={setSelectedPlanFilter}>
-                <SelectTrigger className="w-64">
-                  <SelectValue placeholder="Select a plan" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Plans</SelectItem>
-                  {subscriptionPlans.map((plan) => (
-                    <SelectItem key={plan.id} value={plan.id.toString()}>
-                      {plan.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Subscription Sales Table */}
-            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Member</TableHead>
-                    <TableHead>Plan</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment Method</TableHead>
-                    <TableHead>Receipt #</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sales
-                    .filter((sale) => {
-                      // Filter by subscription sales
-                      const isSubscriptionSale = sale.sale_type === 'Subscription'
-
-                      if (!isSubscriptionSale) return false
-
-                      // Filter by selected plan if not "all"
-                      if (selectedPlanFilter !== "all") {
-                        // Check if any sales_details match the plan
-                        return sale.sales_details && sale.sales_details.some(detail =>
-                          detail.subscription_id && detail.subscription_id.toString() === selectedPlanFilter
-                        )
-                      }
-
-                      return true
-                    })
-                    .map((sale) => {
-                      // Get plan info - prefer from sale level, fallback to sales_details
-                      const planName = sale.plan_name || sale.sales_details?.find(d => d.subscription?.plan_name)?.subscription?.plan_name
-
-                      return (
-                        <TableRow key={sale.id}>
-                          <TableCell className="font-medium">
-                            {formatDateOnly(sale.sale_date)}
-                          </TableCell>
-                          <TableCell>
-                            {sale.user_name || 'N/A'}
-                          </TableCell>
-                          <TableCell>
-                            {planName ? (
-                              <Badge variant="secondary">{planName}</Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">N/A</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {sale.receipt_number || 'N/A'}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                </TableBody>
-              </Table>
-              {sales.filter(sale => sale.sale_type === 'Subscription').length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <TrendingUp className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No subscription sales found</p>
+        <DialogContent className="max-w-[80vw] w-[80vw] max-h-[85vh] overflow-hidden flex flex-col [&>button]:hidden">
+          <DialogHeader className="pb-3 border-b border-gray-200 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                  <TrendingUp className="h-5 w-5 text-gray-700" />
                 </div>
-              )}
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900">Subscription Sales Details</DialogTitle>
+                  <DialogDescription className="text-sm text-gray-600 mt-0.5">
+                    View all subscription revenue with detailed transaction information
+                  </DialogDescription>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSubscriptionSalesDialogOpen(false)}
+                className="h-8 w-8 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="h-4 w-4 text-gray-600" />
+              </Button>
             </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setSubscriptionSalesDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Product Sales Dialog */}
-      <Dialog open={productSalesDialogOpen} onOpenChange={(open) => {
-        setProductSalesDialogOpen(open)
-        if (!open) {
-          // Reset filters when dialog closes
-          setSelectedCategoryFilter("all")
-          setSelectedProductFilter("all")
-        }
-      }}>
-        <DialogContent className="max-w-6xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-blue-600" />
-              Product Sales Details
-            </DialogTitle>
-            <DialogDescription>
-              View all product sales with detailed transaction information
-            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {/* Filters */}
-            <div className="flex items-center gap-4">
+          <div className="space-y-4 pt-4 flex-1 overflow-hidden flex flex-col">
+            {/* Filters Row - All in One Row */}
+            <div className="flex items-center gap-4 flex-wrap bg-gradient-to-r from-gray-50 to-gray-50/50 p-3 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
               <div className="flex items-center gap-2">
-                <Label htmlFor="category-filter">Filter by Category:</Label>
-                <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
-                  <SelectTrigger className="w-64">
-                    <SelectValue placeholder="All Categories" />
+                <Label htmlFor="plan-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">By Plan:</Label>
+                <Select value={selectedPlanFilter} onValueChange={(value) => {
+                  setSelectedPlanFilter(value)
+                  // Reset Day Pass type filter when plan changes
+                  const selectedPlan = subscriptionPlans.find(p => p.id.toString() === value)
+                  const isDayPassPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('day pass') ||
+                    selectedPlan.name.toLowerCase().includes('daypass') ||
+                    selectedPlan.name.toLowerCase().includes('walk-in') ||
+                    selectedPlan.name.toLowerCase().includes('walkin') ||
+                    selectedPlan.name.toLowerCase().includes('guest') ||
+                    (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                    selectedPlan.name.toLowerCase() === 'day pass'
+                  )
+                  if (!isDayPassPlan) {
+                    setSubscriptionDayPassTypeFilter("all")
+                  }
+                }}>
+                  <SelectTrigger className="w-56 h-10 border-2 border-gray-300 focus:border-blue-500">
+                    <SelectValue placeholder="Select a plan" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {getUniqueCategories().map((category) => (
-                      <SelectItem key={category} value={category}>
-                        {category}
+                    <SelectItem value="all">All Plans</SelectItem>
+                    {subscriptionPlans.map((plan) => (
+                      <SelectItem key={plan.id} value={plan.id.toString()}>
+                        {plan.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Day Pass Type Filter - Only show when Day Pass plan is selected */}
+              {(() => {
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('day pass') ||
+                  selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('walk-in') ||
+                  selectedPlan.name.toLowerCase().includes('walkin') ||
+                  selectedPlan.name.toLowerCase().includes('guest') ||
+                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                  selectedPlan.name.toLowerCase() === 'day pass'
+                )
+                return isDayPassPlan ? (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="subscription-daypass-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Type:</Label>
+                    <Select value={subscriptionDayPassTypeFilter} onValueChange={setSubscriptionDayPassTypeFilter}>
+                      <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-blue-500">
+                        <SelectValue placeholder="All Types" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="day_pass">Subscription</SelectItem>
+                        <SelectItem value="guest">Guest</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null
+              })()}
+
               <div className="flex items-center gap-2">
-                <Label htmlFor="product-filter">Filter by Product:</Label>
-                <Select value={selectedProductFilter} onValueChange={setSelectedProductFilter}>
-                  <SelectTrigger className="w-64">
-                    <SelectValue placeholder="All Products" />
+                <Label htmlFor="subscription-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
+                <Select value={subscriptionMonthFilter} onValueChange={(value) => {
+                  setSubscriptionMonthFilter(value)
+                  if (value !== "all") {
+                    setSubscriptionCustomDate(null)
+                    setSubscriptionUseCustomDate(false)
+                  }
+                }}>
+                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={subscriptionUseCustomDate}>
+                    <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Products</SelectItem>
-                    {products
-                      .filter(p => selectedCategoryFilter === "all" || p.category === selectedCategoryFilter)
-                      .map((product) => (
-                        <SelectItem key={product.id} value={product.id.toString()}>
-                          {product.name}
-                        </SelectItem>
-                      ))}
+                    <SelectItem value="all">All Months</SelectItem>
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="flex items-center gap-2">
+                <Label htmlFor="subscription-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
+                <Select value={subscriptionYearFilter} onValueChange={(value) => {
+                  setSubscriptionYearFilter(value)
+                  if (value !== "all") {
+                    setSubscriptionCustomDate(null)
+                    setSubscriptionUseCustomDate(false)
+                  }
+                }}>
+                  <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={subscriptionUseCustomDate}>
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Years</SelectItem>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Label htmlFor="subscription-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
+                <Input
+                  id="subscription-date-filter"
+                  type="date"
+                  value={subscriptionCustomDate ? format(subscriptionCustomDate, "yyyy-MM-dd") : ""}
+                  max={format(new Date(), "yyyy-MM-dd")}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value
+                    if (selectedDate) {
+                      const date = new Date(selectedDate + "T00:00:00")
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+
+                      if (date.getTime() <= today.getTime()) {
+                        setSubscriptionCustomDate(date)
+                        setSubscriptionUseCustomDate(true)
+                        setSubscriptionMonthFilter("all")
+                        setSubscriptionYearFilter("all")
+                      }
+                    } else {
+                      setSubscriptionCustomDate(null)
+                      setSubscriptionUseCustomDate(false)
+                    }
+                  }}
+                  className="h-10 text-sm border-2 border-gray-300 focus:border-blue-500 rounded-lg"
+                  placeholder="Select date"
+                />
+                {subscriptionUseCustomDate && subscriptionCustomDate && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      setSubscriptionCustomDate(null)
+                      setSubscriptionUseCustomDate(false)
+                    }}
+                    className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
 
-            {/* Product Sales Table */}
-            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Products</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment Method</TableHead>
-                    <TableHead>Receipt #</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sales
-                    .filter((sale) => {
-                      // Filter by product sales - sales that have product items OR sale_type is Product
-                      const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
-                      const isProductSale = sale.sale_type === 'Product'
+            {/* Sales Dashboard */}
+            {(() => {
+              const filteredSales = sales.filter((sale) => {
+                // Check if selected plan is "Day Pass"
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('day pass') ||
+                  selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('walk-in') ||
+                  selectedPlan.name.toLowerCase().includes('walkin') ||
+                  selectedPlan.name.toLowerCase().includes('guest') ||
+                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                  selectedPlan.name.toLowerCase() === 'day pass'
+                )
 
-                      if (!hasProducts && !isProductSale) return false
-
-                      // Filter by category if selected
-                      if (selectedCategoryFilter !== "all") {
-                        const hasCategoryMatch = sale.sales_details?.some(detail => {
-                          if (!detail.product_id) return false
-                          const product = detail.product || products.find(p => p.id === detail.product_id)
-                          return product?.category === selectedCategoryFilter
-                        })
-                        if (!hasCategoryMatch) return false
-                      }
-
-                      // Filter by product if selected
-                      if (selectedProductFilter !== "all") {
-                        const hasProductMatch = sale.sales_details?.some(detail =>
-                          detail.product_id && detail.product_id.toString() === selectedProductFilter
-                        )
-                        if (!hasProductMatch) return false
-                      }
-
-                      return true
-                    })
-                    .map((sale) => {
-                      // Get product names from sales_details
-                      const productDetails = sale.sales_details
-                        ?.filter(detail => detail.product_id)
-                        .map(detail => {
-                          const productName = detail.product?.name || products.find(p => p.id === detail.product_id)?.name || 'Unknown Product'
-                          const quantity = detail.quantity || 1
-                          return `${productName}${quantity > 1 ? ` (x${quantity})` : ''}`
-                        }) || []
-
-                      const productsDisplay = productDetails.length > 0
-                        ? productDetails.join(', ')
-                        : 'N/A'
-
-                      return (
-                        <TableRow key={sale.id}>
-                          <TableCell className="font-medium">
-                            {formatDateOnly(sale.sale_date)}
-                          </TableCell>
-                          <TableCell className="max-w-xs">
-                            <div className="text-sm truncate" title={productsDisplay}>
-                              {productsDisplay}
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatCurrency(sale.total_amount)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{sale.payment_method || 'Cash'}</Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {sale.receipt_number || 'N/A'}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                </TableBody>
-              </Table>
-              {sales.filter((sale) => {
-                const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
-                const isProductSale = sale.sale_type === 'Product'
-                if (!hasProducts && !isProductSale) return false
-
-                if (selectedCategoryFilter !== "all") {
-                  const hasCategoryMatch = sale.sales_details?.some(detail => {
-                    if (!detail.product_id) return false
-                    const product = detail.product || products.find(p => p.id === detail.product_id)
-                    return product?.category === selectedCategoryFilter
-                  })
-                  if (!hasCategoryMatch) return false
+                // Debug: Log when Day Pass plan is selected
+                if (isDayPassPlan) {
+                  console.log("Day Pass plan detected:", selectedPlan)
                 }
 
-                if (selectedProductFilter !== "all") {
-                  const hasProductMatch = sale.sales_details?.some(detail =>
-                    detail.product_id && detail.product_id.toString() === selectedProductFilter
-                  )
-                  if (!hasProductMatch) return false
+                // If Day Pass plan is selected, include ALL Day Pass/Walk-in/Guest sales
+                if (isDayPassPlan) {
+                  // Check if this is a Guest/Walk-in/Day Pass sale
+                  const isGuestSale = sale.sale_type === 'Guest' ||
+                    sale.sale_type === 'Walk-in' ||
+                    sale.sale_type === 'Walkin' ||
+                    sale.sale_type === 'Day Pass' ||
+                    sale.guest_name
+
+                  if (isGuestSale) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "day_pass") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Status filter removed - show all sales
+                    return true
+                  }
+
+                  // Also check if this is a subscription sale with Day Pass plan_id
+                  if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                    // This is a subscription sale with Day Pass plan
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Status filter removed - show all sales
+                    return true
+                  }
+
+                  // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // For other plans or "All Plans", only show subscription sales
+                const isSubscriptionSale = sale.sale_type === 'Subscription'
+                if (!isSubscriptionSale) return false
+
+                // Filter by selected plan if not "all"
+                if (selectedPlanFilter !== "all") {
+                  // First try to match by plan_id from sale object
+                  const salePlanId = sale.plan_id?.toString()
+                  if (salePlanId === selectedPlanFilter) {
+                    // Matches, continue
+                  } else {
+                    // Try to match by plan name from sale object
+                    const salePlanName = sale.plan_name
+                    if (selectedPlan && salePlanName === selectedPlan.name) {
+                      // Matches by name, continue
+                    } else {
+                      // No match, exclude this sale
+                      return false
+                    }
+                  }
+                }
+
+                // Handle custom date first (highest priority)
+                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                  if (saleDateStr !== customDateStr) return false
+                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                  // Specific month and year
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                } else if (subscriptionMonthFilter !== "all") {
+                  // Filter by month if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                } else if (subscriptionYearFilter !== "all") {
+                  // Filter by year if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== subscriptionYearFilter) return false
+                }
+
+                // Status filter removed - show all sales
+                return true
+              })
+
+              // Calculate statistics based on current filters (including status filter)
+              // First get all sales matching plan/month/year filters (for calculating active/expired counts)
+              const allSalesForCounts = sales.filter((sale) => {
+                // Check if selected plan is "Day Pass"
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('day pass') ||
+                  selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('walk-in') ||
+                  selectedPlan.name.toLowerCase().includes('walkin') ||
+                  selectedPlan.name.toLowerCase().includes('guest') ||
+                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                  selectedPlan.name.toLowerCase() === 'day pass'
+                )
+
+                // Helper function to check if a sale is a Day Pass subscription (user with account)
+                const isDayPassSubscription = (sale) => {
+                  if (sale.sale_type !== 'Subscription') return false
+
+                  // Check by plan_id
+                  if (sale.plan_id && selectedPlan && sale.plan_id.toString() === selectedPlanFilter) {
+                    return true
+                  }
+
+                  // Check by plan_name
+                  if (sale.plan_name) {
+                    const planNameLower = sale.plan_name.toLowerCase()
+                    if (planNameLower.includes('day pass') ||
+                      planNameLower.includes('daypass') ||
+                      planNameLower.includes('walk-in') ||
+                      planNameLower.includes('walkin')) {
+                      return true
+                    }
+                  }
+
+                  // Check subscription details for plan name
+                  const subscriptionDetail = getSubscriptionDetails(sale.id)
+                  if (subscriptionDetail && subscriptionDetail.planName) {
+                    const planNameLower = subscriptionDetail.planName.toLowerCase()
+                    if (planNameLower.includes('day pass') ||
+                      planNameLower.includes('daypass') ||
+                      planNameLower.includes('walk-in') ||
+                      planNameLower.includes('walkin')) {
+                      return true
+                    }
+                  }
+
+                  // Check if plan has Day Pass characteristics (duration_days > 0, duration_months === 0)
+                  if (sale.plan_id) {
+                    const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
+                    if (plan && plan.duration_days && plan.duration_days > 0 &&
+                      (!plan.duration_months || plan.duration_months === 0)) {
+                      return true
+                    }
+                  }
+
+                  return false
+                }
+
+                // Helper function to check if a sale is a Day Pass guest/walk-in (user without account)
+                const isDayPassGuestSale = (sale) => {
+                  return sale.sale_type === 'Walk-in' ||
+                    sale.sale_type === 'Walkin' ||
+                    sale.sale_type === 'Guest' ||
+                    sale.sale_type === 'Day Pass' ||
+                    sale.guest_name
+                }
+
+                // If Day Pass plan is selected, include ALL Day Pass sales (both guest and subscription)
+                if (isDayPassPlan) {
+                  // Check if this is a Day Pass guest/walk-in sale (user without account)
+                  if (isDayPassGuestSale(sale)) {
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Day Pass guest sales always show (they don't expire)
+                    return true
+                  }
+
+                  // Check if this is a Day Pass subscription sale (user with account)
+                  if (isDayPassSubscription(sale)) {
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Day Pass subscription sales are included (will be filtered by status below)
+                    return true
+                  }
+
+                  // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // For other plans or "All Plans", only show subscription sales
+                const isSubscriptionSale = sale.sale_type === 'Subscription'
+                if (!isSubscriptionSale) return false
+
+                // Filter by selected plan if not "all"
+                if (selectedPlanFilter !== "all") {
+                  // First try to match by plan_id from sale object
+                  const salePlanId = sale.plan_id?.toString()
+                  if (salePlanId === selectedPlanFilter) {
+                    // Matches, continue
+                  } else {
+                    // Try to match by plan name from sale object
+                    const salePlanName = sale.plan_name
+                    if (selectedPlan && salePlanName === selectedPlan.name) {
+                      // Matches by name, continue
+                    } else {
+                      // No match, exclude this sale
+                      return false
+                    }
+                  }
+                }
+
+                // Handle custom date first (highest priority)
+                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                  if (saleDateStr !== customDateStr) return false
+                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                  // Specific month and year
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                } else if (subscriptionMonthFilter !== "all") {
+                  // Filter by month if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                } else if (subscriptionYearFilter !== "all") {
+                  // Filter by year if not "all"
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== subscriptionYearFilter) return false
                 }
 
                 return true
-              }).length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <ShoppingCart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No product sales found</p>
+              })
+
+              // Helper function to check if a sale is a Day Pass subscription (for filtering)
+              const isDayPassSubscriptionForFilter = (sale, selectedPlanFilter) => {
+                if (sale.sale_type !== 'Subscription') return false
+
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+
+                // Check by plan_id
+                if (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                  return true
+                }
+
+                // Check by plan_name
+                if (sale.plan_name) {
+                  const planNameLower = sale.plan_name.toLowerCase()
+                  if (planNameLower.includes('day pass') ||
+                    planNameLower.includes('daypass') ||
+                    planNameLower.includes('walk-in') ||
+                    planNameLower.includes('walkin')) {
+                    return true
+                  }
+                }
+
+                // Check subscription details for plan name
+                const subscriptionDetail = getSubscriptionDetails(sale.id)
+                if (subscriptionDetail && subscriptionDetail.planName) {
+                  const planNameLower = subscriptionDetail.planName.toLowerCase()
+                  if (planNameLower.includes('day pass') ||
+                    planNameLower.includes('daypass') ||
+                    planNameLower.includes('walk-in') ||
+                    planNameLower.includes('walkin')) {
+                    return true
+                  }
+                }
+
+                // Check if plan has Day Pass characteristics
+                if (sale.plan_id) {
+                  const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
+                  if (plan && plan.duration_days && plan.duration_days > 0 &&
+                    (!plan.duration_months || plan.duration_months === 0)) {
+                    return true
+                  }
+                }
+
+                return false
+              }
+
+              // Helper function to check if a sale is a Day Pass guest sale (for filtering)
+              const isDayPassGuestSaleForFilter = (sale) => {
+                return sale.sale_type === 'Walk-in' ||
+                  sale.sale_type === 'Walkin' ||
+                  sale.sale_type === 'Guest' ||
+                  sale.sale_type === 'Day Pass' ||
+                  sale.guest_name
+              }
+
+              // Now filter by status for statistics (same as table filter)
+              const filteredSalesForStats = allSalesForCounts.filter((sale) => {
+                // Check if selected plan is "Day Pass"
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('day pass') ||
+                  selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('walk-in') ||
+                  selectedPlan.name.toLowerCase().includes('walkin') ||
+                  selectedPlan.name.toLowerCase().includes('guest') ||
+                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                  selectedPlan.name.toLowerCase() === 'day pass'
+                )
+
+                // If Day Pass plan is selected, include Day Pass sales (both guest and subscription)
+                if (isDayPassPlan) {
+                  // Day Pass guest sales (always show, don't expire)
+                  if (isDayPassGuestSaleForFilter(sale)) {
+                    // Status filter removed - show all sales
+                    return true
+                  }
+
+                  // Day Pass subscription sales
+                  if (isDayPassSubscriptionForFilter(sale, selectedPlanFilter)) {
+                    // Status filter removed - show all sales
+                    return true
+                  }
+                }
+
+                // Status filter removed - show all sales
+                return true
+              })
+
+              // Total sales reflects the filtered results (based on status filter)
+              const totalSales = filteredSalesForStats.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+              // Calculate monthly subscription sales (plans with duration_months > 0)
+              const monthlySales = filteredSalesForStats.filter(sale => {
+                const subscriptionDetail = getSubscriptionDetails(sale.id)
+                const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id?.toString())
+
+                // Check if it's a monthly plan (has duration_months > 0)
+                if (plan && plan.duration_months && plan.duration_months > 0) {
+                  return true
+                }
+
+                // Also check plan name for monthly indicators
+                const planName = sale.plan_name || subscriptionDetail?.planName || ''
+                if (planName.toLowerCase().includes('monthly') ||
+                  planName.toLowerCase().includes('month')) {
+                  return true
+                }
+
+                return false
+              })
+              const monthlyTotal = monthlySales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+              // Check if Day Pass plan is selected
+              const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+              const isDayPassPlan = selectedPlan && (
+                selectedPlan.name.toLowerCase().includes('day pass') ||
+                selectedPlan.name.toLowerCase().includes('daypass') ||
+                selectedPlan.name.toLowerCase() === 'day pass'
+              )
+
+              // Count active subscriptions from all sales (for context, not filtered by status)
+              const activeCount = allSalesForCounts.filter(sale => {
+                // If Day Pass sale, always count as active
+                if (isDayPassPlan) {
+                  const isDayPassSale = sale.sale_type === 'Walk-in' ||
+                    sale.sale_type === 'Walkin' ||
+                    sale.sale_type === 'Guest' ||
+                    sale.sale_type === 'Day Pass' ||
+                    sale.guest_name
+                  if (isDayPassSale) return true
+                }
+                // For subscription sales, check subscription details
+                const detail = getSubscriptionDetails(sale.id)
+                return detail && (detail.daysLeft === null || detail.daysLeft === undefined || detail.daysLeft >= 0)
+              }).length
+
+              // Count expired subscriptions from all sales (for context, not filtered by status)
+              const expiredCount = allSalesForCounts.filter(sale => {
+                // Exclude Day Pass sales from expired count
+                if (isDayPassPlan) {
+                  const isDayPassSale = sale.sale_type === 'Walk-in' ||
+                    sale.sale_type === 'Walkin' ||
+                    sale.sale_type === 'Guest' ||
+                    sale.sale_type === 'Day Pass' ||
+                    sale.guest_name
+                  if (isDayPassSale) return false
+                }
+                const detail = getSubscriptionDetails(sale.id)
+                return detail && detail.daysLeft !== null && detail.daysLeft !== undefined && detail.daysLeft < 0
+              }).length
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-shrink-0">
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Total Sales</p>
+                          <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalSales)}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">{filteredSalesForStats.length} transaction{filteredSalesForStats.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <TrendingUp className="h-5 w-5 text-gray-700" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Total Transactions</p>
+                          <p className="text-2xl font-bold text-gray-900">{filteredSalesForStats.length}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">Sales recorded</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <FileText className="h-5 w-5 text-gray-700" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Monthly Sales</p>
+                          <p className="text-2xl font-bold text-gray-900">{formatCurrency(monthlyTotal)}</p>
+                          <p className="text-xs text-gray-600 mt-1.5">{monthlySales.length} sale{monthlySales.length !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
+                          <CalendarIcon className="h-5 w-5 text-gray-700" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )
+            })()}
+
+            {/* Subscription Sales Table */}
+            {(() => {
+              // Check if selected plan is "Day Pass" (shared across filter and display)
+              const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+              const isDayPassPlan = selectedPlan && (
+                selectedPlan.name.toLowerCase().includes('day pass') ||
+                selectedPlan.name.toLowerCase().includes('daypass') ||
+                selectedPlan.name.toLowerCase().includes('walk-in') ||
+                selectedPlan.name.toLowerCase().includes('walkin') ||
+                selectedPlan.name.toLowerCase().includes('guest') ||
+                (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                selectedPlan.name.toLowerCase() === 'day pass'
+              )
+
+              // Helper function to check if a sale is a Day Pass subscription (user with account)
+              const isDayPassSubscription = (sale) => {
+                if (sale.sale_type !== 'Subscription') return false
+
+                // Check by plan_id
+                if (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                  return true
+                }
+
+                // Check by plan_name
+                if (sale.plan_name) {
+                  const planNameLower = sale.plan_name.toLowerCase()
+                  if (planNameLower.includes('day pass') ||
+                    planNameLower.includes('daypass') ||
+                    planNameLower.includes('walk-in') ||
+                    planNameLower.includes('walkin')) {
+                    return true
+                  }
+                }
+
+                // Check subscription details for plan name
+                const subscriptionDetail = getSubscriptionDetails(sale.id)
+                if (subscriptionDetail && subscriptionDetail.planName) {
+                  const planNameLower = subscriptionDetail.planName.toLowerCase()
+                  if (planNameLower.includes('day pass') ||
+                    planNameLower.includes('daypass') ||
+                    planNameLower.includes('walk-in') ||
+                    planNameLower.includes('walkin')) {
+                    return true
+                  }
+                }
+
+                // Check if plan has Day Pass characteristics (duration_days > 0, duration_months === 0)
+                if (sale.plan_id) {
+                  const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
+                  if (plan && plan.duration_days && plan.duration_days > 0 &&
+                    (!plan.duration_months || plan.duration_months === 0)) {
+                    return true
+                  }
+                }
+
+                return false
+              }
+
+              // Helper function to check if a sale is a Day Pass guest/walk-in (user without account)
+              const isDayPassGuestSale = (sale) => {
+                return sale.sale_type === 'Walk-in' ||
+                  sale.sale_type === 'Walkin' ||
+                  sale.sale_type === 'Guest' ||
+                  sale.sale_type === 'Day Pass' ||
+                  sale.guest_name
+              }
+
+              const filteredSales = sales.filter((sale) => {
+
+                // If Day Pass plan is selected, include ALL Day Pass sales (both guest and subscription)
+                if (isDayPassPlan) {
+                  // Check if this is a Day Pass guest/walk-in sale (user without account)
+                  if (isDayPassGuestSale(sale)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "day_pass") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Status filter removed - show all sales
+                    return true
+                  }
+
+                  // Check if this is a Day Pass subscription sale (user with account)
+                  if (isDayPassSubscription(sale)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    // Status filter removed - show all sales
+                    return true
+                  }
+
+                  // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // For other plans or "All Plans", only show subscription sales
+                const isSubscriptionSale = sale.sale_type === 'Subscription'
+                if (!isSubscriptionSale) return false
+
+                // Filter by selected plan if not "all"
+                if (selectedPlanFilter !== "all") {
+                  // First try to match by plan_id from sale object
+                  const salePlanId = sale.plan_id?.toString()
+                  if (salePlanId === selectedPlanFilter) {
+                    // Matches, continue
+                  } else {
+                    // Try to match by plan name from sale object
+                    const salePlanName = sale.plan_name
+                    if (selectedPlan && salePlanName === selectedPlan.name) {
+                      // Matches by name, continue
+                    } else {
+                      // No match, exclude this sale
+                      return false
+                    }
+                  }
+                }
+
+                // Filter by month if not "all"
+                if (subscriptionMonthFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                }
+
+                // Filter by year if not "all"
+                if (subscriptionYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== subscriptionYearFilter) return false
+                }
+
+                // Status filter removed - show all sales
+                return true
+              })
+
+              const totalPages = Math.ceil(filteredSales.length / subscriptionItemsPerPage)
+              const startIndex = (subscriptionCurrentPage - 1) * subscriptionItemsPerPage
+              const endIndex = startIndex + subscriptionItemsPerPage
+              const paginatedSales = filteredSales.slice(startIndex, endIndex)
+
+              return (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg shadow-sm bg-white">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-b border-gray-200">
+                          <TableHead className="font-semibold text-gray-900">Date</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Name</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Plan</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Amount</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Payment Method</TableHead>
+                          <TableHead className="font-semibold text-gray-900">Receipt #</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedSales.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                              <div className="flex flex-col items-center justify-center">
+                                <div className="p-3 rounded-full bg-gray-100 mb-3">
+                                  <TrendingUp className="h-8 w-8 text-gray-400" />
+                                </div>
+                                <p className="text-lg font-medium text-gray-600 mb-1">No subscription sales found</p>
+                                <p className="text-sm text-gray-500">Try adjusting your filters</p>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          paginatedSales.map((sale) => {
+                            // Check if this is a Day Pass guest sale (user without account)
+                            const isDayPassGuest = isDayPassGuestSale(sale)
+
+                            // Check if this is a Day Pass subscription sale (user with account)
+                            const isDayPassSubscriptionSale = isDayPassSubscription(sale)
+
+                            const subscriptionDetail = getSubscriptionDetails(sale.id)
+                            let planName = sale.plan_name || subscriptionDetail?.planName || 'N/A'
+
+                            // For Day Pass sales (both guest and subscription), set plan name to "Day Pass"
+                            if (isDayPassGuest || isDayPassSubscriptionSale) {
+                              planName = 'Day Pass'
+                            }
+
+                            return (
+                              <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
+                                <TableCell className="font-medium text-gray-900 py-3">
+                                  {formatDateOnly(sale.sale_date)}
+                                </TableCell>
+                                <TableCell className="text-gray-700 py-3">
+                                  {isDayPassGuest
+                                    ? (sale.guest_name || sale.user_name || 'Guest')
+                                    : isDayPassSubscriptionSale && subscriptionDetail?.userName
+                                      ? subscriptionDetail.userName
+                                      : (sale.user_name || 'N/A')}
+                                </TableCell>
+                                <TableCell className="py-3">
+                                  {planName ? (
+                                    <Badge variant="secondary" className="font-medium">{planName}</Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">N/A</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-semibold text-gray-900 py-3">{formatCurrency(sale.total_amount)}</TableCell>
+                                <TableCell className="py-3">
+                                  <Badge variant="outline" className="font-medium">{sale.payment_method || 'Cash'}</Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-gray-600 font-mono py-3">
+                                  {sale.receipt_number || 'N/A'}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
+
+                  {/* Pagination Controls */}
+                  {filteredSales.length > 0 && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 flex-shrink-0">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {startIndex + 1} to {Math.min(endIndex, filteredSales.length)} of {filteredSales.length} results
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSubscriptionCurrentPage(prev => Math.max(1, prev - 1))}
+                          disabled={subscriptionCurrentPage === 1}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Previous
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum
+                            if (totalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (subscriptionCurrentPage <= 3) {
+                              pageNum = i + 1
+                            } else if (subscriptionCurrentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i
+                            } else {
+                              pageNum = subscriptionCurrentPage - 2 + i
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={subscriptionCurrentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setSubscriptionCurrentPage(pageNum)}
+                                className="w-10"
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSubscriptionCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                          disabled={subscriptionCurrentPage === totalPages}
+                        >
+                          Next
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Product Sales Dialog */}
+      <Dialog open={productSalesDialogOpen} onOpenChange={setProductSalesDialogOpen}>
+        <DialogContent className="max-w-[85vw] w-[85vw] max-h-[85vh] h-[85vh] flex flex-col p-0 gap-0 rounded-xl overflow-hidden [&>button]:hidden border-0 shadow-2xl">
+          {/* Header */}
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-200 bg-white">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-lg bg-gray-100">
+                  <ShoppingCart className="h-5 w-5 text-gray-700" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl font-bold text-gray-900">Product Sales Details</DialogTitle>
+                  <DialogDescription className="text-sm text-gray-600 mt-1">
+                    Comprehensive view of all product sales and transactions
+                  </DialogDescription>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setProductSalesDialogOpen(false)}
+                className="h-8 w-8 rounded-md hover:bg-gray-100 text-gray-500"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
+            {/* Filters Section */}
+            <div className="px-6 pt-5 pb-4 bg-white border-b border-gray-200">
+              <div className="space-y-4">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="search"
+                    placeholder="Search products, customers, receipt numbers..."
+                    className="pl-10 h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400 rounded-lg"
+                    value={productSalesSearchQuery}
+                    onChange={(e) => setProductSalesSearchQuery(e.target.value)}
+                  />
+                </div>
+
+                {/* Filter Controls */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
+                      <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {getUniqueCategories().map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={selectedProductFilter} onValueChange={setSelectedProductFilter}>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
+                      <SelectValue placeholder="All Products" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      {products
+                        .filter(p => selectedCategoryFilter === "all" || p.category === selectedCategoryFilter)
+                        .map((product) => (
+                          <SelectItem key={product.id} value={product.id.toString()}>
+                            {product.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={productSalesMonthFilter} onValueChange={setProductSalesMonthFilter}>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
+                      <SelectValue placeholder="All Months" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Months</SelectItem>
+                      <SelectItem value="1">January</SelectItem>
+                      <SelectItem value="2">February</SelectItem>
+                      <SelectItem value="3">March</SelectItem>
+                      <SelectItem value="4">April</SelectItem>
+                      <SelectItem value="5">May</SelectItem>
+                      <SelectItem value="6">June</SelectItem>
+                      <SelectItem value="7">July</SelectItem>
+                      <SelectItem value="8">August</SelectItem>
+                      <SelectItem value="9">September</SelectItem>
+                      <SelectItem value="10">October</SelectItem>
+                      <SelectItem value="11">November</SelectItem>
+                      <SelectItem value="12">December</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={productSalesYearFilter} onValueChange={setProductSalesYearFilter}>
+                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
+                      <SelectValue placeholder="All Years" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="date"
+                      value={productSalesCustomDate ? format(productSalesCustomDate, "yyyy-MM-dd") : ""}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+
+                          if (date.getTime() <= today.getTime()) {
+                            setProductSalesCustomDate(date)
+                            setProductSalesUseCustomDate(true)
+                            setProductSalesMonthFilter("all")
+                            setProductSalesYearFilter("all")
+                          }
+                        } else {
+                          setProductSalesCustomDate(null)
+                          setProductSalesUseCustomDate(false)
+                        }
+                      }}
+                      className="h-10 text-sm border border-gray-300 rounded-lg"
+                      placeholder="Select date"
+                    />
+                    {productSalesUseCustomDate && productSalesCustomDate && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        onClick={() => {
+                          setProductSalesCustomDate(null)
+                          setProductSalesUseCustomDate(false)
+                        }}
+                        className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-hidden flex flex-col px-6 pt-5 pb-6 space-y-5">
+
+              {/* Product Sales Summary Cards */}
+              {(() => {
+                const filteredSales = sales.filter((sale) => {
+                  // Filter by product sales - sales that have product items OR sale_type is Product
+                  const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                  const isProductSale = sale.sale_type === 'Product'
+
+                  if (!hasProducts && !isProductSale) return false
+
+                  // Filter by search query
+                  const matchesSearch = productSalesSearchQuery === "" ||
+                    sale.user_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.guest_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.receipt_number?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.sales_details?.some(detail => {
+                      if (!detail.product_id) return false
+                      const product = detail.product || products.find(p => p.id === detail.product_id)
+                      return product?.name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase())
+                    })
+
+                  // Filter by category if selected
+                  if (selectedCategoryFilter !== "all") {
+                    const hasCategoryMatch = sale.sales_details?.some(detail => {
+                      if (!detail.product_id) return false
+                      const product = detail.product || products.find(p => p.id === detail.product_id)
+                      return product?.category === selectedCategoryFilter
+                    })
+                    if (!hasCategoryMatch) return false
+                  }
+
+                  // Filter by product if selected
+                  if (selectedProductFilter !== "all") {
+                    const hasProductMatch = sale.sales_details?.some(detail =>
+                      detail.product_id && detail.product_id.toString() === selectedProductFilter
+                    )
+                    if (!hasProductMatch) return false
+                  }
+
+                  // Filter by month
+                  if (productSalesMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== productSalesMonthFilter) return false
+                  }
+
+                  // Filter by year
+                  if (productSalesYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== productSalesYearFilter) return false
+                  }
+
+                  // Filter by custom date
+                  if (productSalesUseCustomDate && productSalesCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    saleDate.setHours(0, 0, 0, 0)
+                    const customDate = new Date(productSalesCustomDate)
+                    customDate.setHours(0, 0, 0, 0)
+                    const saleDateStr = saleDate.toISOString().split('T')[0]
+                    const customDateStr = customDate.toISOString().split('T')[0]
+                    if (saleDateStr !== customDateStr) return false
+                  }
+
+                  return matchesSearch
+                })
+
+                const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                const totalItems = filteredSales.reduce((sum, sale) => {
+                  if (!sale.sales_details || !Array.isArray(sale.sales_details)) return sum
+                  const items = sale.sales_details
+                    .filter(d => d.product_id)
+                    .reduce((s, d) => s + (parseInt(d.quantity) || 1), 0)
+                  return sum + items
+                }, 0)
+                const uniqueProducts = new Set()
+                filteredSales.forEach(sale => {
+                  sale.sales_details?.forEach(detail => {
+                    if (detail.product_id) {
+                      uniqueProducts.add(detail.product_id)
+                    }
+                  })
+                })
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-600 mb-2">Total Sales</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">{formatCurrency(totalSales)}</p>
+                            <p className="text-xs text-gray-500">{filteredSales.length} transaction{filteredSales.length !== 1 ? 's' : ''}</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-blue-50 ml-3">
+                            <ShoppingCart className="h-5 w-5 text-blue-600" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-600 mb-2">Items Sold</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">{totalItems.toLocaleString()}</p>
+                            <p className="text-xs text-gray-500">total items</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-green-50 ml-3">
+                            <Package className="h-5 w-5 text-green-600" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
+                      <CardContent className="p-5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-600 mb-2">Products</p>
+                            <p className="text-2xl font-bold text-gray-900 mb-1">{uniqueProducts.size}</p>
+                            <p className="text-xs text-gray-500">unique products</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-purple-50 ml-3">
+                            <Layers className="h-5 w-5 text-purple-600" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )
+              })()}
+
+              {/* Product Sales Table */}
+              {(() => {
+                const filteredSales = sales.filter((sale) => {
+                  // Filter by product sales - sales that have product items OR sale_type is Product
+                  const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                  const isProductSale = sale.sale_type === 'Product'
+
+                  if (!hasProducts && !isProductSale) return false
+
+                  // Filter by search query
+                  const matchesSearch = productSalesSearchQuery === "" ||
+                    sale.user_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.guest_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.receipt_number?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                    sale.sales_details?.some(detail => {
+                      if (!detail.product_id) return false
+                      const product = detail.product || products.find(p => p.id === detail.product_id)
+                      return product?.name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase())
+                    })
+
+                  // Filter by category if selected
+                  if (selectedCategoryFilter !== "all") {
+                    const hasCategoryMatch = sale.sales_details?.some(detail => {
+                      if (!detail.product_id) return false
+                      const product = detail.product || products.find(p => p.id === detail.product_id)
+                      return product?.category === selectedCategoryFilter
+                    })
+                    if (!hasCategoryMatch) return false
+                  }
+
+                  // Filter by product if selected
+                  if (selectedProductFilter !== "all") {
+                    const hasProductMatch = sale.sales_details?.some(detail =>
+                      detail.product_id && detail.product_id.toString() === selectedProductFilter
+                    )
+                    if (!hasProductMatch) return false
+                  }
+
+                  // Filter by month
+                  if (productSalesMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== productSalesMonthFilter) return false
+                  }
+
+                  // Filter by year
+                  if (productSalesYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== productSalesYearFilter) return false
+                  }
+
+                  // Filter by custom date
+                  if (productSalesUseCustomDate && productSalesCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    saleDate.setHours(0, 0, 0, 0)
+                    const customDate = new Date(productSalesCustomDate)
+                    customDate.setHours(0, 0, 0, 0)
+                    const saleDateStr = saleDate.toISOString().split('T')[0]
+                    const customDateStr = customDate.toISOString().split('T')[0]
+                    if (saleDateStr !== customDateStr) return false
+                  }
+
+                  return matchesSearch
+                })
+
+                const totalPages = Math.ceil(filteredSales.length / productSalesItemsPerPage)
+                const startIndex = (productSalesCurrentPage - 1) * productSalesItemsPerPage
+                const endIndex = startIndex + productSalesItemsPerPage
+                const paginatedSales = filteredSales.slice(startIndex, endIndex)
+
+                return (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex-1 overflow-auto border border-gray-200 rounded-lg bg-white shadow-sm">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-gray-50 z-10 border-b border-gray-200">
+                          <TableRow className="hover:bg-gray-50">
+                            <TableHead className="font-semibold text-gray-900 text-sm py-3.5 px-5">Date & Time</TableHead>
+                            <TableHead className="font-semibold text-gray-900 text-sm py-3.5 px-5">Products</TableHead>
+                            <TableHead className="font-semibold text-gray-900 text-sm py-3.5 px-5">Payment</TableHead>
+                            <TableHead className="font-semibold text-gray-900 text-sm py-3.5 px-5">Receipt</TableHead>
+                            <TableHead className="text-right font-semibold text-gray-900 text-sm py-3.5 px-5">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedSales.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center py-16">
+                                <div className="flex flex-col items-center justify-center">
+                                  <div className="p-3 rounded-full bg-gray-100 mb-3">
+                                    <ShoppingCart className="h-6 w-6 text-gray-400" />
+                                  </div>
+                                  <p className="text-sm font-semibold text-gray-700 mb-1">No product sales found</p>
+                                  <p className="text-xs text-gray-500">Try adjusting your filters or search query</p>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            paginatedSales.map((sale, index) => {
+                              // Get product names from sales_details
+                              const productDetails = sale.sales_details
+                                ?.filter(detail => detail.product_id)
+                                .map(detail => {
+                                  const productName = detail.product?.name || products.find(p => p.id === detail.product_id)?.name || 'Unknown Product'
+                                  const quantity = detail.quantity || 1
+                                  return { name: productName, quantity }
+                                }) || []
+
+                              return (
+                                <TableRow
+                                  key={sale.id}
+                                  className={`hover:bg-gray-50/80 transition-colors border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}
+                                >
+                                  <TableCell className="py-3.5 px-5">
+                                    <div className="text-sm font-medium text-gray-900">{formatDate(sale.sale_date)}</div>
+                                  </TableCell>
+                                  <TableCell className="py-3.5 px-5">
+                                    <div className="space-y-1.5">
+                                      {productDetails.length > 0 ? (
+                                        productDetails.map((detail, idx) => (
+                                          <div key={idx} className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-medium text-gray-900">
+                                              {detail.name}
+                                            </span>
+                                            {detail.quantity > 1 && (
+                                              <Badge variant="outline" className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border-blue-200 font-medium">
+                                                {detail.quantity}x
+                                              </Badge>
+                                            )}
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <span className="text-sm text-gray-500">N/A</span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="py-3.5 px-5">
+                                    <Badge variant="outline" className={`text-xs px-2.5 py-1 font-medium ${sale.payment_method === 'Gcash' || sale.payment_method === 'gcash'
+                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                      : 'bg-gray-50 text-gray-700 border-gray-200'
+                                      }`}>
+                                      {sale.payment_method || "Cash"}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="py-3.5 px-5">
+                                    <div className="text-xs font-mono font-medium text-gray-700 bg-gray-50 px-2 py-1 rounded inline-block">
+                                      {sale.receipt_number || "N/A"}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right py-3.5 px-5">
+                                    <span className="text-sm font-bold text-gray-900">{formatCurrency(sale.total_amount)}</span>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {filteredSales.length > 0 && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                        <div className="text-sm text-gray-600">
+                          Showing <span className="font-semibold text-gray-900">{startIndex + 1}</span> to <span className="font-semibold text-gray-900">{Math.min(endIndex, filteredSales.length)}</span> of <span className="font-semibold text-gray-900">{filteredSales.length}</span> results
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setProductSalesCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={productSalesCurrentPage === 1}
+                            className="h-9 px-3 text-sm border border-gray-300 hover:bg-gray-50"
+                          >
+                            <ChevronLeft className="h-4 w-4 mr-1" />
+                            Previous
+                          </Button>
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum
+                              if (totalPages <= 5) {
+                                pageNum = i + 1
+                              } else if (productSalesCurrentPage <= 3) {
+                                pageNum = i + 1
+                              } else if (productSalesCurrentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i
+                              } else {
+                                pageNum = productSalesCurrentPage - 2 + i
+                              }
+                              return (
+                                <Button
+                                  key={pageNum}
+                                  variant={productSalesCurrentPage === pageNum ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setProductSalesCurrentPage(pageNum)}
+                                  className="h-9 w-9 p-0 text-sm font-medium border border-gray-300"
+                                >
+                                  {pageNum}
+                                </Button>
+                              )
+                            })}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setProductSalesCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={productSalesCurrentPage === totalPages}
+                            className="h-9 px-3 text-sm border border-gray-300 hover:bg-gray-50"
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           </div>
-          <DialogFooter>
-            <Button onClick={() => setProductSalesDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

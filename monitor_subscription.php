@@ -77,12 +77,15 @@ try {
                 case 'create_manual':
                     createManualSubscription($pdo, $data);
                     break;
+                case 'fix_day_pass':
+                    fixDayPassSubscriptions($pdo);
+                    break;
                 default:
                     http_response_code(400);
                     echo json_encode([
                         "success" => false,
                         "error" => "Invalid action",
-                        "message" => "Supported actions: approve, decline, create_manual"
+                        "message" => "Supported actions: approve, decline, create_manual, fix_day_pass"
                     ]);
                     break;
             }
@@ -442,7 +445,7 @@ function createManualSubscription($pdo, $data)
             throw new Exception("User account must be approved first");
 
         // Verify plan exists
-        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, discounted_price FROM member_subscription_plan WHERE id = ?");
+        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days, discounted_price FROM member_subscription_plan WHERE id = ?");
         $planStmt->execute([$plan_id]);
         $plan = $planStmt->fetch();
 
@@ -463,10 +466,18 @@ function createManualSubscription($pdo, $data)
             $amount_paid = (float) $amount_paid;
         }
 
-        // Calculate end date
+        // Calculate end date - use duration_days if set (for Day Pass), otherwise use duration_months
         $start_date_obj = new DateTime($start_date);
         $end_date_obj = clone $start_date_obj;
-        $end_date_obj->add(new DateInterval('P' . $plan['duration_months'] . 'M'));
+
+        if (!empty($plan['duration_days']) && $plan['duration_days'] > 0) {
+            // Use days for Day Pass plans
+            $end_date_obj->add(new DateInterval('P' . $plan['duration_days'] . 'D'));
+        } else {
+            // Use months for regular subscription plans
+            $duration_months = $plan['duration_months'] ?? 1; // Default to 1 month if not set
+            $end_date_obj->add(new DateInterval('P' . $duration_months . 'M'));
+        }
         $end_date = $end_date_obj->format('Y-m-d');
 
         // Get approved status ID
@@ -783,6 +794,65 @@ function deleteSubscription($pdo, $data)
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(["success" => false, "error" => "Delete failed", "message" => $e->getMessage()]);
+    }
+}
+
+function fixDayPassSubscriptions($pdo)
+{
+    try {
+        // Find all subscriptions with Day Pass plans (plans with duration_days > 0)
+        $stmt = $pdo->prepare("
+            SELECT s.id, s.start_date, s.end_date, p.id as plan_id, p.plan_name, p.duration_days, p.duration_months
+            FROM subscription s
+            JOIN member_subscription_plan p ON s.plan_id = p.id
+            WHERE (p.duration_days > 0 OR LOWER(p.plan_name) LIKE '%day pass%' OR LOWER(p.plan_name) LIKE '%daypass%')
+            AND s.start_date IS NOT NULL
+        ");
+        $stmt->execute();
+        $subscriptions = $stmt->fetchAll();
+
+        $fixed = 0;
+        $errors = [];
+
+        foreach ($subscriptions as $sub) {
+            try {
+                $start_date = new DateTime($sub['start_date']);
+                $end_date = clone $start_date;
+
+                // Use duration_days if available, otherwise default to 1 day for Day Pass
+                $duration_days = !empty($sub['duration_days']) && $sub['duration_days'] > 0
+                    ? $sub['duration_days']
+                    : 1;
+
+                $end_date->add(new DateInterval('P' . $duration_days . 'D'));
+                $new_end_date = $end_date->format('Y-m-d');
+
+                // Only update if the end_date is different
+                if ($new_end_date !== $sub['end_date']) {
+                    $updateStmt = $pdo->prepare("UPDATE subscription SET end_date = ? WHERE id = ?");
+                    $updateStmt->execute([$new_end_date, $sub['id']]);
+                    $fixed++;
+                }
+            } catch (Exception $e) {
+                $errors[] = "Subscription ID {$sub['id']}: " . $e->getMessage();
+            }
+        }
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Day Pass subscriptions fixed successfully",
+            "fixed_count" => $fixed,
+            "total_checked" => count($subscriptions),
+            "errors" => $errors
+        ]);
+
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "error" => "Failed to fix Day Pass subscriptions",
+            "message" => $e->getMessage()
+        ]);
     }
 }
 ?>

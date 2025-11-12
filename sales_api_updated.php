@@ -129,6 +129,9 @@ function handlePutRequest($pdo, $action, $data)
 		case 'product':
 			updateProduct($pdo, $data);
 			break;
+		case 'restore':
+			restoreProduct($pdo, $data);
+			break;
 		default:
 			http_response_code(400);
 			echo json_encode(["error" => "Invalid action for PUT request"]);
@@ -140,7 +143,7 @@ function handleDeleteRequest($pdo, $action, $data)
 {
 	switch ($action) {
 		case 'product':
-			deleteProduct($pdo, $data);
+			archiveProduct($pdo, $data);
 			break;
 		default:
 			http_response_code(400);
@@ -152,9 +155,56 @@ function handleDeleteRequest($pdo, $action, $data)
 
 function getProductsData($pdo)
 {
-	$stmt = $pdo->query("SELECT * FROM `product` ORDER BY category, name");
-	$products = $stmt->fetchAll();
-	echo json_encode(["products" => $products ?: []]);
+	// Check if viewing archived products
+	$showArchived = isset($_GET['archived']) && $_GET['archived'] == '1';
+
+	// Check if is_archived column exists
+	try {
+		$checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `product` LIKE 'is_archived'");
+		$hasArchivedColumn = $checkColumnStmt->rowCount() > 0;
+	} catch (Exception $e) {
+		$hasArchivedColumn = false;
+	}
+
+	if ($hasArchivedColumn) {
+		if ($showArchived) {
+			// Show only archived products
+			$stmt = $pdo->prepare("
+				SELECT id, name, price, stock, category, is_archived
+				FROM product
+				WHERE is_archived = 1
+				ORDER BY category, name ASC
+			");
+		} else {
+			// Show only non-archived products (default)
+			$stmt = $pdo->prepare("
+				SELECT id, name, price, stock, category, COALESCE(is_archived, 0) as is_archived
+				FROM product
+				WHERE COALESCE(is_archived, 0) = 0
+				ORDER BY category, name ASC
+			");
+		}
+		$stmt->execute();
+		$products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+	} else {
+		// If column doesn't exist yet, show all products
+		$stmt = $pdo->query("
+			SELECT id, name, price, stock, category, 0 as is_archived
+			FROM product
+			ORDER BY category, name ASC
+		");
+		$products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	// Convert to proper types
+	foreach ($products as &$product) {
+		$product['id'] = (int) $product['id'];
+		$product['price'] = (float) $product['price'];
+		$product['stock'] = (int) $product['stock'];
+		$product['is_archived'] = isset($product['is_archived']) ? (int) $product['is_archived'] : 0;
+	}
+
+	echo json_encode(["products" => $products]);
 }
 
 function getSalesData($pdo)
@@ -216,8 +266,8 @@ function getSalesData($pdo)
 		       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
 		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.guest_session_id, sd.quantity, sd.price AS detail_price,
 		       p.name AS product_name, p.price AS product_price, p.category AS product_category,
-		       sub.plan_id, sub.user_id AS subscription_user_id,
-		       msp.plan_name,
+		       sub.plan_id, sub.user_id AS subscription_user_id, sub.amount_paid AS subscription_amount_paid, sub.discounted_price AS subscription_discounted_price,
+		       msp.plan_name, msp.price AS plan_price, msp.duration_months,
 		       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS member_fullname,
 		       CONCAT_WS(' ', u_sub.fname, u_sub.mname, u_sub.lname) AS subscription_member_fullname,
 		       cml.coach_id,
@@ -268,8 +318,16 @@ function getSalesData($pdo)
 
 		if (!isset($salesGrouped[$saleId])) {
 			// Get member name - prefer from sales.user_id, fallback to subscription.user_id
-			$memberName = !empty($row['member_fullname']) ? trim($row['member_fullname']) : null;
-			if (empty($memberName) && !empty($row['subscription_member_fullname'])) {
+			// For subscription sales, always prefer subscription.user_id since it's more reliable
+			$memberName = null;
+			if ($row['sale_type'] === 'Subscription' && !empty($row['subscription_member_fullname'])) {
+				// For subscription sales, prefer subscription_member_fullname (from subscription.user_id)
+				$memberName = trim($row['subscription_member_fullname']);
+			} else if (!empty($row['member_fullname'])) {
+				// For other sales, use member_fullname (from sales.user_id)
+				$memberName = trim($row['member_fullname']);
+			} else if (!empty($row['subscription_member_fullname'])) {
+				// Fallback to subscription_member_fullname if member_fullname is empty
 				$memberName = trim($row['subscription_member_fullname']);
 			}
 
@@ -309,6 +367,18 @@ function getSalesData($pdo)
 				'coach_name' => $coachName,
 				'sales_details' => []
 			];
+
+			// For subscription sales, store plan info at sale level even if no sales_details
+			// NOTE: This is a temporary value - it will be overwritten later by subscription lookup to ensure accuracy
+			if ($row['sale_type'] === 'Subscription' && !empty($row['plan_name'])) {
+				$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
+				$salesGrouped[$saleId]['plan_id'] = $row['plan_id'];
+				$salesGrouped[$saleId]['plan_price'] = !empty($row['plan_price']) ? (float) $row['plan_price'] : null;
+				$salesGrouped[$saleId]['duration_months'] = !empty($row['duration_months']) ? (int) $row['duration_months'] : null;
+				$salesGrouped[$saleId]['duration_days'] = !empty($row['duration_days']) ? (int) $row['duration_days'] : null;
+				$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
+				$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
+			}
 		} else {
 			// If coach info wasn't set in first row but exists in this row, update it
 			if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
@@ -322,6 +392,17 @@ function getSalesData($pdo)
 				if (in_array($salesGrouped[$saleId]['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 					$salesGrouped[$saleId]['user_name'] = trim($row['guest_name']);
 				}
+			}
+			// For subscription sales, update plan info if not set and available in this row
+			// NOTE: This will be overwritten later by the subscription lookup to ensure accuracy
+			if ($salesGrouped[$saleId]['sale_type'] === 'Subscription' && empty($salesGrouped[$saleId]['plan_name']) && !empty($row['plan_name'])) {
+				$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
+				$salesGrouped[$saleId]['plan_id'] = $row['plan_id'];
+				$salesGrouped[$saleId]['plan_price'] = !empty($row['plan_price']) ? (float) $row['plan_price'] : null;
+				$salesGrouped[$saleId]['duration_months'] = !empty($row['duration_months']) ? (int) $row['duration_months'] : null;
+				$salesGrouped[$saleId]['duration_days'] = !empty($row['duration_days']) ? (int) $row['duration_days'] : null;
+				$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
+				$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 			}
 		}
 
@@ -346,17 +427,235 @@ function getSalesData($pdo)
 				$detail['subscription_id'] = $row['subscription_id'];
 				$detail['subscription'] = [
 					'plan_id' => $row['plan_id'],
-					'plan_name' => $row['plan_name']
+					'plan_name' => $row['plan_name'],
+					'plan_price' => !empty($row['plan_price']) ? (float) $row['plan_price'] : null,
+					'duration_months' => !empty($row['duration_months']) ? (int) $row['duration_months'] : null,
+					'duration_days' => !empty($row['duration_days']) ? (int) $row['duration_days'] : null,
+					'amount_paid' => !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null,
+					'discounted_price' => !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null
 				];
 				// Also store plan info at sale level for easy access in frontend
 				if (!isset($salesGrouped[$saleId]['plan_name']) && !empty($row['plan_name'])) {
 					$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
 					$salesGrouped[$saleId]['plan_id'] = $row['plan_id'];
+					$salesGrouped[$saleId]['plan_price'] = !empty($row['plan_price']) ? (float) $row['plan_price'] : null;
+					$salesGrouped[$saleId]['duration_months'] = !empty($row['duration_months']) ? (int) $row['duration_months'] : null;
+					$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
+					$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 				}
 			}
 
 			$salesGrouped[$saleId]['sales_details'][] = $detail;
 		}
+	}
+
+	// For ALL subscription sales, ensure we have plan info - query subscription table directly
+	// This ensures we always get the correct plan_name from the subscription's actual plan_id
+	// Wrap in try-catch to prevent errors from breaking sales retrieval
+	try {
+		foreach ($salesGrouped as $saleId => $sale) {
+			// Process ALL subscription sales to ALWAYS get the correct plan_name from subscription table
+			// This ensures plan_name matches what's shown in monitoring subscription
+			if (strtolower($sale['sale_type']) === 'subscription' && !empty($sale['user_id'])) {
+				// ALWAYS query subscription table to get the correct plan_name
+				// Even if plan_name is already set, we want to overwrite it with the correct one
+				// Check if sales_details has subscription_id first
+				$subscriptionId = null;
+				if (!empty($sale['sales_details']) && is_array($sale['sales_details'])) {
+					foreach ($sale['sales_details'] as $detail) {
+						if (!empty($detail['subscription_id'])) {
+							$subscriptionId = $detail['subscription_id'];
+							break;
+						}
+					}
+				}
+
+				// If we found subscription_id in sales_details, use it directly (most reliable)
+				if ($subscriptionId) {
+					$subStmt = $pdo->prepare("
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
+						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
+						FROM `subscription` sub
+						JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
+						LEFT JOIN `user` u ON sub.user_id = u.id
+						WHERE sub.id = ?
+						LIMIT 1
+					");
+					$subStmt->execute([$subscriptionId]);
+					$subscription = $subStmt->fetch();
+
+					if ($subscription && !empty($subscription['plan_name'])) {
+						// Always update plan_name from subscription (most accurate source)
+						$salesGrouped[$saleId]['plan_name'] = $subscription['plan_name'];
+						$salesGrouped[$saleId]['plan_id'] = $subscription['plan_id'];
+						$salesGrouped[$saleId]['plan_price'] = !empty($subscription['plan_price']) ? (float) $subscription['plan_price'] : null;
+						$salesGrouped[$saleId]['duration_months'] = !empty($subscription['duration_months']) ? (int) $subscription['duration_months'] : null;
+						$salesGrouped[$saleId]['duration_days'] = !empty($subscription['duration_days']) ? (int) $subscription['duration_days'] : null;
+						$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($subscription['amount_paid']) ? (float) $subscription['amount_paid'] : null;
+						$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($subscription['discounted_price']) ? (float) $subscription['discounted_price'] : null;
+						// Update user_name and user_id from subscription if not set or incorrect
+						if (!empty($subscription['user_fullname'])) {
+							// Always update user_name from subscription (more reliable)
+							$currentUserName = strtolower(trim($salesGrouped[$saleId]['user_name'] ?? ''));
+							if (
+								empty($salesGrouped[$saleId]['user_name']) ||
+								$currentUserName === 'gym membership' ||
+								$currentUserName === strtolower(trim($subscription['plan_name']))
+							) {
+								$salesGrouped[$saleId]['user_name'] = trim($subscription['user_fullname']);
+							}
+						}
+						if (!empty($subscription['user_id']) && empty($salesGrouped[$saleId]['user_id'])) {
+							$salesGrouped[$saleId]['user_id'] = $subscription['user_id'];
+						}
+						continue;
+					}
+				}
+
+				// If no subscription_id found, try matching by user_id, amount, and date (more accurate)
+				// Strategy 1: Match subscription by user_id, amount (within 10 peso), and same day
+				$subStmt = $pdo->prepare("
+					SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+					       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
+					       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
+					FROM `subscription` sub
+					JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
+					LEFT JOIN `user` u ON sub.user_id = u.id
+					WHERE sub.user_id = ?
+					  AND DATE(sub.start_date) = DATE(?)
+					  AND (ABS(COALESCE(sub.amount_paid, 0) - ?) <= 10 OR ABS(COALESCE(sub.discounted_price, 0) - ?) <= 10)
+					ORDER BY ABS(COALESCE(sub.amount_paid, sub.discounted_price, 0) - ?) ASC, sub.start_date DESC, sub.id DESC
+					LIMIT 1
+				");
+				$subStmt->execute([
+					$sale['user_id'],
+					$sale['sale_date'],
+					$sale['total_amount'],
+					$sale['total_amount'],
+					$sale['total_amount']
+				]);
+				$subscription = $subStmt->fetch();
+
+				// Strategy 2: If no exact date/amount match, try matching by amount and date range
+				if (!$subscription || empty($subscription['plan_name'])) {
+					$subStmt = $pdo->prepare("
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
+						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
+						FROM `subscription` sub
+						JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
+						LEFT JOIN `user` u ON sub.user_id = u.id
+						WHERE sub.user_id = ?
+						  AND (ABS(COALESCE(sub.amount_paid, 0) - ?) <= 10 OR ABS(COALESCE(sub.discounted_price, 0) - ?) <= 10)
+						  AND sub.start_date >= DATE_SUB(?, INTERVAL 14 DAY)
+						  AND sub.start_date <= DATE_ADD(?, INTERVAL 14 DAY)
+						ORDER BY ABS(COALESCE(sub.amount_paid, sub.discounted_price, 0) - ?) ASC, ABS(DATEDIFF(sub.start_date, ?)) ASC, sub.start_date DESC
+						LIMIT 1
+					");
+					$subStmt->execute([
+						$sale['user_id'],
+						$sale['total_amount'],
+						$sale['total_amount'],
+						$sale['sale_date'],
+						$sale['sale_date'],
+						$sale['total_amount'],
+						$sale['sale_date']
+					]);
+					$subscription = $subStmt->fetch();
+				}
+
+				// Strategy 3: If still no match, try by date only (same day or within 7 days)
+				if (!$subscription || empty($subscription['plan_name'])) {
+					$subStmt = $pdo->prepare("
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
+						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
+						FROM `subscription` sub
+						JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
+						LEFT JOIN `user` u ON sub.user_id = u.id
+						WHERE sub.user_id = ?
+						  AND sub.start_date >= DATE_SUB(?, INTERVAL 7 DAY)
+						  AND sub.start_date <= DATE_ADD(?, INTERVAL 7 DAY)
+						ORDER BY ABS(DATEDIFF(sub.start_date, ?)) ASC, sub.start_date DESC
+						LIMIT 1
+					");
+					$subStmt->execute([
+						$sale['user_id'],
+						$sale['sale_date'],
+						$sale['sale_date'],
+						$sale['sale_date']
+					]);
+					$subscription = $subStmt->fetch();
+				}
+
+				// Strategy 4: Last resort - find most recent subscription for this user (within 60 days)
+				if (!$subscription || empty($subscription['plan_name'])) {
+					$subStmt = $pdo->prepare("
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
+						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
+						FROM `subscription` sub
+						JOIN `member_subscription_plan` msp ON sub.plan_id = msp.id
+						LEFT JOIN `user` u ON sub.user_id = u.id
+						WHERE sub.user_id = ?
+						  AND sub.start_date >= DATE_SUB(?, INTERVAL 60 DAY)
+						  AND sub.start_date <= DATE_ADD(?, INTERVAL 14 DAY)
+						ORDER BY sub.start_date DESC
+						LIMIT 1
+					");
+					$subStmt->execute([
+						$sale['user_id'],
+						$sale['sale_date'],
+						$sale['sale_date']
+					]);
+					$subscription = $subStmt->fetch();
+				}
+
+				// If we found a subscription, ALWAYS update plan_name from subscription (most accurate)
+				if ($subscription && !empty($subscription['plan_name'])) {
+					// ALWAYS overwrite plan_name from subscription table (this is the source of truth)
+					// This ensures plan_name matches what's shown in monitoring subscription
+					$salesGrouped[$saleId]['plan_name'] = $subscription['plan_name'];
+					$salesGrouped[$saleId]['plan_id'] = $subscription['plan_id'];
+					$salesGrouped[$saleId]['plan_price'] = !empty($subscription['plan_price']) ? (float) $subscription['plan_price'] : null;
+					$salesGrouped[$saleId]['duration_months'] = !empty($subscription['duration_months']) ? (int) $subscription['duration_months'] : null;
+					$salesGrouped[$saleId]['duration_days'] = !empty($subscription['duration_days']) ? (int) $subscription['duration_days'] : null;
+					$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($subscription['amount_paid']) ? (float) $subscription['amount_paid'] : null;
+					$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($subscription['discounted_price']) ? (float) $subscription['discounted_price'] : null;
+					// Update user_name from subscription (always use subscription's user)
+					if (!empty($subscription['user_fullname'])) {
+						$salesGrouped[$saleId]['user_name'] = trim($subscription['user_fullname']);
+					}
+					// Update user_id from subscription
+					if (!empty($subscription['user_id'])) {
+						$salesGrouped[$saleId]['user_id'] = $subscription['user_id'];
+					}
+				} else if (!empty($sale['plan_id'])) {
+					// If no subscription found but we have a plan_id, query plan directly as fallback
+					// This ensures we at least have the plan_name from the plan table
+					$planStmt = $pdo->prepare("
+						SELECT id, plan_name, price, duration_months, duration_days, discounted_price
+						FROM member_subscription_plan
+						WHERE id = ?
+						LIMIT 1
+					");
+					$planStmt->execute([$sale['plan_id']]);
+					$plan = $planStmt->fetch();
+					if ($plan && !empty($plan['plan_name'])) {
+						// Update plan_name from plan table (fallback if subscription not found)
+						$salesGrouped[$saleId]['plan_name'] = $plan['plan_name'];
+						$salesGrouped[$saleId]['plan_id'] = $plan['id'];
+						$salesGrouped[$saleId]['plan_price'] = !empty($plan['price']) ? (float) $plan['price'] : null;
+						$salesGrouped[$saleId]['duration_months'] = !empty($plan['duration_months']) ? (int) $plan['duration_months'] : null;
+						$salesGrouped[$saleId]['duration_days'] = !empty($plan['duration_days']) ? (int) $plan['duration_days'] : null;
+					}
+				}
+			}
+		}
+	} catch (Exception $e) {
+		// Log error but don't break sales retrieval
+		error_log("Error fetching subscription plan info for sales: " . $e->getMessage());
 	}
 
 	echo json_encode(["sales" => array_values($salesGrouped)]);
@@ -480,11 +779,12 @@ function getAnalyticsData($pdo)
 	$coachSales = (float) $salesBreakdown['coach_assignment_sales'];
 	$walkinSales = (float) $salesBreakdown['walkin_sales'];
 
-	// Get low stock items (only relevant for product sales)
+	// Get low stock items (only relevant for product sales) - exclude archived products
 	$stmt = $pdo->prepare("
 		SELECT COUNT(*) AS low_stock_count
 		FROM `product`
 		WHERE stock <= 10
+		AND (is_archived = 0 OR is_archived IS NULL)
 	");
 	$stmt->execute();
 	$lowStockItems = $stmt->fetch()['low_stock_count'];
@@ -738,7 +1038,7 @@ function updateProduct($pdo, $data)
 	}
 }
 
-function deleteProduct($pdo, $data)
+function archiveProduct($pdo, $data)
 {
 	if (!isset($data['id']) || !is_numeric($data['id'])) {
 		http_response_code(400);
@@ -746,11 +1046,8 @@ function deleteProduct($pdo, $data)
 		return;
 	}
 
-	// Begin transaction to ensure data integrity
-	$pdo->beginTransaction();
-
 	try {
-		// Get product details before deletion for logging
+		// Get product details before archiving for logging
 		$productStmt = $pdo->prepare("SELECT name, price, category FROM product WHERE id = ?");
 		$productStmt->execute([$data['id']]);
 		$product = $productStmt->fetch();
@@ -759,34 +1056,84 @@ function deleteProduct($pdo, $data)
 			throw new Exception("Product not found");
 		}
 
-		// First, delete all sales_details that reference this product
-		$deleteDetailsStmt = $pdo->prepare("DELETE FROM `sales_details` WHERE product_id = ?");
-		$deleteDetailsStmt->execute([$data['id']]);
+		// Archive the product instead of deleting (preserve sales data)
+		// First check if is_archived column exists, if not, add it
+		$checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `product` LIKE 'is_archived'");
+		if ($checkColumnStmt->rowCount() == 0) {
+			// Add is_archived column if it doesn't exist
+			$pdo->exec("ALTER TABLE `product` ADD COLUMN `is_archived` TINYINT(1) DEFAULT 0");
+			$pdo->exec("ALTER TABLE `product` ADD INDEX `idx_is_archived` (`is_archived`)");
+		}
 
-		// Now delete the product
-		$stmt = $pdo->prepare("DELETE FROM `product` WHERE id = ?");
+		// Update product to archived status
+		$stmt = $pdo->prepare("UPDATE `product` SET `is_archived` = 1 WHERE id = ?");
 		$stmt->execute([$data['id']]);
 
 		if ($stmt->rowCount() > 0) {
-			// Commit the transaction
-			$pdo->commit();
-
-			// Log activity using dedicated logging file
+			// Log activity
 			$productName = $product['name'];
 			$userId = $_SESSION['user_id'] ?? null;
-			$logUrl = "https://api.cnergy.site/log_activity.php?action=Delete%20Product&details=" . urlencode("Product deleted: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Archive%20Product&details=" . urlencode("Product archived: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
 			if ($userId) {
 				$logUrl .= "&user_id=" . $userId;
 			}
 			file_get_contents($logUrl);
 
-			echo json_encode(["success" => "Product deleted successfully"]);
+			echo json_encode(["success" => "Product archived successfully"]);
 		} else {
 			throw new Exception("Product not found");
 		}
 	} catch (Exception $e) {
-		// Rollback transaction on error
-		$pdo->rollBack();
+		http_response_code(404);
+		echo json_encode(["error" => $e->getMessage()]);
+	}
+}
+
+function restoreProduct($pdo, $data)
+{
+	if (!isset($data['id']) || !is_numeric($data['id'])) {
+		http_response_code(400);
+		echo json_encode(["error" => "Invalid product ID"]);
+		return;
+	}
+
+	try {
+		// Check if is_archived column exists, if not, add it
+		$checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `product` LIKE 'is_archived'");
+		if ($checkColumnStmt->rowCount() == 0) {
+			// Add is_archived column if it doesn't exist
+			$pdo->exec("ALTER TABLE `product` ADD COLUMN `is_archived` TINYINT(1) DEFAULT 0");
+			$pdo->exec("ALTER TABLE `product` ADD INDEX `idx_is_archived` (`is_archived`)");
+		}
+
+		// Get product details before restoring for logging
+		$productStmt = $pdo->prepare("SELECT name, price, category FROM product WHERE id = ?");
+		$productStmt->execute([$data['id']]);
+		$product = $productStmt->fetch();
+
+		if (!$product) {
+			throw new Exception("Product not found");
+		}
+
+		// Restore the product (set is_archived to 0)
+		$stmt = $pdo->prepare("UPDATE `product` SET `is_archived` = 0 WHERE id = ?");
+		$stmt->execute([$data['id']]);
+
+		if ($stmt->rowCount() > 0) {
+			// Log activity
+			$productName = $product['name'];
+			$userId = $_SESSION['user_id'] ?? null;
+			$logUrl = "https://api.cnergy.site/log_activity.php?action=Restore%20Product&details=" . urlencode("Product restored: {$productName} - Price: ₱{$product['price']}, Category: {$product['category']}");
+			if ($userId) {
+				$logUrl .= "&user_id=" . $userId;
+			}
+			file_get_contents($logUrl);
+
+			echo json_encode(["success" => "Product restored successfully"]);
+		} else {
+			throw new Exception("Product not found");
+		}
+	} catch (Exception $e) {
 		http_response_code(404);
 		echo json_encode(["error" => $e->getMessage()]);
 	}

@@ -28,6 +28,8 @@ import {
   User,
   CreditCard,
   Receipt,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -57,6 +59,16 @@ const SubscriptionMonitor = ({ userId }) => {
     amount_received: "",
     notes: ""
   })
+
+  // Pagination state for each tab
+  const [currentPage, setCurrentPage] = useState({
+    pending: 1,
+    active: 1,
+    upcoming: 1,
+    expired: 1,
+    all: 1
+  })
+  const [itemsPerPage] = useState(15) // 15 entries per page
 
   // Discount configuration - load from localStorage
   const [discountConfig, setDiscountConfig] = useState(() => {
@@ -474,7 +486,7 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_received: receivedAmount,
         change_given: change,
         receipt_number: autoReceiptNumber,
-        notes: transactionNotes,
+        notes: "",
         created_by: "Admin",
         staff_id: currentUserId, // Use current user ID with fallback
         transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
@@ -553,7 +565,7 @@ const SubscriptionMonitor = ({ userId }) => {
         subscription_id: currentSubscriptionId,
         payment_method: paymentMethod,
         amount_received: receivedAmount,
-        notes: transactionNotes,
+        notes: "",
         receipt_number: receiptNumber || undefined,
         approved_by: "Admin",
         staff_id: userId,
@@ -801,6 +813,30 @@ const SubscriptionMonitor = ({ userId }) => {
   const activeSubscriptions = getActiveSubscriptions()
   const expiringSoonSubscriptions = getExpiringSoonSubscriptions()
   const expiredSubscriptions = getExpiredSubscriptions()
+
+  // Pagination helper function
+  const getPaginatedData = (data, tabKey) => {
+    const page = currentPage[tabKey] || 1
+    const startIndex = (page - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return {
+      paginated: data.slice(startIndex, endIndex),
+      totalPages: Math.max(1, Math.ceil(data.length / itemsPerPage)),
+      currentPage: page,
+      totalItems: data.length
+    }
+  }
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage({
+      pending: 1,
+      active: 1,
+      upcoming: 1,
+      expired: 1,
+      all: 1
+    })
+  }, [searchQuery, statusFilter, planFilter])
 
   // Get analytics
   const analytics = {
@@ -1638,14 +1674,6 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label>Notes (Optional)</Label>
-              <Input
-                value={transactionNotes}
-                onChange={(e) => setTransactionNotes(e.target.value)}
-                placeholder="Add notes for this transaction"
-              />
-            </div>
           </div>
 
           <DialogFooter>

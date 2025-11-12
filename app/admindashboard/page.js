@@ -216,9 +216,21 @@ const App = () => {
         let errorMessage = (response.data && response.data.message) ? response.data.message : "Failed to process QR code"
         const errorType = (response.data && response.data.type) ? response.data.type : "unknown"
 
-        // Format error message for no_plan type
+        // Format error message consistently based on type
         if (errorType === "no_plan") {
           errorMessage = `${memberName} - No active subscription`
+        } else if (errorType === "expired_plan") {
+          // Extract expiration date from message if available
+          const dateMatch = (response.data.message || "").match(/(\w+\s+\d{1,2},\s+\d{4})/i)
+          if (dateMatch) {
+            errorMessage = `${memberName} - Subscription expired on ${dateMatch[1]}`
+          } else {
+            errorMessage = `${memberName} - Subscription has expired`
+          }
+        } else if (errorType === "guest_expired") {
+          errorMessage = `${memberName} - Guest session has expired`
+        } else if (errorType === "guest_error") {
+          errorMessage = `${memberName} - Guest session error`
         }
 
         // Only log subscription-related denials (no_plan, expired_plan, guest errors)

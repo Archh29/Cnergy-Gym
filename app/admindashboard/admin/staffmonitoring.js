@@ -30,6 +30,8 @@ import {
   FileText,
   Eye,
   RefreshCw,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 // API Configuration
@@ -73,6 +75,10 @@ const StaffMonitoring = () => {
   const [selectedUserActivities, setSelectedUserActivities] = useState([])
   const [selectedUserName, setSelectedUserName] = useState("")
   const [loadingUserActivities, setLoadingUserActivities] = useState(false)
+
+  // Pagination states for activity logs
+  const [activityLogsCurrentPage, setActivityLogsCurrentPage] = useState(1)
+  const [activityLogsItemsPerPage] = useState(20) // 20 entries per page
 
   // Load initial data
   useEffect(() => {
@@ -1099,6 +1105,17 @@ const StaffMonitoring = () => {
     return true
   })
 
+  // Pagination for Activity Logs
+  const activityLogsTotalPages = Math.max(1, Math.ceil(filteredActivities.length / activityLogsItemsPerPage))
+  const activityLogsStartIndex = (activityLogsCurrentPage - 1) * activityLogsItemsPerPage
+  const activityLogsEndIndex = activityLogsStartIndex + activityLogsItemsPerPage
+  const paginatedActivities = filteredActivities.slice(activityLogsStartIndex, activityLogsEndIndex)
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setActivityLogsCurrentPage(1)
+  }, [searchQuery, staffFilter, dateFilter, activityTypeFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange])
+
   console.log("Activities state:", activities.length)
   console.log("Filtered activities:", filteredActivities.length)
   console.log("Search query:", searchQuery)
@@ -1566,14 +1583,14 @@ const StaffMonitoring = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredActivities.length === 0 ? (
+                    {paginatedActivities.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                           No activities found matching your criteria
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredActivities.map((activity) => (
+                      paginatedActivities.map((activity) => (
                         <TableRow key={activity.id} className="hover:bg-gray-50/50 transition-colors">
                           <TableCell className="py-4">
                             <div className="flex items-center gap-3">
@@ -1620,6 +1637,37 @@ const StaffMonitoring = () => {
                   </TableBody>
                 </Table>
               </div>
+              {/* Pagination Controls for Activity Logs */}
+              {filteredActivities.length > 0 && (
+                <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white mb-6">
+                  <div className="text-sm text-gray-500">
+                    {filteredActivities.length} {filteredActivities.length === 1 ? 'entry' : 'entries'} total
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActivityLogsCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={activityLogsCurrentPage === 1}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md min-w-[100px] text-center">
+                      Page {activityLogsCurrentPage} of {activityLogsTotalPages}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setActivityLogsCurrentPage(prev => Math.min(activityLogsTotalPages, prev + 1))}
+                      disabled={activityLogsCurrentPage === activityLogsTotalPages}
+                      className="h-8 px-3 flex items-center gap-1 border-gray-300 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

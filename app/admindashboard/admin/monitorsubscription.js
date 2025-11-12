@@ -29,6 +29,8 @@ import {
   CreditCard,
   Receipt,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -60,6 +62,16 @@ const SubscriptionMonitor = ({ userId }) => {
     amount_received: "",
     notes: ""
   })
+
+  // Pagination state for each tab
+  const [currentPage, setCurrentPage] = useState({
+    pending: 1,
+    active: 1,
+    upcoming: 1,
+    expired: 1,
+    all: 1
+  })
+  const [itemsPerPage] = useState(15) // 15 entries per page
 
   // Discount configuration - load from localStorage
   const [discountConfig, setDiscountConfig] = useState(() => {
@@ -501,7 +513,7 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_received: receivedAmount,
         change_given: change,
         receipt_number: autoReceiptNumber,
-        notes: transactionNotes,
+        notes: "",
         created_by: "Admin",
         staff_id: currentUserId, // Use current user ID with fallback
         transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
@@ -580,7 +592,7 @@ const SubscriptionMonitor = ({ userId }) => {
         subscription_id: currentSubscriptionId,
         payment_method: paymentMethod,
         amount_received: receivedAmount,
-        notes: transactionNotes,
+        notes: "",
         receipt_number: receiptNumber || undefined,
         approved_by: "Admin",
         staff_id: userId,
@@ -797,6 +809,30 @@ const SubscriptionMonitor = ({ userId }) => {
     return diffDays
   }
 
+  // Calculate time remaining with hours when 1 day or less
+  const calculateTimeRemaining = (endDate) => {
+    if (!endDate) return null
+    const now = new Date()
+    const end = new Date(endDate)
+    const diffTime = end.getTime() - now.getTime()
+
+    if (diffTime < 0) {
+      // Expired
+      const daysAgo = Math.ceil(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
+      return { type: 'expired', days: daysAgo }
+    }
+
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    const totalHours = Math.floor(diffTime / (1000 * 60 * 60))
+
+    if (diffDays <= 1) {
+      // Show hours when 1 day or less (show total hours)
+      return { type: 'hours', days: diffDays, hours: totalHours }
+    }
+
+    return { type: 'days', days: diffDays }
+  }
+
   // Get analytics
   const getActiveSubscriptions = () => {
     return (subscriptions || []).filter((s) => {
@@ -919,6 +955,30 @@ const SubscriptionMonitor = ({ userId }) => {
   const activeSubscriptions = getActiveSubscriptions()
   const expiringSoonSubscriptions = getExpiringSoonSubscriptions()
   const expiredSubscriptions = getExpiredSubscriptions()
+
+  // Pagination helper function
+  const getPaginatedData = (data, tabKey) => {
+    const page = currentPage[tabKey] || 1
+    const startIndex = (page - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return {
+      paginated: data.slice(startIndex, endIndex),
+      totalPages: Math.max(1, Math.ceil(data.length / itemsPerPage)),
+      currentPage: page,
+      totalItems: data.length
+    }
+  }
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage({
+      pending: 1,
+      active: 1,
+      upcoming: 1,
+      expired: 1,
+      all: 1
+    })
+  }, [searchQuery, statusFilter, planFilter, monthFilter, yearFilter])
 
   // Get analytics
   const analytics = {
@@ -1155,104 +1215,142 @@ const SubscriptionMonitor = ({ userId }) => {
                 </div>
               </div>
 
-              {!filterSubscriptions(pendingSubscriptions) || filterSubscriptions(pendingSubscriptions).length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No pending subscription requests</p>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-gradient-to-r from-yellow-50 to-yellow-100/50 hover:bg-yellow-100 border-b-2 border-yellow-200">
-                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Requested</TableHead>
-                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                        <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filterSubscriptions(pendingSubscriptions).map((subscription) => {
-                        return (
-                          <TableRow key={subscription.subscription_id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-10 w-10">
-                                  <AvatarFallback>
-                                    {subscription.fname[0]}
-                                    {subscription.lname[0]}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <div className="font-medium">
-                                    {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{subscription.plan_name}</div>
-                                {(() => {
-                                  const months = calculateMonths(subscription)
-                                  return months > 1 ? (
-                                    <div className="text-xs text-blue-600 font-medium mt-1">
-                                      {months} month{months > 1 ? 's' : ''} availed
-                                    </div>
-                                  ) : null
-                                })()}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                {(() => {
-                                  const rawDate = subscription.created_at
-                                  const formattedDate = formatDateTime(rawDate)
-                                  console.log("🔍 DEBUG - Rendering pending subscription date:")
-                                  console.log("  - Subscription ID:", subscription.subscription_id)
-                                  console.log("  - Raw created_at:", rawDate)
-                                  console.log("  - Type of created_at:", typeof rawDate)
-                                  console.log("  - Formatted date:", formattedDate)
-                                  console.log("  - Full subscription object:", subscription)
-                                  return formattedDate
-                                })()}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                                <Clock className="h-3 w-3" />
-                                {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    console.log("Approve button clicked for subscription:", subscription);
-                                    handleApprove(subscription.subscription_id);
-                                  }}
-                                  disabled={actionLoading === subscription.subscription_id}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  {actionLoading === subscription.subscription_id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle className="h-4 w-4" />
-                                  )}
-                                  Approve
-                                </Button>
-                              </div>
-                            </TableCell>
+              {(() => {
+                const filteredPending = filterSubscriptions(pendingSubscriptions)
+                const pendingPagination = getPaginatedData(filteredPending, 'pending')
+
+                return filteredPending.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No pending subscription requests</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-yellow-50 to-yellow-100/50 hover:bg-yellow-100 border-b-2 border-yellow-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Requested</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Actions</TableHead>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+                        </TableHeader>
+                        <TableBody>
+                          {pendingPagination.paginated.map((subscription) => {
+                            return (
+                              <TableRow key={subscription.subscription_id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {subscription.fname[0]}
+                                        {subscription.lname[0]}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium">
+                                        {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div>
+                                    <div className="font-medium">{subscription.plan_name}</div>
+                                    {(() => {
+                                      const months = calculateMonths(subscription)
+                                      return months > 1 ? (
+                                        <div className="text-xs text-blue-600 font-medium mt-1">
+                                          {months} month{months > 1 ? 's' : ''} availed
+                                        </div>
+                                      ) : null
+                                    })()}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-sm">
+                                    {(() => {
+                                      const rawDate = subscription.created_at
+                                      const formattedDate = formatDateTime(rawDate)
+                                      console.log("🔍 DEBUG - Rendering pending subscription date:")
+                                      console.log("  - Subscription ID:", subscription.subscription_id)
+                                      console.log("  - Raw created_at:", rawDate)
+                                      console.log("  - Type of created_at:", typeof rawDate)
+                                      console.log("  - Formatted date:", formattedDate)
+                                      console.log("  - Full subscription object:", subscription)
+                                      return formattedDate
+                                    })()}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                                    <Clock className="h-3 w-3" />
+                                    {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        console.log("Approve button clicked for subscription:", subscription);
+                                        handleApprove(subscription.subscription_id);
+                                      }}
+                                      disabled={actionLoading === subscription.subscription_id}
+                                      className="bg-green-600 hover:bg-green-700"
+                                    >
+                                      {actionLoading === subscription.subscription_id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <CheckCircle className="h-4 w-4" />
+                                      )}
+                                      Approve
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {filteredPending.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {filteredPending.length} {filteredPending.length === 1 ? 'entry' : 'entries'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.max(1, prev.pending - 1) }))}
+                            disabled={pendingPagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {pendingPagination.currentPage} of {pendingPagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.min(pendingPagination.totalPages, prev.pending + 1) }))}
+                            disabled={pendingPagination.currentPage === pendingPagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </TabsContent>
 
             <TabsContent value="active" className="space-y-4 mt-6">
@@ -1333,112 +1431,164 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
 
               {/* Active Subscriptions Table */}
-              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gradient-to-r from-green-50 to-green-100/50 hover:bg-green-100 border-b-2 border-green-200">
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!filterSubscriptions(activeSubscriptions) || filterSubscriptions(activeSubscriptions).length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          No active subscriptions found
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filterSubscriptions(activeSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarFallback>
-                                  {subscription.fname[0]}
-                                  {subscription.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">
-                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+              {(() => {
+                const filteredActive = filterSubscriptions(activeSubscriptions)
+                const activePagination = getPaginatedData(filteredActive, 'active')
+
+                return filteredActive.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No active subscriptions found</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-green-50 to-green-100/50 hover:bg-green-100 border-b-2 border-green-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activePagination.paginated.map((subscription) => (
+                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback>
+                                      {subscription.fname[0]}
+                                      {subscription.lname[0]}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <div className="font-medium">
+                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                  </div>
                                 </div>
-                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="font-medium">{subscription.plan_name}</div>
-                              {(() => {
-                                const months = calculateMonths(subscription)
-                                return months > 1 ? (
-                                  <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
-                                    <Calendar className="h-3 w-3 mr-1" />
-                                    {months} month{months > 1 ? 's' : ''}
-                                  </Badge>
-                                ) : null
-                              })()}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                            >
-                              {getStatusIcon(subscription.status_name)}
-                              {subscription.display_status || subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.end_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              const daysLeft = calculateDaysLeft(subscription.end_date)
-                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
-                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
-                              if (daysLeft < 0) {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              // For day 1 session, don't show orange warning
-                              if (isDay1Session) {
-                                return (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                                  </Badge>
-                                )
-                              }
-                              // For other plans, show orange if 7 days or less
-                              return (
-                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="font-medium">{subscription.plan_name}</div>
+                                  {(() => {
+                                    const months = calculateMonths(subscription)
+                                    return months > 1 ? (
+                                      <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
+                                        <Calendar className="h-3 w-3 mr-1" />
+                                        {months} month{months > 1 ? 's' : ''}
+                                      </Badge>
+                                    ) : null
+                                  })()}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                                >
+                                  {getStatusIcon(subscription.status_name)}
+                                  {subscription.display_status || subscription.status_name}
                                 </Badge>
-                              )
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.end_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                                  const daysLeft = calculateDaysLeft(subscription.end_date)
+                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  // For day 1 session, don't show orange warning
+                                  if (isDay1Session) {
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      </Badge>
+                                    )
+                                  }
+                                  // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                    </Badge>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {filteredActive.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {filteredActive.length} {filteredActive.length === 1 ? 'entry' : 'entries'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, active: Math.max(1, prev.active - 1) }))}
+                            disabled={activePagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {activePagination.currentPage} of {activePagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, active: Math.min(activePagination.totalPages, prev.active + 1) }))}
+                            disabled={activePagination.currentPage === activePagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                  </>
+                )
+              })()}
             </TabsContent>
 
             <TabsContent value="upcoming" className="space-y-4 mt-6">
@@ -1519,106 +1669,158 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
 
               {/* Upcoming Expiration Subscriptions Table */}
-              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gradient-to-r from-orange-50 to-orange-100/50 hover:bg-orange-100 border-b-2 border-orange-200">
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!filterSubscriptions(expiringSoonSubscriptions) || filterSubscriptions(expiringSoonSubscriptions).length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          No subscriptions expiring within 7 days
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filterSubscriptions(expiringSoonSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarFallback>
-                                  {subscription.fname[0]}
-                                  {subscription.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">
-                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+              {(() => {
+                const filteredExpiring = filterSubscriptions(expiringSoonSubscriptions)
+                const expiringPagination = getPaginatedData(filteredExpiring, 'upcoming')
+
+                return filteredExpiring.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No subscriptions expiring within 7 days</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-orange-50 to-orange-100/50 hover:bg-orange-100 border-b-2 border-orange-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expiringPagination.paginated.map((subscription) => (
+                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback>
+                                      {subscription.fname[0]}
+                                      {subscription.lname[0]}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <div className="font-medium">
+                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                  </div>
                                 </div>
-                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{subscription.plan_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatCurrency(subscription.price)}/month
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              {subscription.display_status || subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-orange-600">{formatDate(subscription.end_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              const daysLeft = calculateDaysLeft(subscription.end_date)
-                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
-                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
-                              if (daysLeft < 0) {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              // For day 1 session, don't show orange warning
-                              if (isDay1Session) {
-                                return (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                                  </Badge>
-                                )
-                              }
-                              // For other plans, show orange if 7 days or less
-                              return (
-                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium">{subscription.plan_name}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {formatCurrency(subscription.price)}/month
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
+                                >
+                                  <AlertTriangle className="h-3 w-3" />
+                                  {subscription.display_status || subscription.status_name}
                                 </Badge>
-                              )
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium text-orange-600">{formatDate(subscription.end_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                                  const daysLeft = calculateDaysLeft(subscription.end_date)
+                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  // For day 1 session, don't show orange warning
+                                  if (isDay1Session) {
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      </Badge>
+                                    )
+                                  }
+                                  // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                    </Badge>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {filteredExpiring.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {filteredExpiring.length} {filteredExpiring.length === 1 ? 'entry' : 'entries'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, upcoming: Math.max(1, prev.upcoming - 1) }))}
+                            disabled={expiringPagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {expiringPagination.currentPage} of {expiringPagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, upcoming: Math.min(expiringPagination.totalPages, prev.upcoming + 1) }))}
+                            disabled={expiringPagination.currentPage === expiringPagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                  </>
+                )
+              })()}
             </TabsContent>
 
             <TabsContent value="expired" className="space-y-4 mt-6">
@@ -1699,106 +1901,158 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
 
               {/* Expired Subscriptions Table */}
-              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gradient-to-r from-red-50 to-red-100/50 hover:bg-red-100 border-b-2 border-red-200">
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!filterSubscriptions(expiredSubscriptions) || filterSubscriptions(expiredSubscriptions).length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          No expired subscriptions found
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filterSubscriptions(expiredSubscriptions).map((subscription) => (
-                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarFallback>
-                                  {subscription.fname[0]}
-                                  {subscription.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">
-                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+              {(() => {
+                const filteredExpired = filterSubscriptions(expiredSubscriptions)
+                const expiredPagination = getPaginatedData(filteredExpired, 'expired')
+
+                return filteredExpired.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No expired subscriptions found</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-red-50 to-red-100/50 hover:bg-red-100 border-b-2 border-red-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expiredPagination.paginated.map((subscription) => (
+                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback>
+                                      {subscription.fname[0]}
+                                      {subscription.lname[0]}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <div className="font-medium">
+                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                  </div>
                                 </div>
-                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{subscription.plan_name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatCurrency(subscription.price)}/month
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
-                            >
-                              {getStatusIcon(subscription.status_name)}
-                              {subscription.display_status || subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              const daysLeft = calculateDaysLeft(subscription.end_date)
-                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
-                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
-                              if (daysLeft < 0) {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              // For day 1 session, don't show orange warning
-                              if (isDay1Session) {
-                                return (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                                  </Badge>
-                                )
-                              }
-                              // For other plans, show orange if 7 days or less
-                              return (
-                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                              </TableCell>
+                              <TableCell>
+                                <div>
+                                  <div className="font-medium">{subscription.plan_name}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {formatCurrency(subscription.price)}/month
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                                >
+                                  {getStatusIcon(subscription.status_name)}
+                                  {subscription.display_status || subscription.status_name}
                                 </Badge>
-                              )
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                                  const daysLeft = calculateDaysLeft(subscription.end_date)
+                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  // For day 1 session, don't show orange warning
+                                  if (isDay1Session) {
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      </Badge>
+                                    )
+                                  }
+                                  // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                    </Badge>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {filteredExpired.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {filteredExpired.length} {filteredExpired.length === 1 ? 'entry' : 'entries'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, expired: Math.max(1, prev.expired - 1) }))}
+                            disabled={expiredPagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {expiredPagination.currentPage} of {expiredPagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, expired: Math.min(expiredPagination.totalPages, prev.expired + 1) }))}
+                            disabled={expiredPagination.currentPage === expiredPagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                  </>
+                )
+              })()}
             </TabsContent>
 
             <TabsContent value="all" className="space-y-4 mt-6">
@@ -1879,124 +2133,175 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
 
               {/* All Subscriptions Table */}
-              <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
-                      <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {!filteredSubscriptions || filteredSubscriptions.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                          {!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredSubscriptions.map((subscription) => (
-                        <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarFallback>
-                                  {subscription.fname[0]}
-                                  {subscription.lname[0]}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-medium">
-                                  {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+              {(() => {
+                const allPagination = getPaginatedData(filteredSubscriptions, 'all')
+
+                return filteredSubscriptions.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>{!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {allPagination.paginated.map((subscription) => (
+                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-10 w-10">
+                                    <AvatarFallback>
+                                      {subscription.fname[0]}
+                                      {subscription.lname[0]}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div>
+                                    <div className="font-medium">
+                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                  </div>
                                 </div>
-                                <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="font-medium">{subscription.plan_name}</div>
-                              {(() => {
-                                const months = calculateMonths(subscription)
-                                return months > 1 ? (
-                                  <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
-                                    <Calendar className="h-3 w-3 mr-1" />
-                                    {months} month{months > 1 ? 's' : ''}
-                                  </Badge>
-                                ) : null
-                              })()}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                            >
-                              {getStatusIcon(subscription.status_name)}
-                              {subscription.display_status || subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatDate(subscription.end_date)}</div>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              const daysLeft = calculateDaysLeft(subscription.end_date)
-                              const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
-                              if (daysLeft === null) return <span className="text-slate-500">N/A</span>
-                              if (daysLeft < 0) {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    Expired {Math.abs(daysLeft)} day{Math.abs(daysLeft) === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              // For day 1 session, don't show orange warning
-                              if (isDay1Session) {
-                                return (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                    {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                                  </Badge>
-                                )
-                              }
-                              // For other plans, show orange if 7 days or less
-                              return (
-                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                  {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="font-medium">{subscription.plan_name}</div>
+                                  {(() => {
+                                    const months = calculateMonths(subscription)
+                                    return months > 1 ? (
+                                      <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
+                                        <Calendar className="h-3 w-3 mr-1" />
+                                        {months} month{months > 1 ? 's' : ''}
+                                      </Badge>
+                                    ) : null
+                                  })()}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                                >
+                                  {getStatusIcon(subscription.status_name)}
+                                  {subscription.display_status || subscription.status_name}
                                 </Badge>
-                              )
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {subscription.discount_type && subscription.discount_type !== "none" && (
-                                <span className="text-orange-600">
-                                  {subscription.discount_type} discount
-                                </span>
-                              )}
-                              {subscription.total_paid === 0 && (
-                                <span className="text-red-600">
-                                  No payments received
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatDate(subscription.end_date)}</div>
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                                  const daysLeft = calculateDaysLeft(subscription.end_date)
+                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  // For day 1 session, don't show orange warning
+                                  if (isDay1Session) {
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      </Badge>
+                                    )
+                                  }
+                                  // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                    </Badge>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {subscription.discount_type && subscription.discount_type !== "none" && (
+                                    <span className="text-orange-600">
+                                      {subscription.discount_type} discount
+                                    </span>
+                                  )}
+                                  {subscription.total_paid === 0 && (
+                                    <span className="text-red-600">
+                                      No payments received
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {filteredSubscriptions.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {filteredSubscriptions.length} {filteredSubscriptions.length === 1 ? 'entry' : 'entries'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.max(1, prev.all - 1) }))}
+                            disabled={allPagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {allPagination.currentPage} of {allPagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.min(allPagination.totalPages, prev.all + 1) }))}
+                            disabled={allPagination.currentPage === allPagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                  </>
+                )
+              })()}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -2216,16 +2521,6 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label className="text-sm text-gray-700">Notes (Optional)</Label>
-              <Textarea
-                value={transactionNotes}
-                onChange={(e) => setTransactionNotes(e.target.value)}
-                placeholder="Add notes for this transaction"
-                rows={1}
-                className="text-sm border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-none"
-              />
-            </div>
           </div>
 
           <DialogFooter>

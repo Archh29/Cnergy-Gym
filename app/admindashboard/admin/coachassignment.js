@@ -165,26 +165,52 @@ const CoachAssignments = ({ userId }) => {
   // Get current user ID from session
   useEffect(() => {
     const getCurrentUser = async () => {
+      // First, try to get from sessionStorage (primary source when cookies don't work)
+      const storedUserId = sessionStorage.getItem("user_id")
+      if (storedUserId) {
+        setCurrentUserId(parseInt(storedUserId))
+        return
+      }
+
       try {
-        // Try the session endpoint first
-        const response = await axios.get('https://api.cnergy.site/session.php')
-        if (response.data.authenticated && response.data.user_id) {
+        // Try the session endpoint
+        const response = await axios.get('https://api.cnergy.site/session.php', {
+          withCredentials: true
+        })
+        if (response.data && response.data.authenticated && response.data.user_id) {
           setCurrentUserId(response.data.user_id)
+          sessionStorage.setItem("user_id", response.data.user_id)
           return
         }
       } catch (err) {
-        console.error("Error getting current user from session:", err)
+        // 401 errors are expected with third-party cookie restrictions - handle silently
+        if (err.response && err.response.status === 401) {
+          // Try to parse response data even if status is 401
+          if (err.response.data && err.response.data.authenticated && err.response.data.user_id) {
+            setCurrentUserId(err.response.data.user_id)
+            sessionStorage.setItem("user_id", err.response.data.user_id)
+            return
+          }
+        }
+        // Don't log 401 errors - they're expected
+        if (!err.response || err.response.status !== 401) {
+          console.error("Error getting current user from session:", err)
+        }
       }
 
       // Fallback: try to get user from admin_coach.php
       try {
         const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
-        if (response.data.success && response.data.user_id) {
+        if (response.data && response.data.success && response.data.user_id) {
           setCurrentUserId(response.data.user_id)
+          sessionStorage.setItem("user_id", response.data.user_id)
         }
       } catch (err) {
-        console.error("Error getting current user from API:", err)
-        // Keep default admin ID if both fail
+        // Don't log 401 errors - they're expected
+        if (!err.response || err.response.status !== 401) {
+          console.error("Error getting current user from API:", err)
+        }
+        // Keep default admin ID if all fail
       }
     }
     getCurrentUser()
