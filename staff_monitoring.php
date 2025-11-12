@@ -108,7 +108,7 @@ function getStaffActivitiesFromAPI($pdo)
 
         $filters = [
             'staff_id' => $_GET['staff_id'] ?? 'all',
-            'category' => $_GET['activity_type'] ?? 'all',
+            'category' => $_GET['category'] ?? 'all',
             'date_filter' => $_GET['date_filter'] ?? 'all',
             'limit' => $_GET['limit'] ?? 50
         ];
@@ -124,8 +124,45 @@ function getStaffActivitiesFromAPI($pdo)
         }
 
         if ($filters['category'] !== 'all') {
-            $whereConditions[] = "al.activity LIKE ?";
-            $params[] = '%' . $filters['category'] . '%';
+            // Filter by category name (e.g., "User Management", "Coach Management", etc.)
+            $category = $filters['category'];
+            $categoryCondition = "";
+
+            switch ($category) {
+                case 'Coach Management':
+                    $categoryCondition = "(al.activity LIKE '%Add Coach%' OR al.activity LIKE '%Delete Coach%' OR al.activity LIKE '%Update Coach%')";
+                    break;
+                case 'Subscription Management':
+                    $categoryCondition = "(al.activity LIKE '%Approve Subscription%' OR al.activity LIKE '%subscription%')";
+                    break;
+                case 'Guest Management':
+                    $categoryCondition = "(al.activity LIKE '%Guest session%' OR al.activity LIKE '%guest%')";
+                    break;
+                case 'Coach Assignment':
+                    $categoryCondition = "(al.activity LIKE '%Coach Assignment%' OR al.activity LIKE '%coach assignment%')";
+                    break;
+                case 'Sales':
+                    $categoryCondition = "(al.activity LIKE '%POS Sale%' OR al.activity LIKE '%sale%' OR al.activity LIKE '%Process POS%')";
+                    break;
+                case 'Product Management':
+                    $categoryCondition = "(al.activity LIKE '%Add Product%' OR al.activity LIKE '%product%')";
+                    break;
+                case 'Inventory Management':
+                    $categoryCondition = "(al.activity LIKE '%Stock updated%' OR al.activity LIKE '%inventory%')";
+                    break;
+                case 'User Management':
+                    $categoryCondition = "(al.activity LIKE '%Add Member%' OR al.activity LIKE '%Delete Member%' OR al.activity LIKE '%Update Member%' OR al.activity LIKE '%Member Check%')";
+                    break;
+                default:
+                    // If category doesn't match known categories, search in activity text
+                    $categoryCondition = "al.activity LIKE ?";
+                    $params[] = '%' . $category . '%';
+                    break;
+            }
+
+            if (!empty($categoryCondition)) {
+                $whereConditions[] = $categoryCondition;
+            }
         }
 
         if ($filters['date_filter'] !== 'all') {
@@ -198,7 +235,7 @@ function getStaffActivitiesFromAPI($pdo)
                     WHEN al.activity LIKE '%POS Sale%' OR al.activity LIKE '%sale%' OR al.activity LIKE '%Process POS%' THEN 'Sales'
                     WHEN al.activity LIKE '%Add Product%' OR al.activity LIKE '%product%' THEN 'Product Management'
                     WHEN al.activity LIKE '%Stock updated%' OR al.activity LIKE '%inventory%' THEN 'Inventory Management'
-                    WHEN al.activity LIKE '%Add Member%' OR al.activity LIKE '%Delete Member%' OR al.activity LIKE '%Update Member%' OR al.activity LIKE '%Member Check%' THEN 'Member Management'
+                    WHEN al.activity LIKE '%Add Member%' OR al.activity LIKE '%Delete Member%' OR al.activity LIKE '%Update Member%' OR al.activity LIKE '%Member Check%' THEN 'User Management'
                     ELSE 'Other'
                 END as activity_category
             FROM activity_log al
@@ -257,100 +294,28 @@ function getStaffActivitiesFromAPI($pdo)
 
 function getStaffPerformance($pdo)
 {
-    // Follow the SAME pattern as getStaffActivitiesFromAPI
-    $filters = [
-        'date_filter' => $_GET['date_filter'] ?? 'all',
-        'month' => $_GET['month'] ?? 'all',
-        'year' => $_GET['year'] ?? 'all',
-        'custom_date' => $_GET['custom_date'] ?? null,
-        'date_from' => $_GET['date_from'] ?? null,
-        'date_to' => $_GET['date_to'] ?? null
-    ];
+    $period = $_GET['period'] ?? 'month';
 
-    // Build date condition - same logic as Activity Logs
+    // Build date condition based on period
     $dateCondition = "";
-    $params = [];
-
-    // Handle date filtering - custom date takes priority (same as Activity Logs)
-    if ($filters['date_filter'] === 'custom' && !empty($filters['custom_date'])) {
-        $dateCondition = "DATE(al.timestamp) = ?";
-        $params[] = $filters['custom_date'];
-    } else if ($filters['date_filter'] === 'range') {
-        // Handle custom date range
-        if (!empty($filters['date_from'])) {
-            $dateCondition = "DATE(al.timestamp) >= ?";
-            $params[] = $filters['date_from'];
-        }
-        if (!empty($filters['date_to'])) {
-            if ($dateCondition) {
-                $dateCondition .= " AND DATE(al.timestamp) <= ?";
-            } else {
-                $dateCondition = "DATE(al.timestamp) <= ?";
-            }
-            $params[] = $filters['date_to'];
-        }
-    } else if ($filters['date_filter'] !== 'all') {
-        // Get current Philippines time (same as Activity Logs)
-        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-
-        switch ($filters['date_filter']) {
-            case 'today':
-                $today = $phTime->format('Y-m-d');
-                $dateCondition = "DATE(al.timestamp) = ?";
-                $params[] = $today;
-                break;
-            case 'week':
-                $weekStart = clone $phTime;
-                $weekStart->modify('-' . $phTime->format('w') . ' days')->setTime(0, 0, 0);
-                $dateCondition = "al.timestamp >= ?";
-                $params[] = $weekStart->format('Y-m-d H:i:s');
-                break;
-            case 'month':
-                $month = $phTime->format('Y-m');
-                $dateCondition = "DATE_FORMAT(al.timestamp, '%Y-%m') = ?";
-                $params[] = $month;
-                break;
-            case 'year':
-                $year = $phTime->format('Y');
-                $dateCondition = "YEAR(al.timestamp) = ?";
-                $params[] = $year;
-                break;
-        }
-    } else if ($filters['month'] !== 'all' || $filters['year'] !== 'all') {
-        // Month and year filters (same as Activity Logs)
-        if ($filters['month'] !== 'all' && $filters['month'] !== '' && !empty($filters['month'])) {
-            $dateCondition = "MONTH(al.timestamp) = ?";
-            $params[] = (int) $filters['month'];
-            if ($filters['year'] !== 'all' && $filters['year'] !== '' && !empty($filters['year'])) {
-                $dateCondition .= " AND YEAR(al.timestamp) = ?";
-                $params[] = (int) $filters['year'];
-            }
-        } else if ($filters['year'] !== 'all' && $filters['year'] !== '' && !empty($filters['year'])) {
-            $dateCondition = "YEAR(al.timestamp) = ?";
-            $params[] = (int) $filters['year'];
-        }
+    switch ($period) {
+        case 'today':
+            $dateCondition = "DATE(al.timestamp) = CURDATE()";
+            break;
+        case 'week':
+            $dateCondition = "al.timestamp >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)";
+            break;
+        case 'month':
+            $dateCondition = "MONTH(al.timestamp) = MONTH(CURDATE()) AND YEAR(al.timestamp) = YEAR(CURDATE())";
+            break;
+        case 'year':
+            $dateCondition = "YEAR(al.timestamp) = YEAR(CURDATE())";
+            break;
+        default:
+            $dateCondition = "MONTH(al.timestamp) = MONTH(CURDATE()) AND YEAR(al.timestamp) = YEAR(CURDATE())";
     }
-    // If date_filter is 'all' and month/year are 'all', $dateCondition remains empty = ALL TIME (same as Activity Logs)
 
-    // Debug logging - also output to response for frontend debugging
-    $debugInfo = [
-        'date_filter' => $filters['date_filter'],
-        'month' => $filters['month'],
-        'year' => $filters['year'],
-        'dateCondition' => $dateCondition ?: 'NONE (all time)',
-        'hasWhereClause' => !empty($dateCondition),
-        'sql_where_clause' => $dateCondition ?: 'NO WHERE CLAUSE (all time)',
-        'filters_applied' => $filters
-    ];
-    error_log("=== PERFORMANCE QUERY DEBUG ===");
-    error_log("Date Filter: " . $filters['date_filter']);
-    error_log("Month: " . $filters['month']);
-    error_log("Year: " . $filters['year']);
-    error_log("Date Condition: " . ($dateCondition ?: 'NONE (all time)'));
-    error_log("Has WHERE clause: " . (!empty($dateCondition) ? 'YES' : 'NO'));
-
-    // Build the query with conditional WHERE clause
-    $sql = "
+    $stmt = $pdo->prepare("
         SELECT 
             COALESCE(u.id, 0) as staff_id,
             COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
@@ -367,54 +332,15 @@ function getStaffPerformance($pdo)
         FROM activity_log al
         LEFT JOIN user u ON al.user_id = u.id
         LEFT JOIN usertype ut ON u.user_type_id = ut.id
-    ";
-
-    if ($dateCondition) {
-        $sql .= " WHERE $dateCondition";
-    }
-
-    $sql .= "
+        WHERE $dateCondition
         GROUP BY COALESCE(u.id, 0), u.fname, u.lname, u.email, ut.type_name
         ORDER BY total_activities DESC
-    ";
+    ");
 
-    $stmt = $pdo->prepare($sql);
-
-    if (!empty($params)) {
-        $stmt->execute($params);
-    } else {
-        $stmt->execute();
-    }
+    $stmt->execute();
     $performance = $stmt->fetchAll();
 
-    error_log("Performance Query Result: " . count($performance) . " users found");
-
-    // Calculate total activities for debugging
-    $totalActivities = 0;
-    foreach ($performance as $user) {
-        $totalActivities += (int) ($user['total_activities'] ?? 0);
-    }
-    error_log("Performance Query - Total activities across all users: " . $totalActivities);
-
-    // Also count total rows in activity_log table for comparison
-    try {
-        $countStmt = $pdo->query("SELECT COUNT(*) as total FROM activity_log");
-        $totalRows = $countStmt->fetch()['total'];
-        error_log("Performance Query - Total rows in activity_log table: " . $totalRows);
-    } catch (Exception $e) {
-        error_log("Could not count total rows: " . $e->getMessage());
-    }
-
-    error_log("=== END PERFORMANCE QUERY DEBUG ===");
-    error_log("SQL Query: " . $sql);
-
-    echo json_encode([
-        "performance" => $performance,
-        "debug" => $debugInfo ?? [],
-        "sql_query" => $sql,
-        "total_users" => count($performance),
-        "total_activities" => $totalActivities
-    ]);
+    echo json_encode(["performance" => $performance]);
 }
 
 function getActivityDetails($pdo)
@@ -447,6 +373,7 @@ function getActivityDetails($pdo)
                 WHEN al.activity LIKE '%POS Sale%' OR al.activity LIKE '%Process POS%' THEN 'Sales'
                 WHEN al.activity LIKE '%Add Product%' THEN 'Product Management'
                 WHEN al.activity LIKE '%Stock updated%' THEN 'Inventory Management'
+                WHEN al.activity LIKE '%Add Member%' OR al.activity LIKE '%Delete Member%' OR al.activity LIKE '%Update Member%' OR al.activity LIKE '%Member Check%' THEN 'User Management'
                 ELSE 'Other'
             END as activity_category
         FROM activity_log al
@@ -470,7 +397,15 @@ function getActivityDetails($pdo)
 function getStaffSummary($pdo)
 {
     try {
-        $stats = getActivityStats($pdo);
+        // Get date filter from request (default to 'today')
+        $dateFilter = $_GET['date_filter'] ?? 'today';
+        $monthFilter = $_GET['month'] ?? 'all';
+        $yearFilter = $_GET['year'] ?? 'all';
+        $customDate = $_GET['custom_date'] ?? null;
+        $dateFrom = $_GET['date_from'] ?? null;
+        $dateTo = $_GET['date_to'] ?? null;
+
+        $stats = getActivityStats($pdo, $dateFilter, $monthFilter, $yearFilter, $customDate, $dateFrom, $dateTo);
 
         // Get staff counts
         $stmt = $pdo->prepare("
@@ -485,34 +420,100 @@ function getStaffSummary($pdo)
         $stmt->execute();
         $staffCounts = $stmt->fetch();
 
-        // Get most active staff today
-        $stmt = $pdo->prepare("
+        // Build date condition for most active staff based on filter
+        $dateCondition = "";
+        $params = [];
+        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+
+        if ($dateFilter === 'custom' && !empty($customDate)) {
+            $dateCondition = "DATE(al.timestamp) = ?";
+            $params[] = $customDate;
+        } else if ($dateFilter === 'range') {
+            if (!empty($dateFrom)) {
+                $dateCondition = "DATE(al.timestamp) >= ?";
+                $params[] = $dateFrom;
+            }
+            if (!empty($dateTo)) {
+                if ($dateCondition) {
+                    $dateCondition .= " AND DATE(al.timestamp) <= ?";
+                } else {
+                    $dateCondition = "DATE(al.timestamp) <= ?";
+                }
+                $params[] = $dateTo;
+            }
+        } else if ($dateFilter !== 'all') {
+            switch ($dateFilter) {
+                case 'today':
+                    $today = $phTime->format('Y-m-d');
+                    $dateCondition = "DATE(al.timestamp) = ?";
+                    $params[] = $today;
+                    break;
+                case 'week':
+                    $weekStart = clone $phTime;
+                    $weekStart->modify('-' . $phTime->format('w') . ' days')->setTime(0, 0, 0);
+                    $dateCondition = "al.timestamp >= ?";
+                    $params[] = $weekStart->format('Y-m-d H:i:s');
+                    break;
+                case 'month':
+                    $month = $phTime->format('Y-m');
+                    $dateCondition = "DATE_FORMAT(al.timestamp, '%Y-%m') = ?";
+                    $params[] = $month;
+                    break;
+                case 'year':
+                    $year = $phTime->format('Y');
+                    $dateCondition = "YEAR(al.timestamp) = ?";
+                    $params[] = $year;
+                    break;
+            }
+        } else if ($monthFilter !== 'all' || $yearFilter !== 'all') {
+            if ($monthFilter !== 'all' && $monthFilter !== '' && !empty($monthFilter)) {
+                $dateCondition = "MONTH(al.timestamp) = ?";
+                $params[] = (int) $monthFilter;
+                if ($yearFilter !== 'all' && $yearFilter !== '' && !empty($yearFilter)) {
+                    $dateCondition .= " AND YEAR(al.timestamp) = ?";
+                    $params[] = (int) $yearFilter;
+                }
+            } else if ($yearFilter !== 'all' && $yearFilter !== '' && !empty($yearFilter)) {
+                $dateCondition = "YEAR(al.timestamp) = ?";
+                $params[] = (int) $yearFilter;
+            }
+        }
+
+        // Get most active staff based on date filter
+        $whereClause = $dateCondition ? "WHERE $dateCondition" : "";
+        $sql = "
             SELECT 
                 COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
                 COUNT(al.id) as activity_count
             FROM activity_log al
             LEFT JOIN user u ON al.user_id = u.id
-            WHERE DATE(al.timestamp) = CURDATE()
+            $whereClause
             GROUP BY COALESCE(u.id, 0), u.fname, u.lname
             ORDER BY activity_count DESC
             LIMIT 1
-        ");
+        ";
 
-        $stmt->execute();
+        $stmt = $pdo->prepare($sql);
+        if (!empty($params)) {
+            $stmt->execute($params);
+        } else {
+            $stmt->execute();
+        }
         $mostActive = $stmt->fetch();
 
         $summary = [
             "total_staff" => $staffCounts['total_staff'] ?? 0,
             "total_admins" => $staffCounts['total_admins'] ?? 0,
             "total_staff_members" => $staffCounts['total_staff_members'] ?? 0,
-            "total_activities_today" => $stats['today_activities'] ?? 0,
-            "activities_today" => $stats['today_activities'] ?? 0,
+            "total_activities_today" => $stats['filtered_activities'] ?? 0,
+            "activities_today" => $stats['filtered_activities'] ?? 0,
             "activities_this_week" => $stats['week_activities'] ?? 0,
             "activities_this_month" => $stats['month_activities'] ?? 0,
-            "most_active_staff_today" => $mostActive ? $mostActive['staff_name'] : 'No activities today',
+            "most_active_staff_today" => $mostActive ? $mostActive['staff_name'] : 'No activities',
             "most_active_count" => $mostActive ? $mostActive['activity_count'] : 0,
             "category_breakdown" => $stats['category_breakdown'] ?? [],
-            "top_staff" => $stats['top_staff'] ?? []
+            "top_staff" => $stats['top_staff'] ?? [],
+            "date_filter" => $dateFilter
         ];
 
         echo json_encode(["summary" => $summary]);
@@ -521,7 +522,7 @@ function getStaffSummary($pdo)
     }
 }
 
-function getActivityStats($pdo)
+function getActivityStats($pdo, $dateFilter = 'today', $monthFilter = 'all', $yearFilter = 'all', $customDate = null, $dateFrom = null, $dateTo = null)
 {
     try {
         // Get today's activities
@@ -542,18 +543,102 @@ function getActivityStats($pdo)
         $stmt->execute();
         $week = $stmt->fetch()['week_activities'];
 
-        // Get this month's activities
+        // Get this month's activities (ALWAYS current month, regardless of filter)
+        // This is used for the "This Month" card which should always show current month's total
         $stmt = $pdo->prepare("
             SELECT COUNT(*) as month_activities
             FROM activity_log 
             WHERE MONTH(timestamp) = MONTH(CURDATE()) AND YEAR(timestamp) = YEAR(CURDATE())
         ");
         $stmt->execute();
-        $month = $stmt->fetch()['month_activities'];
+        $currentMonthActivities = $stmt->fetch()['month_activities'];
+
+        // Calculate filtered activities based on date filter
+        $filteredActivities = 0;
+        $dateCondition = "";
+        $params = [];
+        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+
+        if ($dateFilter === 'custom' && !empty($customDate)) {
+            $dateCondition = "DATE(timestamp) = ?";
+            $params[] = $customDate;
+        } else if ($dateFilter === 'range') {
+            if (!empty($dateFrom)) {
+                $dateCondition = "DATE(timestamp) >= ?";
+                $params[] = $dateFrom;
+            }
+            if (!empty($dateTo)) {
+                if ($dateCondition) {
+                    $dateCondition .= " AND DATE(timestamp) <= ?";
+                } else {
+                    $dateCondition = "DATE(timestamp) <= ?";
+                }
+                $params[] = $dateTo;
+            }
+        } else if ($dateFilter !== 'all') {
+            switch ($dateFilter) {
+                case 'today':
+                    $todayDate = $phTime->format('Y-m-d');
+                    $dateCondition = "DATE(timestamp) = ?";
+                    $params[] = $todayDate;
+                    break;
+                case 'week':
+                    $weekStart = clone $phTime;
+                    $weekStart->modify('-' . $phTime->format('w') . ' days')->setTime(0, 0, 0);
+                    $dateCondition = "timestamp >= ?";
+                    $params[] = $weekStart->format('Y-m-d H:i:s');
+                    break;
+                case 'month':
+                    $filterMonth = $phTime->format('Y-m');
+                    $dateCondition = "DATE_FORMAT(timestamp, '%Y-%m') = ?";
+                    $params[] = $filterMonth;
+                    break;
+                case 'year':
+                    $year = $phTime->format('Y');
+                    $dateCondition = "YEAR(timestamp) = ?";
+                    $params[] = $year;
+                    break;
+            }
+        } else if ($monthFilter !== 'all' || $yearFilter !== 'all') {
+            if ($monthFilter !== 'all' && $monthFilter !== '' && !empty($monthFilter)) {
+                $dateCondition = "MONTH(timestamp) = ?";
+                $params[] = (int) $monthFilter;
+                if ($yearFilter !== 'all' && $yearFilter !== '' && !empty($yearFilter)) {
+                    $dateCondition .= " AND YEAR(timestamp) = ?";
+                    $params[] = (int) $yearFilter;
+                }
+            } else if ($yearFilter !== 'all' && $yearFilter !== '' && !empty($yearFilter)) {
+                $dateCondition = "YEAR(timestamp) = ?";
+                $params[] = (int) $yearFilter;
+            }
+        }
+
+        if ($dateCondition) {
+            $whereClause = "WHERE $dateCondition";
+            $sql = "SELECT COUNT(*) as filtered_count FROM activity_log $whereClause";
+            $stmt = $pdo->prepare($sql);
+            if (!empty($params)) {
+                $stmt->execute($params);
+            } else {
+                $stmt->execute();
+            }
+            $filteredActivities = $stmt->fetch()['filtered_count'];
+        } else {
+            // If no date condition, check the filter type
+            if ($dateFilter === 'all') {
+                // Count all activities when filter is 'all'
+                $stmt = $pdo->prepare("SELECT COUNT(*) as all_count FROM activity_log");
+                $stmt->execute();
+                $filteredActivities = $stmt->fetch()['all_count'];
+            } else {
+                // Default to today for other cases
+                $filteredActivities = $today;
+            }
+        }
 
         // Activities by type
         $stats['category_breakdown'] = [
-            ['category' => 'All Activities', 'count' => $month]
+            ['category' => 'All Activities', 'count' => $currentMonthActivities]
         ];
 
         // Get top staff today
@@ -574,7 +659,8 @@ function getActivityStats($pdo)
         return [
             'today_activities' => $today,
             'week_activities' => $week,
-            'month_activities' => $month,
+            'month_activities' => $currentMonthActivities,
+            'filtered_activities' => $filteredActivities,
             'category_breakdown' => $stats['category_breakdown'],
             'top_staff' => $topStaff
         ];
@@ -584,6 +670,7 @@ function getActivityStats($pdo)
             'today_activities' => 0,
             'week_activities' => 0,
             'month_activities' => 0,
+            'filtered_activities' => 0,
             'category_breakdown' => [],
             'top_staff' => []
         ];
@@ -593,21 +680,17 @@ function getActivityStats($pdo)
 function getStaffList($pdo)
 {
     try {
-        // Get all users (both admins and staff) - user_type_id 1 = admin, 2 = staff
-        // This ensures both admins and staff are included in the filter dropdown
         $stmt = $pdo->prepare("
-            SELECT DISTINCT
+            SELECT 
                 u.id,
                 u.fname,
                 u.lname,
                 u.email,
-                COALESCE(ut.type_name, 'user') as user_type,
-                u.user_type_id
+                ut.type_name as user_type
             FROM user u
             LEFT JOIN usertype ut ON u.user_type_id = ut.id
             WHERE u.user_type_id IN (1, 2)
-            AND (u.is_deleted = 0 OR u.is_deleted IS NULL)
-            ORDER BY u.user_type_id ASC, u.fname ASC, u.lname ASC
+            ORDER BY u.fname, u.lname
         ");
 
         $stmt->execute();

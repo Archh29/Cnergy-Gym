@@ -628,7 +628,7 @@ const SubscriptionPlans = () => {
                           <TableCell className="font-semibold text-lg py-4">{formatCurrency(plan.price)}</TableCell>
                           <TableCell className="py-4">
                             {plan.duration_days > 0 ? (
-                              <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+                              <Badge variant="outline" className="border-gray-300">
                                 {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
                               </Badge>
                             ) : plan.duration_months > 0 ? (
@@ -641,7 +641,7 @@ const SubscriptionPlans = () => {
                           </TableCell>
                           <TableCell className="py-4">
                             {plan.is_member_only ? (
-                              <Badge variant="secondary" className="bg-purple-100 text-purple-800">Members Only</Badge>
+                              <Badge variant="outline" className="border-gray-300">Members Only</Badge>
                             ) : (
                               <Badge variant="outline" className="border-gray-300">Public</Badge>
                             )}
@@ -747,22 +747,22 @@ const SubscriptionPlans = () => {
                         <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
                         <TableCell>
                           {plan.duration_days > 0 ? (
-                            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                            <Badge variant="outline" className="border-gray-300">
                               {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
                             </Badge>
                           ) : plan.duration_months > 0 ? (
-                            <Badge variant="outline">
+                            <Badge variant="outline" className="border-gray-300">
                               {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
                             </Badge>
                           ) : (
-                            <Badge variant="outline">1 Month</Badge>
+                            <Badge variant="outline" className="border-gray-300">1 Month</Badge>
                           )}
                         </TableCell>
                         <TableCell>
                           {plan.is_member_only ? (
-                            <Badge variant="secondary">Members Only</Badge>
+                            <Badge variant="outline" className="border-gray-300">Members Only</Badge>
                           ) : (
-                            <Badge variant="outline">Public</Badge>
+                            <Badge variant="outline" className="border-gray-300">Public</Badge>
                           )}
                         </TableCell>
                         <TableCell>

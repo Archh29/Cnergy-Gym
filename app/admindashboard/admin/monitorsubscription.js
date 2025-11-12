@@ -833,9 +833,13 @@ const SubscriptionMonitor = ({ userId }) => {
     return { type: 'days', days: diffDays }
   }
 
-  // Get analytics
+  // Get analytics - filter by plan if planFilter is set
   const getActiveSubscriptions = () => {
     return (subscriptions || []).filter((s) => {
+      // Apply plan filter
+      const matchesPlan = planFilter === "all" || s.plan_name === planFilter
+      if (!matchesPlan) return false
+
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const endDate = new Date(s.end_date)
@@ -852,6 +856,10 @@ const SubscriptionMonitor = ({ userId }) => {
     sevenDaysFromNow.setHours(23, 59, 59, 999)
 
     return (subscriptions || []).filter((s) => {
+      // Apply plan filter
+      const matchesPlan = planFilter === "all" || s.plan_name === planFilter
+      if (!matchesPlan) return false
+
       const endDate = new Date(s.end_date)
       endDate.setHours(0, 0, 0, 0)
       return (s.display_status === "Active" || s.status_name === "approved") &&
@@ -865,6 +873,10 @@ const SubscriptionMonitor = ({ userId }) => {
     today.setHours(0, 0, 0, 0)
 
     return (subscriptions || []).filter((s) => {
+      // Apply plan filter
+      const matchesPlan = planFilter === "all" || s.plan_name === planFilter
+      if (!matchesPlan) return false
+
       const endDate = new Date(s.end_date)
       endDate.setHours(0, 0, 0, 0)
       return s.display_status === "Expired" || (s.status_name === "approved" && endDate < today)
@@ -980,12 +992,30 @@ const SubscriptionMonitor = ({ userId }) => {
     })
   }, [searchQuery, statusFilter, planFilter, monthFilter, yearFilter])
 
+  // Get analytics - filtered by plan if planFilter is set
+  const getFilteredSubscriptionsByPlan = () => {
+    if (planFilter === "all") {
+      return subscriptions || []
+    }
+    return (subscriptions || []).filter((s) => s.plan_name === planFilter)
+  }
+
+  const getFilteredPendingByPlan = () => {
+    if (planFilter === "all") {
+      return pendingSubscriptions || []
+    }
+    return (pendingSubscriptions || []).filter((s) => s.plan_name === planFilter)
+  }
+
+  const filteredByPlan = getFilteredSubscriptionsByPlan()
+  const filteredPendingByPlan = getFilteredPendingByPlan()
+
   // Get analytics
   const analytics = {
-    total: subscriptions?.length || 0,
-    pending: pendingSubscriptions?.length || 0,
-    approved: subscriptions?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
-    declined: subscriptions?.filter((s) => s.status_name === "declined")?.length || 0,
+    total: filteredByPlan?.length || 0,
+    pending: filteredPendingByPlan?.length || 0,
+    approved: filteredByPlan?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
+    declined: filteredByPlan?.filter((s) => s.status_name === "declined")?.length || 0,
     active: activeSubscriptions.length,
     expiringSoon: expiringSoonSubscriptions.length,
     expired: expiredSubscriptions.length,
@@ -1013,8 +1043,13 @@ const SubscriptionMonitor = ({ userId }) => {
               <Users className="h-6 w-6 text-slate-700" />
             </div>
             <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Total Requests</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                {planFilter !== "all" ? "Total Requests" : "Total Requests"}
+              </p>
               <p className="text-3xl font-bold text-slate-900">{analytics.total}</p>
+              {planFilter !== "all" && (
+                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1027,6 +1062,9 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="flex-1 relative z-10">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Active</p>
               <p className="text-3xl font-bold text-green-700">{analytics.active}</p>
+              {planFilter !== "all" && (
+                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1039,6 +1077,9 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="flex-1 relative z-10">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Expiring Soon</p>
               <p className="text-3xl font-bold text-orange-700">{analytics.expiringSoon}</p>
+              {planFilter !== "all" && (
+                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1051,6 +1092,9 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="flex-1 relative z-10">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Expired</p>
               <p className="text-3xl font-bold text-red-700">{analytics.expired}</p>
+              {planFilter !== "all" && (
+                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
+              )}
             </div>
           </CardContent>
         </Card>

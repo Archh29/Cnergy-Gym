@@ -44,7 +44,7 @@ const StaffMonitoring = () => {
 
   // Filter states
   const [staffFilter, setStaffFilter] = useState("all")
-  const [dateFilter, setDateFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState("today")
   const [activityTypeFilter, setActivityTypeFilter] = useState("all")
   const [monthFilter, setMonthFilter] = useState("all")
   const [yearFilter, setYearFilter] = useState("all")
@@ -93,6 +93,12 @@ const StaffMonitoring = () => {
   // Reload performance data when filters change
   useEffect(() => {
     loadStaffPerformance()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange])
+
+  // Reload summary when date filter changes
+  useEffect(() => {
+    loadStaffSummary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange])
 
@@ -325,8 +331,29 @@ const StaffMonitoring = () => {
 
   const loadStaffSummary = async () => {
     try {
+      // Build params with date filter
+      const params = new URLSearchParams()
+      params.append("action", "staff_summary")
+      params.append("date_filter", dateFilter)
+
+      if (monthFilter !== "all") {
+        params.append("month", monthFilter)
+      }
+      if (yearFilter !== "all") {
+        params.append("year", yearFilter)
+      }
+      if (useCustomDate && customDate) {
+        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+      }
+      if (dateRange.from) {
+        params.append("date_from", format(dateRange.from, "yyyy-MM-dd"))
+      }
+      if (dateRange.to) {
+        params.append("date_to", format(dateRange.to, "yyyy-MM-dd"))
+      }
+
       // Use the dedicated staff monitoring API for summary
-      const response = await axios.get(`${STAFF_MONITORING_API_URL}?action=staff_summary`)
+      const response = await axios.get(`${STAFF_MONITORING_API_URL}?${params.toString()}`)
       if (response.data.summary) {
         setSummary(response.data.summary)
       } else {
@@ -1165,6 +1192,47 @@ const StaffMonitoring = () => {
     )
   }
 
+  // Helper function to get dynamic labels based on date filter
+  const getFilterLabel = () => {
+    if (useCustomDate && customDate) {
+      return format(customDate, "MMM dd, yyyy")
+    }
+    if (dateRange.from && dateRange.to) {
+      return `${format(dateRange.from, "MMM dd")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+    }
+    switch (dateFilter) {
+      case 'today':
+        return "Today"
+      case 'week':
+        return "This Week"
+      case 'month':
+        return "This Month"
+      case 'year':
+        return "This Year"
+      case 'all':
+        return "All Time"
+      default:
+        if (monthFilter !== "all" && yearFilter !== "all") {
+          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+          return `${monthNames[parseInt(monthFilter) - 1]} ${yearFilter}`
+        }
+        if (yearFilter !== "all") {
+          return yearFilter
+        }
+        return "Today"
+    }
+  }
+
+  const getActivitiesLabel = () => {
+    const filterLabel = getFilterLabel()
+    return `${filterLabel}'s Activities`
+  }
+
+  const getMostActiveLabel = () => {
+    const filterLabel = getFilterLabel()
+    return `Most Active ${filterLabel}`
+  }
+
   return (
     <div className="space-y-4">
       <Card className="border border-gray-200 shadow-md bg-white">
@@ -1185,7 +1253,7 @@ const StaffMonitoring = () => {
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-sm font-semibold text-gray-700">Today's Activities</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{getActivitiesLabel()}</CardTitle>
             <div className="p-2 rounded-lg bg-gray-100">
               <Activity className="h-5 w-5 text-gray-600" />
             </div>
@@ -1193,7 +1261,7 @@ const StaffMonitoring = () => {
           <CardContent>
             <div className="text-3xl font-bold text-gray-900 mb-1">{summary.activities_today}</div>
             <p className="text-xs text-gray-600 font-medium">
-              {summary.activities_this_week} this week
+              Total activities
             </p>
           </CardContent>
         </Card>
@@ -1215,7 +1283,7 @@ const StaffMonitoring = () => {
 
         <Card className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 bg-white">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-sm font-semibold text-gray-700">Most Active Today</CardTitle>
+            <CardTitle className="text-sm font-semibold text-gray-700">{getMostActiveLabel()}</CardTitle>
             <div className="p-2 rounded-lg bg-gray-100">
               <TrendingUp className="h-5 w-5 text-gray-600" />
             </div>
@@ -1225,7 +1293,7 @@ const StaffMonitoring = () => {
             <p className="text-xs text-gray-600 font-medium mb-3">
               {summary.most_active_staff_today}
             </p>
-            {summary.most_active_staff_today !== "No activities today" && summary.most_active_staff_today !== "N/A" && (
+            {summary.most_active_staff_today !== "No activities" && summary.most_active_staff_today !== "N/A" && summary.most_active_staff_today !== "No activities today" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1239,10 +1307,26 @@ const StaffMonitoring = () => {
                   setUserActivitiesModalOpen(true)
 
                   try {
-                    // Fetch activities for today
+                    // Fetch activities based on current date filter
                     const params = new URLSearchParams()
-                    params.append("date_filter", "today")
+                    params.append("date_filter", dateFilter)
                     params.append("limit", "1000")
+
+                    if (monthFilter !== "all") {
+                      params.append("month", monthFilter)
+                    }
+                    if (yearFilter !== "all") {
+                      params.append("year", yearFilter)
+                    }
+                    if (useCustomDate && customDate) {
+                      params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+                    }
+                    if (dateRange.from) {
+                      params.append("date_from", format(dateRange.from, "yyyy-MM-dd"))
+                    }
+                    if (dateRange.to) {
+                      params.append("date_to", format(dateRange.to, "yyyy-MM-dd"))
+                    }
 
                     // Handle "System User" case
                     if (mostActiveName === "System User" || mostActiveName.includes("System")) {
@@ -1357,15 +1441,15 @@ const StaffMonitoring = () => {
                     </Select>
                   </div>
 
-                  {/* Activity Type Filter */}
+                  {/* Category Type Filter */}
                   <div className="space-y-2">
-                    <Label htmlFor="activity-filter" className="text-sm font-semibold text-gray-700">Activity Type</Label>
+                    <Label htmlFor="activity-filter" className="text-sm font-semibold text-gray-700">Category Type</Label>
                     <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
                       <SelectTrigger className="w-full h-10 border-2 border-gray-300 rounded-lg">
-                        <SelectValue placeholder="All Types" />
+                        <SelectValue placeholder="All Categories" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="all">All Categories</SelectItem>
                         <SelectItem value="Coach Management">Coach Management</SelectItem>
                         <SelectItem value="Subscription Management">Subscription Management</SelectItem>
                         <SelectItem value="Day Pass Access">Day Pass Access</SelectItem>
@@ -1373,7 +1457,7 @@ const StaffMonitoring = () => {
                         <SelectItem value="Sales">Sales</SelectItem>
                         <SelectItem value="Product Management">Product Management</SelectItem>
                         <SelectItem value="Inventory Management">Inventory Management</SelectItem>
-                        <SelectItem value="Member Management">Member Management</SelectItem>
+                        <SelectItem value="User Management">User Management</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
