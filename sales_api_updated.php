@@ -263,10 +263,10 @@ function getSalesData($pdo)
 
 	$stmt = $pdo->prepare("
 		SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type,
-		       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
+		       COALESCE(NULLIF(s.payment_method, ''), NULLIF(sub.payment_method, ''), 'cash') AS payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
 		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.guest_session_id, sd.quantity, sd.price AS detail_price,
 		       p.name AS product_name, p.price AS product_price, p.category AS product_category,
-		       sub.plan_id, sub.user_id AS subscription_user_id, sub.amount_paid AS subscription_amount_paid, sub.discounted_price AS subscription_discounted_price,
+		       sub.plan_id, sub.user_id AS subscription_user_id, sub.amount_paid AS subscription_amount_paid, sub.discounted_price AS subscription_discounted_price, sub.payment_method AS subscription_payment_method,
 		       msp.plan_name, msp.price AS plan_price, msp.duration_months,
 		       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS member_fullname,
 		       CONCAT_WS(' ', u_sub.fname, u_sub.mname, u_sub.lname) AS subscription_member_fullname,
@@ -349,12 +349,36 @@ function getSalesData($pdo)
 				$displayName = $memberName;
 			}
 
+			// Get payment method - the SQL query already handles fallback to subscription table
+			$paymentMethod = $row['payment_method'] ?? 'cash';
+			// Handle empty string - should already be handled by COALESCE in SQL, but double-check
+			if ($paymentMethod === '' || $paymentMethod === null) {
+				// Try subscription_payment_method if available (from JOIN)
+				if (!empty($row['subscription_payment_method'])) {
+					$paymentMethod = $row['subscription_payment_method'];
+					error_log("DEBUG sales_api: Sale ID {$row['id']}, Using subscription_payment_method from JOIN: '$paymentMethod'");
+				} else {
+					$paymentMethod = 'cash';
+				}
+			}
+			// Normalize payment method: digital -> gcash, ensure lowercase
+			$paymentMethod = strtolower(trim($paymentMethod));
+			if ($paymentMethod === 'digital') {
+				$paymentMethod = 'gcash';
+			}
+			// Log for debugging subscription sales
+			if ($row['sale_type'] === 'Subscription') {
+				$rawPaymentMethod = $row['payment_method'] ?? null;
+				$subPaymentMethod = $row['subscription_payment_method'] ?? null;
+				error_log("DEBUG sales_api: Sale ID {$row['id']}, Payment method from DB: " . var_export($rawPaymentMethod, true) . ", Subscription PM: " . var_export($subPaymentMethod, true) . ", Final normalized: '$paymentMethod', Receipt: " . ($row['receipt_number'] ?? 'N/A'));
+			}
+
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
 				'total_amount' => (float) $row['total_amount'],
 				'sale_date' => $row['sale_date'],
 				'sale_type' => $row['sale_type'],
-				'payment_method' => $row['payment_method'],
+				'payment_method' => $paymentMethod, // Use normalized value
 				'transaction_status' => $row['transaction_status'],
 				'receipt_number' => $row['receipt_number'],
 				'cashier_id' => $row['cashier_id'],
@@ -473,7 +497,7 @@ function getSalesData($pdo)
 				// If we found subscription_id in sales_details, use it directly (most reliable)
 				if ($subscriptionId) {
 					$subStmt = $pdo->prepare("
-						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date, sub.payment_method,
 						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
 						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
 						FROM `subscription` sub
@@ -494,6 +518,15 @@ function getSalesData($pdo)
 						$salesGrouped[$saleId]['duration_days'] = !empty($subscription['duration_days']) ? (int) $subscription['duration_days'] : null;
 						$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($subscription['amount_paid']) ? (float) $subscription['amount_paid'] : null;
 						$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($subscription['discounted_price']) ? (float) $subscription['discounted_price'] : null;
+						// Update payment_method from subscription if sales table has empty/null
+						if (!empty($subscription['payment_method']) && (empty($salesGrouped[$saleId]['payment_method']) || $salesGrouped[$saleId]['payment_method'] === '')) {
+							$subPaymentMethod = strtolower(trim($subscription['payment_method']));
+							if ($subPaymentMethod === 'digital') {
+								$subPaymentMethod = 'gcash';
+							}
+							$salesGrouped[$saleId]['payment_method'] = $subPaymentMethod;
+							error_log("DEBUG sales_api: Sale ID $saleId, Updated payment_method from subscription (by ID): '$subPaymentMethod'");
+						}
 						// Update user_name and user_id from subscription if not set or incorrect
 						if (!empty($subscription['user_fullname'])) {
 							// Always update user_name from subscription (more reliable)
@@ -516,7 +549,7 @@ function getSalesData($pdo)
 				// If no subscription_id found, try matching by user_id, amount, and date (more accurate)
 				// Strategy 1: Match subscription by user_id, amount (within 10 peso), and same day
 				$subStmt = $pdo->prepare("
-					SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+					SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date, sub.payment_method,
 					       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
 					       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
 					FROM `subscription` sub
@@ -568,7 +601,7 @@ function getSalesData($pdo)
 				// Strategy 3: If still no match, try by date only (same day or within 7 days)
 				if (!$subscription || empty($subscription['plan_name'])) {
 					$subStmt = $pdo->prepare("
-						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date, sub.payment_method,
 						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
 						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
 						FROM `subscription` sub
@@ -592,7 +625,7 @@ function getSalesData($pdo)
 				// Strategy 4: Last resort - find most recent subscription for this user (within 60 days)
 				if (!$subscription || empty($subscription['plan_name'])) {
 					$subStmt = $pdo->prepare("
-						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date,
+						SELECT sub.id, sub.plan_id, sub.user_id, sub.amount_paid, sub.discounted_price, sub.start_date, sub.end_date, sub.payment_method,
 						       msp.plan_name, msp.price AS plan_price, msp.duration_months, msp.duration_days,
 						       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS user_fullname
 						FROM `subscription` sub
@@ -623,6 +656,15 @@ function getSalesData($pdo)
 					$salesGrouped[$saleId]['duration_days'] = !empty($subscription['duration_days']) ? (int) $subscription['duration_days'] : null;
 					$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($subscription['amount_paid']) ? (float) $subscription['amount_paid'] : null;
 					$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($subscription['discounted_price']) ? (float) $subscription['discounted_price'] : null;
+					// Update payment_method from subscription if sales table has empty/null
+					if (!empty($subscription['payment_method']) && (empty($salesGrouped[$saleId]['payment_method']) || $salesGrouped[$saleId]['payment_method'] === '')) {
+						$subPaymentMethod = strtolower(trim($subscription['payment_method']));
+						if ($subPaymentMethod === 'digital') {
+							$subPaymentMethod = 'gcash';
+						}
+						$salesGrouped[$saleId]['payment_method'] = $subPaymentMethod;
+						error_log("DEBUG sales_api: Sale ID $saleId, Updated payment_method from subscription lookup: '$subPaymentMethod'");
+					}
 					// Update user_name from subscription (always use subscription's user)
 					if (!empty($subscription['user_fullname'])) {
 						$salesGrouped[$saleId]['user_name'] = trim($subscription['user_fullname']);

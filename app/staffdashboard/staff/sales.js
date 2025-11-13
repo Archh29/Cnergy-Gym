@@ -602,6 +602,19 @@ const Sales = ({ userId }) => {
     }).format(amount)
   }
 
+  // Normalize payment method display: digital -> GCash, gcash -> GCash, empty -> Cash
+  const formatPaymentMethod = (paymentMethod) => {
+    if (!paymentMethod || paymentMethod === "N/A") {
+      return "Cash"
+    }
+    const normalized = paymentMethod.toLowerCase().trim()
+    if (normalized === "digital" || normalized === "gcash") {
+      return "GCash"
+    }
+    // Capitalize first letter for other methods
+    return paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1).toLowerCase()
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return "N/A"
     const date = new Date(dateString)
@@ -1328,7 +1341,7 @@ const Sales = ({ userId }) => {
                           <TableCell className="py-4">
                             <div className="space-y-1">
                               <Badge variant="outline" className="text-xs font-medium bg-gray-50 text-gray-700 border-gray-300">
-                                {sale.payment_method || "N/A"}
+                                {formatPaymentMethod(sale.payment_method)}
                               </Badge>
                               {sale.change_given > 0 && (
                                 <div className="text-xs text-gray-600 font-medium">

@@ -983,7 +983,7 @@ const SubscriptionPlans = () => {
                   Saving...
                 </>
               ) : currentPlan.id ? (
-                "Update Plan"
+                "Update"
               ) : (
                 "Create Plan"
               )}

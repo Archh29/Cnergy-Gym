@@ -522,8 +522,16 @@ const SubscriptionMonitor = ({ userId }) => {
 
       console.log("Sending request data:", requestData);
       console.log("staff_id being sent:", requestData.staff_id);
+      console.log("Payment method in request data:", requestData.payment_method);
+      console.log("Payment method variable:", paymentMethod);
+      console.log("Full request data JSON:", JSON.stringify(requestData, null, 2));
 
       const response = await axios.post(`${API_URL}?action=create_manual`, requestData);
+
+      console.log("Response received:", response.data);
+      if (response.data.data) {
+        console.log("Response payment_method:", response.data.data.payment_method);
+      }
 
       if (response.data.success) {
         const confirmationData = {
@@ -2418,7 +2426,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     <SelectContent>
                       {subscriptionPlans.map((plan) => (
                         <SelectItem key={plan.id} value={plan.id.toString()}>
-                          {`${plan.plan_name} - ₱${plan.price}`}
+                          {plan.plan_name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -2427,24 +2435,12 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
               <div className="space-y-2">
                 <Label className="text-sm text-gray-700">Amount to Pay</Label>
-                {currentSubscriptionId ? (
-                  <Input
-                    value={subscriptionForm.amount_paid || '0.00'}
-                    disabled
-                    placeholder="Amount to pay"
-                    className="h-10 text-sm border border-gray-300 bg-gray-50"
-                  />
-                ) : (
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={subscriptionForm.amount_paid}
-                    onChange={(e) => setSubscriptionForm(prev => ({ ...prev, amount_paid: e.target.value }))}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="Enter amount"
-                    className="h-10 text-sm border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                )}
+                <Input
+                  value={subscriptionForm.amount_paid || '0.00'}
+                  disabled
+                  placeholder="Amount to pay"
+                  className="h-10 text-sm border border-gray-300 bg-gray-50 text-gray-900 font-medium"
+                />
               </div>
               <div className="space-y-2">
                 <Label className="text-sm text-gray-700">Payment Method</Label>
@@ -2454,25 +2450,24 @@ const SubscriptionMonitor = ({ userId }) => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="digital">Digital Payment</SelectItem>
+                    <SelectItem value="gcash">GCash</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
             {/* Discount Section */}
-            <div className="space-y-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700">Discount Options</h3>
-              <div className="grid grid-cols-3 gap-2.5">
+            <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Discount Options</h3>
+              <div className="grid grid-cols-3 gap-3">
                 {Object.entries(discountConfig).map(([key, config]) => (
                   <Button
                     key={key}
                     type="button"
                     variant={subscriptionForm.discount_type === key ? "default" : "outline"}
-                    className={`h-auto py-2 px-2.5 ${subscriptionForm.discount_type === key
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-white hover:bg-gray-50"
+                    className={`h-auto py-3 px-3 ${subscriptionForm.discount_type === key
+                      ? "bg-gray-800 hover:bg-gray-700 text-white border-gray-800"
+                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
                       }`}
                     onClick={() => {
                       setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
@@ -2487,12 +2482,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     }}
                   >
                     <div className="flex flex-col items-center w-full">
-                      <span className="text-xs font-medium">{config.name}</span>
-                      <span className={`text-xs mt-0.5 ${subscriptionForm.discount_type === key ? "text-blue-100" : "text-gray-500"}`}>
-                        {config.amount === 0 || !config.amount
-                          ? "No discount"
-                          : `₱${config.amount} off`}
-                      </span>
+                      <span className="text-sm font-medium">{config.name}</span>
                     </div>
                   </Button>
                 ))}
@@ -2501,9 +2491,9 @@ const SubscriptionMonitor = ({ userId }) => {
 
             {/* Price Breakdown */}
             {subscriptionForm.plan_id && (
-              <div className="p-2.5 bg-green-50 rounded-lg border border-green-200">
-                <h4 className="text-green-900 mb-1 text-xs font-medium">Price Breakdown</h4>
-                <div className="text-sm text-green-700 space-y-1">
+              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 className="text-gray-700 mb-2 text-sm font-semibold">Price Breakdown</h4>
+                <div className="text-sm text-gray-600 space-y-2">
                   {(() => {
                     const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
                     const planPrice = parseFloat(selectedPlan?.price || 0)
@@ -2516,9 +2506,9 @@ const SubscriptionMonitor = ({ userId }) => {
                       <>
                         <div className="flex justify-between">
                           <span>Original Price:</span>
-                          <span>
+                          <span className="font-medium text-gray-900">
                             {months > 1 ? (
-                              <span className="font-medium">
+                              <span>
                                 ₱{planPrice.toFixed(2)} × {months} month{months > 1 ? 's' : ''} = ₱{(planPrice * months).toFixed(2)}
                               </span>
                             ) : (
@@ -2529,12 +2519,12 @@ const SubscriptionMonitor = ({ userId }) => {
                         {hasDiscount && (
                           <div className="flex justify-between">
                             <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                            <span className="text-red-600">-₱{discount.toFixed(2)}</span>
+                            <span className="font-medium text-gray-700">-₱{discount.toFixed(2)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between font-semibold border-t border-green-300 pt-1">
-                          <span>Final Price:</span>
-                          <span>₱{amountPaid.toFixed(2)}</span>
+                        <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
+                          <span className="text-gray-900">Final Price:</span>
+                          <span className="text-gray-900">₱{amountPaid.toFixed(2)}</span>
                         </div>
                       </>
                     )
@@ -2544,21 +2534,21 @@ const SubscriptionMonitor = ({ userId }) => {
             )}
 
             {paymentMethod === "cash" && (
-              <div className="space-y-2 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
-                <Label className="text-sm text-gray-700">Amount Received</Label>
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <Label className="text-sm font-semibold text-gray-700">Amount Received</Label>
                 <Input
                   type="number"
                   step="0.01"
                   value={amountReceived}
                   onChange={(e) => setAmountReceived(e.target.value)}
                   placeholder="Enter amount received"
-                  className="h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 {amountReceived && (
-                  <div className="mt-2 p-3 bg-white rounded-md border border-green-200">
+                  <div className="mt-2 p-3 bg-white rounded-md border border-gray-300">
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-medium text-gray-700">Change:</span>
-                      <span className="text-lg font-bold text-green-600">₱{changeGiven.toFixed(2)}</span>
+                      <span className="text-base font-semibold text-gray-900">₱{changeGiven.toFixed(2)}</span>
                     </div>
                   </div>
                 )}
@@ -2580,9 +2570,10 @@ const SubscriptionMonitor = ({ userId }) => {
                 !subscriptionForm.plan_id ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
               }
+              className="bg-gray-800 hover:bg-gray-700 text-white"
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Process Payment
+              Process
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2590,75 +2581,92 @@ const SubscriptionMonitor = ({ userId }) => {
 
       {/* Confirmation Modal */}
       <Dialog open={showConfirmationModal} onOpenChange={setShowConfirmationModal}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-lg" hideClose>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600 text-lg">
-              <CheckCircle className="h-5 w-5" />
-              Transaction Successful
-            </DialogTitle>
-            <DialogDescription className="text-sm">
-              {confirmationData?.is_approval
-                ? "Subscription approved and payment processed"
-                : "Subscription created and payment processed"
-              }
+            <DialogTitle className="sr-only">Subscription Receipt</DialogTitle>
+            <DialogDescription className="sr-only">
+              Transaction completed successfully. Receipt details are displayed below.
             </DialogDescription>
           </DialogHeader>
-
           {confirmationData && (
-            <div className="space-y-3">
-              <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                <h4 className="text-green-800 mb-2 text-sm">Transaction Details</h4>
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Receipt:</span>
-                    <span className="font-mono text-xs">{confirmationData.receipt_number}</span>
+            <div className="space-y-6">
+              {/* Header Section */}
+              <div className="text-center space-y-4 pb-6 border-b-2 border-gray-200">
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-bold text-gray-900 tracking-tight">CNERGY GYM</h2>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Subscription Receipt</p>
+                </div>
+                <div className="pt-2 space-y-1.5">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-green-50 rounded-full">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <p className="text-sm font-medium text-green-700">Transaction Completed Successfully</p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Member:</span>
-                    <span>{confirmationData.user_name}</span>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                    <span className="text-sm font-bold text-gray-900 font-mono">{confirmationData.receipt_number}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Plan:</span>
-                    <span>{confirmationData.plan_name}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-green-200 pt-1.5 mt-1.5">
-                    <span className="text-gray-600">Amount Paid:</span>
-                    <span className="text-green-700">₱{confirmationData.total_amount?.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Payment:</span>
-                    <span className="capitalize">{confirmationData.payment_method}</span>
-                  </div>
-                  {confirmationData.payment_method === 'cash' && (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Received:</span>
-                        <span>₱{confirmationData.amount_received?.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Change:</span>
-                        <span>₱{confirmationData.change_given?.toFixed(2)}</span>
-                      </div>
-                    </>
-                  )}
+                  <p className="text-xs text-gray-500">
+                    {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-200">
-                <p className="text-xs text-blue-800">
-                  Subscription is now active
-                </p>
+              {/* Transaction Details */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium text-gray-600">Member Name</span>
+                    <span className="text-sm font-semibold text-gray-900">{confirmationData.user_name}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                    <span className="text-sm font-medium text-gray-600">Subscription Plan</span>
+                    <span className="text-sm font-semibold text-gray-900">{confirmationData.plan_name}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                    <span className="text-sm font-medium text-gray-600">Payment Method</span>
+                    <span className="text-sm font-semibold text-gray-900 capitalize px-3 py-1.5 bg-gray-200 text-gray-700 rounded-full">
+                      {confirmationData.payment_method}
+                    </span>
+                  </div>
+
+                  {confirmationData.payment_method === 'cash' && (
+                    <div className="space-y-3 pt-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Amount Received</span>
+                        <span className="text-sm font-semibold text-gray-900">₱{confirmationData.amount_received?.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-gray-600">Change</span>
+                        <span className="text-base font-bold text-gray-900">₱{confirmationData.change_given?.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Total Section */}
+                <div className="flex justify-between items-center py-4 px-2 border-t-2 border-gray-300">
+                  <span className="text-lg font-semibold text-gray-900">Total Amount Paid</span>
+                  <span className="text-2xl font-bold text-gray-900">₱{confirmationData.total_amount?.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Footer Message */}
+              <div className="text-center pt-4 border-t border-gray-200">
+                <p className="text-sm text-gray-500">Subscription is now active and ready to use</p>
+                <p className="text-xs text-gray-400 mt-2">Thank you for your business!</p>
               </div>
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="pt-6 border-t border-gray-200">
             <Button
               onClick={() => {
                 setShowConfirmationModal(false)
                 setConfirmationData(null)
               }}
-              className="w-full"
+              className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-medium"
             >
               Close
             </Button>

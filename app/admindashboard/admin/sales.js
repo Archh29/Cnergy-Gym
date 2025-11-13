@@ -775,7 +775,40 @@ const Sales = ({ userId }) => {
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
-      setSales(response.data.sales || [])
+      const salesData = response.data.sales || []
+      // Log payment methods for debugging
+      const subscriptionSales = salesData.filter(s => s.sale_type === 'Subscription')
+      if (subscriptionSales.length > 0) {
+        console.log("🔍 DEBUG - Subscription sales payment methods:", subscriptionSales.map(s => ({
+          id: s.id,
+          receipt: s.receipt_number,
+          payment_method: s.payment_method,
+          payment_method_type: typeof s.payment_method,
+          payment_method_value: JSON.stringify(s.payment_method),
+          formatted: formatPaymentMethod(s.payment_method)
+        })))
+        // Also log the most recent ones
+        const recentGCash = subscriptionSales.filter(s => {
+          const pm = (s.payment_method || '').toLowerCase().trim()
+          return pm === 'gcash' || pm === 'digital'
+        })
+        console.log("🔍 DEBUG - Recent GCash subscriptions:", recentGCash.slice(-5).map(s => ({
+          id: s.id,
+          receipt: s.receipt_number,
+          payment_method: s.payment_method,
+          formatted: formatPaymentMethod(s.payment_method)
+        })))
+        // Log the most recent 10 subscriptions to see their payment methods
+        console.log("🔍 DEBUG - Most recent 10 subscriptions:", subscriptionSales.slice(-10).map(s => ({
+          id: s.id,
+          receipt: s.receipt_number,
+          payment_method: s.payment_method,
+          payment_method_type: typeof s.payment_method,
+          payment_method_length: s.payment_method ? s.payment_method.length : 0,
+          formatted: formatPaymentMethod(s.payment_method)
+        })))
+      }
+      setSales(salesData)
     } catch (error) {
       console.error("Error loading sales:", error)
     }
@@ -1284,6 +1317,19 @@ const Sales = ({ userId }) => {
       month: "short",
       day: "numeric",
     })
+  }
+
+  // Normalize payment method display: digital -> GCash, gcash -> GCash, empty -> Cash
+  const formatPaymentMethod = (paymentMethod) => {
+    if (!paymentMethod || paymentMethod === "N/A") {
+      return "Cash"
+    }
+    const normalized = paymentMethod.toLowerCase().trim()
+    if (normalized === "digital" || normalized === "gcash") {
+      return "GCash"
+    }
+    // Capitalize first letter for other methods
+    return paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1).toLowerCase()
   }
 
   const formatDateTime = () => {
@@ -2292,7 +2338,7 @@ const Sales = ({ userId }) => {
                           <TableCell className="py-4">
                             <div className="space-y-1">
                               <Badge variant="outline" className="text-xs font-medium bg-gray-50 text-gray-700 border-gray-300">
-                                {sale.payment_method || "N/A"}
+                                {formatPaymentMethod(sale.payment_method)}
                               </Badge>
                               {sale.change_given > 0 && (
                                 <div className="text-xs text-gray-600 font-medium">
@@ -2949,53 +2995,79 @@ const Sales = ({ userId }) => {
 
       {/* Confirmation Dialog */}
       <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm Transaction</DialogTitle>
-            <DialogDescription>Please review the transaction details before proceeding</DialogDescription>
+        <DialogContent className="max-w-lg" hideClose>
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-2xl font-bold text-gray-900">Confirm Transaction</DialogTitle>
+            <DialogDescription className="text-sm text-gray-600 mt-1">
+              Review the details below before completing the payment
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-medium">Items in Cart:</h4>
-              <div className="max-h-32 overflow-y-auto space-y-1">
+
+          <div className="space-y-6 py-2">
+            {/* Cart Items Section */}
+            <div className="space-y-3">
+              <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Order Summary</h4>
+              <div className="bg-gray-50 rounded-lg p-4 max-h-48 overflow-y-auto space-y-3">
                 {cart.map((item, index) => (
-                  <div key={index} className="flex justify-between text-sm">
-                    <span>{item.product?.name} x{item.quantity}</span>
-                    <span>{formatCurrency(item.price)}</span>
+                  <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-gray-900">{item.product?.name}</span>
+                      <span className="text-xs text-gray-500 ml-2">× {item.quantity}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-gray-900">{formatCurrency(item.price)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="border-t pt-2 space-y-2">
-              <div className="flex justify-between font-medium">
-                <span>Total Amount:</span>
-                <span>{formatCurrency(getTotalAmount())}</span>
+            {/* Payment Details Section */}
+            <div className="space-y-3 border-t border-gray-200 pt-4">
+              <div className="flex justify-between items-center py-1">
+                <span className="text-sm text-gray-600">Subtotal</span>
+                <span className="text-sm font-medium text-gray-900">{formatCurrency(getTotalAmount())}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Payment Method:</span>
-                <span className="capitalize">{paymentMethod}</span>
+
+              <div className="flex justify-between items-center py-1">
+                <span className="text-sm text-gray-600">Payment Method</span>
+                <span className="text-sm font-medium text-gray-900 capitalize px-3 py-1 bg-blue-50 text-blue-700 rounded-md">
+                  {paymentMethod}
+                </span>
               </div>
+
               {paymentMethod === "cash" && (
                 <>
-                  <div className="flex justify-between">
-                    <span>Amount Received:</span>
-                    <span>{formatCurrency(parseFloat(amountReceived) || 0)}</span>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-sm text-gray-600">Amount Received</span>
+                    <span className="text-sm font-medium text-gray-900">{formatCurrency(parseFloat(amountReceived) || 0)}</span>
                   </div>
-                  <div className="flex justify-between font-medium">
-                    <span>Change Given:</span>
-                    <span>{formatCurrency(changeGiven)}</span>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200 pt-3 mt-2">
+                    <span className="text-base font-semibold text-gray-900">Change</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(changeGiven)}</span>
                   </div>
                 </>
               )}
+
+              <div className="flex justify-between items-center py-3 border-t-2 border-gray-300 pt-4 mt-2">
+                <span className="text-base font-semibold text-gray-900">Total Amount</span>
+                <span className="text-xl font-bold text-gray-900">{formatCurrency(getTotalAmount())}</span>
+              </div>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowConfirmDialog(false)}>
+
+          <DialogFooter className="gap-3 pt-4 border-t border-gray-200">
+            <Button
+              variant="outline"
+              onClick={() => setShowConfirmDialog(false)}
+              className="flex-1 h-11"
+            >
               Cancel
             </Button>
-            <Button onClick={confirmTransaction} disabled={loading}>
-              {loading ? "Processing..." : "Confirm Transaction"}
+            <Button
+              onClick={confirmTransaction}
+              disabled={loading}
+              className="flex-1 h-11 bg-gray-900 hover:bg-gray-800 text-white"
+            >
+              {loading ? "Processing..." : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3003,53 +3075,80 @@ const Sales = ({ userId }) => {
 
       {/* Receipt Dialog */}
       <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Transaction Receipt</DialogTitle>
-            <DialogDescription>Transaction completed successfully</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-lg" hideClose>
+          <DialogTitle className="sr-only">Point of Sale Receipt</DialogTitle>
+          <DialogDescription className="sr-only">Transaction receipt for {receiptNumber}</DialogDescription>
           {lastTransaction && (
-            <div className="space-y-4">
-              <div className="text-center border-b pb-4">
-                <h3 className="text-lg font-bold">CNERGY GYM</h3>
-                <p className="text-sm text-muted-foreground">Point of Sale Receipt</p>
-                <p className="text-xs text-muted-foreground">Receipt #: {receiptNumber}</p>
-                <p className="text-xs text-muted-foreground">
-                  Date: {formatDateTime().date} {formatDateTime().time}
-                </p>
+            <div className="space-y-6">
+              {/* Header Section */}
+              <div className="text-center space-y-4 pb-6 border-b-2 border-gray-200">
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-bold text-gray-900 tracking-tight">CNERGY GYM</h2>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Point of Sale Receipt</p>
+                </div>
+                <div className="pt-2 space-y-1.5">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                    <span className="text-sm font-bold text-gray-900">{receiptNumber}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {formatDateTime().date} • {formatDateTime().time}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span>Payment Method:</span>
-                  <span className="font-medium capitalize">{lastTransaction.payment_method}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total Amount:</span>
-                  <span className="font-medium">{formatCurrency(lastTransaction.total_amount)}</span>
-                </div>
-                {lastTransaction.payment_method === "cash" && (
-                  <>
-                    <div className="flex justify-between">
-                      <span>Amount Received:</span>
-                      <span>{formatCurrency(parseFloat(amountReceived) || lastTransaction.total_amount)}</span>
+              {/* Transaction Details */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium text-gray-600">Payment Method</span>
+                    <span className="text-sm font-semibold text-gray-900 capitalize px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full">
+                      {lastTransaction.payment_method}
+                    </span>
+                  </div>
+
+                  {lastTransaction.payment_method === "cash" && (
+                    <div className="space-y-3 pt-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Amount Received</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {formatCurrency(parseFloat(amountReceived) || lastTransaction.total_amount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-gray-600">Change</span>
+                        <span className="text-base font-bold text-green-600">
+                          {formatCurrency(changeGiven)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Change Given:</span>
-                      <span className="font-medium">{formatCurrency(changeGiven)}</span>
-                    </div>
-                  </>
-                )}
+                  )}
+                </div>
+
+                {/* Total Section */}
+                <div className="flex justify-between items-center py-4 px-2 border-t-2 border-gray-300">
+                  <span className="text-lg font-semibold text-gray-900">Total Amount</span>
+                  <span className="text-2xl font-bold text-gray-900">
+                    {formatCurrency(lastTransaction.total_amount)}
+                  </span>
+                </div>
               </div>
 
-
-              <div className="text-center pt-4">
-                <p className="text-sm text-muted-foreground">Thank you for your business!</p>
+              {/* Footer Message */}
+              <div className="text-center pt-4 border-t border-gray-200">
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 rounded-full">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <p className="text-sm font-medium text-green-700">Transaction completed successfully</p>
+                </div>
+                <p className="text-sm text-gray-500 mt-4">Thank you for your business!</p>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setShowReceipt(false)} className="w-full">
+          <DialogFooter className="pt-6 border-t border-gray-200">
+            <Button
+              onClick={() => setShowReceipt(false)}
+              className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white font-medium"
+            >
               Close
             </Button>
           </DialogFooter>
@@ -4752,7 +4851,7 @@ const Sales = ({ userId }) => {
                               <TableCell className="py-2.5">
                                 <div className="space-y-0.5">
                                   <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium bg-gray-50 text-gray-700 border-gray-300">
-                                    {sale.payment_method || "N/A"}
+                                    {formatPaymentMethod(sale.payment_method)}
                                   </Badge>
                                   {sale.change_given > 0 && (
                                     <div className="text-[10px] text-gray-600">
@@ -5781,7 +5880,7 @@ const Sales = ({ userId }) => {
                             return (
                               <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
                                 <TableCell className="font-medium text-gray-900 py-3">
-                                  {formatDateOnly(sale.sale_date)}
+                                  {formatDate(sale.sale_date)}
                                 </TableCell>
                                 <TableCell className="text-gray-700 py-3">
                                   {isDayPassGuest
@@ -6301,11 +6400,11 @@ const Sales = ({ userId }) => {
                                     </div>
                                   </TableCell>
                                   <TableCell className="py-3.5 px-5">
-                                    <Badge variant="outline" className={`text-xs px-2.5 py-1 font-medium ${sale.payment_method === 'Gcash' || sale.payment_method === 'gcash'
+                                    <Badge variant="outline" className={`text-xs px-2.5 py-1 font-medium ${formatPaymentMethod(sale.payment_method) === 'GCash'
                                       ? 'bg-purple-50 text-purple-700 border-purple-200'
                                       : 'bg-gray-50 text-gray-700 border-gray-200'
                                       }`}>
-                                      {sale.payment_method || "Cash"}
+                                      {formatPaymentMethod(sale.payment_method)}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="py-3.5 px-5">
