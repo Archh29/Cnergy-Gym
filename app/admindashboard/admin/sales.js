@@ -3848,7 +3848,9 @@ const Sales = ({ userId }) => {
                                 </TableCell>
                                 <TableCell className="font-semibold text-gray-900 py-3">{formatCurrency(sale.total_amount)}</TableCell>
                                 <TableCell className="py-3">
-                                  <Badge variant="outline" className="font-medium">{sale.payment_method || 'Cash'}</Badge>
+                                  <Badge variant="outline" className="font-medium">
+                                    {formatPaymentMethod(sale.payment_method)}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
                                   {sale.receipt_number || 'N/A'}
@@ -5898,7 +5900,9 @@ const Sales = ({ userId }) => {
                                 </TableCell>
                                 <TableCell className="font-semibold text-gray-900 py-3">{formatCurrency(sale.total_amount)}</TableCell>
                                 <TableCell className="py-3">
-                                  <Badge variant="outline" className="font-medium">{sale.payment_method || 'Cash'}</Badge>
+                                  <Badge variant="outline" className="font-medium">
+                                    {formatPaymentMethod(sale.payment_method)}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
                                   {sale.receipt_number || 'N/A'}

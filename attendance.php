@@ -2,7 +2,34 @@
 // Set timezone to Philippines
 date_default_timezone_set('Asia/Manila');
 
+session_start();
 require 'activity_logger.php';
+
+// Helper function to get staff_id from multiple sources
+function getStaffIdFromRequest($data = null) {
+    // First, try from request data
+    if ($data && isset($data['staff_id']) && !empty($data['staff_id'])) {
+        return $data['staff_id'];
+    }
+    
+    // Second, try from session
+    if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+        return $_SESSION['user_id'];
+    }
+    
+    // Third, try from GET parameters
+    if (isset($_GET['staff_id']) && !empty($_GET['staff_id'])) {
+        return $_GET['staff_id'];
+    }
+    
+    // Fourth, try from POST parameters
+    if (isset($_POST['staff_id']) && !empty($_POST['staff_id'])) {
+        return $_POST['staff_id'];
+    }
+    
+    // Last resort: return null (will be logged as system)
+    return null;
+}
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -298,11 +325,11 @@ function getAttendance(PDO $pdo): void
             $planName = $r['plan_name'] ?? '';
             $planId = $r['plan_id'] ?? null;
             $planNameLower = strtolower($planName);
-
+            
             // Determine if premium or standard
             $isPremium = false;
             $isStandard = false;
-
+            
             if ($planId == 2) {
                 // Plan ID 2 is always premium (Monthly with membership)
                 $isPremium = true;
@@ -553,8 +580,7 @@ function handleQRScan(PDO $pdo, array $input): void
             $formatted_duration = $duration_hours > 0 ? "{$duration_hours}h {$duration_mins}m" : "{$duration_mins}m";
 
             // Log activity using centralized logger (same as monitor_subscription.php)
-            $staffId = $input['staff_id'] ?? null;
-            error_log("DEBUG Attendance Auto Checkout - staffId: " . ($staffId ?? 'NULL') . " from request data");
+            $staffId = getStaffIdFromRequest($input);
             logStaffActivity($pdo, $staffId, "Auto Checkout", "Member {$user['fname']} {$user['lname']} auto checked out from " . date('M j', strtotime($sessionDate)) . " ({$formatted_duration})", "Attendance");
 
             echo json_encode([
@@ -601,8 +627,7 @@ function handleQRScan(PDO $pdo, array $input): void
             $formatted_duration = $duration_hours > 0 ? "{$duration_hours}h {$duration_mins}m" : "{$duration_mins}m";
 
             // Log activity using centralized logger (same as monitor_subscription.php)
-            $staffId = $input['staff_id'] ?? null;
-            error_log("DEBUG Attendance Checkout - staffId: " . ($staffId ?? 'NULL') . " from request data");
+            $staffId = getStaffIdFromRequest($input);
             logStaffActivity($pdo, $staffId, "Member Checkout", "Member {$user['fname']} {$user['lname']} checked out successfully! Session: {$formatted_duration}", "Attendance");
 
             echo json_encode([
@@ -682,8 +707,7 @@ function handleQRScan(PDO $pdo, array $input): void
         $attendanceId = $pdo->lastInsertId();
 
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $input['staff_id'] ?? null;
-        error_log("DEBUG Attendance Checkin - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($input);
         logStaffActivity($pdo, $staffId, "Member Checkin", "Member {$user['fname']} {$user['lname']} checked in successfully!", "Attendance");
 
         echo json_encode([
@@ -734,8 +758,7 @@ function recordAttendance(PDO $pdo, array $input): void
     $attendanceId = $pdo->lastInsertId();
 
     // Log activity using centralized logger (same as monitor_subscription.php)
-    $staffId = $input['staff_id'] ?? null;
-    error_log("DEBUG Attendance Record - staffId: " . ($staffId ?? 'NULL') . " from request data");
+    $staffId = getStaffIdFromRequest($input);
     logStaffActivity($pdo, $staffId, "Record Attendance", "Attendance recorded for member {$user['fname']} {$user['lname']}", "Attendance");
 
     echo json_encode([
@@ -777,8 +800,7 @@ function checkoutAttendance(PDO $pdo, array $input): void
     $user = $userStmt->fetch();
 
     // Log activity using centralized logger (same as monitor_subscription.php)
-    $staffId = $input['staff_id'] ?? null;
-    error_log("DEBUG Attendance Checkout Record - staffId: " . ($staffId ?? 'NULL') . " from request data");
+    $staffId = getStaffIdFromRequest($input);
     logStaffActivity($pdo, $staffId, "Record Checkout", "Checkout recorded for member {$user['fname']} {$user['lname']}", "Attendance");
 
     echo json_encode([

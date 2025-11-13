@@ -2,7 +2,34 @@
 // Set timezone to Philippines
 date_default_timezone_set('Asia/Manila');
 
+session_start();
 require 'activity_logger.php';
+
+// Helper function to get staff_id from multiple sources
+function getStaffIdFromRequest($data = null) {
+    // First, try from request data
+    if ($data && isset($data['staff_id']) && !empty($data['staff_id'])) {
+        return $data['staff_id'];
+    }
+    
+    // Second, try from session
+    if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+        return $_SESSION['user_id'];
+    }
+    
+    // Third, try from GET parameters
+    if (isset($_GET['staff_id']) && !empty($_GET['staff_id'])) {
+        return $_GET['staff_id'];
+    }
+    
+    // Fourth, try from POST parameters
+    if (isset($_POST['staff_id']) && !empty($_POST['staff_id'])) {
+        return $_POST['staff_id'];
+    }
+    
+    // Last resort: return null (will be logged as system)
+    return null;
+}
 
 // Database configuration - Online MySQL Database
 $host = "127.0.0.1:3306";
@@ -326,8 +353,7 @@ function approveGuestSession($pdo, $data) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Approve Guest Session", "Guest session approved and marked as paid: {$session['guest_name']} (ID: $sessionId) - Amount: ₱{$session['amount_paid']}", "Guest Management");
         
         echo json_encode([
@@ -413,8 +439,7 @@ function approveGuestSessionWithPayment($pdo, $data) {
         $updatedSession = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Payment - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Approve Guest Session with Payment", "Guest session approved with payment: {$session['guest_name']} (ID: $sessionId) - Amount: ₱$amountPaid, Payment: $paymentMethod, Received: ₱$amountReceived, Change: ₱$changeGiven, Receipt: $receiptNumber", "Guest Management");
         
         echo json_encode([
@@ -457,8 +482,7 @@ function rejectGuestSession($pdo, $data) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Reject - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Reject Guest Session", "Guest session rejected: {$session['guest_name']} (ID: $sessionId)", "Guest Management");
         
         echo json_encode([
@@ -498,8 +522,7 @@ function markGuestSessionPaid($pdo, $data) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Mark Paid - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Confirm Guest Payment", "Guest session payment confirmed: {$session['guest_name']} (ID: $sessionId) - Amount: ₱{$session['amount_paid']}", "Guest Management");
         
         echo json_encode([
@@ -603,8 +626,7 @@ function createGuestSession($pdo, $data) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Create - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Create Guest POS Session", "Guest POS session created: $guestName ($guestType) - Amount: ₱$amountPaid, Payment: $paymentMethod, Receipt: $receiptNumber, Change: ₱$changeGiven", "Guest Management");
         
         echo json_encode([
@@ -680,8 +702,7 @@ function updateGuestSession($pdo, $data) {
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Update Guest Session", "Guest session updated: {$session['guest_name']} (ID: $sessionId)", "Guest Management");
         
         echo json_encode([
@@ -718,8 +739,7 @@ function deleteGuestSession($pdo, $data) {
         $stmt->execute([$sessionId]);
         
         // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = $data['staff_id'] ?? null;
-        error_log("DEBUG Guest Delete - staffId: " . ($staffId ?? 'NULL') . " from request data");
+        $staffId = getStaffIdFromRequest($data);
         logStaffActivity($pdo, $staffId, "Delete Guest Session", "Guest session deleted: {$session['guest_name']} (ID: $sessionId)", "Guest Management");
         
         echo json_encode([

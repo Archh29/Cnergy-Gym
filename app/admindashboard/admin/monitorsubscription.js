@@ -825,8 +825,15 @@ const SubscriptionMonitor = ({ userId }) => {
     const diffTime = end.getTime() - now.getTime()
 
     if (diffTime < 0) {
-      // Expired
-      const daysAgo = Math.ceil(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
+      // Expired - calculate hours and days
+      const hoursAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60))
+      const daysAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
+      
+      // If expired less than 24 hours ago, show hours
+      if (hoursAgo < 24) {
+        return { type: 'expired_hours', hours: hoursAgo }
+      }
+      // Otherwise show days
       return { type: 'expired', days: daysAgo }
     }
 
@@ -1558,8 +1565,17 @@ const SubscriptionMonitor = ({ userId }) => {
                                 {(() => {
                                   const timeRemaining = calculateTimeRemaining(subscription.end_date)
                                   const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
@@ -1567,8 +1583,8 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   }
-                                  // For day 1 session, don't show orange warning
-                                  if (isDay1Session) {
+                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  if (isWalkIn || isDay1Session) {
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
@@ -1790,8 +1806,17 @@ const SubscriptionMonitor = ({ userId }) => {
                                 {(() => {
                                   const timeRemaining = calculateTimeRemaining(subscription.end_date)
                                   const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
@@ -1799,8 +1824,8 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   }
-                                  // For day 1 session, don't show orange warning
-                                  if (isDay1Session) {
+                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  if (isWalkIn || isDay1Session) {
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
@@ -2022,8 +2047,17 @@ const SubscriptionMonitor = ({ userId }) => {
                                 {(() => {
                                   const timeRemaining = calculateTimeRemaining(subscription.end_date)
                                   const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
@@ -2031,8 +2065,8 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   }
-                                  // For day 1 session, don't show orange warning
-                                  if (isDay1Session) {
+                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  if (isWalkIn || isDay1Session) {
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
@@ -2259,8 +2293,17 @@ const SubscriptionMonitor = ({ userId }) => {
                                 {(() => {
                                   const timeRemaining = calculateTimeRemaining(subscription.end_date)
                                   const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const isDay1Session = subscription.plan_name?.toLowerCase().includes('day 1') || subscription.plan_name?.toLowerCase().includes('day1')
+                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
@@ -2268,8 +2311,8 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   }
-                                  // For day 1 session, don't show orange warning
-                                  if (isDay1Session) {
+                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  if (isWalkIn || isDay1Session) {
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">

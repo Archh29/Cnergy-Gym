@@ -148,7 +148,7 @@ function getAllSubscriptions($pdo)
     $stmt = $pdo->query("
             SELECT s.id, s.start_date, s.end_date, s.discounted_price, s.amount_paid,
                    u.id as user_id, u.fname, u.mname, u.lname, u.email,
-                   p.id as plan_id, p.plan_name, p.price, p.duration_months,
+                   p.id as plan_id, p.plan_name, p.price, p.duration_months, p.duration_days,
                    st.id as status_id, st.status_name,
                    {$createdAtSelect} as created_at,
                    CASE 
@@ -178,6 +178,47 @@ function getAllSubscriptions($pdo)
         ");
 
     $subscriptions = $stmt->fetchAll();
+    
+    // Recalculate end_date for Walk In plans and day-based plans
+    date_default_timezone_set('Asia/Manila');
+    foreach ($subscriptions as &$subscription) {
+        $plan_id = $subscription['plan_id'];
+        $plan_name = strtolower($subscription['plan_name'] ?? '');
+        $duration_days = $subscription['duration_days'] ?? 0;
+        
+        // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
+        // Walk In plans expire at 9 PM PH time on the same day
+        if ($plan_id == 6 || $plan_name === 'walk in') {
+            try {
+                $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+                $end_date_obj = clone $start_date_obj;
+                $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+                $subscription['end_date'] = $end_date_obj->format('Y-m-d H:i:s');
+                
+                // Also update the display_status check for Walk In plans (use datetime comparison)
+                $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                if ($subscription['status_name'] === 'approved' && $end_date_obj >= $now) {
+                    $subscription['display_status'] = 'Active';
+                } elseif ($subscription['status_name'] === 'approved' && $end_date_obj < $now) {
+                    $subscription['display_status'] = 'Expired';
+                }
+            } catch (Exception $e) {
+                error_log("Error recalculating Walk In end_date for subscription {$subscription['id']}: " . $e->getMessage());
+            }
+        }
+        // Handle plans with duration_days (day-based plans)
+        elseif (!empty($duration_days) && $duration_days > 0) {
+            try {
+                $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+                $end_date_obj = clone $start_date_obj;
+                $end_date_obj->add(new DateInterval('P' . intval($duration_days) . 'D'));
+                $subscription['end_date'] = $end_date_obj->format('Y-m-d');
+            } catch (Exception $e) {
+                error_log("Error recalculating day-based end_date for subscription {$subscription['id']}: " . $e->getMessage());
+            }
+        }
+    }
+    unset($subscription); // Break reference
 
     // Get payment information for each subscription
     foreach ($subscriptions as &$subscription) {
@@ -536,15 +577,9 @@ function createManualSubscription($pdo, $data)
     }
 
     // Normalize payment method: digital -> gcash (both are GCash)
-    // Also ensure gcash is lowercase for consistency
-    $paymentMethod = strtolower(trim($paymentMethod));
-    if ($paymentMethod === 'digital') {
+    if (strtolower($paymentMethod) === 'digital') {
         $paymentMethod = 'gcash';
     }
-
-    // Log payment method for debugging
-    error_log("DEBUG createManualSubscription: Payment method from request: " . ($data['payment_method'] ?? 'not set') . ", Normalized to: $paymentMethod");
-    error_log("DEBUG createManualSubscription: Full data array payment_method: " . print_r($data['payment_method'] ?? 'not set', true));
 
     // CRITICAL: Validate payment details before creating subscription
     $amountReceived = floatval($data['amount_received'] ?? $payment_amount);
@@ -598,38 +633,57 @@ function createManualSubscription($pdo, $data)
         if ($user['account_status'] !== 'approved')
             throw new Exception("User account must be approved first");
 
-        // Verify plan exists
-        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months FROM member_subscription_plan WHERE id = ?");
+        // Verify plan exists - also fetch duration_days for Walk In plans
+        $planStmt = $pdo->prepare("SELECT id, plan_name, price, duration_months, duration_days FROM member_subscription_plan WHERE id = ?");
         $planStmt->execute([$plan_id]);
         $plan = $planStmt->fetch();
 
         if (!$plan)
             throw new Exception("Subscription plan not found");
 
-        // Calculate actual months based on payment amount (for advance payments)
-        // If user pays for multiple months, calculate how many months they paid for
-        $planPrice = floatval($plan['price']);
-        $actualMonths = 1; // Default to 1 month
-
-        if ($planPrice > 0) {
-            // Calculate how many months the payment covers
-            $monthsPaid = floor($payment_amount / $planPrice);
-            if ($monthsPaid > 0) {
-                $actualMonths = $monthsPaid;
-            } else {
-                // If payment is less than plan price, use plan's duration_months
-                $actualMonths = $plan['duration_months'];
-            }
-        } else {
-            // If plan price is 0, use plan's duration_months
-            $actualMonths = $plan['duration_months'];
+        // Set timezone to Philippines
+        date_default_timezone_set('Asia/Manila');
+        $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
+        
+        // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
+        // Walk In plans expire at 9 PM PH time on the same day
+        if ($plan_id == 6 || strtolower($plan['plan_name']) === 'walk in') {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+            $end_date = $end_date_obj->format('Y-m-d H:i:s');
+        } 
+        // Handle plans with duration_days (day-based plans)
+        elseif (!empty($plan['duration_days']) && $plan['duration_days'] > 0) {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->add(new DateInterval('P' . intval($plan['duration_days']) . 'D'));
+            $end_date = $end_date_obj->format('Y-m-d');
         }
+        // Handle regular monthly plans
+        else {
+            // Calculate actual months based on payment amount (for advance payments)
+            // If user pays for multiple months, calculate how many months they paid for
+            $planPrice = floatval($plan['price']);
+            $actualMonths = 1; // Default to 1 month
 
-        // Calculate end date based on actual months paid
-        $start_date_obj = new DateTime($start_date);
-        $end_date_obj = clone $start_date_obj;
-        $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
-        $end_date = $end_date_obj->format('Y-m-d');
+            if ($planPrice > 0) {
+                // Calculate how many months the payment covers
+                $monthsPaid = floor($payment_amount / $planPrice);
+                if ($monthsPaid > 0) {
+                    $actualMonths = $monthsPaid;
+                } else {
+                    // If payment is less than plan price, use plan's duration_months
+                    $actualMonths = $plan['duration_months'] ?? 1;
+                }
+            } else {
+                // If plan price is 0, use plan's duration_months
+                $actualMonths = $plan['duration_months'] ?? 1;
+            }
+
+            // Calculate end date based on actual months paid
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
+            $end_date = $end_date_obj->format('Y-m-d');
+        }
 
         // Get approved status ID for manual subscriptions
         $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
@@ -784,32 +838,8 @@ function createManualSubscription($pdo, $data)
                     INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
                     VALUES (?, ?, ?, 'Subscription', ?, 'confirmed', ?, ?, ?)
                 ");
-            // Ensure payment method is never empty or null - CRITICAL for database insert
-            $paymentMethodForSales = trim(strval($paymentMethod ?? ''));
-            if (empty($paymentMethodForSales) || $paymentMethodForSales === 'null' || $paymentMethodForSales === '') {
-                $paymentMethodForSales = 'cash'; // Fallback to cash if somehow empty
-                error_log("WARNING createManualSubscription: Payment method was empty/null, defaulting to cash. Original value: " . var_export($paymentMethod, true));
-            }
-            // Ensure it's lowercase for consistency
-            $paymentMethodForSales = strtolower($paymentMethodForSales);
-            if ($paymentMethodForSales === 'digital') {
-                $paymentMethodForSales = 'gcash';
-            }
-            error_log("DEBUG createManualSubscription: About to insert sales record. Payment method variable: '$paymentMethodForSales' (original: " . var_export($paymentMethod, true) . ", length: " . strlen($paymentMethodForSales) . ")");
-            $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethodForSales, $receiptNumber, $cashierId, $changeGiven]);
+            $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
             $sale_id = $pdo->lastInsertId();
-            error_log("DEBUG createManualSubscription: Sales record created. Sale ID: $sale_id, Payment Method saved: $paymentMethodForSales");
-
-            // Verify what was actually saved
-            $verifyStmt = $pdo->prepare("SELECT payment_method FROM sales WHERE id = ?");
-            $verifyStmt->execute([$sale_id]);
-            $savedPaymentMethod = $verifyStmt->fetchColumn();
-            error_log("DEBUG createManualSubscription: Verified payment method in database: '" . ($savedPaymentMethod ?? 'NULL') . "' (expected: '$paymentMethodForSales')");
-
-            // If it doesn't match, log a critical error
-            if ($savedPaymentMethod !== $paymentMethodForSales) {
-                error_log("CRITICAL ERROR: Payment method mismatch! Expected: '$paymentMethodForSales', Got: '$savedPaymentMethod'");
-            }
 
             // Create sales details
             $salesDetailStmt = $pdo->prepare("
@@ -913,7 +943,7 @@ function approveSubscription($pdo, $data)
         $checkStmt = $pdo->prepare("
                 SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, st.status_name,
                        u.fname, u.lname, u.email,
-                       p.plan_name, p.price
+                       p.plan_name, p.price, p.duration_months, p.duration_days
                 FROM subscription s
                 JOIN subscription_status st ON s.status_id = st.id
                 JOIN user u ON s.user_id = u.id
@@ -935,8 +965,32 @@ function approveSubscription($pdo, $data)
         if (!$approvedStatus)
             throw new Exception("Approved status not found in database.");
 
-        $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-        $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
+        // Recalculate end_date for Walk In plans or if duration_days is set
+        // Set timezone to Philippines
+        date_default_timezone_set('Asia/Manila');
+        $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+        $plan_id = $subscription['plan_id'];
+        
+        // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
+        // Walk In plans expire at 9 PM PH time on the same day
+        if ($plan_id == 6 || strtolower($subscription['plan_name']) === 'walk in') {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+            $corrected_end_date = $end_date_obj->format('Y-m-d H:i:s');
+        } 
+        // Handle plans with duration_days (day-based plans)
+        elseif (!empty($subscription['duration_days']) && $subscription['duration_days'] > 0) {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->add(new DateInterval('P' . intval($subscription['duration_days']) . 'D'));
+            $corrected_end_date = $end_date_obj->format('Y-m-d');
+        }
+        // For regular plans, use existing end_date (already calculated correctly)
+        else {
+            $corrected_end_date = $subscription['end_date'];
+        }
+
+        $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, end_date = ? WHERE id = ?");
+        $updateStmt->execute([$approvedStatus['id'], $corrected_end_date, $subscriptionId]);
 
         // Handle package plan logic - if plan ID 5 is approved, create hidden individual plans
         if ($subscription['plan_id'] == 5) {
@@ -1165,15 +1219,10 @@ function approveSubscriptionWithPayment($pdo, $data)
         echo json_encode(["success" => false, "error" => "Invalid payment method", "message" => "Payment method must be one of: cash, card, gcash, or digital"]);
         return;
     }
-    // Normalize payment method: digital -> gcash (both are GCash)
-    // Also ensure gcash is lowercase for consistency
-    $paymentMethod = strtolower(trim($paymentMethod));
-    if ($paymentMethod === 'digital') {
+    // Normalize payment method: digital -> gcash
+    if (strtolower($paymentMethod) === 'digital') {
         $paymentMethod = 'gcash';
     }
-
-    // Log payment method for debugging
-    error_log("DEBUG approve_with_payment: Payment method from request: " . ($data['payment_method'] ?? 'not set') . ", Normalized to: $paymentMethod");
 
     // For cash payments, validate amount received
     if ($paymentMethod === 'cash' && $amountReceived <= 0) {
@@ -1200,7 +1249,8 @@ function approveSubscriptionWithPayment($pdo, $data)
         $checkStmt = $pdo->prepare("
                 SELECT s.id, s.user_id, s.plan_id, st.status_name,
                        u.fname, u.lname, u.email,
-                       p.plan_name, p.price, s.amount_paid, s.discounted_price,
+                       p.plan_name, p.price, p.duration_months, p.duration_days,
+                       s.amount_paid, s.discounted_price,
                        s.start_date, s.end_date, s.discount_type, s.payment_method, 
                        s.receipt_number, s.cashier_id, s.change_given
                 FROM subscription s
@@ -1228,6 +1278,30 @@ function approveSubscriptionWithPayment($pdo, $data)
         $paymentAmount = $subscription['amount_paid'] ?? $subscription['discounted_price'] ?? $subscription['price'] ?? 0;
         $changeGiven = max(0, $amountReceived - $paymentAmount);
 
+        // Recalculate end_date for Walk In plans or if duration_days is set
+        // Set timezone to Philippines
+        date_default_timezone_set('Asia/Manila');
+        $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+        $plan_id = $subscription['plan_id'];
+        
+        // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
+        // Walk In plans expire at 9 PM PH time on the same day
+        if ($plan_id == 6 || strtolower($subscription['plan_name']) === 'walk in') {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+            $corrected_end_date = $end_date_obj->format('Y-m-d H:i:s');
+        } 
+        // Handle plans with duration_days (day-based plans)
+        elseif (!empty($subscription['duration_days']) && $subscription['duration_days'] > 0) {
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->add(new DateInterval('P' . intval($subscription['duration_days']) . 'D'));
+            $corrected_end_date = $end_date_obj->format('Y-m-d');
+        }
+        // For regular plans, use existing end_date (already calculated correctly)
+        else {
+            $corrected_end_date = $subscription['end_date'];
+        }
+
         // Generate receipt number if not provided
         if (empty($receiptNumber)) {
             $receiptNumber = generateSubscriptionReceiptNumber($pdo);
@@ -1238,9 +1312,9 @@ function approveSubscriptionWithPayment($pdo, $data)
 
         if ($isPackagePlan) {
             // For package plans, keep the package plan visible and create hidden individual plans
-            // First, update the package plan status
-            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ? WHERE id = ?");
-            $updateStmt->execute([$approvedStatus['id'], $subscriptionId]);
+            // First, update the package plan status and end_date if corrected
+            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, end_date = ? WHERE id = ?");
+            $updateStmt->execute([$approvedStatus['id'], $corrected_end_date, $subscriptionId]);
 
             // Create hidden individual plans (1 and 2) with same user and dates
             $individualPlans = [1, 2];
@@ -1282,9 +1356,9 @@ function approveSubscriptionWithPayment($pdo, $data)
                 }
             }
         } else {
-            // For regular plans, update the status and payment method
-            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, payment_method = ? WHERE id = ?");
-            $updateStmt->execute([$approvedStatus['id'], $paymentMethod, $subscriptionId]);
+            // For regular plans, update the status, payment method, and end_date if corrected
+            $updateStmt = $pdo->prepare("UPDATE subscription SET status_id = ?, payment_method = ?, end_date = ? WHERE id = ?");
+            $updateStmt->execute([$approvedStatus['id'], $paymentMethod, $corrected_end_date, $subscriptionId]);
         }
 
         // Create payment record with POS data and PayMongo fields - only for confirmed payments
@@ -1365,70 +1439,22 @@ function approveSubscriptionWithPayment($pdo, $data)
                         in_array('receipt_number', $salesColumns);
 
                     if ($hasPosColumns) {
-                        // Ensure payment method is never empty or null - CRITICAL for database insert
-                        $paymentMethodForSales = trim(strval($paymentMethod ?? ''));
-                        if (empty($paymentMethodForSales) || $paymentMethodForSales === 'null' || $paymentMethodForSales === '') {
-                            $paymentMethodForSales = 'cash'; // Fallback to cash if somehow empty
-                            error_log("WARNING approve_with_payment: Payment method was empty/null, defaulting to cash. Original value: " . var_export($paymentMethod, true));
-                        }
-                        // Ensure it's lowercase for consistency
-                        $paymentMethodForSales = strtolower($paymentMethodForSales);
-                        if ($paymentMethodForSales === 'digital') {
-                            $paymentMethodForSales = 'gcash';
-                        }
-                        error_log("DEBUG approve_with_payment: About to insert sales record. Payment method: '$paymentMethodForSales' (original: " . var_export($paymentMethod, true) . ")");
                         $salesStmt = $pdo->prepare("
                                 INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, amount_received, change_given, receipt_number, cashier_id, notes, transaction_status) 
                                 VALUES (?, ?, NOW(), 'Subscription', ?, ?, ?, ?, ?, ?, 'confirmed')
                             ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethodForSales, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
+                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
                         $sale_id = $pdo->lastInsertId();
-                        error_log("Sales record created successfully. Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethodForSales, Receipt: $receiptNumber");
-                        error_log("DEBUG approve_with_payment: Sales record payment method saved: $paymentMethodForSales");
-
-                        // Verify what was actually saved
-                        $verifyStmt = $pdo->prepare("SELECT payment_method FROM sales WHERE id = ?");
-                        $verifyStmt->execute([$sale_id]);
-                        $savedPaymentMethod = $verifyStmt->fetchColumn();
-                        error_log("DEBUG approve_with_payment: Verified payment method in database: '" . ($savedPaymentMethod ?? 'NULL') . "' (expected: '$paymentMethodForSales')");
-
-                        // If it doesn't match, log a critical error
-                        if ($savedPaymentMethod !== $paymentMethodForSales) {
-                            error_log("CRITICAL ERROR: Payment method mismatch! Expected: '$paymentMethodForSales', Got: '$savedPaymentMethod'");
-                        }
+                        error_log("Sales record created successfully. Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethod, Receipt: $receiptNumber");
                     } else {
                         // Fallback to basic sales record with receipt number
-                        // Ensure payment method is never empty or null - CRITICAL for database insert
-                        $paymentMethodForSales = trim(strval($paymentMethod ?? ''));
-                        if (empty($paymentMethodForSales) || $paymentMethodForSales === 'null' || $paymentMethodForSales === '') {
-                            $paymentMethodForSales = 'cash'; // Fallback to cash if somehow empty
-                            error_log("WARNING approve_with_payment (fallback): Payment method was empty/null, defaulting to cash. Original value: " . var_export($paymentMethod, true));
-                        }
-                        // Ensure it's lowercase for consistency
-                        $paymentMethodForSales = strtolower($paymentMethodForSales);
-                        if ($paymentMethodForSales === 'digital') {
-                            $paymentMethodForSales = 'gcash';
-                        }
-                        error_log("DEBUG approve_with_payment (fallback): About to insert sales record. Payment method: '$paymentMethodForSales' (original: " . var_export($paymentMethod, true) . ")");
                         $salesStmt = $pdo->prepare("
                                 INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
                                 VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?)
                             ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethodForSales, $receiptNumber, $cashierId, $changeGiven]);
+                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
                         $sale_id = $pdo->lastInsertId();
-                        error_log("Sales record created successfully (fallback). Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethodForSales, Receipt: $receiptNumber");
-                        error_log("DEBUG approve_with_payment (fallback): Sales record payment method saved: $paymentMethodForSales");
-
-                        // Verify what was actually saved
-                        $verifyStmt = $pdo->prepare("SELECT payment_method FROM sales WHERE id = ?");
-                        $verifyStmt->execute([$sale_id]);
-                        $savedPaymentMethod = $verifyStmt->fetchColumn();
-                        error_log("DEBUG approve_with_payment (fallback): Verified payment method in database: '" . ($savedPaymentMethod ?? 'NULL') . "' (expected: '$paymentMethodForSales')");
-
-                        // If it doesn't match, log a critical error
-                        if ($savedPaymentMethod !== $paymentMethodForSales) {
-                            error_log("CRITICAL ERROR: Payment method mismatch! Expected: '$paymentMethodForSales', Got: '$savedPaymentMethod'");
-                        }
+                        error_log("Sales record created successfully (fallback). Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethod, Receipt: $receiptNumber");
                     }
                 }
             } catch (Exception $e) {
