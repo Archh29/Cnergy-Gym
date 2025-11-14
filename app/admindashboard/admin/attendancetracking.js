@@ -1004,14 +1004,14 @@ const AttendanceTracking = ({ userId }) => {
 
           {/* Filters Row */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-            <div className={`flex items-center ${filterType === "guests" ? "gap-2 flex-wrap" : "gap-2 flex-nowrap"}`}>
+            <div className={`flex items-center ${filterType === "guests" ? "gap-2 flex-wrap" : "gap-3 flex-nowrap"}`}>
               <div className="relative flex-shrink-0">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
                 <Input
                   placeholder={filterType === "guests" ? "Search..." : "Search members, emails, or names..."}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`pl-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm ${filterType === "guests" ? "w-48 text-sm h-9" : "w-48"}`}
+                  className={`pl-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm ${filterType === "guests" ? "w-48 text-sm h-9" : "w-56"}`}
                 />
               </div>
               <Label htmlFor="user-type-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Plan:</Label>
@@ -1022,7 +1022,7 @@ const AttendanceTracking = ({ userId }) => {
                   setSessionTypeFilter("all")
                 }
               }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-32 h-9 text-sm" : "w-36"}`} id="user-type-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-32 h-9 text-sm" : "w-40"}`} id="user-type-filter">
                   <SelectValue placeholder="All Plans" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1056,7 +1056,7 @@ const AttendanceTracking = ({ userId }) => {
                 setSelectedMonth("all-time")
                 setSelectedYear("all-time")
               }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-32"}`} id="quick-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="quick-filter">
                   <SelectValue placeholder="Today" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1073,7 +1073,7 @@ const AttendanceTracking = ({ userId }) => {
                 setSelectedDate("")
                 setQuickFilter("all-time") // Reset quick filter when using specific filters
               }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-32"}`} id="month-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="month-filter">
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1098,7 +1098,7 @@ const AttendanceTracking = ({ userId }) => {
                 setSelectedDate("")
                 setQuickFilter("all-time") // Reset quick filter when using specific filters
               }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-24 h-9 text-sm" : "w-28"}`} id="year-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-24 h-9 text-sm" : "w-32"}`} id="year-filter">
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1117,7 +1117,7 @@ const AttendanceTracking = ({ userId }) => {
                   setSelectedMonth("all-time")
                   setQuickFilter("all-time") // Reset quick filter when using specific filters
                 }}
-                className="w-32 flex-shrink-0 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                className="w-36 flex-shrink-0 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
                 id="day-filter"
               />
             </div>
@@ -1281,7 +1281,7 @@ const AttendanceTracking = ({ userId }) => {
           setManualSearchQuery("")
         }
       }}>
-        <DialogContent className="w-[95vw] max-w-[700px] mx-auto [&>button]:hidden">
+        <DialogContent className="w-[95vw] max-w-[650px] mx-auto [&>button]:hidden">
           <DialogHeader className="border-b pb-4 mb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200">
