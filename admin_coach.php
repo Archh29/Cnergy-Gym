@@ -505,11 +505,20 @@ function approveRequestWithPayment($pdo) {
         }
         
         // Validate payment method
-        $validPaymentMethods = ['cash', 'card', 'digital'];
+        $validPaymentMethods = ['cash', 'gcash'];
         if (!in_array($paymentMethod, $validPaymentMethods)) {
             echo json_encode([
                 'success' => false,
-                'message' => 'Invalid payment method'
+                'message' => 'Invalid payment method. Only Cash and GCash are allowed.'
+            ]);
+            return;
+        }
+        
+        // For GCash, require reference number
+        if ($paymentMethod === 'gcash' && empty($receiptNumber)) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Reference number is required for GCash payments'
             ]);
             return;
         }
@@ -570,8 +579,16 @@ function approveRequestWithPayment($pdo) {
             }
             
             // Generate receipt number if not provided
+            // For GCash, receipt_number should be the reference number (already set from frontend)
+            // For Cash, generate receipt number if not provided
             if (empty($receiptNumber)) {
-                $receiptNumber = generateCoachAssignmentReceiptNumber($pdo);
+                if ($paymentMethod === 'gcash') {
+                    // GCash should always have a reference number (validated above)
+                    // If somehow it's empty, this shouldn't happen, but handle it
+                    $receiptNumber = 'GCASH-' . date('YmdHis');
+                } else {
+                    $receiptNumber = generateCoachAssignmentReceiptNumber($pdo);
+                }
             }
             
             // Check if payment_received column exists, if not add it
@@ -584,16 +601,29 @@ function approveRequestWithPayment($pdo) {
                 error_log("Could not add payment_received column: " . $e->getMessage());
             }
             
-            // Update the request to approved and lock it after payment (payment_received = 1)
+            // Check if payment has already been processed
+            if (!empty($requestDetails['payment_received']) && $requestDetails['payment_received'] == 1) {
+                $pdo->rollback();
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Payment has already been processed for this assignment'
+                ]);
+                return;
+            }
+            
+            // Update the assignment to mark payment as received (payment_received = 1)
+            // This works for both pending and already-approved assignments
             // Once payment is received, assignment is locked - no reassignment allowed
             $stmt = $pdo->prepare("
                 UPDATE coach_member_list 
-                SET staff_approval = 'approved',
+                SET payment_received = 1,
+                    staff_approval = 'approved',
                     status = 'active',
-                    staff_approved_at = NOW(),
-                    payment_received = 1,
+                    staff_approved_at = COALESCE(staff_approved_at, NOW()),
                     handled_by_staff = ?
-                WHERE id = ? AND coach_approval = 'approved' AND staff_approval = 'pending'
+                WHERE id = ? 
+                    AND coach_approval = 'approved' 
+                    AND (payment_received = 0 OR payment_received IS NULL)
             ");
             
             $result = $stmt->execute([$adminId, $requestId]);
@@ -666,6 +696,32 @@ function approveRequestWithPayment($pdo) {
                             $changeGiven,    // change_given
                             $notes
                         ]);
+                        $saleId = $pdo->lastInsertId();
+                        
+                        // Create sales_details entry to link coach assignment to sale
+                        try {
+                            $checkSalesDetailsColumns = $pdo->query("SHOW COLUMNS FROM sales_details");
+                            $salesDetailsColumns = $checkSalesDetailsColumns->fetchAll(PDO::FETCH_COLUMN);
+                            
+                            // Check if coach_assignment_id column exists
+                            if (in_array('coach_assignment_id', $salesDetailsColumns)) {
+                                $salesDetailsStmt = $pdo->prepare("
+                                    INSERT INTO sales_details (sale_id, coach_assignment_id, quantity, price) 
+                                    VALUES (?, ?, 1, ?)
+                                ");
+                                $salesDetailsStmt->execute([$saleId, $requestId, $paymentAmount]);
+                            } else {
+                                // Fallback: create sales_details without coach_assignment_id
+                                $salesDetailsStmt = $pdo->prepare("
+                                    INSERT INTO sales_details (sale_id, quantity, price) 
+                                    VALUES (?, 1, ?)
+                                ");
+                                $salesDetailsStmt->execute([$saleId, $paymentAmount]);
+                            }
+                        } catch (Exception $e2) {
+                            error_log("Sales details creation failed: " . $e2->getMessage());
+                            // Continue - sales record is created even if details fail
+                        }
                     } else {
                         // Fallback to basic sales record with correct column names
                         $salesStmt = $pdo->prepare("
@@ -691,6 +747,31 @@ function approveRequestWithPayment($pdo) {
                         if ($hasCashierColumn) {
                             $updateStmt = $pdo->prepare("UPDATE sales SET cashier_id = ? WHERE id = ?");
                             $updateStmt->execute([$adminId, $salesId]);
+                        }
+                        
+                        // Create sales_details entry to link coach assignment to sale
+                        try {
+                            $checkSalesDetailsColumns = $pdo->query("SHOW COLUMNS FROM sales_details");
+                            $salesDetailsColumns = $checkSalesDetailsColumns->fetchAll(PDO::FETCH_COLUMN);
+                            
+                            // Check if coach_assignment_id column exists
+                            if (in_array('coach_assignment_id', $salesDetailsColumns)) {
+                                $salesDetailsStmt = $pdo->prepare("
+                                    INSERT INTO sales_details (sale_id, coach_assignment_id, quantity, price) 
+                                    VALUES (?, ?, 1, ?)
+                                ");
+                                $salesDetailsStmt->execute([$salesId, $requestId, $paymentAmount]);
+                            } else {
+                                // Fallback: create sales_details without coach_assignment_id
+                                $salesDetailsStmt = $pdo->prepare("
+                                    INSERT INTO sales_details (sale_id, quantity, price) 
+                                    VALUES (?, 1, ?)
+                                ");
+                                $salesDetailsStmt->execute([$salesId, $paymentAmount]);
+                            }
+                        } catch (Exception $e2) {
+                            error_log("Sales details creation failed: " . $e2->getMessage());
+                            // Continue - sales record is created even if details fail
                         }
                     }
                 } catch (Exception $e) {
@@ -1478,6 +1559,17 @@ function assignCoach($pdo) {
             return;
         }
         
+        // Check if payment_received column exists, if not add it (to lock assignments after payment)
+        // This MUST be done BEFORE any queries that use this column
+        try {
+            $checkColumns = $pdo->query("SHOW COLUMNS FROM coach_member_list LIKE 'payment_received'");
+            if ($checkColumns->rowCount() == 0) {
+                $pdo->exec("ALTER TABLE coach_member_list ADD COLUMN payment_received TINYINT(1) DEFAULT 0 AFTER staff_approved_at");
+            }
+        } catch (Exception $e) {
+            error_log("Could not add payment_received column: " . $e->getMessage());
+        }
+        
         // Check if member already has an active assignment with this coach
         $existingStmt = $pdo->prepare("
             SELECT id FROM coach_member_list
@@ -1498,33 +1590,44 @@ function assignCoach($pdo) {
         }
         
         // Check if member has a paid/locked assignment (no reassignment allowed after payment)
-        $paidAssignmentStmt = $pdo->prepare("
-            SELECT id, coach_id 
-            FROM coach_member_list
-            WHERE member_id = ? 
-                AND coach_approval = 'approved'
-                AND staff_approval = 'approved'
-                AND (status = 'active' OR status IS NULL)
-                AND (expires_at IS NULL OR expires_at >= CURDATE())
-                AND payment_received = 1
-            ORDER BY id DESC
-            LIMIT 1
-        ");
-        $paidAssignmentStmt->execute([$memberId]);
-        $paidAssignment = $paidAssignmentStmt->fetch(PDO::FETCH_ASSOC);
+        // Only check if column exists (it should now, but be safe)
+        $hasPaymentColumn = false;
+        try {
+            $checkColumns = $pdo->query("SHOW COLUMNS FROM coach_member_list LIKE 'payment_received'");
+            $hasPaymentColumn = $checkColumns->rowCount() > 0;
+        } catch (Exception $e) {
+            error_log("Could not check payment_received column: " . $e->getMessage());
+        }
         
-        if ($paidAssignment) {
-            // Get coach name for error message
-            $paidCoachStmt = $pdo->prepare("SELECT fname, lname FROM user WHERE id = ?");
-            $paidCoachStmt->execute([$paidAssignment['coach_id']]);
-            $paidCoach = $paidCoachStmt->fetch(PDO::FETCH_ASSOC);
-            $paidCoachName = $paidCoach ? trim($paidCoach['fname'] . ' ' . $paidCoach['lname']) : 'Unknown';
+        if ($hasPaymentColumn) {
+            $paidAssignmentStmt = $pdo->prepare("
+                SELECT id, coach_id 
+                FROM coach_member_list
+                WHERE member_id = ? 
+                    AND coach_approval = 'approved'
+                    AND staff_approval = 'approved'
+                    AND (status = 'active' OR status IS NULL)
+                    AND (expires_at IS NULL OR expires_at >= CURDATE())
+                    AND payment_received = 1
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $paidAssignmentStmt->execute([$memberId]);
+            $paidAssignment = $paidAssignmentStmt->fetch(PDO::FETCH_ASSOC);
             
-            echo json_encode([
-                'success' => false,
-                'message' => "Member already has a paid assignment with coach {$paidCoachName}. Assignment is locked after payment. If wrong coach was assigned, please refund/cancel manually."
-            ]);
-            return;
+            if ($paidAssignment) {
+                // Get coach name for error message
+                $paidCoachStmt = $pdo->prepare("SELECT fname, lname FROM user WHERE id = ?");
+                $paidCoachStmt->execute([$paidAssignment['coach_id']]);
+                $paidCoach = $paidCoachStmt->fetch(PDO::FETCH_ASSOC);
+                $paidCoachName = $paidCoach ? trim($paidCoach['fname'] . ' ' . $paidCoach['lname']) : 'Unknown';
+                
+                echo json_encode([
+                    'success' => false,
+                    'message' => "Member already has a paid assignment with coach {$paidCoachName}. Assignment is locked after payment. If wrong coach was assigned, please refund/cancel manually."
+                ]);
+                return;
+            }
         }
         
         // Start transaction
@@ -1546,16 +1649,6 @@ function assignCoach($pdo) {
             // Calculate expiration date (30 days from now for monthly)
             $expiresAt = date('Y-m-d', strtotime('+30 days'));
             $remainingSessions = 18; // Default sessions
-            
-            // Check if payment_received column exists, if not add it (to lock assignments after payment)
-            try {
-                $checkColumns = $pdo->query("SHOW COLUMNS FROM coach_member_list LIKE 'payment_received'");
-                if ($checkColumns->rowCount() == 0) {
-                    $pdo->exec("ALTER TABLE coach_member_list ADD COLUMN payment_received TINYINT(1) DEFAULT 0 AFTER staff_approved_at");
-                }
-            } catch (Exception $e) {
-                error_log("Could not add payment_received column: " . $e->getMessage());
-            }
             
             // Insert new coach assignment (payment_received = 0, will be set to 1 when payment is processed)
             $insertStmt = $pdo->prepare("
@@ -1636,10 +1729,10 @@ function assignCoach($pdo) {
 }
 
 // Function to get all available members with gym membership (for manual selection)
-// Note: Members with paid assignments (payment_received = 1) cannot be reassigned
+// Note: Excludes members who already have an active coach assignment
 function getAvailableMembers($pdo) {
     try {
-        // Get all members with plan_id 1 or 5 (gym membership) - includes both assigned and unassigned
+        // Get all members with plan_id 1 or 5 (gym membership) who DON'T have an active coach assignment
         $stmt = $pdo->prepare("
             SELECT DISTINCT
                 u.id,
@@ -1648,12 +1741,7 @@ function getAvailableMembers($pdo) {
                 u.lname,
                 u.email,
                 u.account_status,
-                p.plan_name,
-                cml.id as assignment_id,
-                cml.coach_id as current_coach_id,
-                cml.expires_at,
-                cml.remaining_sessions,
-                cml.staff_approved_at
+                p.plan_name
             FROM user u
             INNER JOIN subscription s ON u.id = s.user_id
             INNER JOIN member_subscription_plan p ON s.plan_id = p.id
@@ -1667,6 +1755,7 @@ function getAvailableMembers($pdo) {
                 AND u.account_status = 'approved'
                 AND s.status_id = 2  -- approved subscription status
                 AND s.end_date >= CURDATE()  -- active subscription
+                AND cml.id IS NULL  -- no active coach assignment
             ORDER BY u.fname, u.lname
         ");
         
@@ -1679,10 +1768,7 @@ function getAvailableMembers($pdo) {
                 'id' => (int)$member['id'],
                 'name' => trim($member['fname'] . ' ' . ($member['mname'] ?? '') . ' ' . $member['lname']),
                 'email' => $member['email'],
-                'plan_name' => $member['plan_name'] ?? 'Gym Membership',
-                'has_assignment' => !empty($member['assignment_id']),
-                'current_coach_id' => $member['current_coach_id'] ? (int)$member['current_coach_id'] : null,
-                'assignment_id' => $member['assignment_id'] ? (int)$member['assignment_id'] : null
+                'plan_name' => $member['plan_name'] ?? 'Gym Membership'
             ];
         }
         

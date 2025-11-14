@@ -43,6 +43,7 @@ const CoachAssignments = ({ userId }) => {
   const [rateType, setRateType] = useState("")
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
+  const [referenceNumber, setReferenceNumber] = useState("")
 
   const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
 
@@ -143,6 +144,7 @@ const CoachAssignments = ({ userId }) => {
           payment_method: paymentMethod,
           amount_received: paymentMethod === "cash" ? parseFloat(amountReceived) : paymentAmount,
           cashier_id: effectiveUserId,
+          receipt_number: paymentMethod === "gcash" && referenceNumber ? referenceNumber : undefined,
         }
 
         const paymentResponse = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, paymentData)
@@ -162,6 +164,7 @@ const CoachAssignments = ({ userId }) => {
       setRateType("")
       setPaymentMethod("cash")
       setAmountReceived("")
+      setReferenceNumber("")
     } catch (err) {
       console.error("Error assigning coach:", err)
       setError("Failed to assign coach: " + (err.response?.data?.message || err.message))
@@ -717,7 +720,11 @@ const CoachAssignments = ({ userId }) => {
             {selectedCoach && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Package Type</label>
-                <Select value={rateType} onValueChange={(value) => { setRateType(value); setAmountReceived("") }}>
+                <Select value={rateType} onValueChange={(value) => { 
+                  setRateType(value)
+                  setAmountReceived("")
+                  setReferenceNumber("")
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select package type..." />
                   </SelectTrigger>
@@ -758,14 +765,17 @@ const CoachAssignments = ({ userId }) => {
                 {/* Payment Method */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Payment Method</label>
-                  <Select value={paymentMethod} onValueChange={(value) => { setPaymentMethod(value); setAmountReceived("") }}>
+                  <Select value={paymentMethod} onValueChange={(value) => { 
+                    setPaymentMethod(value)
+                    setAmountReceived("")
+                    setReferenceNumber("")
+                  }}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="card">Card</SelectItem>
-                      <SelectItem value="digital">Digital Payment</SelectItem>
+                      <SelectItem value="gcash">GCash</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -780,6 +790,20 @@ const CoachAssignments = ({ userId }) => {
                       placeholder="0.00"
                       value={amountReceived}
                       onChange={(e) => setAmountReceived(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Reference Number (for GCash) */}
+                {paymentMethod === "gcash" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Reference Number <span className="text-red-500">*</span></label>
+                    <Input
+                      type="text"
+                      placeholder="Enter GCash reference number"
+                      value={referenceNumber}
+                      onChange={(e) => setReferenceNumber(e.target.value)}
+                      required
                     />
                   </div>
                 )}
@@ -809,7 +833,8 @@ const CoachAssignments = ({ userId }) => {
                 !selectedCoachId || 
                 (!selectedMemberId && !selectedMember?.id) ||
                 !rateType ||
-                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < calculatePaymentAmount()))
+                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < calculatePaymentAmount())) ||
+                (paymentMethod === "gcash" && !referenceNumber)
               }
             >
               {actionLoading ? (

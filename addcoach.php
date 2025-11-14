@@ -1,4 +1,54 @@
 <?php
+// ⚠️ CRITICAL: Set CORS headers FIRST, before any output
+// Enable error reporting (but don't display - log only to prevent output)
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+
+// CORS allowed origins
+$allowedOrigins = [
+    'https://www.cnergy.site',
+    'https://cnergy.site',
+    'http://localhost:3000',
+    'http://localhost',
+    'http://127.0.0.1:3000',
+];
+
+// Get origin from request headers
+$origin = trim($_SERVER['HTTP_ORIGIN'] ?? '');
+
+// Determine which origin to use for CORS
+if (!empty($origin)) {
+    // Check if origin is exactly in allowed list
+    if (in_array($origin, $allowedOrigins, true)) {
+        $corsOrigin = $origin;
+    }
+    // Allow any localhost origin for development (more permissive)
+    elseif (stripos($origin, 'localhost') !== false || stripos($origin, '127.0.0.1') !== false) {
+        $corsOrigin = $origin;
+    }
+    // Default to first allowed origin if not in list
+    else {
+        $corsOrigin = $allowedOrigins[0];
+    }
+} else {
+    // No origin header, use default
+    $corsOrigin = $allowedOrigins[0];
+}
+
+// Set CORS headers
+header("Access-Control-Allow-Origin: " . $corsOrigin);
+header("Access-Control-Allow-Credentials: true");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Vary: Origin");
+
+// Handle preflight OPTIONS request
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit(0);
+}
+
 // Database configuration
 $host = "localhost";
 $dbname = "u773938685_cnergydb";
@@ -45,15 +95,7 @@ function getStaffIdFromRequest($data = null) {
     return null;
 }
 
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(204);
-    exit;
-}
 
 require_once 'db.php';
 
