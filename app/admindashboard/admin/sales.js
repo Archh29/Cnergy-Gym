@@ -176,6 +176,7 @@ const Sales = ({ userId }) => {
   const [totalSalesSubscriptionTypeFilter, setTotalSalesSubscriptionTypeFilter] = useState("all") // all, regular, day_pass, or plan_id
   const [dayPassMethodFilter, setDayPassMethodFilter] = useState("all") // all, with_account, without_account
   const [dayPassTypeFilter, setDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
+  const [gymSessionTypeFilter, setGymSessionTypeFilter] = useState("all") // all, subscription, guest - filters Gym Session by type
   const [totalSalesCategoryFilter, setTotalSalesCategoryFilter] = useState("all") // all, or category name
   const [totalSalesProductFilter, setTotalSalesProductFilter] = useState("all") // all, or product id
   const [totalSalesCoaches, setTotalSalesCoaches] = useState([])
@@ -205,6 +206,7 @@ const Sales = ({ userId }) => {
   const [subscriptionCustomDate, setSubscriptionCustomDate] = useState(null)
   const [subscriptionUseCustomDate, setSubscriptionUseCustomDate] = useState(false)
   const [subscriptionDayPassTypeFilter, setSubscriptionDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
+  const [subscriptionGymSessionTypeFilter, setSubscriptionGymSessionTypeFilter] = useState("all") // all, subscription, guest - filters Gym Session by type
   const [subscriptionCurrentPage, setSubscriptionCurrentPage] = useState(1)
   const [subscriptionItemsPerPage] = useState(10)
 
@@ -264,7 +266,7 @@ const Sales = ({ userId }) => {
   // Reset to first page when total sales dialog filters change
   useEffect(() => {
     setTotalSalesCurrentPage(1)
-  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter])
+  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, dayPassTypeFilter, gymSessionTypeFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter])
 
   // Reset filters when total sales dialog closes
   useEffect(() => {
@@ -279,6 +281,7 @@ const Sales = ({ userId }) => {
       setTotalSalesSubscriptionTypeFilter("all")
       setDayPassMethodFilter("all")
       setDayPassTypeFilter("all")
+      setGymSessionTypeFilter("all")
       setTotalSalesCategoryFilter("all")
       setTotalSalesProductFilter("all")
       setTotalSalesCoachFilter("all")
@@ -294,6 +297,7 @@ const Sales = ({ userId }) => {
       setTotalSalesSubscriptionTypeFilter("all")
       setDayPassMethodFilter("all")
       setDayPassTypeFilter("all")
+      setGymSessionTypeFilter("all")
     }
     if (totalSalesTypeFilter !== "Product") {
       setTotalSalesCategoryFilter("all")
@@ -304,6 +308,29 @@ const Sales = ({ userId }) => {
       setTotalSalesServiceTypeFilter("all")
     }
   }, [totalSalesTypeFilter])
+
+  // Reset gym session type filter when plan changes away from Gym Session
+  useEffect(() => {
+    if (totalSalesTypeFilter === "Subscription" && totalSalesSubscriptionTypeFilter !== "all") {
+      const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter.toString())
+      const isGymSessionPlan = selectedPlan && (
+        selectedPlan.name.toLowerCase().includes('gym session') ||
+        selectedPlan.name.toLowerCase().includes('gymsession')
+      ) && !(
+        selectedPlan.name.toLowerCase().includes('day pass') ||
+        selectedPlan.name.toLowerCase().includes('daypass') ||
+        selectedPlan.name.toLowerCase().includes('walk-in') ||
+        selectedPlan.name.toLowerCase().includes('walkin') ||
+        selectedPlan.name.toLowerCase().includes('guest')
+      )
+      
+      if (!isGymSessionPlan) {
+        setGymSessionTypeFilter("all")
+      }
+    } else if (totalSalesTypeFilter !== "Subscription" || totalSalesSubscriptionTypeFilter === "all") {
+      setGymSessionTypeFilter("all")
+    }
+  }, [totalSalesTypeFilter, totalSalesSubscriptionTypeFilter, totalSalesSubscriptionPlans])
 
   // Reset day pass method filter when sale type filter changes away from Day Pass in All Sales tab
   useEffect(() => {
@@ -359,7 +386,31 @@ const Sales = ({ userId }) => {
   // Reset to first page when subscription filters change
   useEffect(() => {
     setSubscriptionCurrentPage(1)
-  }, [selectedPlanFilter, subscriptionMonthFilter, subscriptionYearFilter, subscriptionDayPassTypeFilter])
+  }, [selectedPlanFilter, subscriptionMonthFilter, subscriptionYearFilter, subscriptionDayPassTypeFilter, subscriptionGymSessionTypeFilter])
+
+  // Reset gym session type filter when plan changes away from Gym Session
+  useEffect(() => {
+    if (selectedPlanFilter !== "all") {
+      const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter.toString())
+      const isDayPassPlan = selectedPlan && (
+        selectedPlan.name.toLowerCase().includes('day pass') ||
+        selectedPlan.name.toLowerCase().includes('daypass') ||
+        selectedPlan.name.toLowerCase().includes('walk-in') ||
+        selectedPlan.name.toLowerCase().includes('walkin') ||
+        selectedPlan.name.toLowerCase().includes('guest')
+      )
+      const isGymSessionPlan = selectedPlan && (
+        selectedPlan.name.toLowerCase().includes('gym session') ||
+        selectedPlan.name.toLowerCase().includes('gymsession')
+      ) && !isDayPassPlan
+      
+      if (!isGymSessionPlan) {
+        setSubscriptionGymSessionTypeFilter("all")
+      }
+    } else {
+      setSubscriptionGymSessionTypeFilter("all")
+    }
+  }, [selectedPlanFilter, subscriptionPlans])
 
   // Calculate total sales with discount consideration
   const calculateTotalSales = (salesData) => {
@@ -1471,12 +1522,18 @@ const Sales = ({ userId }) => {
     // If we found a plan name, calculate and display months
     // Don't show "12 months" since that's the default/given duration
     if (planName) {
+      // Replace "Guest Walk In" or "Guest Walk-In" with "Gym Session"
+      let displayName = planName
+      if (planName.toLowerCase().includes('guest walk in') || planName.toLowerCase().includes('guest walk-in')) {
+        displayName = "Gym Session"
+      }
+      
       const months = calculateSubscriptionMonths(subscription, sale)
       // Only show months if it's not 12 (since 12 months is the default)
       if (months > 1 && months !== 12) {
-        return `${planName} (${months} months)`
+        return `${displayName} (${months} months)`
       }
-      return planName
+      return displayName
     }
 
     // Guest/Walk-in/Day Pass sales (without account)
@@ -1797,7 +1854,27 @@ const Sales = ({ userId }) => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.subscriptionSales || 0)}</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
+                  // Calculate subscription sales from sales data (includes both Subscription and Guest sales)
+                  // This matches the calculation in the subscription sales details dialog - filtered to today
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const todayStr = format(today, "yyyy-MM-dd")
+                  
+                  const subscriptionSalesTotal = sales
+                    .filter(sale => {
+                      // Include both Subscription and Guest sales
+                      const isSubscriptionOrGuest = sale.sale_type === 'Subscription' || sale.sale_type === 'Guest'
+                      if (!isSubscriptionOrGuest) return false
+                      
+                      // Filter to today's sales only
+                      const saleDate = new Date(sale.sale_date)
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      return saleDateStr === todayStr
+                    })
+                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                  return subscriptionSalesTotal
+                })())}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">Subscription revenue</p>
                 <Button
                   variant="outline"
@@ -2313,8 +2390,10 @@ const Sales = ({ userId }) => {
                                   {sale.user_name || "N/A"}
                                 </div>
                               ) : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin" ? (
-                                <div className="text-sm font-medium text-gray-900">
-                                  {sale.guest_name || sale.user_name || "Guest"}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {sale.guest_name || sale.user_name || "Guest"}
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="text-sm text-gray-500 italic">
@@ -3993,9 +4072,18 @@ const Sales = ({ userId }) => {
                       (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                       selectedPlan.name.toLowerCase() === 'day pass'
                     )
+                    // Check if selected plan is Gym Session (but not Day Pass)
+                    const isGymSessionPlan = selectedPlan && (
+                      selectedPlan.name.toLowerCase().includes('gym session') ||
+                      selectedPlan.name.toLowerCase().includes('gymsession')
+                    ) && !isDayPassPlan
+                    
                     if (!isDayPassPlan && value !== "all") {
                       setDayPassMethodFilter("all")
                       setDayPassTypeFilter("all")
+                    }
+                    if (!isGymSessionPlan && value !== "all") {
+                      setGymSessionTypeFilter("all")
                     }
                   }}>
                     <SelectTrigger className="w-[200px] h-9 text-sm">
@@ -4011,6 +4099,36 @@ const Sales = ({ userId }) => {
                     </SelectContent>
                   </Select>
                 )}
+
+                {/* Gym Session Type Filter - Only show when Subscription > Gym Session plan is selected */}
+                {totalSalesTypeFilter === "Subscription" && (() => {
+                  const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter)
+                  const isDayPassPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('day pass') ||
+                    selectedPlan.name.toLowerCase().includes('daypass') ||
+                    selectedPlan.name.toLowerCase().includes('walk-in') ||
+                    selectedPlan.name.toLowerCase().includes('walkin') ||
+                    selectedPlan.name.toLowerCase().includes('guest') ||
+                    (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                    selectedPlan.name.toLowerCase() === 'day pass'
+                  )
+                  const isGymSessionPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('gym session') ||
+                    selectedPlan.name.toLowerCase().includes('gymsession')
+                  ) && !isDayPassPlan
+                  return isGymSessionPlan
+                })() && (
+                    <Select value={gymSessionTypeFilter} onValueChange={setGymSessionTypeFilter}>
+                      <SelectTrigger className="w-[160px] h-9 text-sm">
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="subscription">Subscription</SelectItem>
+                        <SelectItem value="guest">Guest</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
 
                 {/* Day Pass Type Filter - Only show when Subscription > Day Pass plan is selected */}
                 {totalSalesTypeFilter === "Subscription" && (() => {
@@ -4276,6 +4394,27 @@ const Sales = ({ userId }) => {
                                 matchesSaleType = false // Subscription sales always have account
                               }
                             }
+                            
+                            // Check if it's a Gym Session plan (but not Day Pass)
+                            const isGymSessionPlan = selectedPlan && (
+                              selectedPlan.name.toLowerCase().includes('gym session') ||
+                              selectedPlan.name.toLowerCase().includes('gymsession')
+                            ) && !isDayPassPlan
+                            
+                            if (isGymSessionPlan) {
+                              // Apply Gym Session type filter (Subscription vs Guest)
+                              if (gymSessionTypeFilter === "guest") {
+                                // Filter out subscription sales (those with user_id)
+                                if (sale.user_id !== null && sale.user_id !== undefined) {
+                                  matchesSaleType = false
+                                }
+                              } else if (gymSessionTypeFilter === "subscription") {
+                                // Filter out guest sales (those without user_id or with guest_name)
+                                if (sale.user_id === null || sale.user_id === undefined || sale.guest_name) {
+                                  matchesSaleType = false
+                                }
+                              }
+                            }
                           }
                         } else {
                           // Plan matches, check if it's a Day Pass plan and apply filters
@@ -4300,11 +4439,32 @@ const Sales = ({ userId }) => {
                               matchesSaleType = false // Subscription sales always have account
                             }
                           }
+                          
+                          // Check if it's a Gym Session plan (but not Day Pass)
+                          const isGymSessionPlan = selectedPlan && (
+                            selectedPlan.name.toLowerCase().includes('gym session') ||
+                            selectedPlan.name.toLowerCase().includes('gymsession')
+                          ) && !isDayPassPlan
+                          
+                          if (isGymSessionPlan) {
+                            // Apply Gym Session type filter (Subscription vs Guest)
+                            if (gymSessionTypeFilter === "guest") {
+                              // Filter out subscription sales (those with user_id)
+                              if (sale.user_id !== null && sale.user_id !== undefined) {
+                                matchesSaleType = false
+                              }
+                            } else if (gymSessionTypeFilter === "subscription") {
+                              // Filter out guest sales (those without user_id or with guest_name)
+                              if (sale.user_id === null || sale.user_id === undefined || sale.guest_name) {
+                                matchesSaleType = false
+                              }
+                            }
+                          }
                         }
                       }
                       // If "all", show all subscription sales (no additional filtering)
                     } else {
-                      // Check if it's a Day Pass guest sale (Guest, Walk-in, etc.) - include when Day Pass plan is selected
+                      // Check if it's a Day Pass or Gym Session guest sale (Guest, Walk-in, etc.) - include when plan is selected
                       if (totalSalesSubscriptionTypeFilter !== "all") {
                         const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter.toString())
                         const isDayPassPlan = selectedPlan && (
@@ -4316,6 +4476,10 @@ const Sales = ({ userId }) => {
                           (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                           selectedPlan.name.toLowerCase() === 'day pass'
                         )
+                        const isGymSessionPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('gym session') ||
+                          selectedPlan.name.toLowerCase().includes('gymsession')
+                        ) && !isDayPassPlan
 
                         if (isDayPassPlan) {
                           // Check if this is a Guest/Walk-in/Day Pass sale
@@ -4345,6 +4509,31 @@ const Sales = ({ userId }) => {
                                 } else if (dayPassMethodFilter === "without_account") {
                                   matchesSaleType = sale.user_id === null || sale.user_id === undefined
                                 }
+                              }
+                            }
+                          } else {
+                            matchesSaleType = false
+                          }
+                        } else if (isGymSessionPlan) {
+                          // Check if this is a Guest/Walk-in sale for Gym Session
+                          const isGuestSale = sale.sale_type === 'Guest' ||
+                            sale.sale_type === 'Walk-in' ||
+                            sale.sale_type === 'Walkin' ||
+                            sale.guest_name ||
+                            (sale.user_id === null || sale.user_id === undefined)
+
+                          if (isGuestSale) {
+                            // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
+                            const salePlanId = sale.plan_id?.toString()
+                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                            if (salePlanId && salePlanId !== selectedPlanId) {
+                              matchesSaleType = false
+                            } else {
+                              // Apply Gym Session type filter (Subscription vs Guest)
+                              if (gymSessionTypeFilter === "subscription") {
+                                matchesSaleType = false // This is a guest sale, not a subscription sale
                               }
                             }
                           } else {
@@ -4630,6 +4819,27 @@ const Sales = ({ userId }) => {
                                 matchesSaleType = false // Subscription sales always have account
                               }
                             }
+                            
+                            // Check if it's a Gym Session plan (but not Day Pass)
+                            const isGymSessionPlan = selectedPlan && (
+                              selectedPlan.name.toLowerCase().includes('gym session') ||
+                              selectedPlan.name.toLowerCase().includes('gymsession')
+                            ) && !isDayPassPlan
+                            
+                            if (isGymSessionPlan) {
+                              // Apply Gym Session type filter (Subscription vs Guest)
+                              if (gymSessionTypeFilter === "guest") {
+                                // Filter out subscription sales (those with user_id)
+                                if (sale.user_id !== null && sale.user_id !== undefined) {
+                                  matchesSaleType = false
+                                }
+                              } else if (gymSessionTypeFilter === "subscription") {
+                                // Filter out guest sales (those without user_id or with guest_name)
+                                if (sale.user_id === null || sale.user_id === undefined || sale.guest_name) {
+                                  matchesSaleType = false
+                                }
+                              }
+                            }
                           }
                         } else {
                           // Plan matches, check if it's a Day Pass plan and apply filters
@@ -4654,11 +4864,32 @@ const Sales = ({ userId }) => {
                               matchesSaleType = false // Subscription sales always have account
                             }
                           }
+                          
+                          // Check if it's a Gym Session plan (but not Day Pass)
+                          const isGymSessionPlan = selectedPlan && (
+                            selectedPlan.name.toLowerCase().includes('gym session') ||
+                            selectedPlan.name.toLowerCase().includes('gymsession')
+                          ) && !isDayPassPlan
+                          
+                          if (isGymSessionPlan) {
+                            // Apply Gym Session type filter (Subscription vs Guest)
+                            if (gymSessionTypeFilter === "guest") {
+                              // Filter out subscription sales (those with user_id)
+                              if (sale.user_id !== null && sale.user_id !== undefined) {
+                                matchesSaleType = false
+                              }
+                            } else if (gymSessionTypeFilter === "subscription") {
+                              // Filter out guest sales (those without user_id or with guest_name)
+                              if (sale.user_id === null || sale.user_id === undefined || sale.guest_name) {
+                                matchesSaleType = false
+                              }
+                            }
+                          }
                         }
                       }
                       // If "all", show all subscription sales (no additional filtering)
                     } else {
-                      // Check if it's a Day Pass guest sale (Guest, Walk-in, etc.) - include when Day Pass plan is selected
+                      // Check if it's a Day Pass or Gym Session guest sale (Guest, Walk-in, etc.) - include when plan is selected
                       if (totalSalesSubscriptionTypeFilter !== "all") {
                         const selectedPlan = totalSalesSubscriptionPlans.find(p => p.id.toString() === totalSalesSubscriptionTypeFilter.toString())
                         const isDayPassPlan = selectedPlan && (
@@ -4670,6 +4901,10 @@ const Sales = ({ userId }) => {
                           (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                           selectedPlan.name.toLowerCase() === 'day pass'
                         )
+                        const isGymSessionPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('gym session') ||
+                          selectedPlan.name.toLowerCase().includes('gymsession')
+                        ) && !isDayPassPlan
 
                         if (isDayPassPlan) {
                           // Check if this is a Guest/Walk-in/Day Pass sale
@@ -4699,6 +4934,31 @@ const Sales = ({ userId }) => {
                                 } else if (dayPassMethodFilter === "without_account") {
                                   matchesSaleType = sale.user_id === null || sale.user_id === undefined
                                 }
+                              }
+                            }
+                          } else {
+                            matchesSaleType = false
+                          }
+                        } else if (isGymSessionPlan) {
+                          // Check if this is a Guest/Walk-in sale for Gym Session
+                          const isGuestSale = sale.sale_type === 'Guest' ||
+                            sale.sale_type === 'Walk-in' ||
+                            sale.sale_type === 'Walkin' ||
+                            sale.guest_name ||
+                            (sale.user_id === null || sale.user_id === undefined)
+
+                          if (isGuestSale) {
+                            // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
+                            const salePlanId = sale.plan_id?.toString()
+                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                            if (salePlanId && salePlanId !== selectedPlanId) {
+                              matchesSaleType = false
+                            } else {
+                              // Apply Gym Session type filter (Subscription vs Guest)
+                              if (gymSessionTypeFilter === "subscription") {
+                                matchesSaleType = false // This is a guest sale, not a subscription sale
                               }
                             }
                           } else {
@@ -4982,8 +5242,16 @@ const Sales = ({ userId }) => {
                     (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                     selectedPlan.name.toLowerCase() === 'day pass'
                   )
+                  const isGymSessionPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('gym session') ||
+                    selectedPlan.name.toLowerCase().includes('gymsession')
+                  ) && !isDayPassPlan
+                  
                   if (!isDayPassPlan) {
                     setSubscriptionDayPassTypeFilter("all")
+                  }
+                  if (!isGymSessionPlan) {
+                    setSubscriptionGymSessionTypeFilter("all")
                   }
                 }}>
                   <SelectTrigger className="w-56 h-10 border-2 border-gray-300 focus:border-blue-500">
@@ -5022,6 +5290,39 @@ const Sales = ({ userId }) => {
                       <SelectContent>
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="day_pass">Subscription</SelectItem>
+                        <SelectItem value="guest">Guest</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null
+              })()}
+
+              {/* Gym Session Type Filter - Only show when Gym Session plan is selected */}
+              {(() => {
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('day pass') ||
+                  selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('walk-in') ||
+                  selectedPlan.name.toLowerCase().includes('walkin') ||
+                  selectedPlan.name.toLowerCase().includes('guest') ||
+                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                  selectedPlan.name.toLowerCase() === 'day pass'
+                )
+                const isGymSessionPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
+                ) && !isDayPassPlan
+                return isGymSessionPlan ? (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="subscription-gymsession-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Type:</Label>
+                    <Select value={subscriptionGymSessionTypeFilter} onValueChange={setSubscriptionGymSessionTypeFilter}>
+                      <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-blue-500">
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        <SelectItem value="subscription">Subscription</SelectItem>
                         <SelectItem value="guest">Guest</SelectItem>
                       </SelectContent>
                     </Select>
@@ -5854,14 +6155,19 @@ const Sales = ({ userId }) => {
                 selectedPlan.name.toLowerCase().includes('walk-in') ||
                 selectedPlan.name.toLowerCase().includes('walkin') ||
                 selectedPlan.name.toLowerCase().includes('guest') ||
+                (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                selectedPlan.name.toLowerCase() === 'day pass'
+              ) && !(
+                selectedPlan.name.toLowerCase().includes('gym session') ||
+                selectedPlan.name.toLowerCase().includes('gymsession')
+              )
+              const isGymSessionPlan = selectedPlan && (
                 selectedPlan.name.toLowerCase().includes('gym session') ||
                 selectedPlan.name.toLowerCase().includes('gymsession') ||
-                (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
-                selectedPlan.name.toLowerCase() === 'day pass' ||
-                selectedPlan.id === 6 // Plan ID 6 is Gym Session/Day Pass
-              )
+                selectedPlan.id === 6 // Plan ID 6 is Gym Session
+              ) && !isDayPassPlan
 
-              // Helper function to check if a sale is a Day Pass subscription (user with account)
+              // Helper function to check if a sale is a Day Pass or Gym Session subscription (user with account)
               const isDayPassSubscription = (sale) => {
                 if (sale.sale_type !== 'Subscription') return false
 
@@ -5876,7 +6182,9 @@ const Sales = ({ userId }) => {
                   if (planNameLower.includes('day pass') ||
                     planNameLower.includes('daypass') ||
                     planNameLower.includes('walk-in') ||
-                    planNameLower.includes('walkin')) {
+                    planNameLower.includes('walkin') ||
+                    planNameLower.includes('gym session') ||
+                    planNameLower.includes('gymsession')) {
                     return true
                   }
                 }
@@ -5888,16 +6196,22 @@ const Sales = ({ userId }) => {
                   if (planNameLower.includes('day pass') ||
                     planNameLower.includes('daypass') ||
                     planNameLower.includes('walk-in') ||
-                    planNameLower.includes('walkin')) {
+                    planNameLower.includes('walkin') ||
+                    planNameLower.includes('gym session') ||
+                    planNameLower.includes('gymsession')) {
                     return true
                   }
                 }
 
-                // Check if plan has Day Pass characteristics (duration_days > 0, duration_months === 0)
+                // Check if plan has Day Pass/Gym Session characteristics (duration_days > 0, duration_months === 0)
                 if (sale.plan_id) {
                   const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
                   if (plan && plan.duration_days && plan.duration_days > 0 &&
                     (!plan.duration_months || plan.duration_months === 0)) {
+                    return true
+                  }
+                  // Also check if it's a Gym Session plan
+                  if (plan && (plan.name.toLowerCase().includes('gym session') || plan.name.toLowerCase().includes('gymsession'))) {
                     return true
                   }
                 }
@@ -6007,6 +6321,74 @@ const Sales = ({ userId }) => {
                   }
 
                   // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // If Gym Session plan is selected, include ALL Gym Session sales (both guest and subscription)
+                if (isGymSessionPlan) {
+                  // Check if this is a Gym Session guest sale (user without account)
+                  if (isDayPassGuestSale(sale)) {
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "subscription") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    return true
+                  }
+
+                  // Check if this is a Gym Session subscription sale (user with account)
+                  if (isDayPassSubscription(sale) || (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)) {
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+
+                    return true
+                  }
+
+                  // If Gym Session plan is selected but this sale doesn't match, exclude it
                   return false
                 }
 
@@ -6129,9 +6511,14 @@ const Sales = ({ userId }) => {
                             const subscriptionDetail = getSubscriptionDetails(sale.id)
                             let planName = sale.plan_name || subscriptionDetail?.planName || 'N/A'
 
-                            // For Day Pass sales (both guest and subscription), set plan name to "Day Pass"
+                            // For Day Pass/Gym Session sales (both guest and subscription), set plan name to "Gym Session"
                             if (isDayPassGuest || isDayPassSubscriptionSale) {
-                              planName = 'Day Pass'
+                              planName = 'Gym Session'
+                            }
+                            
+                            // Also check if it's a Gym Session plan by plan_id
+                            if (sale.plan_id && selectedPlan && selectedPlan.id.toString() === sale.plan_id.toString() && isGymSessionPlan) {
+                              planName = 'Gym Session'
                             }
 
                             return (
@@ -6140,11 +6527,20 @@ const Sales = ({ userId }) => {
                                   {formatDate(sale.sale_date)}
                                 </TableCell>
                                 <TableCell className="text-gray-700 py-3">
-                                  {isDayPassGuest
-                                    ? (sale.guest_name || sale.user_name || 'Guest')
-                                    : isDayPassSubscriptionSale && subscriptionDetail?.userName
-                                      ? subscriptionDetail.userName
-                                      : (sale.user_name || 'N/A')}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <div>
+                                      {isDayPassGuest
+                                        ? (sale.guest_name || sale.user_name || 'Guest')
+                                        : isDayPassSubscriptionSale && subscriptionDetail?.userName
+                                          ? subscriptionDetail.userName
+                                          : (sale.user_name || 'N/A')}
+                                    </div>
+                                    {isDayPassGuest && (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                        Guest
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </TableCell>
                                 <TableCell className="py-3">
                                   {planName ? (

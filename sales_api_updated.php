@@ -1606,7 +1606,7 @@ function getAnalyticsData($pdo)
 	$stmt = $pdo->prepare("
 		SELECT 
 			COALESCE(SUM(CASE WHEN sale_type = 'Product' THEN total_amount ELSE 0 END), 0) AS product_sales,
-			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
+			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' OR sale_type = 'Guest' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
 			COALESCE(SUM(CASE WHEN sale_type IN ('Coaching', 'Coach Assignment', 'Coach') THEN total_amount ELSE 0 END), 0) AS coach_assignment_sales,
 			COALESCE(SUM(CASE WHEN sale_type = 'Guest' THEN total_amount ELSE 0 END), 0) AS walkin_sales
 		FROM `sales`

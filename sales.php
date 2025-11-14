@@ -347,7 +347,7 @@ function getSalesData($pdo)
 			");
 			$guestStmt->execute($guestParams);
 			$guestSessions = $guestStmt->fetchAll();
-			
+
 			error_log("DEBUG sales_api: Found " . count($guestSessions) . " guest sessions from database (status=approved, paid=1)");
 
 			// Transform guest sessions into sales-like records
@@ -372,7 +372,7 @@ function getSalesData($pdo)
 				$gymSessionPlanName = 'Guest Walk In'; // Guest sales use this plan name
 				$gymSessionPlanId = 6; // Use same plan_id as subscription sales for filtering
 				$gymSessionPlanPrice = 150; // Default price
-				
+
 				// Get the price from database if available (for consistency)
 				try {
 					$planStmt = $pdo->prepare("
@@ -395,7 +395,7 @@ function getSalesData($pdo)
 				if ($paymentMethod === 'digital') {
 					$paymentMethod = 'gcash';
 				}
-				
+
 				$guestSalesData[] = [
 					'id' => $saleId,
 					'user_id' => null,
@@ -576,7 +576,7 @@ function getSalesData($pdo)
 
 	foreach ($salesData as $row) {
 		$saleId = $row['id'];
-		
+
 		// Debug: Log guest sales being processed
 		if (isset($row['sale_type']) && $row['sale_type'] === 'Guest') {
 			error_log("DEBUG sales_api: Processing guest sale ID: $saleId, Name: " . ($row['guest_name'] ?? $row['user_name'] ?? 'N/A') . ", Plan: " . ($row['plan_name'] ?? 'N/A'));
@@ -685,7 +685,7 @@ function getSalesData($pdo)
 				$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
 				$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 			}
-			
+
 			// For guest sales, store plan info at sale level (from guest sales data)
 			if ($row['sale_type'] === 'Guest' && !empty($row['plan_name'])) {
 				$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
@@ -859,7 +859,7 @@ function getSalesData($pdo)
 					");
 					$planStmt->execute();
 					$gymSessionPlan = $planStmt->fetch();
-					
+
 					// If plan_id 6 not found, try to find matching plan by name
 					if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
 						$planStmt = $pdo->prepare("
@@ -876,14 +876,14 @@ function getSalesData($pdo)
 					// For guest sales, always use "Guest Walk In" as plan name
 					$salesGrouped[$saleId]['plan_name'] = 'Guest Walk In';
 					$salesGrouped[$saleId]['plan_id'] = 6; // Use same plan_id for filtering
-					
+
 					// Get price from database if available
 					if ($gymSessionPlan && !empty($gymSessionPlan['price'])) {
 						$salesGrouped[$saleId]['plan_price'] = (float) $gymSessionPlan['price'];
 					} else {
 						$salesGrouped[$saleId]['plan_price'] = 150; // Default price
 					}
-					
+
 					// Ensure guest_name is properly set as user_name for display
 					if (!empty($salesGrouped[$saleId]['guest_name'])) {
 						$salesGrouped[$saleId]['user_name'] = trim($salesGrouped[$saleId]['guest_name']);
@@ -1253,34 +1253,34 @@ function getSalesData($pdo)
 				$missingGuestStmt->execute($missingGuestSaleIds);
 				$missingGuestSales = $missingGuestStmt->fetchAll();
 
-					// Get Gym Session plan info - use plan_id = 6 first for consistency
-					$gymSessionPlan = null;
-					try {
-						// First try to get plan_id = 6 specifically (most reliable)
-						$planStmt = $pdo->prepare("
+				// Get Gym Session plan info - use plan_id = 6 first for consistency
+				$gymSessionPlan = null;
+				try {
+					// First try to get plan_id = 6 specifically (most reliable)
+					$planStmt = $pdo->prepare("
 							SELECT id, plan_name, price, duration_months, duration_days
 							FROM member_subscription_plan
 							WHERE id = 6
 							LIMIT 1
 						");
-						$planStmt->execute();
-						$gymSessionPlan = $planStmt->fetch();
-						
-						// If plan_id 6 not found, try to find matching plan by name
-						if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
-							$planStmt = $pdo->prepare("
+					$planStmt->execute();
+					$gymSessionPlan = $planStmt->fetch();
+
+					// If plan_id 6 not found, try to find matching plan by name
+					if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
+						$planStmt = $pdo->prepare("
 								SELECT id, plan_name, price, duration_months, duration_days
 								FROM member_subscription_plan
 								WHERE LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
 								ORDER BY id ASC
 								LIMIT 1
 							");
-							$planStmt->execute();
-							$gymSessionPlan = $planStmt->fetch();
-						}
-					} catch (Exception $e) {
-						error_log("Error fetching Gym Session plan: " . $e->getMessage());
+						$planStmt->execute();
+						$gymSessionPlan = $planStmt->fetch();
 					}
+				} catch (Exception $e) {
+					error_log("Error fetching Gym Session plan: " . $e->getMessage());
+				}
 
 				// Add missing guest sales to salesGrouped
 				foreach ($missingGuestSales as $guestSale) {
@@ -1347,7 +1347,7 @@ function getSalesData($pdo)
 					");
 					$planStmt->execute();
 					$gymSessionPlan = $planStmt->fetch();
-					
+
 					// If plan_id 6 not found, try to find matching plan by name
 					if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
 						$planStmt = $pdo->prepare("
@@ -1396,7 +1396,7 @@ function getSalesData($pdo)
 								");
 								$planStmt->execute();
 								$gymSessionPlan = $planStmt->fetch();
-								
+
 								// If plan_id 6 not found, try to find matching plan by name
 								if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
 									$planStmt = $pdo->prepare("
@@ -1597,7 +1597,7 @@ function getAnalyticsData($pdo)
 	$stmt = $pdo->prepare("
 		SELECT 
 			COALESCE(SUM(CASE WHEN sale_type = 'Product' THEN total_amount ELSE 0 END), 0) AS product_sales,
-			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
+			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' OR sale_type = 'Guest' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
 			COALESCE(SUM(CASE WHEN sale_type IN ('Coaching', 'Coach Assignment', 'Coach') THEN total_amount ELSE 0 END), 0) AS coach_assignment_sales,
 			COALESCE(SUM(CASE WHEN sale_type = 'Guest' THEN total_amount ELSE 0 END), 0) AS walkin_sales
 		FROM `sales`
