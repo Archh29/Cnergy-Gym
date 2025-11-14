@@ -5277,11 +5277,14 @@ const Sales = ({ userId }) => {
               // Calculate statistics based on current filters (including status filter)
               // First get all sales matching plan/month/year filters (for calculating active/expired counts)
               const allSalesForCounts = sales.filter((sale) => {
-                // Check if selected plan is "Day Pass"
+                // Check if selected plan is "Day Pass" or "Gym Session"
                 const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
                 const isDayPassPlan = selectedPlan && (
                   selectedPlan.name.toLowerCase().includes('day pass') ||
                   selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession') ||
+                  selectedPlan.id === 6 ||
                   selectedPlan.name.toLowerCase().includes('walk-in') ||
                   selectedPlan.name.toLowerCase().includes('walkin') ||
                   selectedPlan.name.toLowerCase().includes('guest') ||
@@ -5339,7 +5342,14 @@ const Sales = ({ userId }) => {
                     sale.sale_type === 'Walkin' ||
                     sale.sale_type === 'Guest' ||
                     sale.sale_type === 'Day Pass' ||
-                    sale.guest_name
+                    sale.guest_name ||
+                    (sale.plan_name && (
+                      sale.plan_name.toLowerCase().includes('guest walk in') ||
+                      sale.plan_name.toLowerCase().includes('guest walk-in') ||
+                      sale.plan_name.toLowerCase().includes('walk in') ||
+                      sale.plan_name.toLowerCase().includes('walk-in')
+                    )) ||
+                    (sale.plan_id === 6 && sale.sale_type === 'Guest')
                 }
 
                 // If Day Pass plan is selected, include ALL Day Pass sales (both guest and subscription)
@@ -5402,7 +5412,43 @@ const Sales = ({ userId }) => {
                   return false
                 }
 
-                // For other plans or "All Plans", only show subscription sales
+                // For "All Plans", include both subscription sales and guest sales
+                if (selectedPlanFilter === "all") {
+                  // Include subscription sales
+                  if (sale.sale_type === 'Subscription') {
+                    // Continue with date filters below
+                  } 
+                  // Include guest sales (Guest Walk In) in "All Plans"
+                  else if (sale.sale_type === 'Guest' || sale.guest_name) {
+                    // Apply date filters for guest sales
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+                    return true // Guest sale included in "All Plans"
+                  } else {
+                    // Not a subscription or guest sale, exclude it
+                    return false
+                  }
+                }
+
+                // For other plans (not "all" and not Day Pass/Gym Session), only show subscription sales
                 const isSubscriptionSale = sale.sale_type === 'Subscription'
                 if (!isSubscriptionSale) return false
 
@@ -5506,36 +5552,182 @@ const Sales = ({ userId }) => {
                   sale.guest_name
               }
 
-              // Now filter by status for statistics (same as table filter)
-              const filteredSalesForStats = allSalesForCounts.filter((sale) => {
-                // Check if selected plan is "Day Pass"
+              // Helper function to check if selected plan is Day Pass/Gym Session
+              const isDayPassPlanForStats = (selectedPlanFilter) => {
                 const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
-                const isDayPassPlan = selectedPlan && (
+                return selectedPlan && (
                   selectedPlan.name.toLowerCase().includes('day pass') ||
                   selectedPlan.name.toLowerCase().includes('daypass') ||
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession') ||
+                  selectedPlan.id === 6 ||
                   selectedPlan.name.toLowerCase().includes('walk-in') ||
                   selectedPlan.name.toLowerCase().includes('walkin') ||
                   selectedPlan.name.toLowerCase().includes('guest') ||
                   (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                   selectedPlan.name.toLowerCase() === 'day pass'
                 )
+              }
 
-                // If Day Pass plan is selected, include Day Pass sales (both guest and subscription)
+              // Helper function to check if a sale is a Day Pass guest sale (for stats)
+              const isDayPassGuestSaleForStats = (sale) => {
+                return sale.sale_type === 'Walk-in' ||
+                  sale.sale_type === 'Walkin' ||
+                  sale.sale_type === 'Guest' ||
+                  sale.sale_type === 'Day Pass' ||
+                  sale.guest_name ||
+                  (sale.plan_name && (
+                    sale.plan_name.toLowerCase().includes('guest walk in') ||
+                    sale.plan_name.toLowerCase().includes('guest walk-in') ||
+                    sale.plan_name.toLowerCase().includes('walk in') ||
+                    sale.plan_name.toLowerCase().includes('walk-in')
+                  )) ||
+                  (sale.plan_id === 6 && sale.sale_type === 'Guest')
+              }
+
+              // Now filter by status for statistics (same as table filter)
+              const filteredSalesForStats = allSalesForCounts.filter((sale) => {
+                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                const isDayPassPlan = isDayPassPlanForStats(selectedPlanFilter)
+
+                // If Day Pass/Gym Session plan is selected, include ALL Day Pass sales (both guest and subscription)
                 if (isDayPassPlan) {
-                  // Day Pass guest sales (always show, don't expire)
-                  if (isDayPassGuestSaleForFilter(sale)) {
-                    // Status filter removed - show all sales
+                  // Check if this is a Day Pass guest/walk-in sale (user without account)
+                  if (isDayPassGuestSaleForStats(sale)) {
+                    // Apply date filters for guest sales
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
                     return true
                   }
 
-                  // Day Pass subscription sales
+                  // Check if this is a Day Pass subscription sale (user with account)
                   if (isDayPassSubscriptionForFilter(sale, selectedPlanFilter)) {
-                    // Status filter removed - show all sales
+                    // Apply date filters for subscription sales
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
                     return true
+                  }
+
+                  // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // For "All Plans", include both subscription sales and guest sales
+                if (selectedPlanFilter === "all") {
+                  // Include subscription sales
+                  if (sale.sale_type === 'Subscription') {
+                    // Continue with date filters below
+                  } 
+                  // Include guest sales (Guest Walk In) in "All Plans"
+                  else if (sale.sale_type === 'Guest' || sale.guest_name) {
+                    // Apply date filters for guest sales
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+                    return true // Guest sale included in "All Plans"
+                  } else {
+                    // Not a subscription or guest sale, exclude it
+                    return false
                   }
                 }
 
-                // Status filter removed - show all sales
+                // For other plans (not "all" and not Day Pass/Gym Session), only show subscription sales
+                const isSubscriptionSale = sale.sale_type === 'Subscription'
+                if (!isSubscriptionSale) return false
+
+                // Filter by selected plan if not "all"
+                if (selectedPlanFilter !== "all") {
+                  // First try to match by plan_id from sale object
+                  const salePlanId = sale.plan_id?.toString()
+                  if (salePlanId === selectedPlanFilter) {
+                    // Matches, continue
+                  } else {
+                    // Try to match by plan name from sale object
+                    const salePlanName = sale.plan_name
+                    if (selectedPlan && salePlanName === selectedPlan.name) {
+                      // Matches by name, continue
+                    } else {
+                      // No match, exclude this sale
+                      return false
+                    }
+                  }
+                }
+
+                // Apply date filters for subscription sales
+                // Handle custom date first (highest priority)
+                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                  const saleDate = new Date(sale.sale_date)
+                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                  if (saleDateStr !== customDateStr) return false
+                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                } else if (subscriptionMonthFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth() + 1
+                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                } else if (subscriptionYearFilter !== "all") {
+                  const saleDate = new Date(sale.sale_date)
+                  const saleYear = saleDate.getFullYear().toString()
+                  if (saleYear !== subscriptionYearFilter) return false
+                }
+
                 return true
               })
 
@@ -5654,7 +5846,7 @@ const Sales = ({ userId }) => {
 
             {/* Subscription Sales Table */}
             {(() => {
-              // Check if selected plan is "Day Pass" (shared across filter and display)
+              // Check if selected plan is "Day Pass" or "Gym Session" (shared across filter and display)
               const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
               const isDayPassPlan = selectedPlan && (
                 selectedPlan.name.toLowerCase().includes('day pass') ||
@@ -5662,8 +5854,11 @@ const Sales = ({ userId }) => {
                 selectedPlan.name.toLowerCase().includes('walk-in') ||
                 selectedPlan.name.toLowerCase().includes('walkin') ||
                 selectedPlan.name.toLowerCase().includes('guest') ||
+                selectedPlan.name.toLowerCase().includes('gym session') ||
+                selectedPlan.name.toLowerCase().includes('gymsession') ||
                 (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
-                selectedPlan.name.toLowerCase() === 'day pass'
+                selectedPlan.name.toLowerCase() === 'day pass' ||
+                selectedPlan.id === 6 // Plan ID 6 is Gym Session/Day Pass
               )
 
               // Helper function to check if a sale is a Day Pass subscription (user with account)
@@ -5712,11 +5907,35 @@ const Sales = ({ userId }) => {
 
               // Helper function to check if a sale is a Day Pass guest/walk-in (user without account)
               const isDayPassGuestSale = (sale) => {
-                return sale.sale_type === 'Walk-in' ||
-                  sale.sale_type === 'Walkin' ||
-                  sale.sale_type === 'Guest' ||
-                  sale.sale_type === 'Day Pass' ||
-                  sale.guest_name
+                // Check by sale_type first
+                if (sale.sale_type === 'Walk-in' ||
+                    sale.sale_type === 'Walkin' ||
+                    sale.sale_type === 'Guest' ||
+                    sale.sale_type === 'Day Pass') {
+                  return true
+                }
+                
+                // Check by guest_name
+                if (sale.guest_name) {
+                  return true
+                }
+                
+                // Check by plan_name (Guest Walk In)
+                if (sale.plan_name && (
+                    sale.plan_name.toLowerCase().includes('guest walk in') ||
+                    sale.plan_name.toLowerCase().includes('guest walk-in') ||
+                    sale.plan_name.toLowerCase().includes('walk in') ||
+                    sale.plan_name.toLowerCase().includes('walk-in')
+                  )) {
+                  return true
+                }
+                
+                // Check by plan_id = 6 and sale_type = Guest
+                if (sale.plan_id === 6 && sale.sale_type === 'Guest') {
+                  return true
+                }
+                
+                return false
               }
 
               const filteredSales = sales.filter((sale) => {
@@ -5791,7 +6010,43 @@ const Sales = ({ userId }) => {
                   return false
                 }
 
-                // For other plans or "All Plans", only show subscription sales
+                // For "All Plans", include both subscription sales and guest sales
+                if (selectedPlanFilter === "all") {
+                  // Include subscription sales
+                  if (sale.sale_type === 'Subscription') {
+                    // Continue with date filters below
+                  } 
+                  // Include guest sales (Guest Walk In) in "All Plans"
+                  else if (sale.sale_type === 'Guest' || sale.guest_name) {
+                    // Apply date filters for guest sales
+                    // Handle custom date first (highest priority)
+                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      if (saleDateStr !== customDateStr) return false
+                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                    } else if (subscriptionMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                    } else if (subscriptionYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== subscriptionYearFilter) return false
+                    }
+                    return true // Guest sale included in "All Plans"
+                  } else {
+                    // Not a subscription or guest sale, exclude it
+                    return false
+                  }
+                }
+
+                // For other plans (not "all" and not Day Pass/Gym Session), only show subscription sales
                 const isSubscriptionSale = sale.sale_type === 'Subscription'
                 if (!isSubscriptionSale) return false
 

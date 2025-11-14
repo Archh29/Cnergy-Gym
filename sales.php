@@ -263,9 +263,11 @@ function getSalesData($pdo)
 
 	// CRITICAL: Get guest sessions directly from guest_session table (like monitoring subscription does)
 	// Then match them with sales records OR create sales-like records from guest_session
-	// ALWAYS include guest sales unless explicitly filtering by a non-guest type
+	// ALWAYS include guest sales - they represent "Gym Session" plan sales and should appear
+	// alongside subscription sales when filtering by plan
 	$guestSalesData = [];
-	$shouldIncludeGuestSales = !$saleType || $saleType === 'all' || strtolower($saleType) === 'guest';
+	// Always include guest sales - they are part of "Gym Session" plan sales
+	$shouldIncludeGuestSales = true;
 
 	error_log("DEBUG sales_api: shouldIncludeGuestSales = " . ($shouldIncludeGuestSales ? 'true' : 'false') . ", saleType = " . ($saleType ?: 'empty'));
 
@@ -305,15 +307,19 @@ function getSalesData($pdo)
 				}
 			}
 
-			// Query guest sessions (approved and paid) - same as monitoring subscription
-			$guestWhereConditions = ["gs.status = 'approved'", "gs.paid = 1"];
+			// Query guest sessions - only check if paid = 1
+			// A sale is a sale if payment was received, regardless of status (approved, expired, etc.)
+			// Excludes pending/pending_payment automatically (they have paid = 0)
+			$guestWhereConditions = [
+				"gs.paid = 1"
+			];
 			if (!empty($guestDateConditions)) {
 				$guestWhereConditions = array_merge($guestWhereConditions, $guestDateConditions);
 			}
 			$guestWhereClause = "WHERE " . implode(" AND ", $guestWhereConditions);
 
-			// Query ALL guest sessions (approved and paid) - they should ALL appear in sales
-			// This ensures every guest session that was paid for shows up in sales
+			// Query ALL guest sessions where paid = 1 - they should ALL appear in sales
+			// This ensures every guest session that was paid for shows up in sales, regardless of status
 			$guestStmt = $pdo->prepare("
 				SELECT 
 					gs.id as guest_session_id,
@@ -341,6 +347,8 @@ function getSalesData($pdo)
 			");
 			$guestStmt->execute($guestParams);
 			$guestSessions = $guestStmt->fetchAll();
+			
+			error_log("DEBUG sales_api: Found " . count($guestSessions) . " guest sessions from database (status=approved, paid=1)");
 
 			// Transform guest sessions into sales-like records
 			// EVERY approved and paid guest session should appear as a sale
@@ -359,13 +367,42 @@ function getSalesData($pdo)
 					continue;
 				}
 
+				// For guest sales, use "Guest Walk In" as plan name (not "Day Pass")
+				// Guest sales should have plan_id = 6 to match subscription sales for filtering
+				$gymSessionPlanName = 'Guest Walk In'; // Guest sales use this plan name
+				$gymSessionPlanId = 6; // Use same plan_id as subscription sales for filtering
+				$gymSessionPlanPrice = 150; // Default price
+				
+				// Get the price from database if available (for consistency)
+				try {
+					$planStmt = $pdo->prepare("
+						SELECT id, plan_name, price
+						FROM member_subscription_plan
+						WHERE id = 6
+						LIMIT 1
+					");
+					$planStmt->execute();
+					$planResult = $planStmt->fetch();
+					if ($planResult && !empty($planResult['price'])) {
+						$gymSessionPlanPrice = (float) $planResult['price'];
+					}
+				} catch (Exception $e) {
+					// Use default price if query fails
+				}
+
+				// Normalize payment method: digital -> gcash
+				$paymentMethod = strtolower($guest['payment_method'] ?? 'cash');
+				if ($paymentMethod === 'digital') {
+					$paymentMethod = 'gcash';
+				}
+				
 				$guestSalesData[] = [
 					'id' => $saleId,
 					'user_id' => null,
 					'total_amount' => (float) $totalAmount,
 					'sale_date' => $saleDate,
 					'sale_type' => 'Guest',
-					'payment_method' => strtolower($guest['payment_method'] ?? 'cash'),
+					'payment_method' => $paymentMethod,
 					'transaction_status' => $guest['transaction_status'] ?? 'confirmed',
 					'receipt_number' => $guest['receipt_number'],
 					'cashier_id' => $guest['cashier_id'],
@@ -380,21 +417,21 @@ function getSalesData($pdo)
 					'product_name' => null,
 					'product_price' => null,
 					'product_category' => null,
-					'plan_id' => 6, // Gym Session plan ID
+					'plan_id' => $gymSessionPlanId, // Use plan_id = 6 to match subscription sales for filtering
 					'subscription_user_id' => null,
 					'subscription_amount_paid' => null,
 					'subscription_discounted_price' => null,
 					'subscription_payment_method' => null,
 					'payment_table_payment_method' => null,
-					'plan_name' => 'Gym Session', // Set plan_name for guest sales
-					'plan_price' => 150, // Default gym session price
+					'plan_name' => $gymSessionPlanName, // "Guest Walk In" for guest sales
+					'plan_price' => $gymSessionPlanPrice, // Price from database or default
 					'duration_months' => null,
 					'member_fullname' => null,
 					'subscription_member_fullname' => null,
 					'coach_id' => null,
 					'coach_fullname' => null,
-					'guest_name' => $guest['guest_name'],
-					'user_name' => $guest['guest_name'] // Also set user_name for display
+					'guest_name' => trim($guest['guest_name']), // The typed full name from guest_session
+					'user_name' => trim($guest['guest_name']) // Also set user_name for display (the typed full name)
 				];
 			}
 
@@ -406,10 +443,10 @@ function getSalesData($pdo)
 					error_log("DEBUG sales_api: Guest sale #" . ($i + 1) . " - ID: " . $guestSalesData[$i]['id'] . ", Name: " . ($guestSalesData[$i]['guest_name'] ?? 'N/A') . ", Date: " . ($guestSalesData[$i]['sale_date'] ?? 'N/A'));
 				}
 			} else {
-				// Debug: Check if any guest sessions exist at all
-				$testStmt = $pdo->query("SELECT COUNT(*) as cnt FROM guest_session WHERE status = 'approved' AND paid = 1");
+				// Debug: Check if any guest sessions exist at all (paid = 1)
+				$testStmt = $pdo->query("SELECT COUNT(*) as cnt FROM guest_session WHERE paid = 1");
 				$testResult = $testStmt->fetch();
-				error_log("DEBUG sales_api: Total approved+paid guest sessions in database: " . ($testResult['cnt'] ?? 0));
+				error_log("DEBUG sales_api: Total paid guest sessions in database (paid = 1): " . ($testResult['cnt'] ?? 0));
 			}
 		} catch (Exception $e) {
 			error_log("Error querying guest sessions for sales: " . $e->getMessage());
@@ -522,16 +559,28 @@ function getSalesData($pdo)
 
 	error_log("DEBUG sales_api: Total sales after merge - Main: " . (count($salesData) - count($guestSalesData)) . ", Guest: " . count($guestSalesData) . ", Total: " . count($salesData));
 
-	// Debug: Log guest sales IDs
+	// Debug: Log guest sales IDs and details
 	if (count($guestSalesData) > 0) {
 		$guestIds = array_column($guestSalesData, 'id');
-		error_log("DEBUG sales_api: Guest sale IDs: " . implode(', ', $guestIds));
+		error_log("DEBUG sales_api: Guest sale IDs being merged: " . implode(', ', $guestIds));
+		// Log first 3 guest sales for debugging
+		for ($i = 0; $i < min(3, count($guestSalesData)); $i++) {
+			$gs = $guestSalesData[$i];
+			error_log("DEBUG sales_api: Guest sale #" . ($i + 1) . " - ID: " . $gs['id'] . ", Name: " . ($gs['guest_name'] ?? 'N/A') . ", Date: " . ($gs['sale_date'] ?? 'N/A') . ", Plan: " . ($gs['plan_name'] ?? 'N/A'));
+		}
+	} else {
+		error_log("DEBUG sales_api: WARNING - No guest sales data to merge! Check query conditions.");
 	}
 
 	$salesGrouped = [];
 
 	foreach ($salesData as $row) {
 		$saleId = $row['id'];
+		
+		// Debug: Log guest sales being processed
+		if (isset($row['sale_type']) && $row['sale_type'] === 'Guest') {
+			error_log("DEBUG sales_api: Processing guest sale ID: $saleId, Name: " . ($row['guest_name'] ?? $row['user_name'] ?? 'N/A') . ", Plan: " . ($row['plan_name'] ?? 'N/A'));
+		}
 
 		if (!isset($salesGrouped[$saleId])) {
 			// Get member name - prefer from sales.user_id, fallback to subscription.user_id
@@ -559,8 +608,10 @@ function getSalesData($pdo)
 			$coachId = !empty($row['coach_id']) ? (int) $row['coach_id'] : null;
 
 			// For guest sales, use guest_name instead of user_name
+			// Guest sales should always show the typed full name from guest_session.guest_name
 			$displayName = null;
 			if ($row['sale_type'] === 'Guest') {
+				// For guest sales, prioritize guest_name (the typed full name)
 				$displayName = $guestName ?: $memberName; // Fallback to memberName if guestName is empty
 				// Debug log for guest sales
 				if (empty($guestName)) {
@@ -634,6 +685,13 @@ function getSalesData($pdo)
 				$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
 				$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 			}
+			
+			// For guest sales, store plan info at sale level (from guest sales data)
+			if ($row['sale_type'] === 'Guest' && !empty($row['plan_name'])) {
+				$salesGrouped[$saleId]['plan_name'] = $row['plan_name'];
+				$salesGrouped[$saleId]['plan_id'] = $row['plan_id'] ?? 6;
+				$salesGrouped[$saleId]['plan_price'] = !empty($row['plan_price']) ? (float) $row['plan_price'] : null;
+			}
 		} else {
 			// If coach info wasn't set in first row but exists in this row, update it
 			if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
@@ -653,8 +711,9 @@ function getSalesData($pdo)
 			if ($salesGrouped[$saleId]['sale_type'] === 'Guest' && empty($salesGrouped[$saleId]['guest_name'])) {
 				// Try to get guest_name from sales_details -> guest_session
 				$guestSessionId = null;
-				if (!empty($salesGrouped[$saleId]['sales_details']) && is_array($salesGrouped[$saleId]['sales_details'])) {
-					foreach ($salesGrouped[$saleId]['sales_details'] as $detail) {
+				$salesDetails = $salesGrouped[$saleId]['sales_details'] ?? [];
+				if (!empty($salesDetails) && is_array($salesDetails)) {
+					foreach ($salesDetails as $detail) {
 						if (!empty($detail['guest_session_id'])) {
 							$guestSessionId = $detail['guest_session_id'];
 							break;
@@ -787,32 +846,56 @@ function getSalesData($pdo)
 	try {
 		foreach ($salesGrouped as $saleId => $sale) {
 			if ($sale['sale_type'] === 'Guest') {
-				// For guest sessions, set plan_name to "Gym Session"
-				// Guest sessions are always "Gym Session" plan
-				// Try to get plan_name from member_subscription_plan where plan_id = 6 (Gym Session)
+				// For guest sessions, set plan_name to "Guest Walk In"
+				// Guest sessions use plan_id = 6 to match subscription sales for filtering
+				// But plan_name should be "Guest Walk In" to distinguish from subscription sales
 				try {
+					// First try to get plan_id = 6 specifically (most reliable - matches subscription sales)
 					$planStmt = $pdo->prepare("
 						SELECT id, plan_name, price, duration_months, duration_days
 						FROM member_subscription_plan
-						WHERE id = 6 OR LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+						WHERE id = 6
 						LIMIT 1
 					");
 					$planStmt->execute();
 					$gymSessionPlan = $planStmt->fetch();
+					
+					// If plan_id 6 not found, try to find matching plan by name
+					if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
+						$planStmt = $pdo->prepare("
+							SELECT id, plan_name, price, duration_months, duration_days
+							FROM member_subscription_plan
+							WHERE LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+							ORDER BY id ASC
+							LIMIT 1
+						");
+						$planStmt->execute();
+						$gymSessionPlan = $planStmt->fetch();
+					}
 
-					if ($gymSessionPlan && !empty($gymSessionPlan['plan_name'])) {
-						$salesGrouped[$saleId]['plan_name'] = $gymSessionPlan['plan_name'];
-						$salesGrouped[$saleId]['plan_id'] = $gymSessionPlan['id'];
-						$salesGrouped[$saleId]['plan_price'] = !empty($gymSessionPlan['price']) ? (float) $gymSessionPlan['price'] : null;
+					// For guest sales, always use "Guest Walk In" as plan name
+					$salesGrouped[$saleId]['plan_name'] = 'Guest Walk In';
+					$salesGrouped[$saleId]['plan_id'] = 6; // Use same plan_id for filtering
+					
+					// Get price from database if available
+					if ($gymSessionPlan && !empty($gymSessionPlan['price'])) {
+						$salesGrouped[$saleId]['plan_price'] = (float) $gymSessionPlan['price'];
 					} else {
-						// Fallback to "Gym Session" if plan not found
-						$salesGrouped[$saleId]['plan_name'] = 'Gym Session';
-						$salesGrouped[$saleId]['plan_id'] = 6;
+						$salesGrouped[$saleId]['plan_price'] = 150; // Default price
+					}
+					
+					// Ensure guest_name is properly set as user_name for display
+					if (!empty($salesGrouped[$saleId]['guest_name'])) {
+						$salesGrouped[$saleId]['user_name'] = trim($salesGrouped[$saleId]['guest_name']);
 					}
 				} catch (Exception $e) {
 					error_log("Error fetching Gym Session plan for guest sale: " . $e->getMessage());
-					$salesGrouped[$saleId]['plan_name'] = 'Gym Session';
+					$salesGrouped[$saleId]['plan_name'] = 'Guest Walk In';
 					$salesGrouped[$saleId]['plan_id'] = 6;
+					// Ensure guest_name is properly set as user_name for display
+					if (!empty($salesGrouped[$saleId]['guest_name'])) {
+						$salesGrouped[$saleId]['user_name'] = trim($salesGrouped[$saleId]['guest_name']);
+					}
 				}
 			}
 		}
@@ -1170,20 +1253,34 @@ function getSalesData($pdo)
 				$missingGuestStmt->execute($missingGuestSaleIds);
 				$missingGuestSales = $missingGuestStmt->fetchAll();
 
-				// Get Gym Session plan info
-				$gymSessionPlan = null;
-				try {
-					$planStmt = $pdo->prepare("
-						SELECT id, plan_name, price, duration_months, duration_days
-						FROM member_subscription_plan
-						WHERE id = 6 OR LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
-						LIMIT 1
-					");
-					$planStmt->execute();
-					$gymSessionPlan = $planStmt->fetch();
-				} catch (Exception $e) {
-					error_log("Error fetching Gym Session plan: " . $e->getMessage());
-				}
+					// Get Gym Session plan info - use plan_id = 6 first for consistency
+					$gymSessionPlan = null;
+					try {
+						// First try to get plan_id = 6 specifically (most reliable)
+						$planStmt = $pdo->prepare("
+							SELECT id, plan_name, price, duration_months, duration_days
+							FROM member_subscription_plan
+							WHERE id = 6
+							LIMIT 1
+						");
+						$planStmt->execute();
+						$gymSessionPlan = $planStmt->fetch();
+						
+						// If plan_id 6 not found, try to find matching plan by name
+						if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
+							$planStmt = $pdo->prepare("
+								SELECT id, plan_name, price, duration_months, duration_days
+								FROM member_subscription_plan
+								WHERE LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+								ORDER BY id ASC
+								LIMIT 1
+							");
+							$planStmt->execute();
+							$gymSessionPlan = $planStmt->fetch();
+						}
+					} catch (Exception $e) {
+						error_log("Error fetching Gym Session plan: " . $e->getMessage());
+					}
 
 				// Add missing guest sales to salesGrouped
 				foreach ($missingGuestSales as $guestSale) {
@@ -1229,8 +1326,8 @@ function getSalesData($pdo)
 						'coach_id' => null,
 						'coach_name' => null,
 						'sales_details' => [],
-						'plan_name' => $gymSessionPlan ? $gymSessionPlan['plan_name'] : 'Gym Session',
-						'plan_id' => $gymSessionPlan ? $gymSessionPlan['id'] : 6,
+						'plan_name' => 'Guest Walk In', // Guest sales use this plan name
+						'plan_id' => 6, // Use same plan_id for filtering
 						'plan_price' => $gymSessionPlan ? (float) $gymSessionPlan['price'] : null
 					];
 
@@ -1238,17 +1335,31 @@ function getSalesData($pdo)
 				}
 			}
 
-			// Get Gym Session plan info if not already fetched
+			// Get Gym Session plan info if not already fetched - use plan_id = 6 first for consistency
 			if (!isset($gymSessionPlan)) {
 				try {
+					// First try to get plan_id = 6 specifically (most reliable)
 					$planStmt = $pdo->prepare("
 						SELECT id, plan_name, price, duration_months, duration_days
 						FROM member_subscription_plan
-						WHERE id = 6 OR LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+						WHERE id = 6
 						LIMIT 1
 					");
 					$planStmt->execute();
 					$gymSessionPlan = $planStmt->fetch();
+					
+					// If plan_id 6 not found, try to find matching plan by name
+					if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
+						$planStmt = $pdo->prepare("
+							SELECT id, plan_name, price, duration_months, duration_days
+							FROM member_subscription_plan
+							WHERE LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+							ORDER BY id ASC
+							LIMIT 1
+						");
+						$planStmt->execute();
+						$gymSessionPlan = $planStmt->fetch();
+					}
 				} catch (Exception $e) {
 					$gymSessionPlan = null;
 				}
@@ -1272,10 +1383,38 @@ function getSalesData($pdo)
 						}
 					}
 
-					// Ensure plan_name is set
+					// Ensure plan_name is set - use plan_id = 6 first for consistency
 					if (empty($sale['plan_name'])) {
-						$salesGrouped[$saleId]['plan_name'] = $gymSessionPlan ? $gymSessionPlan['plan_name'] : 'Gym Session';
-						$salesGrouped[$saleId]['plan_id'] = $gymSessionPlan ? $gymSessionPlan['id'] : 6;
+						// Try to get plan_id = 6 specifically if not already fetched
+						if (!$gymSessionPlan) {
+							try {
+								$planStmt = $pdo->prepare("
+									SELECT id, plan_name, price, duration_months, duration_days
+									FROM member_subscription_plan
+									WHERE id = 6
+									LIMIT 1
+								");
+								$planStmt->execute();
+								$gymSessionPlan = $planStmt->fetch();
+								
+								// If plan_id 6 not found, try to find matching plan by name
+								if (!$gymSessionPlan || empty($gymSessionPlan['plan_name'])) {
+									$planStmt = $pdo->prepare("
+										SELECT id, plan_name, price, duration_months, duration_days
+										FROM member_subscription_plan
+										WHERE LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
+										ORDER BY id ASC
+										LIMIT 1
+									");
+									$planStmt->execute();
+									$gymSessionPlan = $planStmt->fetch();
+								}
+							} catch (Exception $e) {
+								error_log("Error fetching Gym Session plan: " . $e->getMessage());
+							}
+						}
+						$salesGrouped[$saleId]['plan_name'] = 'Guest Walk In'; // Guest sales use this plan name
+						$salesGrouped[$saleId]['plan_id'] = 6; // Use same plan_id for filtering
 					}
 				}
 			}
@@ -1325,8 +1464,8 @@ function getSalesData($pdo)
 							'guest_session_id' => $guestSale['guest_session_id'] ?? null
 						]
 					],
-					'plan_name' => 'Gym Session',
-					'plan_id' => 6
+					'plan_name' => 'Guest Walk In', // Guest sales use this plan name
+					'plan_id' => 6 // Use same plan_id for filtering
 				];
 			}
 		}
