@@ -1025,12 +1025,14 @@ const ViewCoach = () => {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                variant={currentView === "archive" ? "default" : "outline"}
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
-                className="flex items-center gap-2 h-10"
+                className={`h-10 px-4 font-medium transition-all ${
+                  currentView === "active"
+                    ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm"
+                    : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
+                }`}
               >
-                <Activity className="h-4 w-4" />
-                {currentView === "active" ? "Archive" : "Active"}
+                {currentView === "active" ? "Active Coach" : "Deactivated"}
               </Button>
               <Button onClick={handleOpenAddDialog} className="flex items-center gap-2 h-10 px-4 font-medium shadow-md hover:shadow-lg transition-all duration-200">
                 <Plus className="h-4 w-4" />

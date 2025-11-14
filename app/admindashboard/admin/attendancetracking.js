@@ -879,9 +879,8 @@ const AttendanceTracking = ({ userId }) => {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button onClick={fetchData} variant="outline" size="sm" className="shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" disabled={loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                Refresh
+              <Button onClick={fetchData} variant="outline" size="sm" className="h-9 w-9 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" disabled={loading} title="Refresh">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
               <Dialog open={manualOpen} onOpenChange={setManualOpen}>
                 <DialogTrigger asChild>
@@ -1282,7 +1281,7 @@ const AttendanceTracking = ({ userId }) => {
           setManualSearchQuery("")
         }
       }}>
-        <DialogContent className="w-[95vw] max-w-[800px] mx-auto [&>button]:hidden">
+        <DialogContent className="w-[95vw] max-w-[600px] mx-auto [&>button]:hidden">
           <DialogHeader className="border-b pb-4 mb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200">

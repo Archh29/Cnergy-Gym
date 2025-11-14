@@ -170,6 +170,9 @@ function handlePostRequest(PDO $pdo, string $rawInput = ''): void
         case 'checkout':
             checkoutAttendance($pdo, $input);
             break;
+        case 'guest_checkout':
+            checkoutGuestSession($pdo, $input);
+            break;
         case 'qr_scan':
             handleQRScan($pdo, $input);
             break;
@@ -323,6 +326,10 @@ function getAttendance(PDO $pdo): void
         }
 
         // Get guest session attendance (approved and paid guests)
+        // Check if checkout_time column exists in guest_session table
+        $checkCheckoutTimeColumn = $pdo->query("SHOW COLUMNS FROM guest_session LIKE 'checkout_time'");
+        $hasCheckoutTimeColumn = $checkCheckoutTimeColumn->rowCount() > 0;
+
         $guestWhereClause = "WHERE gs.status = 'approved' AND gs.paid = 1";
         $guestParams = [];
 
@@ -331,21 +338,48 @@ function getAttendance(PDO $pdo): void
             $guestParams[] = $dateFilter;
         }
 
-        $guestSql = "SELECT gs.id, gs.id AS user_id, gs.created_at AS check_in, 
-                        gs.valid_until AS check_out,
-                        gs.guest_name AS name,
-                        CONCAT(gs.guest_name, ' (', gs.guest_type, ')') AS email,
-                        'guest' AS user_type,
-                        'Session' AS plan_name,
-                        6 AS plan_id,
-                        CASE WHEN gs.valid_until < NOW()
-                             THEN TIMESTAMPDIFF(MINUTE, gs.created_at, gs.valid_until)
-                             ELSE NULL
-                        END AS duration_minutes
-                 FROM `guest_session` gs
-                 " . $guestWhereClause . "
-                 ORDER BY gs.created_at DESC
-                 LIMIT 50";
+        // Use checkout_time if available, otherwise use valid_until for expired sessions
+        if ($hasCheckoutTimeColumn) {
+            $guestSql = "SELECT gs.id, gs.id AS user_id, gs.created_at AS check_in, 
+                            COALESCE(gs.checkout_time, 
+                                CASE WHEN gs.valid_until < NOW() THEN gs.valid_until ELSE NULL END
+                            ) AS check_out,
+                            gs.checkout_time AS actual_checkout_time,
+                            gs.guest_name AS name,
+                            CONCAT(gs.guest_name, ' (', gs.guest_type, ')') AS email,
+                            'guest' AS user_type,
+                            'Session' AS plan_name,
+                            6 AS plan_id,
+                            CASE 
+                                WHEN gs.checkout_time IS NOT NULL 
+                                THEN ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, gs.checkout_time))
+                                WHEN gs.valid_until < NOW() 
+                                THEN ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, gs.valid_until))
+                                ELSE NULL
+                            END AS duration_minutes
+                     FROM `guest_session` gs
+                     " . $guestWhereClause . "
+                     ORDER BY gs.created_at DESC
+                     LIMIT 50";
+        } else {
+            // Fallback if checkout_time column doesn't exist yet
+            $guestSql = "SELECT gs.id, gs.id AS user_id, gs.created_at AS check_in, 
+                            CASE WHEN gs.valid_until < NOW() THEN gs.valid_until ELSE NULL END AS check_out,
+                            NULL AS actual_checkout_time,
+                            gs.guest_name AS name,
+                            CONCAT(gs.guest_name, ' (', gs.guest_type, ')') AS email,
+                            'guest' AS user_type,
+                            'Session' AS plan_name,
+                            6 AS plan_id,
+                            CASE WHEN gs.valid_until < NOW()
+                                 THEN ABS(TIMESTAMPDIFF(MINUTE, gs.created_at, gs.valid_until))
+                                 ELSE NULL
+                            END AS duration_minutes
+                     FROM `guest_session` gs
+                     " . $guestWhereClause . "
+                     ORDER BY gs.created_at DESC
+                     LIMIT 50";
+        }
 
         $stmt = $pdo->prepare($guestSql);
         $stmt->execute($guestParams);
@@ -362,8 +396,10 @@ function getAttendance(PDO $pdo): void
         $formatted = array_map(function ($r) {
             $duration = null;
             if ($r['duration_minutes'] !== null) {
-                $hours = floor($r['duration_minutes'] / 60);
-                $mins = $r['duration_minutes'] % 60;
+                // Ensure duration is always positive
+                $durationMinutes = abs((int) $r['duration_minutes']);
+                $hours = floor($durationMinutes / 60);
+                $mins = $durationMinutes % 60;
                 $duration = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
             }
 
@@ -379,16 +415,25 @@ function getAttendance(PDO $pdo): void
 
             $checkOut = null;
             if ($r['user_type'] === 'guest') {
-                // For guests, check if session has expired
-                if ($r['check_out']) {
-                    $checkOutTime = new DateTime($r['check_out'], new DateTimeZone('Asia/Manila'));
-                    if ($checkOutTime->getTimestamp() < time()) {
-                        $checkOut = $formatDateTime($r['check_out']) . ' (Expired)';
+                // For guests, check if they have checked out
+                // Use actual_checkout_time if available (from checkout_time column), otherwise use check_out
+                $actualCheckout = $r['actual_checkout_time'] ?? $r['check_out'];
+
+                if ($actualCheckout) {
+                    // Guest has checked out - show the checkout time
+                    $checkOut = $formatDateTime($actualCheckout);
+                } else {
+                    // Guest hasn't checked out yet - check if session expired
+                    if ($r['check_out']) {
+                        $checkOutTime = new DateTime($r['check_out'], new DateTimeZone('Asia/Manila'));
+                        if ($checkOutTime->getTimestamp() < time()) {
+                            $checkOut = $formatDateTime($r['check_out']) . ' (Expired)';
+                        } else {
+                            $checkOut = "Still in gym (Guest)";
+                        }
                     } else {
                         $checkOut = "Still in gym (Guest)";
                     }
-                } else {
-                    $checkOut = "Still in gym (Guest)";
                 }
             } else {
                 $checkOut = $r['check_out'] ? $formatDateTime($r['check_out']) : "Still in gym";
@@ -914,6 +959,83 @@ function checkoutAttendance(PDO $pdo, array $input): void
         'check_out' => $checkoutTimeFormatted,
         'check_out_time' => $checkoutTimeFormatted,
         'checkout_time' => $checkoutTimeFormatted
+    ]);
+}
+
+function checkoutGuestSession(PDO $pdo, array $input): void
+{
+    $sessionId = $input['session_id'] ?? $input['guest_session_id'] ?? null;
+    if (!$sessionId) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Guest session ID is required']);
+        return;
+    }
+
+    // Check if checkout_time column exists, if not, add it
+    $checkCheckoutTimeColumn = $pdo->query("SHOW COLUMNS FROM guest_session LIKE 'checkout_time'");
+    $hasCheckoutTimeColumn = $checkCheckoutTimeColumn->rowCount() > 0;
+
+    if (!$hasCheckoutTimeColumn) {
+        try {
+            $pdo->exec("ALTER TABLE `guest_session` ADD COLUMN `checkout_time` DATETIME NULL AFTER `valid_until`");
+            error_log("Added checkout_time column to guest_session table");
+        } catch (Exception $e) {
+            error_log("Failed to add checkout_time column: " . $e->getMessage());
+        }
+    }
+
+    // Get guest session details
+    $sessionStmt = $pdo->prepare("SELECT id, guest_name, created_at, checkout_time FROM `guest_session` WHERE id = ? AND status = 'approved' AND paid = 1");
+    $sessionStmt->execute([(int) $sessionId]);
+    $session = $sessionStmt->fetch();
+
+    if (!$session) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'message' => 'Guest session not found or not active']);
+        return;
+    }
+
+    // Check if already checked out
+    if ($session['checkout_time']) {
+        $checkoutTimeFormatted = date('M j, Y g:i A', strtotime($session['checkout_time']));
+        echo json_encode([
+            'success' => false,
+            'message' => 'Guest session already checked out',
+            'checkout_time' => $checkoutTimeFormatted
+        ]);
+        return;
+    }
+
+    // Use PHP date() to ensure correct timezone (Asia/Manila)
+    $currentDateTime = date('Y-m-d H:i:s');
+    $checkoutTimeFormatted = date('M j, Y g:i A');
+
+    // Update guest session with checkout time
+    $updateStmt = $pdo->prepare("UPDATE `guest_session` SET checkout_time = ? WHERE id = ?");
+    $updateStmt->execute([$currentDateTime, (int) $sessionId]);
+
+    // Calculate duration
+    $checkInTime = new DateTime($session['created_at'], new DateTimeZone('Asia/Manila'));
+    $checkOutTime = new DateTime($currentDateTime, new DateTimeZone('Asia/Manila'));
+    $duration = $checkInTime->diff($checkOutTime);
+    $totalMinutes = ($duration->days * 24 * 60) + ($duration->h * 60) + $duration->i;
+    $hours = floor($totalMinutes / 60);
+    $mins = $totalMinutes % 60;
+    $formattedDuration = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
+
+    // Log activity using centralized logger
+    $staffId = getStaffIdFromRequest($input);
+    logStaffActivity($pdo, $staffId, "Guest Checkout", "Guest session checkout: {$session['guest_name']} (ID: $sessionId) - Duration: {$formattedDuration}", "Attendance");
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Guest checkout recorded successfully',
+        'guest_name' => $session['guest_name'],
+        'check_out' => $checkoutTimeFormatted,
+        'check_out_time' => $checkoutTimeFormatted,
+        'checkout_time' => $checkoutTimeFormatted,
+        'duration' => $formattedDuration,
+        'duration_minutes' => $totalMinutes
     ]);
 }
 

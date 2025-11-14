@@ -37,6 +37,7 @@ const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionMonitor = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState("active")
   const [statusFilter, setStatusFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
   const [subscriptionTypeFilter, setSubscriptionTypeFilter] = useState("all") // all, regular, guest
@@ -1019,7 +1020,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return diffDays
   }
 
-  // Calculate time remaining with hours when 1 day or less
+  // Calculate time remaining with hours when 1 day or less, minutes when less than 1 hour, months and days when beyond 1 month
   const calculateTimeRemaining = (endDate) => {
     if (!endDate) return null
     const now = new Date()
@@ -1027,10 +1028,15 @@ const SubscriptionMonitor = ({ userId }) => {
     const diffTime = end.getTime() - now.getTime()
 
     if (diffTime < 0) {
-      // Expired - calculate hours and days
+      // Expired - calculate hours, minutes and days
       const hoursAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60))
+      const minutesAgo = Math.floor(Math.abs(diffTime) / (1000 * 60))
       const daysAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
       
+      // If expired less than 1 hour ago, show minutes
+      if (hoursAgo < 1) {
+        return { type: 'expired_minutes', minutes: minutesAgo }
+      }
       // If expired less than 24 hours ago, show hours
       if (hoursAgo < 24) {
         return { type: 'expired_hours', hours: hoursAgo }
@@ -1041,10 +1047,31 @@ const SubscriptionMonitor = ({ userId }) => {
 
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
     const totalHours = Math.floor(diffTime / (1000 * 60 * 60))
+    const totalMinutes = Math.floor(diffTime / (1000 * 60))
 
-    if (diffDays <= 1) {
-      // Show hours when 1 day or less (show total hours)
-      return { type: 'hours', days: diffDays, hours: totalHours }
+    // If less than 1 hour, show minutes (59 minutes max)
+    if (totalHours < 1) {
+      return { type: 'minutes', minutes: totalMinutes }
+    }
+
+    // If less than 1 day (24 hours), show hours (23 hours max)
+    if (diffDays < 1) {
+      return { type: 'hours', hours: totalHours }
+    }
+
+    // If 365 days or more (1 year or more), show years and months
+    if (diffDays >= 365) {
+      const years = Math.floor(diffDays / 365)
+      const remainingDaysAfterYears = diffDays % 365
+      const months = Math.floor(remainingDaysAfterYears / 30)
+      return { type: 'years_months', years, months, totalDays: diffDays }
+    }
+
+    // If 30 days or more (1 month or more), show months and days
+    if (diffDays >= 30) {
+      const months = Math.floor(diffDays / 30)
+      const remainingDays = diffDays % 30
+      return { type: 'months_days', months, days: remainingDays, totalDays: diffDays }
     }
 
     return { type: 'days', days: diffDays }
@@ -1052,6 +1079,7 @@ const SubscriptionMonitor = ({ userId }) => {
 
   // Get analytics - filter by plan if planFilter is set
   const getActiveSubscriptions = () => {
+    const now = new Date()
     return (subscriptions || []).filter((s) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
@@ -1066,15 +1094,17 @@ const SubscriptionMonitor = ({ userId }) => {
       }
       if (!matchesType) return false
 
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+      // Check if subscription is expired (end_date is in the past)
       const endDate = new Date(s.end_date)
-      endDate.setHours(0, 0, 0, 0)
-      return s.display_status === "Active" || (s.status_name === "approved" && endDate >= today)
+      if (endDate < now) return false
+
+      // Only show if status is Active or approved and not expired
+      return s.display_status === "Active" || s.status_name === "approved"
     })
   }
 
   const getExpiringSoonSubscriptions = () => {
+    const now = new Date()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const sevenDaysFromNow = new Date()
@@ -1096,6 +1126,9 @@ const SubscriptionMonitor = ({ userId }) => {
       if (!matchesType) return false
 
       const endDate = new Date(s.end_date)
+      // Check if subscription is already expired (end_date is in the past)
+      if (endDate < now) return false
+      
       endDate.setHours(0, 0, 0, 0)
       return (s.display_status === "Active" || s.status_name === "approved") &&
         endDate >= today &&
@@ -1316,7 +1349,10 @@ const SubscriptionMonitor = ({ userId }) => {
     <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group">
+        <Card 
+          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group cursor-pointer"
+          onClick={() => setActiveTab("all")}
+        >
           <CardContent className="flex items-center p-6 relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
@@ -1333,7 +1369,10 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group">
+        <Card 
+          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer"
+          onClick={() => setActiveTab("active")}
+        >
           <CardContent className="flex items-center p-6 relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-green-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="p-4 rounded-xl bg-gradient-to-br from-green-100 to-green-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
@@ -1348,7 +1387,10 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group">
+        <Card 
+          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group cursor-pointer"
+          onClick={() => setActiveTab("upcoming")}
+        >
           <CardContent className="flex items-center p-6 relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
@@ -1363,7 +1405,10 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group">
+        <Card 
+          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group cursor-pointer"
+          onClick={() => setActiveTab("expired")}
+        >
           <CardContent className="flex items-center p-6 relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
             <div className="p-4 rounded-xl bg-gradient-to-br from-red-100 to-red-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
@@ -1412,9 +1457,8 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button onClick={fetchAllData} variant="outline" size="sm" className="shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
+              <Button onClick={fetchAllData} variant="outline" size="sm" className="h-9 w-9 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" title="Refresh">
+                <RefreshCw className="h-4 w-4" />
               </Button>
               <button
                 onClick={() => {
@@ -1471,13 +1515,10 @@ const SubscriptionMonitor = ({ userId }) => {
           </div>
         </CardHeader>
         <CardContent className="p-6 bg-slate-50/30">
-          <Tabs defaultValue="all" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
+          <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="active" className="w-full">
+            <TabsList className="grid w-full grid-cols-4 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
               <TabsTrigger value="all" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-100 data-[state=active]:to-slate-50 data-[state=active]:shadow-md data-[state=active]:text-slate-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-slate-200">
                 All ({analytics.total})
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-yellow-50 data-[state=active]:to-yellow-100/50 data-[state=active]:shadow-md data-[state=active]:text-yellow-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-yellow-200">
-                Pending ({analytics.pending})
               </TabsTrigger>
               <TabsTrigger value="active" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-50 data-[state=active]:to-green-100/50 data-[state=active]:shadow-md data-[state=active]:text-green-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-green-200">
                 Active ({analytics.active})
@@ -1489,248 +1530,6 @@ const SubscriptionMonitor = ({ userId }) => {
                 Expired ({analytics.expired})
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="pending" className="space-y-4 mt-6">
-              {/* Filters */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  {/* Left side - Search and Plan */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
-                      <Input
-                        placeholder="Search members, emails, or plans..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
-                      />
-                    </div>
-                    <Label htmlFor="pending-plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={(value) => {
-                      setPlanFilter(value)
-                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
-                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
-                        setSubscriptionTypeFilter("all")
-                      }
-                    }}>
-                      <SelectTrigger className="w-40" id="pending-plan-filter">
-                        <SelectValue placeholder="All Plans" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Plans</SelectItem>
-                        {subscriptionPlans.map((plan) => (
-                          <SelectItem key={plan.id} value={plan.plan_name}>
-                            {plan.plan_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    
-                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
-                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
-                      <>
-                        <Label htmlFor="subscription-type-filter">Type:</Label>
-                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
-                          <SelectTrigger className="w-40" id="subscription-type-filter">
-                            <SelectValue placeholder="All Types" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Types</SelectItem>
-                            <SelectItem value="regular">Session</SelectItem>
-                            <SelectItem value="guest">Guest Session</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right side - Month and Year Filters */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <Label htmlFor="pending-month-filter">Month:</Label>
-                    <Select value={monthFilter} onValueChange={setMonthFilter}>
-                      <SelectTrigger className="w-40" id="pending-month-filter">
-                        <SelectValue placeholder="All Months" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        <SelectItem value="this_month">This Month</SelectItem>
-                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
-                        <SelectItem value="1">January</SelectItem>
-                        <SelectItem value="2">February</SelectItem>
-                        <SelectItem value="3">March</SelectItem>
-                        <SelectItem value="4">April</SelectItem>
-                        <SelectItem value="5">May</SelectItem>
-                        <SelectItem value="6">June</SelectItem>
-                        <SelectItem value="7">July</SelectItem>
-                        <SelectItem value="8">August</SelectItem>
-                        <SelectItem value="9">September</SelectItem>
-                        <SelectItem value="10">October</SelectItem>
-                        <SelectItem value="11">November</SelectItem>
-                        <SelectItem value="12">December</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Label htmlFor="pending-year-filter">Year:</Label>
-                    <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-32" id="pending-year-filter">
-                        <SelectValue placeholder="All Years" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Years</SelectItem>
-                        <SelectItem value="this_year">This Year ({new Date().getFullYear()})</SelectItem>
-                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
-                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
-                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {(() => {
-                const filteredPending = filterSubscriptions(pendingSubscriptions)
-                const pendingPagination = getPaginatedData(filteredPending, 'pending')
-
-                return filteredPending.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No pending subscription requests</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gradient-to-r from-yellow-50 to-yellow-100/50 hover:bg-yellow-100 border-b-2 border-yellow-200">
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Requested</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pendingPagination.paginated.map((subscription) => {
-                            return (
-                              <TableRow key={subscription.subscription_id || subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                                <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <Avatar className="h-10 w-10">
-                                      <AvatarFallback>
-                                        {getAvatarInitials(subscription)}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <div className="font-medium flex items-center gap-2">
-                                        {getDisplayName(subscription)}
-                                        {subscription.is_guest_session && (
-                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                            Guest
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div>
-                                    <div className="font-medium">{subscription.plan_name}</div>
-                                    {(() => {
-                                      const months = calculateMonths(subscription)
-                                      return months > 1 ? (
-                                        <div className="text-xs text-blue-600 font-medium mt-1">
-                                          {months} month{months > 1 ? 's' : ''} availed
-                                        </div>
-                                      ) : null
-                                    })()}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="text-sm">
-                                    {(() => {
-                                      const rawDate = subscription.created_at
-                                      const formattedDate = formatDateTime(rawDate)
-                                      console.log("🔍 DEBUG - Rendering pending subscription date:")
-                                      console.log("  - Subscription ID:", subscription.subscription_id)
-                                      console.log("  - Raw created_at:", rawDate)
-                                      console.log("  - Type of created_at:", typeof rawDate)
-                                      console.log("  - Formatted date:", formattedDate)
-                                      console.log("  - Full subscription object:", subscription)
-                                      return formattedDate
-                                    })()}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                                    <Clock className="h-3 w-3" />
-                                    {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        console.log("Approve button clicked for subscription:", subscription);
-                                        handleApprove(subscription.subscription_id);
-                                      }}
-                                      disabled={actionLoading === subscription.subscription_id}
-                                      className="bg-green-600 hover:bg-green-700"
-                                    >
-                                      {actionLoading === subscription.subscription_id ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <CheckCircle className="h-4 w-4" />
-                                      )}
-                                      Approve
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {/* Pagination Controls */}
-                    {filteredPending.length > 0 && (
-                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
-                        <div className="text-sm text-slate-500">
-                          {filteredPending.length} {filteredPending.length === 1 ? 'entry' : 'entries'} total
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.max(1, prev.pending - 1) }))}
-                            disabled={pendingPagination.currentPage === 1}
-                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </Button>
-                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
-                            Page {pendingPagination.currentPage} of {pendingPagination.totalPages}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.min(pendingPagination.totalPages, prev.pending + 1) }))}
-                            disabled={pendingPagination.currentPage === pendingPagination.totalPages}
-                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
-            </TabsContent>
 
             <TabsContent value="active" className="space-y-4 mt-6">
               {/* Filters */}
@@ -1853,7 +1652,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Duration Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -1916,40 +1715,83 @@ const SubscriptionMonitor = ({ userId }) => {
                                   const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
                                   const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired_hours') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
-                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
                                   if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                        </Badge>
+                                      )
+                                    }
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
                                         </Badge>
                                       )
                                     }
                                     return (
                                       <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                       </Badge>
                                     )
                                   }
                                   // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'hours') {
                                     return (
                                       <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
                                       </Badge>
                                     )
                                   }
@@ -1957,7 +1799,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                     <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                       'bg-green-100 text-green-700 border-green-300'
                                       }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                     </Badge>
                                   )
                                 })()}
@@ -2127,7 +1969,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Duration Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2155,12 +1997,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <div>
                                   <div className="font-medium">{subscription.plan_name}</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    {formatCurrency(subscription.price)}/month
-                                  </div>
-                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -2184,40 +2021,83 @@ const SubscriptionMonitor = ({ userId }) => {
                                   const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
                                   const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired_hours') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
-                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
                                   if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                        </Badge>
+                                      )
+                                    }
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
                                         </Badge>
                                       )
                                     }
                                     return (
                                       <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                       </Badge>
                                     )
                                   }
                                   // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'hours') {
                                     return (
                                       <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
                                       </Badge>
                                     )
                                   }
@@ -2225,7 +2105,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                     <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                       'bg-green-100 text-green-700 border-green-300'
                                       }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                     </Badge>
                                   )
                                 })()}
@@ -2395,7 +2275,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Duration Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2423,12 +2303,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <div>
                                   <div className="font-medium">{subscription.plan_name}</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    {formatCurrency(subscription.price)}/month
-                                  </div>
-                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -2452,40 +2327,83 @@ const SubscriptionMonitor = ({ userId }) => {
                                   const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
                                   const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired_hours') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
-                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
                                   if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                        </Badge>
+                                      )
+                                    }
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
                                         </Badge>
                                       )
                                     }
                                     return (
                                       <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                       </Badge>
                                     )
                                   }
                                   // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'hours') {
                                     return (
                                       <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
                                       </Badge>
                                     )
                                   }
@@ -2493,7 +2411,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                     <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                       'bg-green-100 text-green-700 border-green-300'
                                       }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                     </Badge>
                                   )
                                 })()}
@@ -2662,7 +2580,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Days Left</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Duration Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2725,40 +2643,83 @@ const SubscriptionMonitor = ({ userId }) => {
                                   const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
                                   const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
                                   if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'expired_hours') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
                                   if (timeRemaining.type === 'expired') {
                                     return (
                                       <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        Expired {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
                                       </Badge>
                                     )
                                   }
-                                  // For Walk In and day 1 session, show hours when 1 day or less
+                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
                                   if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                        </Badge>
+                                      )
+                                    }
                                     if (timeRemaining.type === 'hours') {
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
                                         </Badge>
                                       )
                                     }
                                     return (
                                       <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                       </Badge>
                                     )
                                   }
                                   // For other plans, show orange if 7 days or less
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
                                   if (timeRemaining.type === 'hours') {
                                     return (
                                       <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} duration left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
                                       </Badge>
                                     )
                                   }
@@ -2766,7 +2727,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                     <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                       'bg-green-100 text-green-700 border-green-300'
                                       }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'}
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} duration left
                                     </Badge>
                                   )
                                 })()}

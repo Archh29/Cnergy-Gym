@@ -44,6 +44,8 @@ try {
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     // Ensure proper UTF-8 encoding for special characters like peso sign
     $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // Set MySQL timezone to Philippines
+    $pdo->exec("SET time_zone = '+08:00'");
 } catch (PDOException $e) {
     error_log('Database connection failed: ' . $e->getMessage());
     die('Database connection failed: ' . $e->getMessage());

@@ -46,9 +46,186 @@ function respond($payload, $code = 200)
     exit;
 }
 
+/**
+ * Cleanup function to manage account verification lifecycle
+ * 1. Changes pending accounts older than 7 days to rejected
+ * 2. Deletes rejected accounts older than 1 month
+ */
+function cleanupAccountVerifications($pdo)
+{
+    try {
+        // Set timezone to Philippines
+        date_default_timezone_set('Asia/Manila');
+        $pdo->exec("SET time_zone = '+08:00'");
+
+        // Step 1: Change pending accounts older than 3 days to rejected
+        $updatePendingStmt = $pdo->prepare("
+            UPDATE `user` 
+            SET account_status = 'rejected' 
+            WHERE account_status = 'pending' 
+            AND user_type_id = 4 
+            AND created_at < DATE_SUB(NOW(), INTERVAL 3 DAY)
+        ");
+        $updatePendingStmt->execute();
+        $pendingRejectedCount = $updatePendingStmt->rowCount();
+
+        // Log activity if accounts were rejected
+        if ($pendingRejectedCount > 0 && function_exists('logStaffActivity')) {
+            logStaffActivity(
+                $pdo,
+                null,
+                "Auto-Reject Pending Accounts",
+                "Automatically rejected $pendingRejectedCount pending account(s) that were older than 3 days",
+                "Account Cleanup"
+            );
+        }
+
+        // Step 2: Delete rejected accounts older than 1 month
+        // First, get member details for logging before deletion
+        $getRejectedStmt = $pdo->prepare("
+            SELECT id, fname, lname, email 
+            FROM `user` 
+            WHERE account_status = 'rejected' 
+            AND user_type_id = 4 
+            AND created_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)
+        ");
+        $getRejectedStmt->execute();
+        $rejectedMembers = $getRejectedStmt->fetchAll();
+        $rejectedCount = count($rejectedMembers);
+
+        if ($rejectedCount > 0) {
+            $pdo->beginTransaction();
+            try {
+                // Disable foreign key checks temporarily
+                $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+
+                // Delete all related records for each rejected member
+                foreach ($rejectedMembers as $member) {
+                    $memberId = $member['id'];
+
+                    // Delete related records (same as manual deletion)
+                    try {
+                        $deleteCoachAssignments = $pdo->prepare("DELETE FROM coach_member_list WHERE member_id = ?");
+                        $deleteCoachAssignments->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete coach assignments for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteNotifications = $pdo->prepare("DELETE FROM notification WHERE user_id = ?");
+                        $deleteNotifications->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete notifications for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteAttendance = $pdo->prepare("DELETE FROM attendance WHERE user_id = ?");
+                        $deleteAttendance->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete attendance for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteSubscriptions = $pdo->prepare("DELETE FROM subscriptions WHERE user_id = ?");
+                        $deleteSubscriptions->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete subscriptions for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteSales = $pdo->prepare("DELETE FROM sales WHERE user_id = ?");
+                        $deleteSales->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete sales for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deletePayments = $pdo->prepare("DELETE FROM payments WHERE user_id = ?");
+                        $deletePayments->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete payments for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteSchedules = $pdo->prepare("DELETE FROM member_schedules WHERE user_id = ?");
+                        $deleteSchedules->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete member schedules for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteSessions = $pdo->prepare("DELETE FROM member_sessions WHERE user_id = ?");
+                        $deleteSessions->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete member sessions for member $memberId: " . $e->getMessage());
+                    }
+
+                    try {
+                        $deleteMember = $pdo->prepare("DELETE FROM members WHERE user_id = ?");
+                        $deleteMember->execute([$memberId]);
+                    } catch (PDOException $e) {
+                        error_log("Warning: Could not delete from members table for member $memberId: " . $e->getMessage());
+                    }
+                }
+
+                // Delete rejected users
+                $deleteRejectedStmt = $pdo->prepare("
+                    DELETE FROM `user` 
+                    WHERE account_status = 'rejected' 
+                    AND user_type_id = 4 
+                    AND created_at < DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                ");
+                $deleteRejectedStmt->execute();
+                $deletedCount = $deleteRejectedStmt->rowCount();
+
+                // Re-enable foreign key checks
+                $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+
+                $pdo->commit();
+
+                // Log activity if accounts were deleted
+                if ($deletedCount > 0 && function_exists('logStaffActivity')) {
+                    logStaffActivity(
+                        $pdo,
+                        null,
+                        "Auto-Delete Rejected Accounts",
+                        "Automatically deleted $deletedCount rejected account(s) that were older than 1 month",
+                        "Account Cleanup"
+                    );
+                }
+
+                return [
+                    'pending_rejected' => $pendingRejectedCount,
+                    'rejected_deleted' => $deletedCount
+                ];
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                error_log("Failed to cleanup rejected accounts: " . $e->getMessage());
+                throw $e;
+            }
+        }
+
+        return [
+            'pending_rejected' => $pendingRejectedCount,
+            'rejected_deleted' => 0
+        ];
+    } catch (Exception $e) {
+        error_log("Failed to cleanup account verifications: " . $e->getMessage());
+        return [
+            'pending_rejected' => 0,
+            'rejected_deleted' => 0,
+            'error' => $e->getMessage()
+        ];
+    }
+}
+
 try {
     // GET: all members (user_type_id = 4)
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && !isset($_GET['id'])) {
+        // Run cleanup automatically when fetching members
+        // This ensures pending accounts are rejected and old rejected accounts are deleted
+        cleanupAccountVerifications($pdo);
+
         $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);
@@ -119,7 +296,8 @@ try {
             }
 
             // Set defaults for optional fields
-            $gender_id = isset($input['gender_id']) ? intval($input['gender_id']) : 1; // Default to Male
+            // Don't set default gender_id - allow it to be NULL if not provided
+            $gender_id = isset($input['gender_id']) && $input['gender_id'] !== '' && $input['gender_id'] !== null ? intval($input['gender_id']) : null;
             $account_status = isset($input['account_status']) ? $input['account_status'] : 'approved';
 
             // Handle middle name - convert null/empty to empty string (database doesn't allow NULL)

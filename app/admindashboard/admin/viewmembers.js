@@ -45,6 +45,7 @@ import {
   CalendarDays,
   PowerOff,
   RotateCw,
+  RefreshCw,
   AlertTriangle,
 } from "lucide-react"
 
@@ -76,38 +77,38 @@ const generateStandardPassword = (fname, mname, lname) => {
 }
 
 const memberSchema = z.object({
-  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
-  mname: z.string().max(50, "Middle name must be less than 50 characters").optional(),
-  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
-  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  fname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  mname: z.string().max(50, "Maximum 50 characters").optional(),
+  lname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  email: z.string().email("Invalid email format").max(255, "Maximum 255 characters"),
   password: z
     .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number")
-    .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
-  bday: z.string().min(1, "Date of birth is required"),
+    .min(8, "Minimum 8 characters")
+    .regex(/[A-Z]/, "Must include uppercase letter")
+    .regex(/[0-9]/, "Must include number")
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, "Must include special character"),
+  bday: z.string().min(1, "Required"),
   user_type_id: z.coerce.number().default(4),
   // Gender and account_status removed - not for admin to set
 })
 
 const editMemberSchema = z.object({
-  fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
-  mname: z.string().max(50, "Middle name must be less than 50 characters").optional(),
-  lname: z.string().min(1, "Last name is required").max(50, "Last name must be less than 50 characters"),
-  email: z.string().email("Invalid email address").max(255, "Email must be less than 255 characters"),
+  fname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  mname: z.string().max(50, "Maximum 50 characters").optional(),
+  lname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  email: z.string().email("Invalid email format").max(255, "Maximum 255 characters"),
   password: z
     .string()
     .optional()
     .refine((val) => {
       if (!val || val === "") return true
       return val.length >= 8 && /[A-Z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
-    }, "Password must be at least 8 characters with 1 uppercase, 1 number, and 1 special character"),
-  bday: z.string().min(1, "Date of birth is required").refine((val) => {
+    }, "Must be 8+ characters with uppercase, number, and special character"),
+  bday: z.string().min(1, "Required").refine((val) => {
     if (!val || val === "" || val === "0000-00-00") return false
     const date = new Date(val)
     return !isNaN(date.getTime()) && date.getFullYear() > 1900
-  }, "Please enter a valid date of birth"),
+  }, "Invalid date format"),
   user_type_id: z.coerce.number().default(4),
   // Gender and account_status removed - not for admin to edit
 })
@@ -116,7 +117,7 @@ const ViewMembers = ({ userId }) => {
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("pending")
   const [sortBy, setSortBy] = useState("newest")
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
@@ -132,9 +133,11 @@ const ViewMembers = ({ userId }) => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false)
+  const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false)
   const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false)
   const [errorDialogData, setErrorDialogData] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [showAgeRestrictionModal, setShowAgeRestrictionModal] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
@@ -142,6 +145,8 @@ const ViewMembers = ({ userId }) => {
 
   const form = useForm({
     resolver: zodResolver(memberSchema),
+    mode: "onSubmit",
+    reValidateMode: "onSubmit",
     defaultValues: {
       fname: "",
       mname: "",
@@ -176,7 +181,7 @@ const ViewMembers = ({ userId }) => {
   const statusOptions = [
     { value: "pending", label: "Pending", color: "bg-amber-50 text-amber-700 border-amber-200" },
     { value: "approved", label: "Approved", color: "bg-green-50 text-green-700 border-green-200" },
-    { value: "rejected", label: "Rejected", color: "bg-red-50 text-red-700 border-red-200" },
+    { value: "rejected", label: "Expired", color: "bg-red-50 text-red-700 border-red-200" },
     { value: "deactivated", label: "Deactivated", color: "bg-gray-50 text-gray-700 border-gray-200" },
   ]
 
@@ -229,7 +234,21 @@ const ViewMembers = ({ userId }) => {
 
     // Filter by current view (active vs archive)
     if (currentView === "active") {
+      // In active view, exclude deactivated accounts
       filtered = filtered.filter((member) => member.account_status !== "deactivated")
+      
+      // By default, exclude rejected accounts unless statusFilter is specifically set to "rejected"
+      // This ensures only approved clients are shown in the active view by default
+      if (statusFilter === "all" || statusFilter === "") {
+        // When showing "all" status, only show approved clients (not rejected)
+        filtered = filtered.filter((member) => member.account_status === "approved")
+      } else if (statusFilter === "rejected") {
+        // Only show rejected when explicitly filtered
+        filtered = filtered.filter((member) => member.account_status === "rejected")
+      } else if (statusFilter !== "all") {
+        // For other status filters (pending, approved), show only that status
+        filtered = filtered.filter((member) => member.account_status === statusFilter)
+      }
       console.log("Active members after filtering:", filtered.map(m => ({ id: m.id, name: `${m.fname} ${m.lname}`, account_status: m.account_status })))
     } else if (currentView === "archive") {
       filtered = filtered.filter((member) => member.account_status === "deactivated")
@@ -244,11 +263,6 @@ const ViewMembers = ({ userId }) => {
           `${member.fname} ${member.lname}`.toLowerCase().includes(lowercaseQuery) ||
           member.email?.toLowerCase().includes(lowercaseQuery),
       )
-    }
-
-    // Filter by status (only apply if not using archive view)
-    if (statusFilter !== "all" && currentView === "active") {
-      filtered = filtered.filter((member) => member.account_status === statusFilter)
     }
 
     // Filter by custom date (takes priority over month/year filters)
@@ -328,8 +342,19 @@ const ViewMembers = ({ userId }) => {
   const totalPages = Math.ceil(filteredMembers.length / membersPerPage)
 
   const getGenderName = (genderId) => {
+    if (!genderId || genderId === null || genderId === undefined || genderId === '') {
+      return null
+    }
     const gender = genderOptions.find((g) => g.id === genderId?.toString())
-    return gender ? gender.name : "Unknown"
+    return gender ? gender.name : null
+  }
+
+  const formatName = (name) => {
+    if (!name) return ""
+    return name
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
   }
 
   const getStatusBadge = (status) => {
@@ -340,7 +365,7 @@ const ViewMembers = ({ userId }) => {
       <Badge className={`${statusOption.color} font-medium px-2.5 py-1 border`} variant="outline">
         {status === "pending" && <Clock className="w-3 h-3 mr-1.5" />}
         {status === "approved" && <CheckCircle className="w-3 h-3 mr-1.5" />}
-        {status === "rejected" && <XCircle className="w-3 h-3 mr-1.5" />}
+        {status === "rejected" && <Clock className="w-3 h-3 mr-1.5" />}
         {status === "deactivated" && <Ban className="w-3 h-3 mr-1.5" />}
         {statusOption.label}
       </Badge>
@@ -418,6 +443,11 @@ const ViewMembers = ({ userId }) => {
 
       const result = await response.json()
       if (response.ok) {
+        // Format client name before clearing selectedMember
+        const clientName = selectedMember 
+          ? formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()
+          : "Client"
+        
         // Refresh the members list
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
@@ -425,10 +455,21 @@ const ViewMembers = ({ userId }) => {
         setFilteredMembers(updatedMembers)
         setIsVerificationDialogOpen(false)
         setSelectedMember(null)
-        toast({
-          title: "Success",
-          description: `Account ${status} successfully!`,
-        })
+        
+        // Improved toast messages based on status
+        if (status === "approved") {
+          toast({
+            title: "Account Approved",
+            description: `${clientName}'s account has been approved and is now active. They can now access the web and mobile application.`,
+            duration: 5000,
+          })
+        } else {
+          toast({
+            title: "Status Updated",
+            description: `${clientName}'s account status has been updated to ${status}.`,
+            duration: 5000,
+          })
+        }
       } else {
         throw new Error(result.message || "Failed to update account status")
       }
@@ -444,6 +485,27 @@ const ViewMembers = ({ userId }) => {
   }
 
   const handleAddMember = async (data) => {
+    // Validate age before submitting
+    if (data.bday) {
+      const today = new Date()
+      const birthDate = new Date(data.bday)
+      const age = today.getFullYear() - birthDate.getFullYear()
+      const monthDiff = today.getMonth() - birthDate.getMonth()
+      const dayDiff = today.getDate() - birthDate.getDate()
+      
+      // Calculate exact age
+      let exactAge = age
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        exactAge--
+      }
+      
+      if (exactAge < 13) {
+        setShowAgeRestrictionModal(true)
+        setIsLoading(false)
+        return
+      }
+    }
+    
     setIsLoading(true)
     try {
       // Remove client-side email validation - let backend handle it
@@ -460,7 +522,7 @@ const ViewMembers = ({ userId }) => {
         password: password, // Always use standard default password
         bday: data.bday,
         user_type_id: data.user_type_id,
-        account_status: "approved", // Admin-added users are always approved
+        account_status: "approved", // Admin-added clients are always approved
         failed_attempt: 0,
         staff_id: userId,
       }
@@ -499,7 +561,7 @@ const ViewMembers = ({ userId }) => {
         // Other errors
         setErrorDialogData({
           title: result.error || "Error",
-          message: result.message || "Failed to add user. Please try again.",
+          message: result.message || "Failed to add client. Please try again.",
           duplicateType: result.duplicate_type || "unknown",
           existingUser: result.existing_user || null
         })
@@ -515,10 +577,11 @@ const ViewMembers = ({ userId }) => {
         // Format user's full name before closing dialog
         const fullName = `${data.fname}${data.mname ? ` ${data.mname}` : ''} ${data.lname}`.trim()
 
-        // Show success toast first with improved formatting
+        // Show success toast with improved wording and formatting
         toast({
-          title: "User Successfully Added",
-          description: `${fullName} has been added to the system. Email: ${data.email}. Account is approved and ready to use.`,
+          title: "Client Added Successfully",
+          description: `${fullName} has been added to the system and can now access the mobile application.`,
+          duration: 5000,
         })
 
         // Then update members list and close dialog
@@ -539,7 +602,7 @@ const ViewMembers = ({ userId }) => {
         setIsAddDialogOpen(false)
       } else {
         // Prioritize the detailed message over the generic error
-        throw new Error(result.message || result.error || "Failed to add user")
+        throw new Error(result.message || result.error || "Failed to add client")
       }
     } catch (error) {
       console.error("Error adding user:", error)
@@ -549,7 +612,7 @@ const ViewMembers = ({ userId }) => {
       // Generic error fallback
       setErrorDialogData({
         title: "Error",
-        message: error.message || "Failed to add user. Please try again.",
+        message: error.message || "Failed to add client. Please try again.",
         duplicateType: "unknown",
         existingUser: null
       })
@@ -560,6 +623,26 @@ const ViewMembers = ({ userId }) => {
 
   const handleUpdateMember = async (data) => {
     console.log("handleUpdateMember called with data:", data)
+    
+    // Validate age before submitting
+    if (data.bday) {
+      const today = new Date()
+      const birthDate = new Date(data.bday)
+      const age = today.getFullYear() - birthDate.getFullYear()
+      const monthDiff = today.getMonth() - birthDate.getMonth()
+      const dayDiff = today.getDate() - birthDate.getDate()
+      
+      // Calculate exact age
+      let exactAge = age
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        exactAge--
+      }
+      
+      if (exactAge < 13) {
+        setShowAgeRestrictionModal(true)
+        return
+      }
+    }
     console.log("selectedMember:", selectedMember)
 
     if (!selectedMember) {
@@ -621,16 +704,16 @@ const ViewMembers = ({ userId }) => {
         setSelectedMember(null)
         toast({
           title: "Success",
-          description: "User updated successfully!",
+          description: "Client updated successfully!",
         })
       } else {
-        throw new Error(result.error || result.message || "Failed to update user")
+        throw new Error(result.error || result.message || "Failed to update client")
       }
     } catch (error) {
       console.error("Error updating member:", error)
       toast({
         title: "Error",
-        description: error.message || "Failed to update user. Please try again.",
+        description: error.message || "Failed to update client. Please try again.",
         variant: "destructive",
       })
     }
@@ -685,6 +768,59 @@ const ViewMembers = ({ userId }) => {
     setIsLoading(false)
   }
 
+  const handleRestoreMember = (member) => {
+    setSelectedMember(member)
+    setIsRestoreDialogOpen(true)
+  }
+
+  const handleConfirmRestore = async () => {
+    if (!selectedMember) return
+    setIsLoading(true)
+    try {
+      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: selectedMember.id,
+          account_status: "approved",
+          staff_id: userId,
+        }),
+      })
+
+      const result = await response.json()
+      if (response.ok) {
+        // Format client name before clearing selectedMember
+        const clientName = selectedMember 
+          ? formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()
+          : "Client"
+        
+        const getResponse = await fetch("https://api.cnergy.site/member_management.php")
+        const updatedMembers = await getResponse.json()
+        setMembers(updatedMembers)
+        setFilteredMembers(updatedMembers)
+        setIsRestoreDialogOpen(false)
+        setSelectedMember(null)
+        toast({
+          title: "Account Restored",
+          description: `${clientName}'s account has been restored and is now active. They can now access the web and mobile application.`,
+          duration: 5000,
+        })
+      } else {
+        throw new Error(result.message || "Failed to restore account")
+      }
+    } catch (error) {
+      console.error("Error restoring member:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to restore account. Please try again.",
+        variant: "destructive",
+      })
+    }
+    setIsLoading(false)
+  }
+
   const handleOpenAddDialog = () => {
     form.reset({
       fname: "",
@@ -709,7 +845,8 @@ const ViewMembers = ({ userId }) => {
           currentValues.mname || "",
           currentValues.lname || ""
         )
-        form.setValue("password", generatedPassword, { shouldValidate: true, shouldDirty: true })
+        // Don't trigger validation when auto-updating password - only validate on submit
+        form.setValue("password", generatedPassword, { shouldValidate: false, shouldDirty: false })
       }
     }
   }, [isAddDialogOpen, form.watch("fname"), form.watch("mname"), form.watch("lname")])
@@ -723,7 +860,7 @@ const ViewMembers = ({ userId }) => {
             <div className="p-2 bg-primary/10 rounded-lg mr-3">
               <Users className="h-5 w-5 text-primary" />
             </div>
-            User Statistics
+            Client Statistics
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -741,8 +878,10 @@ const ViewMembers = ({ userId }) => {
                   <Users className="h-4 w-4 text-white" />
                 </div>
                 <div className="relative z-10 text-center">
-                  <p className="text-2xl font-bold text-gray-900 mb-0.5">{filteredMembers.length}</p>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Users</p>
+                  <p className="text-2xl font-bold text-gray-900 mb-0.5">
+                    {members.filter((m) => m.account_status === "approved").length}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Clients</p>
                 </div>
               </CardContent>
             </Card>
@@ -760,7 +899,7 @@ const ViewMembers = ({ userId }) => {
                 </div>
                 <div className="relative z-10 text-center">
                   <p className="text-2xl font-bold text-orange-600 mb-0.5">
-                    {filteredMembers.filter((m) => m.account_status === "pending").length}
+                    {members.filter((m) => m.account_status === "pending").length}
                   </p>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending</p>
                 </div>
@@ -780,7 +919,7 @@ const ViewMembers = ({ userId }) => {
                 </div>
                 <div className="relative z-10 text-center">
                   <p className="text-2xl font-bold text-green-700 mb-0.5">
-                    {filteredMembers.filter((m) => m.account_status === "approved").length}
+                    {members.filter((m) => m.account_status === "approved").length}
                   </p>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Approved</p>
                 </div>
@@ -800,9 +939,9 @@ const ViewMembers = ({ userId }) => {
                 </div>
                 <div className="relative z-10 text-center">
                   <p className="text-2xl font-bold text-red-700 mb-0.5">
-                    {filteredMembers.filter((m) => m.account_status === "rejected").length}
+                    {members.filter((m) => m.account_status === "rejected").length}
                   </p>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Rejected</p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Expired</p>
                 </div>
               </CardContent>
             </Card>
@@ -820,7 +959,7 @@ const ViewMembers = ({ userId }) => {
                 </div>
                 <div className="relative z-10 text-center">
                   <p className="text-2xl font-bold text-slate-700 mb-0.5">
-                    {filteredMembers.filter((m) => m.account_status === "deactivated").length}
+                    {members.filter((m) => m.account_status === "deactivated").length}
                   </p>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Deactivated</p>
                 </div>
@@ -838,25 +977,37 @@ const ViewMembers = ({ userId }) => {
                 <div className="p-2 bg-primary/10 rounded-lg mr-3">
                   <Shield className="h-5 w-5 text-primary" />
                 </div>
-                User Account Management
+                Client Account Management
               </CardTitle>
               <CardDescription className="text-sm text-gray-600 ml-11">
-                Manage and verify user accounts
+                Manage and verify client accounts
               </CardDescription>
             </div>
             <div className="flex gap-3">
               <Button
-                variant={currentView === "archive" ? "default" : "outline"}
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
-                className="h-10 px-4 font-medium"
+                className={`h-10 px-4 font-medium transition-all ${
+                  currentView === "active" 
+                    ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm" 
+                    : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
+                }`}
               >
-                {currentView === "active" ? "Archive" : "Active Users"}
+                {currentView === "active" ? "Active" : "Deactivated"}
+              </Button>
+              <Button
+                onClick={fetchMembers}
+                variant="outline"
+                size="sm"
+                className="h-10 w-10 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300"
+                title="Refresh"
+              >
+                <RefreshCw className="h-4 w-4" />
               </Button>
               <Button
                 onClick={handleOpenAddDialog}
                 className="h-10 px-4 font-medium shadow-md hover:shadow-lg transition-all duration-200"
               >
-                <Plus className="mr-2 h-4 w-4" /> Add User
+                <Plus className="mr-2 h-4 w-4" /> Add Client
               </Button>
             </div>
           </div>
@@ -867,7 +1018,7 @@ const ViewMembers = ({ userId }) => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search users by name or email..."
+                placeholder="Search clients by name or email..."
                 className="pl-10 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -881,7 +1032,7 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="rejected">Expired</SelectItem>
               </SelectContent>
             </Select>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
@@ -983,22 +1134,45 @@ const ViewMembers = ({ userId }) => {
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
-              <p className="text-sm text-muted-foreground">Loading users...</p>
+              <p className="text-sm text-muted-foreground">Loading clients...</p>
             </div>
           ) : currentMembers.length === 0 ? (
             <div className="text-center py-16 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
               <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-lg font-medium text-gray-700 mb-2">No accounts or user found</p>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-lg font-medium text-gray-700 mb-2">
                 {currentView === "archive"
-                  ? "No archived accounts or users found."
-                  : "Try a different search or add a new user."}
+                  ? "No deactivated clients found"
+                  : statusFilter === "pending"
+                  ? "No pending client requests"
+                  : statusFilter === "approved"
+                  ? "No approved clients found"
+                  : statusFilter === "rejected"
+                  ? "No rejected clients found"
+                  : statusFilter === "all"
+                  ? "No clients found"
+                  : "No clients found"}
               </p>
-              {currentView !== "archive" && (
-                <Button onClick={handleOpenAddDialog} variant="outline" className="mt-2">
-                  <Plus className="mr-2 h-4 w-4" /> Add User
-                </Button>
-              )}
+              <p className="text-sm text-muted-foreground">
+                {currentView === "archive"
+                  ? "There are no deactivated client accounts in the system."
+                  : statusFilter === "pending"
+                  ? "All client verification requests have been processed. New requests will appear here when clients register."
+                  : statusFilter === "approved"
+                  ? searchQuery.trim() !== ""
+                  ? "No approved clients match your search. Try a different search term."
+                  : "There are no approved clients in the system."
+                  : statusFilter === "rejected"
+                  ? searchQuery.trim() !== ""
+                  ? "No expired clients match your search. Try a different search term."
+                  : "There are no expired client requests in the system."
+                  : statusFilter === "all"
+                  ? searchQuery.trim() !== ""
+                  ? "No clients match your search. Try a different search term or filter."
+                  : "There are no clients in the system."
+                  : searchQuery.trim() !== ""
+                  ? "No clients match your search. Try a different search term."
+                  : "There are no clients in the system."}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1047,9 +1221,6 @@ const ViewMembers = ({ userId }) => {
                     </Button>
                     <div className="flex items-center gap-2 ml-4">
                       {getStatusBadge(member.account_status)}
-                      <Badge variant="outline" className="border-gray-300 text-gray-700">
-                        {getGenderName(member.gender_id)}
-                      </Badge>
                       {member.account_status === "pending" && (
                         <Button
                           variant="ghost"
@@ -1061,16 +1232,32 @@ const ViewMembers = ({ userId }) => {
                           <Shield className="h-4 w-4" />
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEditMember(member)}
-                        className="h-9 w-9 text-gray-600 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                        title="Edit Member"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      {member.account_status !== "deactivated" ? (
+                      {/* Only show Edit button for approved accounts in the Approved tab */}
+                      {member.account_status === "approved" && statusFilter === "approved" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEditMember(member)}
+                          className="h-9 w-9 text-gray-600 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="Edit Client"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* Show Restore button for expired (rejected) accounts in the Expired tab */}
+                      {member.account_status === "rejected" && statusFilter === "rejected" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRestoreMember(member)}
+                          className="h-9 w-9 text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Restore Account"
+                        >
+                          <RotateCw className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* Show Deactivate button only for approved accounts */}
+                      {member.account_status === "approved" && statusFilter === "approved" && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1080,7 +1267,9 @@ const ViewMembers = ({ userId }) => {
                         >
                           <PowerOff className="h-4 w-4" />
                         </Button>
-                      ) : (
+                      )}
+                      {/* Show Reactivate button for deactivated accounts */}
+                      {member.account_status === "deactivated" && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1103,7 +1292,7 @@ const ViewMembers = ({ userId }) => {
               <div className="text-sm font-medium text-gray-700">
                 Showing <span className="text-primary font-semibold">{indexOfFirstMember + 1}</span> to{" "}
                 <span className="text-primary font-semibold">{Math.min(indexOfLastMember, filteredMembers.length)}</span> of{" "}
-                <span className="text-primary font-semibold">{filteredMembers.length}</span> users
+                <span className="text-primary font-semibold">{filteredMembers.length}</span> clients
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -1135,114 +1324,167 @@ const ViewMembers = ({ userId }) => {
 
       {/* Account Verification Dialog */}
       <Dialog open={isVerificationDialogOpen} onOpenChange={setIsVerificationDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center">
-              <Shield className="mr-2 h-5 w-5" />
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 mr-3">
+                <Shield className="h-5 w-5 text-blue-600" />
+              </div>
               Account Verification
             </DialogTitle>
-            <DialogDescription>Review and verify this member's account to allow mobile app access.</DialogDescription>
+            <DialogDescription className="text-base text-gray-600">
+              Review and verify this member's account details to grant access to the mobile application.
+            </DialogDescription>
           </DialogHeader>
           {selectedMember && (
-            <div className="space-y-4">
-              <div className="border rounded-md p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <User className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="font-medium">
-                      {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+            <div className="space-y-5 py-4">
+              {/* Member Information Card */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
                     </p>
-                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {selectedMember.email}
+                    </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Gender:</span> {getGenderName(selectedMember.gender_id)}
+                <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                  {getGenderName(selectedMember.gender_id) && (
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Gender</span>
+                      <p className="text-sm font-medium text-gray-900">{getGenderName(selectedMember.gender_id)}</p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Birthday</span>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedMember.bday ? formatDateOnlyPH(selectedMember.bday) : "N/A"}
+                    </p>
                   </div>
-                  <div>
-                    <span className="font-medium">Birthday:</span>{" "}
-                    {selectedMember.bday ? formatDateOnlyPH(selectedMember.bday) : "N/A"}
-                  </div>
-                  <div className="col-span-2">
-                    <span className="font-medium">Current Status:</span> {getStatusBadge(selectedMember.account_status)}
+                  <div className="col-span-2 space-y-1">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Status</span>
+                    <div className="mt-1">
+                      {getStatusBadge(selectedMember.account_status)}
+                    </div>
                   </div>
                 </div>
               </div>
-              <div className="bg-blue-50 p-4 rounded-md">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Approving this account will allow the user to access the mobile application.
-                  Rejecting will prevent access until manually approved.
+              {/* Information Note */}
+              <div className="bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-4">
+                <p className="text-sm text-blue-900 leading-relaxed">
+                  <strong className="font-semibold">Note:</strong> Approving this account will grant the member full access to the mobile application. 
+                  Pending verification requests that are not approved within 3 days will be automatically rejected, 
+                  and rejected accounts older than 1 month will be automatically removed from the system.
                 </p>
               </div>
             </div>
           )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setIsVerificationDialogOpen(false)}>
+          <DialogFooter className="gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsVerificationDialogOpen(false)}
+              className="border-2 border-gray-300 hover:bg-gray-50"
+              disabled={isLoading}
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => handleUpdateAccountStatus("rejected")} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <XCircle className="mr-2 h-4 w-4" />
-              Reject
-            </Button>
-            <Button onClick={() => handleUpdateAccountStatus("approved")} disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Approve
+            <Button 
+              onClick={() => handleUpdateAccountStatus("approved")} 
+              disabled={isLoading}
+              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Approve Account
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* View Member Dialog */}
+      {/* View Client Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Member Details</DialogTitle>
+        <DialogContent className="sm:max-w-lg" hideClose>
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 mr-3">
+                <User className="h-5 w-5 text-primary" />
+              </div>
+              Client Details
+            </DialogTitle>
+            <DialogDescription className="text-base text-gray-600">
+              View comprehensive information about this client's account.
+            </DialogDescription>
           </DialogHeader>
           {selectedMember && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <User className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium">Full Name</p>
-                  <p>
-                    {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
-                  </p>
+            <div className="space-y-5 py-4">
+              {/* Client Information Card */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
+                    </p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {selectedMember.email}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium">Email</p>
-                  <p>{selectedMember.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <User className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium">Gender</p>
-                  <p>{getGenderName(selectedMember.gender_id)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <CalendarDays className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium">Date of Birth</p>
-                  <p>{selectedMember.bday ? new Date(selectedMember.bday).toLocaleDateString() : "N/A"}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Shield className="h-5 w-5 text-primary" />
-                <div>
-                  <p className="text-sm font-medium">Account Status</p>
-                  <div className="mt-1">{getStatusBadge(selectedMember.account_status)}</div>
+                <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                  {getGenderName(selectedMember.gender_id) && (
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Gender</span>
+                      <p className="text-sm font-medium text-gray-900">{getGenderName(selectedMember.gender_id)}</p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date of Birth</span>
+                    <p className="text-sm font-medium text-gray-900">
+                      {selectedMember.bday ? formatDateOnlyPH(selectedMember.bday) : "Not provided"}
+                    </p>
+                  </div>
+                  {selectedMember.created_at && (
+                    <div className="space-y-1">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Account Created</span>
+                      <p className="text-sm font-medium text-gray-900 flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatDateOnlyPH(selectedMember.created_at)}
+                      </p>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Account Status</span>
+                    <div className="mt-1">
+                      {getStatusBadge(selectedMember.account_status)}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
+          <DialogFooter className="gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsViewDialogOpen(false)}
+              className="border-2 border-gray-300 hover:bg-gray-50"
+            >
               Close
             </Button>
             <Button
@@ -1250,8 +1492,11 @@ const ViewMembers = ({ userId }) => {
                 setIsViewDialogOpen(false)
                 if (selectedMember) handleEditMember(selectedMember)
               }}
+              disabled={!selectedMember || selectedMember.account_status !== "approved"}
+              className="bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary/80 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Edit
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Client
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1263,10 +1508,10 @@ const ViewMembers = ({ userId }) => {
           <DialogHeader className="space-y-3 pb-4 border-b">
             <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
               <User className="h-6 w-6 text-primary" />
-              Add New User
+              Add New Client
             </DialogTitle>
             <DialogDescription className="text-base">
-              Enter the basic details for the new user account.
+              Enter the basic details for the new client account.
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -1427,8 +1672,35 @@ const ViewMembers = ({ userId }) => {
                 control={form.control}
                 name="bday"
                 render={({ field }) => {
-                  // Get today's date in YYYY-MM-DD format for max date restriction
-                  const today = new Date().toISOString().split('T')[0]
+                  // Calculate maximum date for minimum age of 13 years
+                  const today = new Date()
+                  const maxDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate())
+                  const maxDateStr = maxDate.toISOString().split('T')[0]
+                  
+                  const handleDateChange = (e) => {
+                    const selectedDate = e.target.value
+                    if (selectedDate) {
+                      const birthDate = new Date(selectedDate)
+                      const age = today.getFullYear() - birthDate.getFullYear()
+                      const monthDiff = today.getMonth() - birthDate.getMonth()
+                      const dayDiff = today.getDate() - birthDate.getDate()
+                      
+                      // Calculate exact age
+                      let exactAge = age
+                      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+                        exactAge--
+                      }
+                      
+                      if (exactAge < 13) {
+                        setShowAgeRestrictionModal(true)
+                        // Reset the field to empty
+                        field.onChange("")
+                        return
+                      }
+                    }
+                    field.onChange(selectedDate)
+                  }
+                  
                   return (
                     <FormItem>
                       <FormLabel className="text-sm font-medium flex items-center gap-2">
@@ -1439,8 +1711,9 @@ const ViewMembers = ({ userId }) => {
                         <Input
                           type="date"
                           className="h-11"
-                          max={today}
-                          {...field}
+                          max={maxDateStr}
+                          value={field.value}
+                          onChange={handleDateChange}
                         />
                       </FormControl>
                       <FormMessage />
@@ -1464,7 +1737,7 @@ const ViewMembers = ({ userId }) => {
                 >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   <User className="mr-2 h-4 w-4" />
-                  Add User
+                  Add
                 </Button>
               </DialogFooter>
             </form>
@@ -1472,16 +1745,16 @@ const ViewMembers = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
+      {/* Edit Client Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader className="space-y-3 pb-4 border-b">
             <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
               <Edit className="h-6 w-6 text-primary" />
-              Edit User
+              Edit Client
             </DialogTitle>
             <DialogDescription className="text-base">
-              Update the user's information and account details.
+              Update the client's information and account details.
             </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
@@ -1587,8 +1860,35 @@ const ViewMembers = ({ userId }) => {
                 control={editForm.control}
                 name="bday"
                 render={({ field }) => {
-                  // Get today's date in YYYY-MM-DD format for max date restriction
-                  const today = new Date().toISOString().split('T')[0]
+                  // Calculate maximum date for minimum age of 13 years
+                  const today = new Date()
+                  const maxDate = new Date(today.getFullYear() - 13, today.getMonth(), today.getDate())
+                  const maxDateStr = maxDate.toISOString().split('T')[0]
+                  
+                  const handleDateChange = (e) => {
+                    const selectedDate = e.target.value
+                    if (selectedDate) {
+                      const birthDate = new Date(selectedDate)
+                      const age = today.getFullYear() - birthDate.getFullYear()
+                      const monthDiff = today.getMonth() - birthDate.getMonth()
+                      const dayDiff = today.getDate() - birthDate.getDate()
+                      
+                      // Calculate exact age
+                      let exactAge = age
+                      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+                        exactAge--
+                      }
+                      
+                      if (exactAge < 13) {
+                        setShowAgeRestrictionModal(true)
+                        // Reset the field to its previous value
+                        field.onChange(field.value)
+                        return
+                      }
+                    }
+                    field.onChange(selectedDate)
+                  }
+                  
                   return (
                     <FormItem>
                       <FormLabel className="text-sm font-medium flex items-center gap-2">
@@ -1596,7 +1896,13 @@ const ViewMembers = ({ userId }) => {
                         Date of Birth
                       </FormLabel>
                       <FormControl>
-                        <Input type="date" className="h-11" max={today} {...field} />
+                        <Input 
+                          type="date" 
+                          className="h-11" 
+                          max={maxDateStr}
+                          value={field.value}
+                          onChange={handleDateChange}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1643,7 +1949,7 @@ const ViewMembers = ({ userId }) => {
                 >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   <Edit className="mr-2 h-4 w-4" />
-                  Update User
+                  Update
                 </Button>
               </DialogFooter>
             </form>
@@ -1653,92 +1959,192 @@ const ViewMembers = ({ userId }) => {
 
       {/* Deactivate/Reactivate Account Dialog */}
       <Dialog open={isDeactivateDialogOpen} onOpenChange={setIsDeactivateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="sm:max-w-lg" hideClose>
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
               {selectedMember?.account_status === "deactivated" ? (
                 <>
-                  <RotateCw className="h-5 w-5 text-green-600" />
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 mr-3">
+                    <RotateCw className="h-5 w-5 text-green-600" />
+                  </div>
                   Reactivate Account
                 </>
               ) : (
                 <>
-                  <PowerOff className="h-5 w-5 text-orange-600" />
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100 mr-3">
+                    <PowerOff className="h-5 w-5 text-orange-600" />
+                  </div>
                   Deactivate Account
                 </>
               )}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-base text-gray-600">
               {selectedMember?.account_status === "deactivated"
-                ? "Are you sure you want to reactivate this account? The user will be able to access the system again."
-                : "Are you sure you want to deactivate this account? The user will not be able to access the system until reactivated."}
+                ? "Restore access to this client's account and allow them to use the system again."
+                : "Temporarily disable this client's account access. They will not be able to use the system until you reactivate the account."}
             </DialogDescription>
           </DialogHeader>
           {selectedMember && (
-            <div className="space-y-4">
-              <div className="border rounded-md p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <User className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="font-medium">
-                      {selectedMember.fname} {selectedMember.mname} {selectedMember.lname}
+            <div className="space-y-5 py-4">
+              {/* Client Information Card */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
                     </p>
-                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {selectedMember.email}
+                    </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Current Status:</span>
-                  </div>
-                  <div>{getStatusBadge(selectedMember.account_status)}</div>
-                  <div>
-                    <span className="font-medium">Gender:</span> {getGenderName(selectedMember.gender_id)}
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Status</span>
+                    <div>{getStatusBadge(selectedMember.account_status)}</div>
                   </div>
                 </div>
               </div>
+              
+              {/* Warning/Info Note */}
               <div className={cn(
-                "p-4 rounded-md",
+                "border-l-4 rounded-r-lg p-4",
                 selectedMember.account_status === "deactivated"
-                  ? "bg-green-50 border border-green-200"
-                  : "bg-orange-50 border border-orange-200"
+                  ? "bg-green-50 border-green-400"
+                  : "bg-orange-50 border-orange-400"
               )}>
                 <p className={cn(
-                  "text-sm",
+                  "text-sm leading-relaxed",
                   selectedMember.account_status === "deactivated"
-                    ? "text-green-800"
-                    : "text-orange-800"
+                    ? "text-green-900"
+                    : "text-orange-900"
                 )}>
-                  <strong>Note:</strong>{" "}
+                  <strong className="font-semibold">Important:</strong>{" "}
                   {selectedMember.account_status === "deactivated"
-                    ? "Reactivating this account will restore access to the mobile application and all system features."
-                    : "Deactivating this account will prevent the user from accessing the mobile application and system features. The account can be reactivated at any time."}
+                    ? "Reactivating this account will restore full access to the mobile application and all system features. The client will be able to log in and use all services immediately."
+                    : "Deactivating this account will immediately prevent the client from accessing the mobile application and all system features. The client will not be able to log in or use any services. You can reactivate this account at any time from the client list."}
                 </p>
               </div>
             </div>
           )}
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setIsDeactivateDialogOpen(false)}>
+          <DialogFooter className="gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeactivateDialogOpen(false)}
+              className="border-2 border-gray-300 hover:bg-gray-50"
+              disabled={isLoading}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleConfirmDeactivate}
               disabled={isLoading}
               className={cn(
+                "shadow-md hover:shadow-lg transition-all duration-200 px-6 text-white",
                 selectedMember?.account_status === "deactivated"
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "bg-orange-600 hover:bg-orange-700"
+                  ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                  : "bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700"
               )}
             >
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {selectedMember?.account_status === "deactivated" ? (
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : selectedMember?.account_status === "deactivated" ? (
                 <>
                   <RotateCw className="mr-2 h-4 w-4" />
-                  Reactivate
+                  Reactivate Account
                 </>
               ) : (
                 <>
                   <PowerOff className="mr-2 h-4 w-4" />
-                  Deactivate
+                  Deactivate Account
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Account Dialog */}
+      <Dialog open={isRestoreDialogOpen} onOpenChange={setIsRestoreDialogOpen}>
+        <DialogContent className="sm:max-w-lg" hideClose>
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 mr-3">
+                <RotateCw className="h-5 w-5 text-green-600" />
+              </div>
+              Restore Account
+            </DialogTitle>
+            <DialogDescription className="text-base text-gray-600">
+              Restore this expired client account and grant immediate access to the web and mobile application.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedMember && (
+            <div className="space-y-5 py-4">
+              {/* Client Information Card */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
+                    </p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {selectedMember.email}
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Current Status</span>
+                    <div>{getStatusBadge(selectedMember.account_status)}</div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Info Note */}
+              <div className="bg-green-50 border-l-4 border-green-400 rounded-r-lg p-4">
+                <p className="text-sm text-green-900 leading-relaxed">
+                  <strong className="font-semibold">Account Recovery:</strong>{" "}
+                  Restoring this account will immediately approve the client and grant access to the web and mobile application. 
+                  The client will be able to log in and use the system. This action is typically used when a client 
+                  requests account recovery after their pending request has expired.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-3 pt-4 border-t">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsRestoreDialogOpen(false)}
+              className="border-2 border-gray-300 hover:bg-gray-50"
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmRestore}
+              disabled={isLoading}
+              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <RotateCw className="mr-2 h-4 w-4" />
+                  Restore Account
                 </>
               )}
             </Button>
@@ -1755,13 +2161,13 @@ const ViewMembers = ({ userId }) => {
               {errorDialogData?.title || "Duplicate Entry Detected"}
             </DialogTitle>
             <DialogDescription className="text-base font-medium text-gray-700 mt-2">
-              Cannot Create User Account
+              Cannot Create Client Account
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
               <p className="text-sm text-red-800 font-medium leading-relaxed">
-                {errorDialogData?.message || "A user with this information already exists in the system."}
+                {errorDialogData?.message || "A client with this information already exists in the system."}
               </p>
             </div>
             
@@ -1795,6 +2201,74 @@ const ViewMembers = ({ userId }) => {
               className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5"
             >
               Understood
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Age Restriction Modal */}
+      <Dialog open={showAgeRestrictionModal} onOpenChange={setShowAgeRestrictionModal}>
+        <DialogContent className="sm:max-w-lg" hideClose={true}>
+          <DialogHeader className="space-y-4 pb-2">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center border-2 border-orange-200">
+                <AlertTriangle className="h-7 w-7 text-orange-600" />
+              </div>
+              <div className="flex-1 pt-1">
+                <DialogTitle className="text-2xl font-bold text-slate-900 leading-tight">
+                  Age Requirement Not Met
+                </DialogTitle>
+                <DialogDescription className="text-base text-slate-600 mt-2 leading-relaxed">
+                  We cannot create this client account at this time.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          
+          <div className="py-2 space-y-4">
+            <div className="bg-gradient-to-r from-orange-50 to-orange-50/50 border-l-4 border-orange-500 rounded-r-lg p-4">
+              <p className="text-sm font-semibold text-slate-900 mb-2">
+                Minimum Age Requirement
+              </p>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                Clients must be at least <span className="font-bold text-orange-600 text-base">13 years old</span> to create an account in our system.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                Why is this required?
+              </p>
+              <ul className="space-y-2.5 text-sm text-slate-700 ml-4">
+                <li className="flex items-start gap-2">
+                  <span className="text-orange-600 mt-1.5">•</span>
+                  <span>Safety and liability protection for all clients</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-orange-600 mt-1.5">•</span>
+                  <span>Compliance with platform usage policies</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-orange-600 mt-1.5">•</span>
+                  <span>Insurance and legal requirements</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="pt-2">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Please select a different date of birth that meets our minimum age requirement to continue with account creation.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t border-slate-200">
+            <Button
+              onClick={() => setShowAgeRestrictionModal(false)}
+              className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-medium px-6 py-2.5 shadow-sm hover:shadow-md transition-all"
+            >
+              I Understand
             </Button>
           </DialogFooter>
         </DialogContent>

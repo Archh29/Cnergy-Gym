@@ -171,7 +171,7 @@ export default function StaffDashboardClient() {
     switch (currentSection) {
       case "Home":
         return <Home />
-      case "ViewUsers":
+      case "ViewClients":
         return <ViewMembers userId={userId} />
       case "ViewCoach":
         return <ViewCoach userId={userId} />
@@ -181,10 +181,10 @@ export default function StaffDashboardClient() {
         return <AttendanceTracking userId={userId} />
       case "MonitorSubscriptions":
         return <MonitorSubscriptions userId={userId} />
-      case "Sales":
-        return <Sales userId={userId} />
       case "CoachAssignments":
         return <CoachAssignments userId={userId} />
+      case "Sales":
+        return <Sales userId={userId} />
       default:
         return <Home />
     }
@@ -230,7 +230,7 @@ export default function StaffDashboardClient() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} userId={userId} />
+            <Topbar searchQuery={searchQuery} setSearchQuery={setSearchQuery} userRole={userRole} userId={userId} onNavigateToSection={setCurrentSection} />
           </div>
         </header>
         <main className="flex-1 overflow-auto p-3 sm:p-6">{renderSection()}</main>

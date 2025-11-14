@@ -1341,6 +1341,14 @@ const Sales = ({ userId }) => {
     }).format(amount)
   }
 
+  const formatName = (name) => {
+    if (!name || name === "N/A" || name === "Guest") return name
+    return name
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return "N/A"
     const date = new Date(dateString)
@@ -2387,12 +2395,12 @@ const Sales = ({ userId }) => {
                             <div className="space-y-1">
                               {sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach" ? (
                                 <div className="text-sm font-medium text-gray-900">
-                                  {sale.user_name || "N/A"}
+                                  {formatName(sale.user_name) || "N/A"}
                                 </div>
                               ) : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin" ? (
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {sale.guest_name || sale.user_name || "Guest"}
+                                <div className="text-sm font-medium text-gray-900">
+                                    {formatName(sale.guest_name || sale.user_name) || "Guest"}
                                   </div>
                                 </div>
                               ) : (
@@ -3292,33 +3300,33 @@ const Sales = ({ userId }) => {
 
       {/* Low Stock Products Dialog */}
       <Dialog open={lowStockDialogOpen} onOpenChange={setLowStockDialogOpen}>
-        <DialogContent className="max-w-6xl max-h-[90vh] border-0 shadow-2xl">
-          <DialogHeader className="pb-6 border-b border-gray-100">
+        <DialogContent className="max-w-6xl max-h-[90vh] border-0 shadow-2xl bg-gray-50/95" hideClose={true}>
+          <DialogHeader className="pb-6 border-b border-gray-200 bg-white/80 rounded-t-lg px-6 -mx-6 -mt-6 pt-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
-                  <Package className="h-6 w-6 text-gray-600" />
+                <div className="p-3 rounded-xl bg-gray-100 border border-gray-300 shadow-sm">
+                  <Package className="h-6 w-6 text-gray-700" />
                 </div>
                 <div>
                   <DialogTitle className="text-2xl font-semibold text-gray-900">
                     Low Stock Products
                   </DialogTitle>
-                  <DialogDescription className="text-sm text-gray-500 mt-1.5">
+                  <DialogDescription className="text-sm text-gray-600 mt-1.5">
                     Products with 10 or fewer items remaining that need restocking
                   </DialogDescription>
                 </div>
               </div>
               {getLowStockProducts().length > 0 && (
-                <Badge variant="outline" className="text-sm px-3 py-1.5 bg-gray-50 text-gray-700 border-gray-200 font-medium">
+                <Badge variant="outline" className="text-sm px-3 py-1.5 bg-gray-100 text-gray-700 border-gray-300 font-medium shadow-sm">
                   {getLowStockProducts().length} {getLowStockProducts().length === 1 ? 'Item' : 'Items'}
                 </Badge>
               )}
             </div>
           </DialogHeader>
-          <div className="overflow-y-auto max-h-[65vh] -mx-6 px-6">
+          <div className="overflow-y-auto max-h-[65vh] -mx-6 px-6 bg-white/50">
             {getLowStockProducts().length === 0 ? (
               <div className="text-center py-16">
-                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-50 mb-6">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-50 mb-6 border border-gray-200">
                   <CheckCircle className="h-10 w-10 text-green-600" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">All Products Well Stocked!</h3>
@@ -3330,7 +3338,7 @@ const Sales = ({ userId }) => {
               <div className="py-4">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-gray-50/50 hover:bg-gray-50/50 border-b border-gray-100">
+                    <TableRow className="bg-gray-100/80 hover:bg-gray-100/80 border-b border-gray-200">
                       <TableHead className="font-medium text-gray-700">Product Name</TableHead>
                       <TableHead className="font-medium text-gray-700">Category</TableHead>
                       <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
@@ -3343,10 +3351,10 @@ const Sales = ({ userId }) => {
                     {getLowStockProducts()
                       .sort((a, b) => a.stock - b.stock)
                       .map((product) => (
-                        <TableRow key={product.id} className="hover:bg-gray-50/30 transition-colors border-b border-gray-50">
+                        <TableRow key={product.id} className="hover:bg-gray-50/60 transition-colors border-b border-gray-100 bg-white/70">
                           <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 font-normal">
+                            <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300 font-normal shadow-sm">
                               {product.category}
                             </Badge>
                           </TableCell>
@@ -3392,11 +3400,11 @@ const Sales = ({ userId }) => {
               </div>
             )}
           </div>
-          <DialogFooter className="border-t border-gray-100 pt-4">
+          <DialogFooter className="border-t border-gray-200 pt-4 bg-white/80 rounded-b-lg px-6 -mx-6 -mb-6 pb-6">
             <Button
               variant="outline"
               onClick={() => setLowStockDialogOpen(false)}
-              className="font-medium border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700"
+              className="font-medium border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400 text-gray-700 shadow-sm transition-all"
             >
               Close
             </Button>
@@ -3905,7 +3913,7 @@ const Sales = ({ userId }) => {
                                   {formatDateOnly(sale.sale_date)}
                                 </TableCell>
                                 <TableCell className="text-gray-700 py-3">
-                                  {sale.user_name || 'N/A'}
+                                  {formatName(sale.user_name) || 'N/A'}
                                 </TableCell>
                                 <TableCell className="py-3">
                                   {(() => {
@@ -3920,7 +3928,7 @@ const Sales = ({ userId }) => {
                                 </TableCell>
                                 <TableCell className="py-3">
                                   {sale.coach_name ? (
-                                    <Badge variant="secondary" className="font-medium">{sale.coach_name}</Badge>
+                                    <Badge variant="secondary" className="font-medium">{formatName(sale.coach_name)}</Badge>
                                   ) : (
                                     <span className="text-xs text-muted-foreground">N/A</span>
                                   )}
@@ -4126,9 +4134,9 @@ const Sales = ({ userId }) => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="subscription">Subscription</SelectItem>
                         <SelectItem value="guest">Guest</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
+                    </SelectContent>
+                  </Select>
+                )}
 
                 {/* Day Pass Type Filter - Only show when Subscription > Day Pass plan is selected */}
                 {totalSalesTypeFilter === "Subscription" && (() => {
@@ -5067,7 +5075,7 @@ const Sales = ({ userId }) => {
                         ) : (
                           paginatedSales.map((sale) => (
                             <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b">
-                              <TableCell className="py-2.5">
+                              <TableCell className="py-3 align-top">
                                 <div className="space-y-1">
                                   {sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0 ? (
                                     sale.sales_details.map((detail, index) => (
@@ -5089,16 +5097,16 @@ const Sales = ({ userId }) => {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5">
+                              <TableCell className="py-3 align-top">
                                 <div className="text-xs font-medium text-gray-900 truncate max-w-[150px]">
                                   {sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach"
-                                    ? (sale.user_name || "N/A")
+                                    ? formatName(sale.user_name) || "N/A"
                                     : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin"
-                                      ? (sale.guest_name || sale.user_name || "Guest")
+                                      ? formatName(sale.guest_name || sale.user_name) || "Guest"
                                       : "N/A"}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5">
+                              <TableCell className="py-3 align-top">
                                 <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium bg-gray-50 text-gray-700 border-gray-300">
                                   {(() => {
                                     // For day pass sales, show "Day Pass" if user has account, "Guest" if no account
@@ -5110,7 +5118,7 @@ const Sales = ({ userId }) => {
                                   })()}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="py-2.5">
+                              <TableCell className="py-3 align-top">
                                 <div className="space-y-0.5">
                                   <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium bg-gray-50 text-gray-700 border-gray-300">
                                     {formatPaymentMethod(sale.payment_method)}
@@ -5122,13 +5130,13 @@ const Sales = ({ userId }) => {
                                   )}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5">
+                              <TableCell className="py-3 align-top">
                                 <div className="text-[10px] font-mono text-gray-600">
                                   {sale.receipt_number || "N/A"}
                                 </div>
                               </TableCell>
-                              <TableCell className="py-2.5 text-xs text-gray-700">{formatDate(sale.sale_date)}</TableCell>
-                              <TableCell className="text-right py-2.5 font-semibold text-sm text-gray-900">{formatCurrency(sale.total_amount)}</TableCell>
+                              <TableCell className="py-3 align-top text-xs text-gray-700">{formatDate(sale.sale_date)}</TableCell>
+                              <TableCell className="text-right py-3 align-top font-semibold text-sm text-gray-900">{formatCurrency(sale.total_amount)}</TableCell>
                             </TableRow>
                           ))
                         )}
@@ -6529,11 +6537,11 @@ const Sales = ({ userId }) => {
                                 <TableCell className="text-gray-700 py-3">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <div>
-                                      {isDayPassGuest
-                                        ? (sale.guest_name || sale.user_name || 'Guest')
-                                        : isDayPassSubscriptionSale && subscriptionDetail?.userName
-                                          ? subscriptionDetail.userName
-                                          : (sale.user_name || 'N/A')}
+                                  {isDayPassGuest
+                                        ? formatName(sale.guest_name || sale.user_name) || 'Guest'
+                                    : isDayPassSubscriptionSale && subscriptionDetail?.userName
+                                          ? formatName(subscriptionDetail.userName)
+                                          : formatName(sale.user_name) || 'N/A'}
                                     </div>
                                     {isDayPassGuest && (
                                       <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">

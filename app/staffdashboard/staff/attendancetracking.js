@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Camera, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3, Trash2, ClipboardList, Activity, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Plus, CheckCircle, AlertCircle, RefreshCw, Clock, Users, UserCheck, Filter, Calendar, BarChart3, Trash2, ClipboardList, Activity, ChevronLeft, ChevronRight } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -28,7 +28,8 @@ const AttendanceTracking = ({ userId }) => {
   const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [sessionTypeFilter, setSessionTypeFilter] = useState("all") // "all", "session", "guest" - only shown when filterType === "guests"
-  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (YYYY-MM format or "all-time")
+  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
+  const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
   const [quickFilter, setQuickFilter] = useState("today") // "today", "yesterday", "last-week", "last-month", "all-time"
   const [currentPage, setCurrentPage] = useState(1)
@@ -186,8 +187,8 @@ const AttendanceTracking = ({ userId }) => {
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    // Apply quick filter first (if not "all-time" and no specific date/month filters)
-    const hasSpecificFilters = selectedDate || (selectedMonth && selectedMonth !== "all-time")
+    // Apply quick filter first (if not "all-time" and no specific date/month/year filters)
+    const hasSpecificFilters = selectedDate || (selectedMonth && selectedMonth !== "all-time") || (selectedYear && selectedYear !== "all-time")
 
     if (!hasSpecificFilters && quickFilter !== "all-time") {
       const dateRange = getQuickFilterDateRange()
@@ -212,11 +213,33 @@ const AttendanceTracking = ({ userId }) => {
     else if (selectedMonth && selectedMonth !== "all-time") {
       filtered = filtered.filter((entry) => {
         const entryDate = parseDateFromEntry(entry)
-        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth)
+        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth, "Selected year:", selectedYear)
         if (entryDate) {
-          const entryMonth = entryDate.substring(0, 7) // Get YYYY-MM part
-          console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
-          return entryMonth === selectedMonth
+          const entryMonth = entryDate.substring(5, 7) // Get MM part (YYYY-MM-DD format)
+          const entryYear = entryDate.substring(0, 4) // Get YYYY part
+
+          // If year is also selected, check both month and year
+          if (selectedYear && selectedYear !== "all-time") {
+            console.log("🔍 Debug - Comparing month and year:", entryMonth, "vs", selectedMonth, "and", entryYear, "vs", selectedYear)
+            return entryMonth === selectedMonth && entryYear === selectedYear
+          } else {
+            // Just check month
+            console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
+            return entryMonth === selectedMonth
+          }
+        }
+        return false
+      })
+    }
+    // Apply year filter (if no month selected) - takes priority over quick filter
+    else if (selectedYear && selectedYear !== "all-time") {
+      filtered = filtered.filter((entry) => {
+        const entryDate = parseDateFromEntry(entry)
+        console.log("🔍 Debug - Year filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected year:", selectedYear)
+        if (entryDate) {
+          const entryYear = entryDate.substring(0, 4) // Get YYYY part
+          console.log("🔍 Debug - Comparing years:", entryYear, "vs", selectedYear)
+          return entryYear === selectedYear
         }
         return false
       })
@@ -265,6 +288,9 @@ const AttendanceTracking = ({ userId }) => {
         
         return true
       })
+    } else if (filterType === "active") {
+      // Filter to show only active members (currently in gym)
+      filtered = filtered.filter(entry => !entry.check_out || entry.check_out.includes("Still in gym"))
     }
 
     console.log("🔍 Debug - Final filtered count:", filtered.length)
@@ -284,6 +310,21 @@ const AttendanceTracking = ({ userId }) => {
 
       console.log("🔍 Debug - Raw attendance data:", attendanceRes.data)
       console.log("🔍 Debug - Sample entry:", attendanceRes.data[0])
+      // Debug: Log plan info for first few entries
+      attendanceRes.data.slice(0, 5).forEach((entry, idx) => {
+        console.log(`🔍 Entry ${idx} - Name: ${entry.name}, Plan ID: ${entry.plan_id}, Plan Name: ${entry.plan_name}, is_session: ${entry.is_session}, is_standard: ${entry.is_standard}, is_premium: ${entry.is_premium}`)
+      })
+      if (attendanceRes.data && attendanceRes.data.length > 0) {
+        // Log checkout times to debug
+        attendanceRes.data.slice(0, 3).forEach((entry, idx) => {
+          console.log(`🔍 Debug - Entry ${idx}:`, {
+            name: entry.name,
+            check_in: entry.check_in,
+            check_out: entry.check_out,
+            check_out_raw: entry.check_out
+          })
+        })
+      }
 
       setMembers(membersRes.data)
       setAttendance(attendanceRes.data)
@@ -383,10 +424,10 @@ const AttendanceTracking = ({ userId }) => {
     fetchData()
   }, [])
 
-  // Refetch data when month or date filter changes
+  // Refetch data when month, year, or date filter changes
   useEffect(() => {
     fetchData()
-  }, [selectedMonth, selectedDate])
+  }, [selectedMonth, selectedYear, selectedDate])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {
@@ -626,8 +667,10 @@ const AttendanceTracking = ({ userId }) => {
 
   // Get period label based on filters
   const getPeriodLabel = () => {
-    // Check if specific date/month filters are applied (they take priority)
-    const hasSpecificFilters = selectedDate || (selectedMonth && selectedMonth !== "all-time")
+    // Check if specific date/month/year filters are applied (they take priority)
+    const hasSpecificFilters = selectedDate ||
+      (selectedMonth && selectedMonth !== "all-time") ||
+      (selectedYear && selectedYear !== "all-time")
 
     // If specific filters are applied, use those
     if (selectedDate) {
@@ -635,8 +678,16 @@ const AttendanceTracking = ({ userId }) => {
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     }
     if (selectedMonth && selectedMonth !== "all-time") {
-      const monthDate = new Date(selectedMonth + "-01")
-      return monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      if (selectedYear && selectedYear !== "all-time") {
+        const monthDate = new Date(`${selectedYear}-${selectedMonth}-01`)
+        return monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      }
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+      const monthNum = parseInt(selectedMonth)
+      return monthNames[monthNum - 1] || "This Month"
+    }
+    if (selectedYear && selectedYear !== "all-time") {
+      return selectedYear
     }
 
     // Otherwise, use quick filter label
@@ -693,13 +744,15 @@ const AttendanceTracking = ({ userId }) => {
       return planName.includes("standard") && !planName.includes("premium")
     }).length
 
-    // Gym Session users: includes both guest sessions and gym session subscriptions
+    // Gym Session users: both guest sessions and gym session subscriptions
     const dayPass = filtered.filter(e => {
-      const isGuest = e.user_type === "guest"
-      const isGymSession = e.is_session === true || e.plan_id === 6
+      // Guest sessions
+      if (e.user_type === "guest") return true
+      // Gym session subscriptions (with account)
+      if (e.is_session === true || e.plan_id === 6) return true
+      // Fallback: check plan_name
       const planName = (e.plan_name || "").toLowerCase()
-      const isGymSessionByName = planName.includes("session") || planName.includes("gym session")
-      return isGuest || isGymSession || isGymSessionByName
+      return planName.includes("session") || planName.includes("gym session")
     }).length
 
     const active = filtered.filter(e => !e.check_out || e.check_out.includes("Still in gym")).length
@@ -760,14 +813,15 @@ const AttendanceTracking = ({ userId }) => {
       quickFilter,
       filterType,
       selectedMonth,
+      selectedYear,
       selectedDate
     })
-  }, [filteredAttendance.length, currentPage, itemsPerPage, quickFilter, filterType, selectedMonth, selectedDate])
+  }, [filteredAttendance.length, currentPage, itemsPerPage, quickFilter, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate])
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterType, sessionTypeFilter, selectedMonth, selectedDate, quickFilter])
+  }, [searchQuery, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate, quickFilter])
 
   return (
     <div className="w-full max-w-[99.5%] mx-auto p-4 space-y-4">
@@ -825,9 +879,8 @@ const AttendanceTracking = ({ userId }) => {
               </div>
             </div>
             <div className="flex gap-3">
-              <Button onClick={fetchData} variant="outline" size="sm" className="shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" disabled={loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                Refresh
+              <Button onClick={fetchData} variant="outline" size="sm" className="h-9 w-9 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" disabled={loading} title="Refresh">
+                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
               <Dialog open={manualOpen} onOpenChange={setManualOpen}>
                 <DialogTrigger asChild>
@@ -867,7 +920,11 @@ const AttendanceTracking = ({ userId }) => {
         <CardContent className="p-6 bg-slate-50/30">
           {/* Analytics Cards Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
-            <Card className="border-slate-200 shadow-sm">
+            <Card
+              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-slate-300 ${filterType === "all" ? "border-2 border-slate-400 bg-slate-50 shadow-md" : ""
+                }`}
+              onClick={() => setFilterType("all")}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-slate-600">Total ({getPeriodLabel()})</CardTitle>
                 <Users className="h-4 w-4 text-slate-400" />
@@ -877,7 +934,11 @@ const AttendanceTracking = ({ userId }) => {
                 <p className="text-xs text-slate-500 mt-1">Attendance records</p>
               </CardContent>
             </Card>
-            <Card className="border-slate-200 shadow-sm">
+            <Card
+              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-yellow-300 ${filterType === "premium" ? "border-2 border-yellow-400 bg-yellow-50 shadow-md" : ""
+                }`}
+              onClick={() => setFilterType("premium")}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-slate-600">Premium</CardTitle>
                 <UserCheck className="h-4 w-4 text-yellow-500" />
@@ -887,7 +948,11 @@ const AttendanceTracking = ({ userId }) => {
                 <p className="text-xs text-slate-500 mt-1">Premium member check-ins</p>
               </CardContent>
             </Card>
-            <Card className="border-slate-200 shadow-sm">
+            <Card
+              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${filterType === "standard" ? "border-2 border-blue-400 bg-blue-50 shadow-md" : ""
+                }`}
+              onClick={() => setFilterType("standard")}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-slate-600">Standard</CardTitle>
                 <Users className="h-4 w-4 text-blue-500" />
@@ -897,7 +962,7 @@ const AttendanceTracking = ({ userId }) => {
                 <p className="text-xs text-slate-500 mt-1">Standard user check-ins</p>
               </CardContent>
             </Card>
-            <Card 
+            <Card
               className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${filterType === "guests" ? "border-2 border-blue-400 bg-blue-50 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("guests")}
@@ -911,7 +976,11 @@ const AttendanceTracking = ({ userId }) => {
                 <p className="text-xs text-slate-500 mt-1">Gym session check-ins</p>
               </CardContent>
             </Card>
-            <Card className="border-slate-200 shadow-sm">
+            <Card
+              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-green-300 ${filterType === "active" ? "border-2 border-green-400 bg-green-50 shadow-md" : ""
+                }`}
+              onClick={() => setFilterType("active")}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-slate-600">Active</CardTitle>
                 <Activity className="h-4 w-4 text-green-500" />
@@ -985,6 +1054,7 @@ const AttendanceTracking = ({ userId }) => {
                 // Clear specific filters when quick filter changes
                 setSelectedDate("")
                 setSelectedMonth("all-time")
+                setSelectedYear("all-time")
               }}>
                 <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="quick-filter">
                   <SelectValue placeholder="Today" />
@@ -1003,35 +1073,39 @@ const AttendanceTracking = ({ userId }) => {
                 setSelectedDate("")
                 setQuickFilter("all-time") // Reset quick filter when using specific filters
               }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-40"}`} id="month-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="month-filter">
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all-time">All Months</SelectItem>
-                  <SelectItem value="2025-01">January 2025</SelectItem>
-                  <SelectItem value="2025-02">February 2025</SelectItem>
-                  <SelectItem value="2025-03">March 2025</SelectItem>
-                  <SelectItem value="2025-04">April 2025</SelectItem>
-                  <SelectItem value="2025-05">May 2025</SelectItem>
-                  <SelectItem value="2025-06">June 2025</SelectItem>
-                  <SelectItem value="2025-07">July 2025</SelectItem>
-                  <SelectItem value="2025-08">August 2025</SelectItem>
-                  <SelectItem value="2025-09">September 2025</SelectItem>
-                  <SelectItem value="2025-10">October 2025</SelectItem>
-                  <SelectItem value="2025-11">November 2025</SelectItem>
-                  <SelectItem value="2025-12">December 2025</SelectItem>
-                  <SelectItem value="2024-01">January 2024</SelectItem>
-                  <SelectItem value="2024-02">February 2024</SelectItem>
-                  <SelectItem value="2024-03">March 2024</SelectItem>
-                  <SelectItem value="2024-04">April 2024</SelectItem>
-                  <SelectItem value="2024-05">May 2024</SelectItem>
-                  <SelectItem value="2024-06">June 2024</SelectItem>
-                  <SelectItem value="2024-07">July 2024</SelectItem>
-                  <SelectItem value="2024-08">August 2024</SelectItem>
-                  <SelectItem value="2024-09">September 2024</SelectItem>
-                  <SelectItem value="2024-10">October 2024</SelectItem>
-                  <SelectItem value="2024-11">November 2024</SelectItem>
-                  <SelectItem value="2024-12">December 2024</SelectItem>
+                  <SelectItem value="01">January</SelectItem>
+                  <SelectItem value="02">February</SelectItem>
+                  <SelectItem value="03">March</SelectItem>
+                  <SelectItem value="04">April</SelectItem>
+                  <SelectItem value="05">May</SelectItem>
+                  <SelectItem value="06">June</SelectItem>
+                  <SelectItem value="07">July</SelectItem>
+                  <SelectItem value="08">August</SelectItem>
+                  <SelectItem value="09">September</SelectItem>
+                  <SelectItem value="10">October</SelectItem>
+                  <SelectItem value="11">November</SelectItem>
+                  <SelectItem value="12">December</SelectItem>
+                </SelectContent>
+              </Select>
+              <Label htmlFor="year-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Year:</Label>
+              <Select value={selectedYear} onValueChange={(value) => {
+                setSelectedYear(value)
+                setSelectedDate("")
+                setQuickFilter("all-time") // Reset quick filter when using specific filters
+              }}>
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-24 h-9 text-sm" : "w-32"}`} id="year-filter">
+                  <SelectValue placeholder="All Years" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all-time">All Years</SelectItem>
+                  <SelectItem value="2024">2024</SelectItem>
+                  <SelectItem value="2025">2025</SelectItem>
+                  <SelectItem value="2026">2026</SelectItem>
                 </SelectContent>
               </Select>
               <Label htmlFor="day-filter" className="flex-shrink-0 whitespace-nowrap">Day:</Label>
@@ -1111,6 +1185,16 @@ const AttendanceTracking = ({ userId }) => {
                             {entry.user_type === "guest"
                               ? "Session"
                               : (() => {
+                                // Debug log for type detection
+                                if (entry.name && (entry.name.includes('Eaarl') || entry.name.includes('jerry') || entry.name.includes('julieto'))) {
+                                  console.log(`🔍 Type Detection for ${entry.name}:`, {
+                                    is_session: entry.is_session,
+                                    plan_id: entry.plan_id,
+                                    plan_name: entry.plan_name,
+                                    is_standard: entry.is_standard,
+                                    is_premium: entry.is_premium
+                                  })
+                                }
                                 // Check is_session flag first for Gym Session/Day Pass
                                 if (entry.is_session === true || entry.plan_id === 6) {
                                   return "Session"
@@ -1197,7 +1281,7 @@ const AttendanceTracking = ({ userId }) => {
           setManualSearchQuery("")
         }
       }}>
-        <DialogContent className="w-[95vw] max-w-[800px] mx-auto [&>button]:hidden">
+        <DialogContent className="w-[95vw] max-w-[600px] mx-auto [&>button]:hidden">
           <DialogHeader className="border-b pb-4 mb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200">
@@ -1330,6 +1414,7 @@ const AttendanceTracking = ({ userId }) => {
               </div>
             ) : (
               <>
+
                 <div className="rounded-xl border border-slate-200 shadow-sm overflow-hidden bg-white">
                   <div className="overflow-y-auto max-h-[55vh]">
                     <Table>
@@ -1352,7 +1437,7 @@ const AttendanceTracking = ({ userId }) => {
                               {scan.memberName}
                             </TableCell>
                             <TableCell className="text-sm text-slate-600">
-                              {scan.entryMethod === "manual" ? "Manual Entry" : (scan.entryMethod === "qr" || !scan.entryMethod) ? "QR Scan" : "QR Scan"}
+                              {scan.entryMethod === "manual" ? "Manual Entry" : scan.entryMethod === "qr" ? "QR Scan" : "QR Scan"}
                             </TableCell>
                             <TableCell>
                               <Badge

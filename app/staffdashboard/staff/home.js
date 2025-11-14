@@ -1,15 +1,12 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
+import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
-import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown, CalendarDays } from "lucide-react"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Button } from "@/components/ui/button"
+import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
@@ -72,66 +69,37 @@ const GymDashboard = () => {
   const [summaryStats, setSummaryStats] = useState({
     members: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
     totalUsers: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
+    salesToday: { value: 0, trend: 0, isPositive: true },
     activeSubscriptions: { value: 0, trend: 0, isPositive: true },
     checkinsToday: { value: 0, trend: 0, isPositive: true },
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
   })
+  const [revenueData, setRevenueData] = useState([])
   const [timePeriod, setTimePeriod] = useState("today")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [selectedDate, setSelectedDate] = useState(new Date())
-  const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const fetchDashboardData = async (period = timePeriod, isRetry = false) => {
+  const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
     setLoading(true)
     setError(null)
 
     try {
-      const response = await axios.get(`https://api.cnergy.site/admindashboard.php?period=${period}`, {
+      let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
+
+      // Don't send date parameter to API - we'll filter client-side
+      console.log("Fetching data for period:", period, "URL:", apiUrl)
+
+      const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
       })
 
+      console.log("API Response received:", response.data)
+
       if (response.data.success) {
-        // Extract actual day numbers from API data and force them to October
-        const currentDate = new Date()
-        const currentYear = currentDate.getFullYear()
-        const currentMonth = 9 // October = 9 (0-based)
-
-        // Process membership data
-        const octoberMembershipData = (response.data.membershipData || []).map((item, index) => {
-          // Extract day number from the name (e.g., "Jul 17" -> 17, "Aug 19" -> 19)
-          const dayMatch = item.name?.match(/\d{1,2}/)
-          let day = 1
-
-          if (dayMatch) {
-            day = parseInt(dayMatch[0])
-          } else {
-            // If no day found, use index + 1
-            day = index + 1
-          }
-
-          // Ensure day is valid (1-31)
-          if (day < 1 || day > 31) {
-            day = Math.min(31, Math.max(1, day))
-          }
-
-          // Create October date with the actual day number
-          const octoberDate = new Date(currentYear, currentMonth, day)
-          const dayName = format(octoberDate, "MMM dd")
-
-          return {
-            name: dayName,
-            displayName: dayName,
-            members: item.members || 0
-          }
-        })
-
-        console.log('Original API Membership Data:', response.data.membershipData)
-        console.log('Corrected October Membership Data:', octoberMembershipData)
-
         setSummaryStats(response.data.summaryStats)
-        setMembershipData(octoberMembershipData)
+        setMembershipData(response.data.membershipData || [])
+        setRevenueData(response.data.revenueData || [])
         setRetryCount(0)
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
@@ -139,29 +107,8 @@ const GymDashboard = () => {
     } catch (err) {
       console.error("Error fetching dashboard data:", err)
       setError(err.message)
-
-      // Create October data even if API fails, using sample day numbers
-      const currentDate = new Date()
-      const currentYear = currentDate.getFullYear()
-      const currentMonth = 9 // October = 9 (0-based)
-
-      const octoberMembershipData = []
-
-      // Use sample day numbers that match common patterns
-      const sampleDays = [17, 19, 21, 22, 23, 24, 25]
-
-      sampleDays.forEach((day, index) => {
-        const octoberDate = new Date(currentYear, currentMonth, day)
-        const dayName = format(octoberDate, "MMM dd")
-
-        octoberMembershipData.push({
-          name: dayName,
-          displayName: dayName,
-          members: Math.floor(Math.random() * 10) + 1
-        })
-      })
-
-      setMembershipData(octoberMembershipData)
+      setMembershipData([])
+      setRevenueData([])
 
       // Auto-retry logic (max 3 retries)
       if (!isRetry && retryCount < 3) {
@@ -173,7 +120,7 @@ const GymDashboard = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [timePeriod, retryCount])
 
   const handleRetry = () => {
     setRetryCount(0)
@@ -181,34 +128,18 @@ const GymDashboard = () => {
   }
 
   useEffect(() => {
-    fetchDashboardData()
+    console.log("useEffect triggered - Period:", timePeriod)
+    fetchDashboardData(timePeriod)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timePeriod])
 
   const handleTimePeriodChange = (value) => {
     setTimePeriod(value)
   }
 
-  // Filter data by selected date
-  const filterDataByDate = (data, targetDate) => {
-    if (!data || data.length === 0) return data
-
-    // If no specific date is selected, show all data
-    if (!targetDate) return data
-
-    const targetDay = targetDate.getDate()
-    return data.filter(item => {
-      const dayMatch = item.name?.match(/\d{1,2}/)
-      if (dayMatch) {
-        const itemDay = parseInt(dayMatch[0])
-        return itemDay === targetDay
-      }
-      return false
-    })
-  }
-
-  const handleDateSelect = (date) => {
-    setSelectedDate(date)
-    setCalendarOpen(false)
+  // Custom formatters
+  const formatCurrency = (value) => {
+    return `₱${value.toLocaleString()}`
   }
 
   // Custom formatters
@@ -216,133 +147,52 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Validate and correct chart data to ensure it's for the current month
-  const validateAndCorrectChartData = (data) => {
-    if (!data || data.length === 0) {
-      // If no data, create sample data for current month
-      const currentDate = new Date()
-      const currentYear = currentDate.getFullYear()
-      const currentMonth = currentDate.getMonth()
-
-
-      // Create sample data for the last 7 days
-      const sampleData = []
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(currentYear, currentMonth, currentDate.getDate() - i)
-        sampleData.push({
-          name: format(date, "MMM dd"),
-          displayName: format(date, "MMM dd"),
-          members: Math.floor(Math.random() * 10) + 1
-        })
-      }
-      return sampleData
-    }
-
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
-
-
-    return data.map((item, index) => {
-      if (!item.name) return item
-
-      // Extract day number from the name
-      const dayMatch = item.name.match(/\d{1,2}/)
-      let day = 1
-
-      if (dayMatch) {
-        day = parseInt(dayMatch[0])
-      } else {
-        // If no day found, use the index + 1
-        day = index + 1
-      }
-
-      // Ensure day is valid (1-31)
-      if (day < 1 || day > 31) {
-        day = Math.min(31, Math.max(1, day))
-      }
-
-      // Create a corrected date for the current month
-      const correctedDate = new Date(currentYear, currentMonth, day)
-      const displayName = format(correctedDate, "MMM dd")
-
-
-      return {
-        ...item,
-        name: displayName, // Update the original name too
-        displayName: displayName
-      }
-    })
-  }
 
   // Format chart data to show proper dates
   const formatChartData = (data) => {
     if (!data || data.length === 0) return []
 
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const currentMonth = currentDate.getMonth() // 0-based (October = 9)
-
-
     return data.map(item => {
-      if (!item.name) return item
+      if (!item.name) return { ...item, displayName: item.name || '' }
 
+      // If already has displayName, use it
+      if (item.displayName) {
+        return item
+      }
 
-      // If it's a time format (HH:MM), keep it as is
+      // If it's a time format (HH:MM), convert to 12-hour format with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+        const [hours, minutes] = item.name.split(':').map(Number)
+        const period = hours >= 12 ? 'PM' : 'AM'
+        const hour12 = hours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
+        const formattedTime = `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+        return { ...item, displayName: formattedTime }
+      }
+
+      // Handle month abbreviations (e.g., "Jan", "Feb", "Aug", "Oct")
+      const monthAbbrev = item.name.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}$/i)
+      if (monthAbbrev) {
+        // Return as is for month/day format
         return { ...item, displayName: item.name }
       }
 
-      // For dates, let's be more aggressive about fixing them
+      // Try to format as date if it's a valid date string
       try {
-        let date;
-        let originalName = item.name;
-
-        // Handle different date formats
-        if (originalName.includes('-')) {
-          date = new Date(originalName)
-        } else if (originalName.includes('/')) {
-          const parts = originalName.split('/')
-          if (parts.length === 3) {
-            date = new Date(parts[2], parts[0] - 1, parts[1])
-          }
-        } else if (originalName.match(/^\d{8}$/)) {
-          const year = originalName.substring(0, 4)
-          const month = originalName.substring(4, 6)
-          const day = originalName.substring(6, 8)
-          date = new Date(year, month - 1, day)
-        } else {
-          date = new Date(originalName)
-        }
-
+        const date = new Date(item.name)
         if (!isNaN(date.getTime())) {
-          // Force the date to be in the current month and year
-          const day = date.getDate()
-          const correctedDate = new Date(currentYear, currentMonth, day)
-
-
-          return { ...item, displayName: format(correctedDate, "MMM dd") }
+          return { ...item, displayName: format(date, "MMM dd") }
         }
       } catch (error) {
-        console.warn('Date parsing failed for:', item.name, error)
+        // Use original name if date parsing fails
       }
 
-      // If all else fails, try to extract just the day number and use current month
-      const dayMatch = item.name.match(/\d{1,2}/)
-      if (dayMatch) {
-        const day = parseInt(dayMatch[0])
-        if (day >= 1 && day <= 31) {
-          const correctedDate = new Date(currentYear, currentMonth, day)
-          return { ...item, displayName: format(correctedDate, "MMM dd") }
-        }
-      }
-
+      // Use original name
       return { ...item, displayName: item.name }
     })
   }
 
   // Show error state if there's an error and no data
-  if (error && !loading && membershipData.length === 0) {
+  if (error && !loading && membershipData.length === 0 && revenueData.length === 0) {
     return (
       <div className="space-y-4 sm:space-y-6">
         <ErrorDisplay error={error} onRetry={handleRetry} retryCount={retryCount} />
@@ -357,32 +207,35 @@ const GymDashboard = () => {
         <CardHeader>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <CardTitle className="text-lg sm:text-xl">Staff Dashboard Overview</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Dashboard Overview</CardTitle>
               <CardDescription className="text-sm">
-                Welcome to the CNERGY Gym Staff Dashboard – Manage Members, Check-ins, and Daily Operations!
+                Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
               </CardDescription>
             </div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Select time period" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Period" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
             {loading ? (
               // Show loading skeletons
-              Array.from({ length: 5 }).map((_, index) => <CardSkeleton key={index} />)
+              Array.from({ length: 6 }).map((_, index) => <CardSkeleton key={index} />)
             ) : (
               <>
                 {/* Annual Members */}
@@ -429,6 +282,25 @@ const GymDashboard = () => {
                   </CardContent>
                 </Card>
 
+                {/* Sales Today */}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
+                    <span className="text-muted-foreground">₱</span>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">₱{(summaryStats.salesToday?.value || 0).toLocaleString()}</div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">Today's revenue</p>
+                      {summaryStats.salesToday?.trend !== undefined && (
+                        <TrendIndicator
+                          trend={summaryStats.salesToday.trend}
+                          isPositive={summaryStats.salesToday.isPositive}
+                        />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
 
                 {/* Active Monthly Subscriptions */}
                 <Card>
@@ -495,57 +367,17 @@ const GymDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Date Filter */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5" />
-            Date Filter
-          </CardTitle>
-          <CardDescription>Select a specific date to view detailed data</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-[280px] justify-start text-left font-normal"
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <CalendarComponent
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={handleDateSelect}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            <div className="text-sm text-muted-foreground">
-              Selected: {format(selectedDate, "MMM dd, yyyy")}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDate(null)}
-            >
-              Show All Dates
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Charts and Operational Info */}
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
-        {/* Membership Growth Chart - Takes 2 columns */}
-        <Card className="lg:col-span-2">
+      {/* Charts */}
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
+        <Card>
           <CardHeader>
-            <CardTitle>Annual Membership Growth</CardTitle>
-            <CardDescription>Annual membership growth trend (Plan ID 1)</CardDescription>
+            <CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Membership Growth
+            </CardTitle>
+            <CardDescription>Membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer
@@ -555,7 +387,7 @@ const GymDashboard = () => {
               className="h-[300px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(filterDataByDate(membershipData, selectedDate))}>
+                <LineChart data={formatChartData(membershipData)}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
                     dataKey="displayName"
@@ -595,118 +427,54 @@ const GymDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Quick Stats Panel - Takes 1 column */}
-        <div className="space-y-4">
-          {/* Today's Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Today's Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <UserCheck className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium">Check-ins</span>
-                </div>
-                <span className="text-lg font-bold text-green-600">
-                  {summaryStats.checkinsToday.value || 0}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <AlertTriangle className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm font-medium">Expiring Soon</span>
-                </div>
-                <span className="text-lg font-bold text-orange-600">
-                  {summaryStats.upcomingExpirations.value || 0}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium">Active Members</span>
-                </div>
-                <span className="text-lg font-bold text-blue-600">
-                  {summaryStats.members.active.value || 0}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
-                <div className="flex items-center space-x-3">
-                  <UserCheck className="h-5 w-5 text-blue-600" />
-                  <div>
-                    <p className="font-medium text-sm">Member Check-in</p>
-                    <p className="text-xs text-gray-500">Process gym check-ins</p>
-                  </div>
-                </div>
-              </button>
-
-              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
-                <div className="flex items-center space-x-3">
-                  <Users className="h-5 w-5 text-green-600" />
-                  <div>
-                    <p className="font-medium text-sm">New Member</p>
-                    <p className="text-xs text-gray-500">Register new members</p>
-                  </div>
-                </div>
-              </button>
-
-              <button className="w-full p-3 text-left rounded-lg border hover:bg-gray-50 transition-colors">
-                <div className="flex items-center space-x-3">
-                  <AlertTriangle className="h-5 w-5 text-orange-600" />
-                  <div>
-                    <p className="font-medium text-sm">Expiring Memberships</p>
-                    <p className="text-xs text-gray-500">Review expiring members</p>
-                  </div>
-                </div>
-              </button>
-            </CardContent>
-          </Card>
-
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-3">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">John Doe checked in</p>
-                    <p className="text-xs text-gray-500">2 minutes ago</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">New member registered</p>
-                    <p className="text-xs text-gray-500">15 minutes ago</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-3">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">Membership expiring</p>
-                    <p className="text-xs text-gray-500">1 hour ago</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Revenue
+            </CardTitle>
+            <CardDescription>Revenue performance over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer
+              config={{
+                revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
+              }}
+              className="h-[300px]"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={formatChartData(revenueData)}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="displayName"
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    className="text-xs fill-muted-foreground"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatCurrency}
+                  />
+                  <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
+                  <ChartTooltip
+                    content={<ChartTooltipContent
+                      formatter={(value, name, props) => [
+                        `₱${value.toLocaleString()}`,
+                        "Revenue",
+                        `Period: ${props.payload?.name || 'N/A'}`
+                      ]}
+                      labelFormatter={(label) => `Revenue Period: ${label}`}
+                    />}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

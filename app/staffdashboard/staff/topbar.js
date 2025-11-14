@@ -27,12 +27,14 @@ import {
 
 const API_URL = "https://api.cnergy.site/adminnotification.php"
 
-const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
+const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateToSection }) => {
   const [notifications, setNotifications] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [userData, setUserData] = useState({ firstName: 'Staff', role: 'Staff Member' })
+  const [supportTickets, setSupportTickets] = useState([])
+  const [pendingTicketsCount, setPendingTicketsCount] = useState(0)
 
   const { toast } = useToast()
 
@@ -40,19 +42,54 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
     if (userId) {
       fetchUserData()
       fetchNotifications()
-      const interval = setInterval(fetchNotifications, 30000)
+      fetchSupportTickets()
+      const interval = setInterval(() => {
+        fetchNotifications()
+        fetchSupportTickets()
+      }, 30000)
       return () => clearInterval(interval)
     }
   }, [userId])
 
+  const fetchSupportTickets = async () => {
+    try {
+      const response = await fetch("https://api.cnergy.site/support_requests.php?action=get_all_tickets")
+      if (response.ok) {
+        const data = await response.json()
+        if (Array.isArray(data)) {
+          setSupportTickets(data)
+          const pendingCount = data.filter(ticket => ticket.status === 'pending').length
+          setPendingTicketsCount(pendingCount)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching support tickets:", error)
+    }
+  }
+
   const fetchUserData = async () => {
     try {
       const response = await fetch("https://api.cnergy.site/session.php", {
-        credentials: "include"
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json"
+        }
       })
-      const data = await response.json()
 
-      if (data.authenticated && data.user_id) {
+      // Try to parse response even if status is 401 (expected with third-party cookies)
+      let data = null
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch (e) {
+        // Response might not be JSON or might be empty
+        // This is okay - 401 is expected with third-party cookie restrictions
+      }
+
+      // If we got authenticated data, use it
+      if (data && data.authenticated && data.user_id) {
         // Fetch user details from the database
         const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${data.user_id}`, {
           credentials: "include"
@@ -67,9 +104,31 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
             })
           }
         }
+      } else {
+        // Not authenticated via session - this is expected with third-party cookies
+        // Use userId from props/sessionStorage to fetch user info
+        if (userId) {
+          const userResponse = await fetch(`https://api.cnergy.site/get_user_info.php?user_id=${userId}`, {
+            credentials: "include"
+          })
+
+          if (userResponse.ok) {
+            const userInfo = await userResponse.json()
+            if (userInfo.success) {
+              setUserData({
+                firstName: userInfo.user.fname || 'Staff',
+                role: userInfo.user.user_type_name || 'Staff Member'
+              })
+            }
+          }
+        }
       }
     } catch (error) {
-      console.error("Error fetching user data:", error)
+      // Silently handle errors - 401 is expected with third-party cookie restrictions
+      // Only log actual errors (not 401/network errors)
+      if (error.name !== 'TypeError' && !error.message.includes('401') && !error.message.includes('Failed to fetch')) {
+        console.error("Error fetching user data:", error)
+      }
       // Keep default values on error
     }
   }
@@ -87,13 +146,36 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
 
-      const data = await response.json()
-      if (data.success) {
+      // Get raw text first to handle malformed JSON
+      const rawText = await response.text()
+
+      // Clean the response text (remove trailing characters)
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError)
+        console.error("Raw response:", rawText)
+        // Fallback: try to extract JSON from the response
+        const jsonMatch = rawText.match(/\{.*\}/)
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error("Invalid JSON response")
+        }
+      }
+
+      if (data && data.success) {
         setNotifications(data.notifications || [])
         setUnreadCount(data.unread_count || 0)
       }
     } catch (error) {
       console.error("Error fetching notifications:", error)
+      // Set empty state on error
+      setNotifications([])
+      setUnreadCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -106,7 +188,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: notificationId, action: "mark_read" }),
       })
-      const data = await response.json()
+
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+
       if (response.ok) {
         setNotifications((prev) =>
           prev.map((notif) => (notif.id === notificationId ? { ...notif, status_name: "Read" } : notif))
@@ -128,7 +221,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId, action: "mark_all_read" }),
       })
-      const data = await response.json()
+
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+
       if (response.ok) {
         setNotifications((prev) => prev.map((notif) => ({ ...notif, status_name: "Read" })))
         setUnreadCount(0)
@@ -149,7 +253,18 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: notificationId }),
       })
-      const data = await response.json()
+
+      const rawText = await response.text()
+      const cleanedText = rawText.trim().replace(/[^}]*$/, '')
+
+      let data
+      try {
+        data = JSON.parse(cleanedText)
+      } catch (parseError) {
+        const jsonMatch = rawText.match(/\{.*\}/)
+        data = jsonMatch ? JSON.parse(jsonMatch[0]) : { error: "Invalid response" }
+      }
+
       if (response.ok) {
         setNotifications((prev) => prev.filter((notif) => notif.id !== notificationId))
         const deletedNotif = notifications.find((n) => n.id === notificationId)
@@ -233,6 +348,27 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
     return formatted
   }
 
+  const handleNotificationClick = (notification) => {
+    const message = notification.message || ""
+
+    // If it's a support ticket notification, navigate to support requests
+    if (message.includes("support") || message.includes("ticket") || message.includes("request") || message.toLowerCase().includes("support ticket")) {
+      if (onNavigateToSection) {
+        onNavigateToSection("SupportRequests")
+      }
+      setIsOpen(false)
+      if (notification.status_name === "Unread") {
+        markAsRead(notification.id)
+      }
+      return
+    }
+
+    // Mark as read when clicked
+    if (notification.status_name === "Unread") {
+      markAsRead(notification.id)
+    }
+  }
+
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return "Unknown time"
     const date = new Date(timestamp)
@@ -247,7 +383,6 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
     if (diffInHours < 24) return `${Math.floor(diffInHours)} hour${Math.floor(diffInHours) !== 1 ? 's' : ''} ago`
     if (diffInDays < 7) return `${Math.floor(diffInDays)} day${Math.floor(diffInDays) !== 1 ? 's' : ''} ago`
     if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} week${Math.floor(diffInDays / 7) !== 1 ? 's' : ''} ago`
-    // Format in Philippines timezone
     return date.toLocaleDateString('en-US', {
       timeZone: 'Asia/Manila',
       month: 'short',
@@ -255,6 +390,29 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
     })
   }
+
+  // Combine notifications with support tickets
+  const getAllNotifications = () => {
+    const allNotifications = [...notifications]
+
+    // Add support ticket notifications if there are pending tickets
+    if (pendingTicketsCount > 0) {
+      const ticketNotification = {
+        id: `support-tickets-${pendingTicketsCount}`,
+        type_name: "Info",
+        message: `You have ${pendingTicketsCount} pending support ticket${pendingTicketsCount !== 1 ? 's' : ''} requiring attention`,
+        status_name: "Unread",
+        timestamp: supportTickets.length > 0 ? supportTickets[0].created_at : new Date().toISOString(),
+        isSupportTicket: true
+      }
+      allNotifications.unshift(ticketNotification)
+    }
+
+    return allNotifications
+  }
+
+  const totalUnreadCount = unreadCount + (pendingTicketsCount > 0 ? 1 : 0)
+  const allNotifications = getAllNotifications()
 
   return (
     <div className="flex items-center gap-4">
@@ -266,11 +424,11 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
             className="relative hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 rounded-lg h-9 w-9"
           >
             <Bell className="h-5 w-5 text-gray-700 dark:text-gray-300" />
-            {unreadCount > 0 && (
+            {totalUnreadCount > 0 && (
               <Badge
                 className="absolute -top-1 -right-1 h-4 w-4 flex items-center justify-center text-[10px] p-0 font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-2 border-white dark:border-gray-900"
               >
-                {unreadCount > 99 ? "99+" : unreadCount}
+                {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
               </Badge>
             )}
           </Button>
@@ -290,13 +448,13 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                 <div>
                   <h3 className="font-semibold text-base text-gray-900 dark:text-white tracking-tight">Notifications</h3>
                   <p className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">
-                    {unreadCount > 0
-                      ? `${unreadCount} new notification${unreadCount !== 1 ? 's' : ''}`
+                    {totalUnreadCount > 0
+                      ? `${totalUnreadCount} new notification${totalUnreadCount !== 1 ? 's' : ''}`
                       : "All caught up!"}
                   </p>
                 </div>
               </div>
-              {unreadCount > 0 && (
+              {totalUnreadCount > 0 && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -307,6 +465,29 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                 </Button>
               )}
             </div>
+            {pendingTicketsCount > 0 && (
+              <div className="mt-2 p-3 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2.5">
+                  <Headphones className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900 dark:text-white flex-1">
+                    {pendingTicketsCount} pending support ticket{pendingTicketsCount !== 1 ? 's' : ''}
+                  </span>
+                  {onNavigateToSection && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        onNavigateToSection("SupportRequests")
+                        setIsOpen(false)
+                      }}
+                      className="text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 h-7 px-2.5 text-xs rounded-md"
+                    >
+                      View <ArrowRight className="h-3 w-3 ml-1" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Notification List */}
@@ -316,7 +497,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-3" />
                 <p className="text-gray-500 dark:text-gray-400 text-sm">Loading notifications...</p>
               </div>
-            ) : notifications.length === 0 ? (
+            ) : allNotifications.length === 0 ? (
               <div className="text-center py-16 px-4">
                 <div className="p-4 bg-gray-100 dark:bg-gray-800 rounded-full w-20 h-20 mx-auto mb-4 flex items-center justify-center">
                   <Bell className="h-10 w-10 text-gray-400" />
@@ -326,19 +507,15 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
               </div>
             ) : (
               <div className="p-3 space-y-2">
-                {notifications.map((notification) => {
+                {allNotifications.map((notification) => {
                   const isUnread = notification.status_name === "Unread"
-                  const isSupportTicket = notification.message?.toLowerCase().includes("support") || notification.message?.toLowerCase().includes("ticket")
+                  const isSupportTicket = notification.isSupportTicket || notification.message?.toLowerCase().includes("support") || notification.message?.toLowerCase().includes("ticket")
 
                   return (
                     <div
                       key={notification.id}
                       className={`${getNotificationBgColor(notification.type_name, isUnread, notification.message)} rounded-lg p-3.5 transition-all duration-200 cursor-pointer group`}
-                      onClick={() => {
-                        if (isUnread) {
-                          markAsRead(notification.id)
-                        }
-                      }}
+                      onClick={() => handleNotificationClick(notification)}
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 mt-0.5">
@@ -364,8 +541,22 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {formatTimestamp(notification.timestamp)}
                             </span>
+                            {isSupportTicket && onNavigateToSection && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onNavigateToSection("SupportRequests")
+                                  setIsOpen(false)
+                                }}
+                                className="h-6 px-2 text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                View <ArrowRight className="h-3 w-3 ml-1" />
+                              </Button>
+                            )}
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {isUnread && (
+                              {isUnread && !isSupportTicket && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -379,18 +570,20 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
                                   <Check className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
                                 </Button>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  deleteNotification(notification.id)
-                                }}
-                                className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
-                                title="Delete notification"
-                              >
-                                <X className="h-3.5 w-3.5 text-gray-500 dark:text-gray-500" />
-                              </Button>
+                              {!notification.isSupportTicket && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    deleteNotification(notification.id)
+                                  }}
+                                  className="h-6 w-6 p-0 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md"
+                                  title="Delete notification"
+                                >
+                                  <X className="h-3.5 w-3.5 text-gray-500 dark:text-gray-500" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -403,7 +596,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6 }) => {
           </ScrollArea>
 
           {/* Footer */}
-          {notifications.length > 0 && (
+          {allNotifications.length > 0 && (
             <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-b-xl">
               <Button
                 variant="ghost"

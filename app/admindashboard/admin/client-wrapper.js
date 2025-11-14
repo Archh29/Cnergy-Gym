@@ -187,7 +187,7 @@ export default function AdminDashboardClient() {
     switch (currentSection) {
       case "Home":
         return <Home />
-      case "ViewUsers":
+      case "ViewClients":
         return <ViewMembers userId={userId} />
       case "ViewStaff":
         return <ViewStaff />
