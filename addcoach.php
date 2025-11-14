@@ -242,7 +242,14 @@ try {
                     $coach['package_sessions'] = $coach['package_sessions'] ? (int)$coach['package_sessions'] : null;
                     $coach['monthly_rate'] = $coach['monthly_rate'] ? (float)$coach['monthly_rate'] : null;
                     $coach['total_clients'] = (int)$coach['total_clients'];
-                    $coach['is_available'] = (bool)$coach['is_available'];
+                    // Handle is_available: NULL or missing should default to true (available)
+                    // MySQL TINYINT(1) returns as string "0" or "1", or NULL
+                    if ($coach['is_available'] === null || $coach['is_available'] === '') {
+                        $coach['is_available'] = true;
+                    } else {
+                        // Convert string "0"/"1" or int 0/1 to boolean
+                        $coach['is_available'] = (bool)(int)$coach['is_available'];
+                    }
                 }
                 
                 echo json_encode(["coaches" => $coaches]);

@@ -19,6 +19,8 @@ import {
   Users,
   UserCheck,
   Filter,
+  CheckCircle2,
+  XCircle as XCircleIcon,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -36,7 +38,11 @@ const CoachAssignments = ({ userId }) => {
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
   const [availableCoaches, setAvailableCoaches] = useState([])
   const [selectedCoachId, setSelectedCoachId] = useState("")
+  const [selectedCoach, setSelectedCoach] = useState(null)
   const [availableMembers, setAvailableMembers] = useState([])
+  const [rateType, setRateType] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState("cash")
+  const [amountReceived, setAmountReceived] = useState("")
 
   const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
 
@@ -81,27 +87,85 @@ const CoachAssignments = ({ userId }) => {
       return
     }
 
+    if (!selectedCoach) {
+      setError("Please select a coach")
+      return
+    }
+
+    // Calculate payment amount based on rate type
+    let paymentAmount = 0
+    switch (rateType) {
+      case "monthly":
+        paymentAmount = selectedCoach.monthly_rate || 0
+        break
+      case "package":
+        paymentAmount = selectedCoach.session_package_rate || 0
+        break
+      case "per_session":
+        paymentAmount = selectedCoach.per_session_rate || 0
+        break
+    }
+
+    // Validate payment for cash
+    if (paymentMethod === "cash") {
+      const received = parseFloat(amountReceived) || 0
+      if (received < paymentAmount) {
+        setError(`Amount received (₱${received.toFixed(2)}) is less than required amount (₱${paymentAmount.toFixed(2)})`)
+        return
+      }
+    }
+
     setActionLoading(true)
+    setError(null)
     try {
-      const response = await axios.post(`${API_BASE_URL}?action=assign-coach`, {
+      // Use currentUserId from state, fallback to userId prop
+      const effectiveUserId = currentUserId || userId
+      
+      // First, assign the coach
+      const assignResponse = await axios.post(`${API_BASE_URL}?action=assign-coach`, {
         member_id: memberId,
         coach_id: selectedCoachId,
-        admin_id: userId,
-        staff_id: userId,
+        admin_id: effectiveUserId,
+        staff_id: effectiveUserId,
+        rate_type: rateType,
       })
-      if (response.data.success) {
-        // Refresh data
-        await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog(), fetchAvailableMembers()])
-        setAssignModalOpen(false)
-        setSelectedMember(null)
-        setSelectedMemberId("")
-        setSelectedCoachId("")
-      } else {
-        throw new Error(response.data.message || "Failed to assign coach")
+
+      if (!assignResponse.data.success) {
+        throw new Error(assignResponse.data.message || "Failed to assign coach")
       }
+
+      // Then process payment if amount > 0
+      if (paymentAmount > 0) {
+        const paymentData = {
+          request_id: assignResponse.data.data?.assignment_id,
+          admin_id: effectiveUserId,
+          staff_id: effectiveUserId,
+          payment_method: paymentMethod,
+          amount_received: paymentMethod === "cash" ? parseFloat(amountReceived) : paymentAmount,
+          cashier_id: effectiveUserId,
+        }
+
+        const paymentResponse = await axios.post(`${API_BASE_URL}?action=approve-request-with-payment`, paymentData)
+        
+        if (!paymentResponse.data.success) {
+          throw new Error(paymentResponse.data.message || "Coach assigned but payment processing failed")
+        }
+      }
+
+      // Refresh data
+      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog(), fetchAvailableMembers()])
+      setAssignModalOpen(false)
+      setSelectedMember(null)
+      setSelectedMemberId("")
+      setSelectedCoachId("")
+      setSelectedCoach(null)
+      setRateType("monthly")
+      setPaymentMethod("cash")
+      setAmountReceived("")
+      setReceiptNumber("")
     } catch (err) {
       console.error("Error assigning coach:", err)
-      setError("Failed to assign coach: " + err.message)
+      setError("Failed to assign coach: " + (err.response?.data?.message || err.message))
     } finally {
       setActionLoading(false)
     }
@@ -122,11 +186,21 @@ const CoachAssignments = ({ userId }) => {
     try {
       const response = await axios.get(COACH_API_URL)
       if (response.data && response.data.coaches) {
-        const coaches = response.data.coaches.map(coach => ({
-          id: coach.id,
-          name: `${coach.fname} ${coach.mname} ${coach.lname}`.trim()
-        }))
-        setAvailableCoaches(coaches)
+        // Map and filter duplicates by ID
+        const coachesMap = new Map()
+        response.data.coaches.forEach(coach => {
+          if (coach.id && !coachesMap.has(coach.id)) {
+            coachesMap.set(coach.id, {
+              id: coach.id,
+              name: `${coach.fname} ${coach.mname} ${coach.lname}`.trim(),
+              monthly_rate: coach.monthly_rate || 0,
+              session_package_rate: coach.session_package_rate || coach.package_rate || 0,
+              per_session_rate: coach.per_session_rate || 0,
+              is_available: coach.is_available !== undefined && coach.is_available !== null ? Boolean(coach.is_available) : true
+            })
+          }
+        })
+        setAvailableCoaches(Array.from(coachesMap.values()))
       }
     } catch (err) {
       console.error("Error fetching coaches:", err)
@@ -138,7 +212,15 @@ const CoachAssignments = ({ userId }) => {
       // Fetch all members with gym membership (plan_id 1) for manual selection
       const response = await axios.get(`${API_BASE_URL}?action=available-members`)
       if (response.data.success) {
-        setAvailableMembers(response.data.members || [])
+        // Filter duplicates by member ID
+        const membersMap = new Map()
+        const members = response.data.members || []
+        members.forEach(member => {
+          if (member.id && !membersMap.has(member.id)) {
+            membersMap.set(member.id, member)
+          }
+        })
+        setAvailableMembers(Array.from(membersMap.values()))
       }
     } catch (err) {
       console.error("Error fetching available members:", err)
@@ -240,6 +322,10 @@ const CoachAssignments = ({ userId }) => {
       setSelectedMemberId("")
     }
     setSelectedCoachId("")
+    setSelectedCoach(null)
+      setRateType("")
+      setPaymentMethod("cash")
+      setAmountReceived("")
     setAssignModalOpen(true)
   }
 
@@ -247,7 +333,41 @@ const CoachAssignments = ({ userId }) => {
     setSelectedMember(null)
     setSelectedMemberId("")
     setSelectedCoachId("")
+    setSelectedCoach(null)
+      setRateType("")
+      setPaymentMethod("cash")
+      setAmountReceived("")
     setAssignModalOpen(true)
+  }
+
+  const handleCoachSelect = (coachId) => {
+    setSelectedCoachId(coachId)
+    const coach = availableCoaches.find(c => c.id.toString() === coachId.toString())
+    setSelectedCoach(coach || null)
+    // Reset rate type when coach changes
+    setRateType("")
+    setAmountReceived("")
+  }
+
+  const calculatePaymentAmount = () => {
+    if (!selectedCoach) return 0
+    switch (rateType) {
+      case "monthly":
+        return selectedCoach.monthly_rate || 0
+      case "package":
+        return selectedCoach.session_package_rate || 0
+      case "per_session":
+        return selectedCoach.per_session_rate || 0
+      default:
+        return 0
+    }
+  }
+
+  const calculateChange = () => {
+    if (paymentMethod !== "cash" || !amountReceived) return 0
+    const received = parseFloat(amountReceived) || 0
+    const amount = calculatePaymentAmount()
+    return Math.max(0, received - amount)
   }
 
   const formatDate = (dateString) => {
@@ -426,12 +546,13 @@ const CoachAssignments = ({ userId }) => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Coaches ({assignedMembers.length})</SelectItem>
-                        {availableCoaches
+                        {Array.from(new Map(availableCoaches
                           .filter(coach => coach.id && coach.id.toString().trim() !== '')
-                          .map((coach) => {
+                          .map(coach => [coach.id, coach])).values())
+                          .map((coach, index) => {
                             const memberCount = assignedMembers.filter(assignment => assignment.coach?.id?.toString() === coach.id.toString()).length
                             return (
-                              <SelectItem key={coach.id} value={coach.id.toString()}>
+                              <SelectItem key={`filter-coach-${coach.id}-${index}`} value={coach.id.toString()}>
                                 {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
                               </SelectItem>
                             )
@@ -530,18 +651,18 @@ const CoachAssignments = ({ userId }) => {
 
       {/* Assign Coach Modal */}
       <Dialog open={assignModalOpen} onOpenChange={setAssignModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Connect Member to Coach</DialogTitle>
+            <DialogTitle>Create Manual Connection - POS System</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Select an available coach to connect with this member who has gym membership.
+              Assign a coach to a member and process payment.
             </p>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* Member Selection - only show if no member pre-selected */}
             {!selectedMember && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Select Member (with Gym Membership)</label>
+                <label className="text-sm font-medium">Select Member (with Gym Membership - Plan ID 1 or 5)</label>
                 <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a member..." />
@@ -550,8 +671,9 @@ const CoachAssignments = ({ userId }) => {
                     {availableMembers.length === 0 ? (
                       <SelectItem value="no-members" disabled>No members available</SelectItem>
                     ) : (
-                      availableMembers.map((member) => (
-                        <SelectItem key={member.id} value={member.id.toString()}>
+                      // Filter out duplicates and ensure unique keys
+                      Array.from(new Map(availableMembers.map(member => [member.id, member])).values()).map((member, index) => (
+                        <SelectItem key={`member-${member.id}-${index}`} value={member.id.toString()}>
                           {member.name} ({member.email})
                         </SelectItem>
                       ))
@@ -578,10 +700,10 @@ const CoachAssignments = ({ userId }) => {
               </div>
             )}
 
-            {/* Coach Selection */}
+            {/* Coach Selection with Availability */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Select Coach</label>
-              <Select value={selectedCoachId} onValueChange={setSelectedCoachId}>
+              <Select value={selectedCoachId} onValueChange={handleCoachSelect}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a coach..." />
                 </SelectTrigger>
@@ -589,15 +711,123 @@ const CoachAssignments = ({ userId }) => {
                   {availableCoaches.length === 0 ? (
                     <SelectItem value="no-coaches" disabled>No coaches available</SelectItem>
                   ) : (
-                    availableCoaches.map((coach) => (
-                      <SelectItem key={coach.id} value={coach.id.toString()}>
-                        {coach.name}
+                    // Filter out duplicates and ensure unique keys
+                    Array.from(new Map(availableCoaches.map(coach => [coach.id, coach])).values()).map((coach, index) => (
+                      <SelectItem key={`coach-${coach.id}-${index}`} value={coach.id.toString()} disabled={!coach.is_available}>
+                        <div className="flex items-center gap-2">
+                          {coach.is_available ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <XCircleIcon className="h-4 w-4 text-red-600" />
+                          )}
+                          <span>{coach.name}</span>
+                          {!coach.is_available && <span className="text-xs text-muted-foreground">(Unavailable)</span>}
+                        </div>
                       </SelectItem>
                     ))
                   )}
                 </SelectContent>
               </Select>
+              {selectedCoach && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  {selectedCoach.is_available ? (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <span>Available</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircleIcon className="h-4 w-4 text-red-600" />
+                      <span>Unavailable</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Package Type Selection */}
+            {selectedCoach && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Package Type</label>
+                <Select value={rateType} onValueChange={(value) => { setRateType(value); setAmountReceived("") }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select package type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedCoach.monthly_rate > 0 && (
+                      <SelectItem value="monthly">
+                        Monthly - ₱{selectedCoach.monthly_rate.toFixed(2)}
+                      </SelectItem>
+                    )}
+                    {selectedCoach.session_package_rate > 0 && (
+                      <SelectItem value="package">
+                        Package - ₱{selectedCoach.session_package_rate.toFixed(2)}
+                      </SelectItem>
+                    )}
+                    {selectedCoach.per_session_rate > 0 && (
+                      <SelectItem value="per_session">
+                        Per Session - ₱{selectedCoach.per_session_rate.toFixed(2)}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* POS System */}
+            {selectedCoach && rateType && (
+              <div className="border-t pt-4 space-y-4">
+                <h4 className="font-semibold text-sm">Payment Information</h4>
+                
+                {/* Payment Amount Display */}
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Amount Due:</span>
+                    <span className="text-lg font-bold text-blue-600">₱{calculatePaymentAmount().toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment Method</label>
+                  <Select value={paymentMethod} onValueChange={(value) => { setPaymentMethod(value); setAmountReceived("") }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="digital">Digital Payment</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Amount Received (for cash) */}
+                {paymentMethod === "cash" && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Amount Received</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={amountReceived}
+                      onChange={(e) => setAmountReceived(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Change Display (for cash) */}
+                {paymentMethod === "cash" && amountReceived && calculateChange() > 0 && (
+                  <div className="bg-green-50 p-3 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium">Change:</span>
+                      <span className="text-lg font-bold text-green-600">₱{calculateChange().toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignModalOpen(false)}>
@@ -606,14 +836,20 @@ const CoachAssignments = ({ userId }) => {
             <Button
               onClick={handleAssignCoach}
               className="bg-blue-600 hover:bg-blue-700"
-              disabled={actionLoading || !selectedCoachId || (!selectedMemberId && !selectedMember?.id)}
+              disabled={
+                actionLoading || 
+                !selectedCoachId || 
+                (!selectedMemberId && !selectedMember?.id) ||
+                !rateType ||
+                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < calculatePaymentAmount()))
+              }
             >
               {actionLoading ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               ) : (
                 <UserCheck className="h-4 w-4 mr-2" />
               )}
-              Connect to Coach
+              {calculatePaymentAmount() > 0 ? "Assign & Process Payment" : "Assign Coach"}
             </Button>
           </DialogFooter>
         </DialogContent>

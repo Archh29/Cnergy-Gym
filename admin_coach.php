@@ -157,6 +157,14 @@ switch ($action) {
         }
         break;
         
+    case 'available-members':
+        if ($method === 'GET') getAvailableMembers($pdo);
+        break;
+        
+    case 'assign-coach':
+        if ($method === 'POST') assignCoach($pdo);
+        break;
+        
     default:
         echo json_encode(['success' => false, 'message' => 'Invalid endpoint']);
         break;
@@ -320,6 +328,8 @@ function getAssignedMembers($pdo) {
             LEFT JOIN coaches coach_info ON c.id = coach_info.user_id
             WHERE cml.coach_approval = 'approved' 
             AND cml.staff_approval = 'approved'
+            AND (cml.status = 'active' OR cml.status IS NULL)
+            AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
             ORDER BY cml.staff_approved_at DESC
         ");
         
@@ -564,12 +574,24 @@ function approveRequestWithPayment($pdo) {
                 $receiptNumber = generateCoachAssignmentReceiptNumber($pdo);
             }
             
-            // Update the request to approved
+            // Check if payment_received column exists, if not add it
+            try {
+                $checkColumns = $pdo->query("SHOW COLUMNS FROM coach_member_list LIKE 'payment_received'");
+                if ($checkColumns->rowCount() == 0) {
+                    $pdo->exec("ALTER TABLE coach_member_list ADD COLUMN payment_received TINYINT(1) DEFAULT 0 AFTER staff_approved_at");
+                }
+            } catch (Exception $e) {
+                error_log("Could not add payment_received column: " . $e->getMessage());
+            }
+            
+            // Update the request to approved and lock it after payment (payment_received = 1)
+            // Once payment is received, assignment is locked - no reassignment allowed
             $stmt = $pdo->prepare("
                 UPDATE coach_member_list 
                 SET staff_approval = 'approved',
                     status = 'active',
                     staff_approved_at = NOW(),
+                    payment_received = 1,
                     handled_by_staff = ?
                 WHERE id = ? AND coach_approval = 'approved' AND staff_approval = 'pending'
             ");
@@ -1355,6 +1377,326 @@ function getSalesRecord($pdo, $salesId) {
         echo json_encode([
             'success' => false,
             'message' => 'Error fetching sales record: ' . $e->getMessage()
+        ]);
+    }
+}
+
+// Function to assign a coach to a member (manual assignment)
+function assignCoach($pdo) {
+    try {
+        $input = json_decode(file_get_contents('php://input'), true);
+        
+        $memberId = $input['member_id'] ?? null;
+        $coachId = $input['coach_id'] ?? null;
+        $adminId = $input['admin_id'] ?? null;
+        $staffId = $input['staff_id'] ?? null;
+        $rateType = $input['rate_type'] ?? 'monthly';
+        
+        if (!$memberId || !$coachId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Member ID and Coach ID are required'
+            ]);
+            return;
+        }
+        
+        // Validate admin or staff user - check both adminId and staffId
+        $userId = $adminId ?? $staffId;
+        if (!$userId) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Admin ID or Staff ID is required'
+            ]);
+            return;
+        }
+        
+        $adminUser = validateAdminUser($pdo, $userId);
+        if (!$adminUser) {
+            // If adminId validation failed, try staffId if it's different
+            if ($staffId && $staffId != $adminId) {
+                $adminUser = validateAdminUser($pdo, $staffId);
+                if ($adminUser) {
+                    $userId = $staffId;
+                    $adminId = $staffId; // Use staffId as adminId for consistency
+                }
+            }
+            
+            if (!$adminUser) {
+                error_log("Permission validation failed - User ID: $userId, Admin ID: $adminId, Staff ID: $staffId");
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Invalid admin user or insufficient permissions. User must be admin (type 1) or staff (type 2).'
+                ]);
+                return;
+            }
+        }
+        
+        // Use the validated userId
+        if (!$adminId) {
+            $adminId = $userId;
+        }
+        if (!$staffId) {
+            $staffId = $userId;
+        }
+        
+        // Validate member exists and has plan_id 1 or 5 (gym membership)
+        $memberStmt = $pdo->prepare("
+            SELECT u.id, u.fname, u.lname, u.email
+            FROM user u
+            INNER JOIN subscription s ON u.id = s.user_id
+            WHERE u.id = ? 
+                AND u.user_type_id = 4
+                AND (s.plan_id = 1 OR s.plan_id = 5)
+                AND s.status_id = 2
+                AND s.end_date >= CURDATE()
+        ");
+        $memberStmt->execute([$memberId]);
+        $member = $memberStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$member) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Member not found or does not have an active gym membership (Plan ID 1 or 5)'
+            ]);
+            return;
+        }
+        
+        // Validate coach exists
+        $coachStmt = $pdo->prepare("
+            SELECT u.id, u.fname, u.lname, u.email
+            FROM user u
+            WHERE u.id = ? AND u.user_type_id = 3
+        ");
+        $coachStmt->execute([$coachId]);
+        $coach = $coachStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$coach) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Coach not found'
+            ]);
+            return;
+        }
+        
+        // Check if member already has an active assignment with this coach
+        $existingStmt = $pdo->prepare("
+            SELECT id FROM coach_member_list
+            WHERE member_id = ? 
+                AND coach_id = ?
+                AND coach_approval = 'approved'
+                AND staff_approval = 'approved'
+                AND (status = 'active' OR status IS NULL)
+                AND (expires_at IS NULL OR expires_at >= CURDATE())
+        ");
+        $existingStmt->execute([$memberId, $coachId]);
+        if ($existingStmt->fetch()) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Member already has an active assignment with this coach'
+            ]);
+            return;
+        }
+        
+        // Check if member has a paid/locked assignment (no reassignment allowed after payment)
+        $paidAssignmentStmt = $pdo->prepare("
+            SELECT id, coach_id 
+            FROM coach_member_list
+            WHERE member_id = ? 
+                AND coach_approval = 'approved'
+                AND staff_approval = 'approved'
+                AND (status = 'active' OR status IS NULL)
+                AND (expires_at IS NULL OR expires_at >= CURDATE())
+                AND payment_received = 1
+            ORDER BY id DESC
+            LIMIT 1
+        ");
+        $paidAssignmentStmt->execute([$memberId]);
+        $paidAssignment = $paidAssignmentStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($paidAssignment) {
+            // Get coach name for error message
+            $paidCoachStmt = $pdo->prepare("SELECT fname, lname FROM user WHERE id = ?");
+            $paidCoachStmt->execute([$paidAssignment['coach_id']]);
+            $paidCoach = $paidCoachStmt->fetch(PDO::FETCH_ASSOC);
+            $paidCoachName = $paidCoach ? trim($paidCoach['fname'] . ' ' . $paidCoach['lname']) : 'Unknown';
+            
+            echo json_encode([
+                'success' => false,
+                'message' => "Member already has a paid assignment with coach {$paidCoachName}. Assignment is locked after payment. If wrong coach was assigned, please refund/cancel manually."
+            ]);
+            return;
+        }
+        
+        // Start transaction
+        $pdo->beginTransaction();
+        
+        try {
+            $assignmentId = null;
+            
+            // Simple new assignment only - no reassignment after payment
+            // Get coach's default rate (monthly rate if available)
+            $coachInfoStmt = $pdo->prepare("
+                SELECT monthly_rate, session_package_rate, per_session_rate
+                FROM coaches
+                WHERE user_id = ?
+            ");
+            $coachInfoStmt->execute([$coachId]);
+            $coachInfo = $coachInfoStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Calculate expiration date (30 days from now for monthly)
+            $expiresAt = date('Y-m-d', strtotime('+30 days'));
+            $remainingSessions = 18; // Default sessions
+            
+            // Check if payment_received column exists, if not add it (to lock assignments after payment)
+            try {
+                $checkColumns = $pdo->query("SHOW COLUMNS FROM coach_member_list LIKE 'payment_received'");
+                if ($checkColumns->rowCount() == 0) {
+                    $pdo->exec("ALTER TABLE coach_member_list ADD COLUMN payment_received TINYINT(1) DEFAULT 0 AFTER staff_approved_at");
+                }
+            } catch (Exception $e) {
+                error_log("Could not add payment_received column: " . $e->getMessage());
+            }
+            
+            // Insert new coach assignment (payment_received = 0, will be set to 1 when payment is processed)
+            $insertStmt = $pdo->prepare("
+                INSERT INTO coach_member_list (
+                    coach_id, 
+                    member_id, 
+                    status, 
+                    coach_approval, 
+                    staff_approval, 
+                    payment_received,
+                    requested_at,
+                    coach_approved_at,
+                    staff_approved_at,
+                    handled_by_coach,
+                    handled_by_staff,
+                    expires_at,
+                    remaining_sessions,
+                    rate_type
+                ) VALUES (?, ?, 'active', 'approved', 'approved', 0, NOW(), NOW(), NOW(), ?, ?, ?, 18, ?)
+            ");
+            
+            $insertStmt->execute([
+                $coachId,
+                $memberId,
+                $coachId,  // handled_by_coach
+                $adminId,  // handled_by_staff
+                $expiresAt,
+                $rateType,  // rate_type
+            ]);
+            
+            $assignmentId = $pdo->lastInsertId();
+            
+            // Log the activity using centralized logger
+            $actionMessage = "Coach assigned to member: {$member['fname']} {$member['lname']} assigned to {$coach['fname']} {$coach['lname']} by {$adminUser['fname']} {$adminUser['lname']}";
+            
+            $logDetails = [
+                'assignment_id' => $assignmentId,
+                'member_id' => $memberId,
+                'member_name' => $member['fname'] . ' ' . $member['lname'],
+                'coach_id' => $coachId,
+                'coach_name' => $coach['fname'] . ' ' . $coach['lname'],
+                'assigned_by' => $adminUser['fname'] . ' ' . $adminUser['lname'],
+                'user_type' => $adminUser['user_type_id'] == 1 ? 'admin' : 'staff',
+                'expires_at' => $expiresAt,
+                'remaining_sessions' => $remainingSessions,
+                'payment_received' => 0
+            ];
+            
+            logStaffActivity($pdo, $staffId, "Assign Coach", $actionMessage, "Coach Assignment", $logDetails);
+            
+            $pdo->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Coach assigned successfully. Assignment will be locked after payment.',
+                'data' => [
+                    'assignment_id' => $assignmentId,
+                    'member_name' => $member['fname'] . ' ' . $member['lname'],
+                    'coach_name' => $coach['fname'] . ' ' . $coach['lname'],
+                    'expires_at' => $expiresAt,
+                    'remaining_sessions' => $remainingSessions,
+                    'payment_received' => 0
+                ]
+            ]);
+            
+        } catch (Exception $e) {
+            $pdo->rollback();
+            throw $e;
+        }
+        
+    } catch (Exception $e) {
+        error_log("Error in assignCoach: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error assigning coach: ' . $e->getMessage()
+        ]);
+    }
+}
+
+// Function to get all available members with gym membership (for manual selection)
+// Note: Members with paid assignments (payment_received = 1) cannot be reassigned
+function getAvailableMembers($pdo) {
+    try {
+        // Get all members with plan_id 1 or 5 (gym membership) - includes both assigned and unassigned
+        $stmt = $pdo->prepare("
+            SELECT DISTINCT
+                u.id,
+                u.fname,
+                u.mname,
+                u.lname,
+                u.email,
+                u.account_status,
+                p.plan_name,
+                cml.id as assignment_id,
+                cml.coach_id as current_coach_id,
+                cml.expires_at,
+                cml.remaining_sessions,
+                cml.staff_approved_at
+            FROM user u
+            INNER JOIN subscription s ON u.id = s.user_id
+            INNER JOIN member_subscription_plan p ON s.plan_id = p.id
+            LEFT JOIN coach_member_list cml ON u.id = cml.member_id 
+                AND cml.coach_approval = 'approved' 
+                AND cml.staff_approval = 'approved'
+                AND (cml.status = 'active' OR cml.status IS NULL)
+                AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
+            WHERE (p.id = 1 OR p.id = 5)
+                AND u.user_type_id = 4
+                AND u.account_status = 'approved'
+                AND s.status_id = 2  -- approved subscription status
+                AND s.end_date >= CURDATE()  -- active subscription
+            ORDER BY u.fname, u.lname
+        ");
+        
+        $stmt->execute();
+        $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $formattedMembers = [];
+        foreach ($members as $member) {
+            $formattedMembers[] = [
+                'id' => (int)$member['id'],
+                'name' => trim($member['fname'] . ' ' . ($member['mname'] ?? '') . ' ' . $member['lname']),
+                'email' => $member['email'],
+                'plan_name' => $member['plan_name'] ?? 'Gym Membership',
+                'has_assignment' => !empty($member['assignment_id']),
+                'current_coach_id' => $member['current_coach_id'] ? (int)$member['current_coach_id'] : null,
+                'assignment_id' => $member['assignment_id'] ? (int)$member['assignment_id'] : null
+            ];
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'members' => $formattedMembers,
+            'total' => count($formattedMembers)
+        ]);
+        
+    } catch (PDOException $e) {
+        error_log("Error in getAvailableMembers: " . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'Error fetching available members: ' . $e->getMessage()
         ]);
     }
 }
