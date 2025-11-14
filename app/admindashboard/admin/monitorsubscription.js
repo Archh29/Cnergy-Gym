@@ -39,6 +39,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
+  const [subscriptionTypeFilter, setSubscriptionTypeFilter] = useState("all") // all, regular, guest
   const [monthFilter, setMonthFilter] = useState("all")
   const [yearFilter, setYearFilter] = useState("all")
   const [subscriptions, setSubscriptions] = useState([])
@@ -52,6 +53,8 @@ const SubscriptionMonitor = ({ userId }) => {
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
   const [availableUsers, setAvailableUsers] = useState([])
   const [selectedUserInfo, setSelectedUserInfo] = useState(null)
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
     plan_id: "",
@@ -135,11 +138,58 @@ const SubscriptionMonitor = ({ userId }) => {
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
   const [confirmationData, setConfirmationData] = useState(null)
 
+  // Guest Session Creation State
+  const [isCreateGuestSessionDialogOpen, setIsCreateGuestSessionDialogOpen] = useState(false)
+  const [guestSessionForm, setGuestSessionForm] = useState({
+    guest_name: "",
+    payment_method: "cash",
+    amount_received: "",
+    notes: ""
+  })
+  const [gymSessionPlan, setGymSessionPlan] = useState(null)
+  const [guestSessionChangeGiven, setGuestSessionChangeGiven] = useState(0)
+  const [guestSessionLoading, setGuestSessionLoading] = useState(false)
+  const [showGuestReceipt, setShowGuestReceipt] = useState(false)
+  const [lastGuestTransaction, setLastGuestTransaction] = useState(null)
+
   useEffect(() => {
     fetchAllData()
     fetchSubscriptionPlans()
     fetchAvailableUsers()
+    fetchGymSessionPlan()
   }, [])
+
+  // Fetch Gym Session plan details
+  const fetchGymSessionPlan = async () => {
+    try {
+      const response = await axios.get(`${API_URL}?action=plans`)
+      if (response.data.success && response.data.plans) {
+        // Find Gym Session, Day Pass, or Walk In plan
+        const gymPlan = response.data.plans.find(plan => 
+          plan.plan_name?.toLowerCase() === 'gym session' || 
+          plan.plan_name?.toLowerCase() === 'day pass' || 
+          plan.plan_name?.toLowerCase() === 'walk in' ||
+          plan.id === 6
+        )
+        if (gymPlan) {
+          setGymSessionPlan(gymPlan)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching Gym Session plan:", error)
+    }
+  }
+
+  // Calculate change for guest session
+  useEffect(() => {
+    if (guestSessionForm.amount_received && gymSessionPlan?.price) {
+      const received = parseFloat(guestSessionForm.amount_received) || 0
+      const price = parseFloat(gymSessionPlan.price) || 0
+      setGuestSessionChangeGiven(Math.max(0, received - price))
+    } else {
+      setGuestSessionChangeGiven(0)
+    }
+  }, [guestSessionForm.amount_received, gymSessionPlan])
 
   // Calculate change when amount received changes
   useEffect(() => {
@@ -562,6 +612,95 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
+  // Create Guest Session Handler
+  const handleCreateGuestSession = async () => {
+    if (!guestSessionForm.guest_name || !gymSessionPlan) {
+      setMessage({
+        type: "error",
+        text: "Please fill in the guest name"
+      })
+      return
+    }
+
+    const totalAmount = parseFloat(gymSessionPlan.price) || 0
+    const receivedAmount = parseFloat(guestSessionForm.amount_received) || totalAmount
+
+    if (guestSessionForm.payment_method === "cash" && receivedAmount < totalAmount) {
+      setMessage({
+        type: "error",
+        text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`
+      })
+      return
+    }
+
+    setGuestSessionLoading(true)
+    setMessage(null)
+
+    try {
+      // Get current user ID
+      let currentUserId = userId
+      if (!currentUserId) {
+        const storedUserId = sessionStorage.getItem("user_id")
+        if (storedUserId) {
+          currentUserId = parseInt(storedUserId)
+        }
+      }
+
+      const change = Math.max(0, receivedAmount - totalAmount)
+
+      // Keep payment method as is (cash or digital for GCash)
+      const apiPaymentMethod = guestSessionForm.payment_method
+
+      // Call guest session API
+      const response = await axios.post('https://api.cnergy.site/guest_session_admin.php', {
+        action: 'create_guest_session',
+        guest_name: guestSessionForm.guest_name,
+        guest_type: 'walkin',
+        staff_id: currentUserId,
+        amount_paid: totalAmount,
+        payment_method: apiPaymentMethod,
+        amount_received: receivedAmount,
+        notes: guestSessionForm.notes || ""
+      }, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.data.success) {
+        const transactionData = {
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: guestSessionForm.payment_method,
+          amount_received: receivedAmount,
+          guest_name: guestSessionForm.guest_name
+        }
+
+        setLastGuestTransaction(transactionData)
+        setShowGuestReceipt(true)
+
+        // Reset form and close dialog
+        setGuestSessionForm({
+          guest_name: "",
+          payment_method: "cash",
+          amount_received: "",
+          notes: ""
+        })
+        setIsCreateGuestSessionDialogOpen(false)
+        await fetchAllData()
+      } else {
+        throw new Error(response.data.message || "Failed to create guest session")
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create guest session"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setGuestSessionLoading(false)
+    }
+  }
+
   const confirmSubscriptionTransaction = async () => {
     setShowConfirmDialog(false)
     setActionLoading("create")
@@ -649,6 +788,8 @@ const SubscriptionMonitor = ({ userId }) => {
       notes: ""
     })
     setSelectedUserInfo(null)
+    setUserSearchQuery("")
+    setShowUserDropdown(false)
     // Reset to all plans
     fetchSubscriptionPlans()
   }
@@ -691,16 +832,30 @@ const SubscriptionMonitor = ({ userId }) => {
       }))
 
       if (userId) {
-        const userInfo = await fetchAvailablePlansForUser(userId)
-        setSelectedUserInfo(userInfo)
+        // Find the user from availableUsers array
+        const user = availableUsers.find(u => u.id.toString() === userId.toString())
+        if (user) {
+          setSelectedUserInfo(user)
+          // Update search query to show selected user's name
+          setUserSearchQuery(`${user.fname || ''} ${user.lname || ''}`.trim())
+        } else {
+          // If user not found in availableUsers, try to fetch it
+          setSelectedUserInfo(null)
+          setUserSearchQuery("")
+        }
+        
+        // Fetch available plans for the user
+        await fetchAvailablePlansForUser(userId)
       } else {
         setSelectedUserInfo(null)
+        setUserSearchQuery("")
         // Reset to all plans if no user selected
         fetchSubscriptionPlans()
       }
     } catch (error) {
       console.error("Error in handleUserSelection:", error)
       setSelectedUserInfo(null)
+      setUserSearchQuery("")
       setMessage({ type: "error", text: "Failed to load user information" })
     }
   }
@@ -805,6 +960,53 @@ const SubscriptionMonitor = ({ userId }) => {
     }).format(amount)
   }
 
+  // Helper function to format names properly (capitalize first letter of each word)
+  const formatName = (name) => {
+    if (!name) return ''
+    return name
+      .toLowerCase()
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+      .trim()
+  }
+
+  // Helper function to get display name (handles guest sessions)
+  const getDisplayName = (subscription) => {
+    if (subscription.is_guest_session || subscription.subscription_type === 'guest') {
+      const guestName = subscription.guest_name || 'Guest'
+      return formatName(guestName)
+    }
+    const fname = formatName(subscription.fname || '')
+    const mname = formatName(subscription.mname || '')
+    const lname = formatName(subscription.lname || '')
+    const fullName = `${fname} ${mname} ${lname}`.trim()
+    return fullName || 'Unknown'
+  }
+
+  // Helper function to get display email/info (handles guest sessions)
+  const getDisplayEmail = (subscription) => {
+    if (subscription.is_guest_session || subscription.subscription_type === 'guest') {
+      return 'Guest Session'
+    }
+    return subscription.email || 'No email'
+  }
+
+  // Helper function to get avatar initials (handles guest sessions)
+  const getAvatarInitials = (subscription) => {
+    if (subscription.is_guest_session || subscription.subscription_type === 'guest') {
+      const name = subscription.guest_name || 'Guest'
+      const parts = name.trim().split(' ').filter(part => part.length > 0)
+      if (parts.length >= 2) {
+        return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+      }
+      return name.substring(0, 2).toUpperCase()
+    }
+    const fname = (subscription.fname || '').trim()
+    const lname = (subscription.lname || '').trim()
+    return `${fname[0] || ''}${lname[0] || ''}`.toUpperCase()
+  }
+
   // Calculate days left until end date
   const calculateDaysLeft = (endDate) => {
     if (!endDate) return null
@@ -854,6 +1056,15 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
+      
+      // Apply subscription type filter
+      let matchesType = true
+      if (subscriptionTypeFilter === "guest") {
+        matchesType = s.is_guest_session === true || s.subscription_type === 'guest'
+      } else if (subscriptionTypeFilter === "regular") {
+        matchesType = s.is_guest_session !== true && s.subscription_type !== 'guest'
+      }
+      if (!matchesType) return false
 
       const today = new Date()
       today.setHours(0, 0, 0, 0)
@@ -874,6 +1085,15 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
+      
+      // Apply subscription type filter
+      let matchesType = true
+      if (subscriptionTypeFilter === "guest") {
+        matchesType = s.is_guest_session === true || s.subscription_type === 'guest'
+      } else if (subscriptionTypeFilter === "regular") {
+        matchesType = s.is_guest_session !== true && s.subscription_type !== 'guest'
+      }
+      if (!matchesType) return false
 
       const endDate = new Date(s.end_date)
       endDate.setHours(0, 0, 0, 0)
@@ -891,6 +1111,15 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
+      
+      // Apply subscription type filter
+      let matchesType = true
+      if (subscriptionTypeFilter === "guest") {
+        matchesType = s.is_guest_session === true || s.subscription_type === 'guest'
+      } else if (subscriptionTypeFilter === "regular") {
+        matchesType = s.is_guest_session !== true && s.subscription_type !== 'guest'
+      }
+      if (!matchesType) return false
 
       const endDate = new Date(s.end_date)
       endDate.setHours(0, 0, 0, 0)
@@ -901,15 +1130,29 @@ const SubscriptionMonitor = ({ userId }) => {
   // Filter subscriptions
   const filterSubscriptions = (subscriptionList) => {
     return (subscriptionList || []).filter((subscription) => {
+      // Search filter - include guest_name for guest sessions
+      const searchText = searchQuery.toLowerCase()
       const matchesSearch =
         `${subscription.fname || ''} ${subscription.mname || ''} ${subscription.lname || ''}`
           .toLowerCase()
-          .includes(searchQuery.toLowerCase()) ||
-        (subscription.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (subscription.plan_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+          .includes(searchText) ||
+        (subscription.email || '').toLowerCase().includes(searchText) ||
+        (subscription.plan_name || '').toLowerCase().includes(searchText) ||
+        (subscription.guest_name || '').toLowerCase().includes(searchText) ||
+        (subscription.receipt_number || '').toLowerCase().includes(searchText)
 
       const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
       const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
+      
+      // Subscription type filter (Guest Session vs Regular)
+      let matchesType = true
+      if (subscriptionTypeFilter === "guest") {
+        matchesType = subscription.is_guest_session === true || subscription.subscription_type === 'guest'
+      } else if (subscriptionTypeFilter === "regular") {
+        matchesType = subscription.is_guest_session !== true && subscription.subscription_type !== 'guest'
+      } else {
+        matchesType = true // "all" - show both
+      }
 
       // Month filter logic
       let matchesMonth = true
@@ -974,7 +1217,7 @@ const SubscriptionMonitor = ({ userId }) => {
         }
       }
 
-      return matchesSearch && matchesStatus && matchesPlan && matchesMonth && matchesYear
+      return matchesSearch && matchesStatus && matchesPlan && matchesType && matchesMonth && matchesYear
     })
   }
 
@@ -1005,21 +1248,43 @@ const SubscriptionMonitor = ({ userId }) => {
       expired: 1,
       all: 1
     })
-  }, [searchQuery, statusFilter, planFilter, monthFilter, yearFilter])
+  }, [searchQuery, statusFilter, planFilter, subscriptionTypeFilter, monthFilter, yearFilter])
 
-  // Get analytics - filtered by plan if planFilter is set
+  // Get analytics - filtered by plan and subscription type if filters are set
   const getFilteredSubscriptionsByPlan = () => {
-    if (planFilter === "all") {
-      return subscriptions || []
+    let filtered = subscriptions || []
+    
+    // Apply plan filter
+    if (planFilter !== "all") {
+      filtered = filtered.filter((s) => s.plan_name === planFilter)
     }
-    return (subscriptions || []).filter((s) => s.plan_name === planFilter)
+    
+    // Apply subscription type filter
+    if (subscriptionTypeFilter === "guest") {
+      filtered = filtered.filter((s) => s.is_guest_session === true || s.subscription_type === 'guest')
+    } else if (subscriptionTypeFilter === "regular") {
+      filtered = filtered.filter((s) => s.is_guest_session !== true && s.subscription_type !== 'guest')
+    }
+    
+    return filtered
   }
 
   const getFilteredPendingByPlan = () => {
-    if (planFilter === "all") {
-      return pendingSubscriptions || []
+    let filtered = pendingSubscriptions || []
+    
+    // Apply plan filter
+    if (planFilter !== "all") {
+      filtered = filtered.filter((s) => s.plan_name === planFilter)
     }
-    return (pendingSubscriptions || []).filter((s) => s.plan_name === planFilter)
+    
+    // Apply subscription type filter
+    if (subscriptionTypeFilter === "guest") {
+      filtered = filtered.filter((s) => s.is_guest_session === true || s.subscription_type === 'guest')
+    } else if (subscriptionTypeFilter === "regular") {
+      filtered = filtered.filter((s) => s.is_guest_session !== true && s.subscription_type !== 'guest')
+    }
+    
+    return filtered
   }
 
   const filteredByPlan = getFilteredSubscriptionsByPlan()
@@ -1153,6 +1418,34 @@ const SubscriptionMonitor = ({ userId }) => {
               </Button>
               <button
                 onClick={() => {
+                  setGuestSessionForm({
+                    guest_name: "",
+                    payment_method: "cash",
+                    amount_received: "",
+                    notes: ""
+                  })
+                  setIsCreateGuestSessionDialogOpen(true)
+                }}
+                style={{
+                  backgroundColor: '#6b7280',
+                  color: '#ffffff',
+                  border: 'none'
+                }}
+                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-semibold h-9 px-4 shadow-lg hover:shadow-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#4b5563'
+                  e.currentTarget.style.transform = 'translateY(-1px)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#6b7280'
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Guest Session
+              </button>
+              <button
+                onClick={() => {
                   resetSubscriptionForm()
                   setIsCreateSubscriptionDialogOpen(true)
                 }}
@@ -1213,7 +1506,13 @@ const SubscriptionMonitor = ({ userId }) => {
                       />
                     </div>
                     <Label htmlFor="pending-plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
                       <SelectTrigger className="w-40" id="pending-plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
@@ -1226,6 +1525,23 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    
+                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                   </div>
 
                   {/* Right side - Month and Year Filters */}
@@ -1299,20 +1615,24 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableBody>
                           {pendingPagination.paginated.map((subscription) => {
                             return (
-                              <TableRow key={subscription.subscription_id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                              <TableRow key={subscription.subscription_id || subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
                                     <Avatar className="h-10 w-10">
                                       <AvatarFallback>
-                                        {subscription.fname[0]}
-                                        {subscription.lname[0]}
+                                        {getAvatarInitials(subscription)}
                                       </AvatarFallback>
                                     </Avatar>
                                     <div>
-                                      <div className="font-medium">
-                                        {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                      <div className="font-medium flex items-center gap-2">
+                                        {getDisplayName(subscription)}
+                                        {subscription.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
                                       </div>
-                                      <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                      <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                     </div>
                                   </div>
                                 </TableCell>
@@ -1428,7 +1748,13 @@ const SubscriptionMonitor = ({ userId }) => {
                       />
                     </div>
                     <Label htmlFor="active-plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
                       <SelectTrigger className="w-40" id="active-plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
@@ -1441,6 +1767,23 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    
+                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="active-subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="active-subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                   </div>
 
                   {/* Right side - Month and Year Filters */}
@@ -1521,15 +1864,19 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <div className="flex items-center gap-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback>
-                                      {subscription.fname[0]}
-                                      {subscription.lname[0]}
+                                      {getAvatarInitials(subscription)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div>
-                                    <div className="font-medium">
-                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    <div className="font-medium flex items-center gap-2">
+                                      {getDisplayName(subscription)}
+                                      {subscription.is_guest_session && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                          Guest
+                                        </Badge>
+                                      )}
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -1675,7 +2022,13 @@ const SubscriptionMonitor = ({ userId }) => {
                       />
                     </div>
                     <Label htmlFor="upcoming-plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
                       <SelectTrigger className="w-40" id="upcoming-plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
@@ -1688,6 +2041,23 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    
+                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="upcoming-subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="upcoming-subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                   </div>
 
                   {/* Right side - Month and Year Filters */}
@@ -1768,15 +2138,19 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <div className="flex items-center gap-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback>
-                                      {subscription.fname[0]}
-                                      {subscription.lname[0]}
+                                      {getAvatarInitials(subscription)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div>
-                                    <div className="font-medium">
-                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    <div className="font-medium flex items-center gap-2">
+                                      {getDisplayName(subscription)}
+                                      {subscription.is_guest_session && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                          Guest
+                                        </Badge>
+                                      )}
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -1916,7 +2290,13 @@ const SubscriptionMonitor = ({ userId }) => {
                       />
                     </div>
                     <Label htmlFor="expired-plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
                       <SelectTrigger className="w-40" id="expired-plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
@@ -1929,6 +2309,23 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    
+                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="expired-subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="expired-subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                   </div>
 
                   {/* Right side - Month and Year Filters */}
@@ -2009,15 +2406,19 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <div className="flex items-center gap-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback>
-                                      {subscription.fname[0]}
-                                      {subscription.lname[0]}
+                                      {getAvatarInitials(subscription)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div>
-                                    <div className="font-medium">
-                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    <div className="font-medium flex items-center gap-2">
+                                      {getDisplayName(subscription)}
+                                      {subscription.is_guest_session && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                          Guest
+                                        </Badge>
+                                      )}
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -2157,7 +2558,13 @@ const SubscriptionMonitor = ({ userId }) => {
                       />
                     </div>
                     <Label htmlFor="plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={setPlanFilter}>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
                       <SelectTrigger className="w-40" id="plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
@@ -2170,6 +2577,23 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
+                    
+                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="all-subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="all-subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
                   </div>
 
                   {/* Right side - Month and Year Filters */}
@@ -2249,15 +2673,19 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <div className="flex items-center gap-3">
                                   <Avatar className="h-10 w-10">
                                     <AvatarFallback>
-                                      {subscription.fname[0]}
-                                      {subscription.lname[0]}
+                                      {getAvatarInitials(subscription)}
                                     </AvatarFallback>
                                   </Avatar>
                                   <div>
-                                    <div className="font-medium">
-                                      {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
+                                    <div className="font-medium flex items-center gap-2">
+                                      {getDisplayName(subscription)}
+                                      {subscription.is_guest_session && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                          Guest
+                                        </Badge>
+                                      )}
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{subscription.email}</div>
+                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -2403,9 +2831,16 @@ const SubscriptionMonitor = ({ userId }) => {
       </Card>
 
       {/* Manual Subscription Creation Dialog */}
-      <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
+      <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={(open) => {
+        setIsCreateSubscriptionDialogOpen(open)
+        if (!open) {
+          // Reset search when dialog closes
+          setUserSearchQuery("")
+          setShowUserDropdown(false)
+        }
+      }}>
         <DialogContent
-          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden"
           onOpenAutoFocus={async (e) => {
             // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
@@ -2426,34 +2861,89 @@ const SubscriptionMonitor = ({ userId }) => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-4 gap-3">
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-700">Member Name</Label>
+          <div className="space-y-4">
+            {/* First Row: User Name and Plan Name */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 relative">
+                <Label className="text-sm text-gray-700 font-semibold">User Name</Label>
                 {currentSubscriptionId ? (
                   <Input
-                    value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
+                    value={selectedUserInfo ? `${selectedUserInfo.fname || ''} ${selectedUserInfo.lname || ''}`.trim() : 'Loading...'}
                     disabled
-                    placeholder="Loading member details..."
+                    placeholder="Loading user details..."
                     className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select value={subscriptionForm.user_id} onValueChange={handleUserSelection}>
-                    <SelectTrigger className="h-10 text-sm border border-gray-300">
-                      <SelectValue placeholder="Select a member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id.toString()}>
-                          {`${user.fname} ${user.lname} (${user.email})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <Input
+                        value={userSearchQuery || (selectedUserInfo ? `${selectedUserInfo.fname || ''} ${selectedUserInfo.lname || ''}`.trim() : "")}
+                        onChange={(e) => {
+                          setUserSearchQuery(e.target.value)
+                          setShowUserDropdown(true)
+                          // Clear user selection if user starts typing
+                          if (e.target.value !== userSearchQuery && subscriptionForm.user_id) {
+                            setSubscriptionForm(prev => ({ ...prev, user_id: "" }))
+                            setSelectedUserInfo(null)
+                          }
+                        }}
+                        onFocus={() => setShowUserDropdown(true)}
+                        placeholder="Search user by name or email..."
+                        className="h-10 text-sm border border-gray-300 pl-10"
+                      />
+                    </div>
+                    {showUserDropdown && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={() => setShowUserDropdown(false)}
+                        />
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                          {(() => {
+                            const filteredUsers = availableUsers.filter((user) => {
+                              const searchLower = userSearchQuery.toLowerCase()
+                              const fullName = `${user.fname} ${user.lname}`.toLowerCase()
+                              const email = (user.email || '').toLowerCase()
+                              return fullName.includes(searchLower) || email.includes(searchLower)
+                            })
+                            
+                            if (filteredUsers.length === 0) {
+                              return (
+                                <div className="p-3 text-sm text-gray-500 text-center">
+                                  No users found
+                                </div>
+                              )
+                            }
+                            
+                            return filteredUsers.map((user) => (
+                              <div
+                                key={user.id}
+                                onClick={() => {
+                                  handleUserSelection(user.id.toString())
+                                  setShowUserDropdown(false)
+                                }}
+                                className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium text-sm text-gray-900">
+                                  {user.fname || ''} {user.lname || ''}
+                                </div>
+                                {user.email && (
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    {user.email}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="space-y-2">
-                <Label className="text-sm text-gray-700">Plan Name</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Plan Name</Label>
                 {currentSubscriptionId ? (
                   <Input
                     value={subscriptionForm.plan_name || 'Loading...'}
@@ -2476,8 +2966,12 @@ const SubscriptionMonitor = ({ userId }) => {
                   </Select>
                 )}
               </div>
+            </div>
+
+            {/* Second Row: Amount to Pay and Payment Method */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-sm text-gray-700">Amount to Pay</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Amount to Pay</Label>
                 <Input
                   value={subscriptionForm.amount_paid || '0.00'}
                   disabled
@@ -2486,7 +2980,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm text-gray-700">Payment Method</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
                   <SelectTrigger className="h-10 text-sm border border-gray-300">
                     <SelectValue />
@@ -2658,7 +3152,7 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-sm font-medium text-gray-600">Member Name</span>
+                    <span className="text-sm font-medium text-gray-600">User Name</span>
                     <span className="text-sm font-semibold text-gray-900">{confirmationData.user_name}</span>
                   </div>
 
@@ -2759,6 +3253,216 @@ const SubscriptionMonitor = ({ userId }) => {
                 <XCircle className="h-4 w-4 mr-2" />
               )}
               Decline Subscription
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Guest Session Dialog */}
+      <Dialog open={isCreateGuestSessionDialogOpen} onOpenChange={setIsCreateGuestSessionDialogOpen}>
+        <DialogContent className="max-w-lg w-[95vw] overflow-x-hidden" hideClose>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-gray-900">Guest Session</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-5 py-2">
+            {/* Name */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-gray-700">Name</Label>
+              <Input
+                value={guestSessionForm.guest_name}
+                onChange={(e) => setGuestSessionForm(prev => ({ ...prev, guest_name: e.target.value }))}
+                placeholder="Enter name"
+                className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200"
+              />
+            </div>
+
+            {/* Plan and Price in Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Plan Display */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Plan</Label>
+                <Input
+                  value={gymSessionPlan?.plan_name || "Gym Session"}
+                  disabled
+                  className="h-11 text-sm border-gray-300 bg-gray-50 text-gray-700"
+                />
+              </div>
+
+              {/* Price Display */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Price</Label>
+                <Input
+                  value={gymSessionPlan ? `₱${parseFloat(gymSessionPlan.price || 0).toFixed(2)}` : "₱0.00"}
+                  disabled
+                  className="h-11 text-sm border-gray-300 bg-gray-50 font-semibold text-gray-900"
+                />
+              </div>
+            </div>
+
+            {/* Payment Method - Cash and GCash buttons */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-gray-700">Payment Method</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "cash", amount_received: prev.payment_method === "cash" ? prev.amount_received : "" }))}
+                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${
+                    guestSessionForm.payment_method === "cash"
+                      ? "border-gray-900 bg-gray-900 text-white shadow-md"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                >
+                  Cash
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "" }))}
+                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${
+                    guestSessionForm.payment_method === "digital"
+                      ? "border-gray-900 bg-gray-900 text-white shadow-md"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                  }`}
+                >
+                  GCash
+                </button>
+              </div>
+            </div>
+
+            {/* Amount Received (for cash only) */}
+            {guestSessionForm.payment_method === "cash" && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Amount Received</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={guestSessionForm.amount_received}
+                  onChange={(e) => setGuestSessionForm(prev => ({ ...prev, amount_received: e.target.value }))}
+                  placeholder="Enter amount received"
+                  className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                {guestSessionForm.amount_received && gymSessionPlan && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-600">Change:</span>
+                      <span className="text-base font-bold text-gray-900">₱{guestSessionChangeGiven.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-3 mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsCreateGuestSessionDialogOpen(false)}
+              className="border-gray-300 hover:bg-gray-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateGuestSession}
+              disabled={
+                guestSessionLoading ||
+                !guestSessionForm.guest_name ||
+                !gymSessionPlan ||
+                (guestSessionForm.payment_method === "cash" && (!guestSessionForm.amount_received || parseFloat(guestSessionForm.amount_received) < parseFloat(gymSessionPlan.price || 0)))
+              }
+              className="bg-gray-900 hover:bg-gray-800 text-white font-semibold"
+            >
+              {guestSessionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Process
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Guest Session Receipt Modal */}
+      <Dialog open={showGuestReceipt} onOpenChange={setShowGuestReceipt}>
+        <DialogContent className="max-w-lg" hideClose>
+          <DialogHeader>
+            <DialogTitle className="sr-only">Guest Session Receipt</DialogTitle>
+            <DialogDescription className="sr-only">
+              Transaction completed successfully. Receipt details are displayed below.
+            </DialogDescription>
+          </DialogHeader>
+          {lastGuestTransaction && (
+            <div className="space-y-6">
+              {/* Header Section */}
+              <div className="text-center space-y-4 pb-6 border-b-2 border-gray-200">
+                <div className="space-y-2">
+                  <h2 className="text-3xl font-bold text-gray-900 tracking-tight">CNERGY GYM</h2>
+                  <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Guest Session Receipt</p>
+                </div>
+                <div className="pt-2 space-y-1.5">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-green-50 rounded-full">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <p className="text-sm font-medium text-green-700">Transaction Completed Successfully</p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                    <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Transaction Details */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-sm font-medium text-gray-600">Guest Name</span>
+                    <span className="text-sm font-semibold text-gray-900">{lastGuestTransaction.guest_name}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                    <span className="text-sm font-medium text-gray-600">Plan</span>
+                    <span className="text-sm font-semibold text-gray-900">Gym Session</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                    <span className="text-sm font-medium text-gray-600">Payment Method</span>
+                    <span className="text-sm font-semibold text-gray-900 capitalize">{lastGuestTransaction.payment_method}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                    <span className="text-sm font-medium text-gray-600">Amount Paid</span>
+                    <span className="text-base font-bold text-gray-900">₱{parseFloat(lastGuestTransaction.total_amount || 0).toFixed(2)}</span>
+                  </div>
+                  {lastGuestTransaction.payment_method === "cash" && lastGuestTransaction.amount_received && (
+                    <>
+                      <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                        <span className="text-sm font-medium text-gray-600">Amount Received</span>
+                        <span className="text-sm font-semibold text-gray-900">₱{parseFloat(lastGuestTransaction.amount_received).toFixed(2)}</span>
+                      </div>
+                      {lastGuestTransaction.change_given > 0 && (
+                        <div className="flex justify-between items-center py-2 border-t border-gray-200">
+                          <span className="text-sm font-medium text-gray-600">Change</span>
+                          <span className="text-sm font-semibold text-gray-900">₱{parseFloat(lastGuestTransaction.change_given).toFixed(2)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 border-t border-gray-200">
+                <p className="text-xs text-center text-gray-500">
+                  Thank you for choosing CNERGY GYM!
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setShowGuestReceipt(false)
+                setLastGuestTransaction(null)
+              }}
+              className="w-full bg-gray-800 hover:bg-gray-700 text-white"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

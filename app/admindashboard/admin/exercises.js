@@ -7,19 +7,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, Plus, Edit, Trash2, Loader2, X, Play, ImageIcon, Dumbbell, Target } from "lucide-react"
+import { Search, Plus, Edit, Trash2, Loader2, X, Play, ImageIcon, Dumbbell, Target, ChevronLeft, ChevronRight } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/components/ui/use-toast"
 
 const ExerciseMuscleManager = () => {
   // Common states
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const { toast } = useToast()
 
   // Exercise states
   const [exercises, setExercises] = useState([])
@@ -59,6 +61,29 @@ const ExerciseMuscleManager = () => {
 
   const [selectedMuscleGroups, setSelectedMuscleGroups] = useState([])
   const [muscleTargetSearchQuery, setMuscleTargetSearchQuery] = useState("")
+
+  // Exercise filter states
+  const [selectedExerciseMuscleGroup, setSelectedExerciseMuscleGroup] = useState("")
+  const [selectedExerciseMusclePart, setSelectedExerciseMusclePart] = useState("")
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
+
+  // Delete confirmation dialog states
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [exerciseToDelete, setExerciseToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+  
+  // Muscle group delete dialog states
+  const [muscleGroupDeleteDialogOpen, setMuscleGroupDeleteDialogOpen] = useState(false)
+  const [muscleGroupToDelete, setMuscleGroupToDelete] = useState(null)
+  const [muscleGroupDeleteLoading, setMuscleGroupDeleteLoading] = useState(false)
+  
+  // Muscle part delete dialog states
+  const [musclePartDeleteDialogOpen, setMusclePartDeleteDialogOpen] = useState(false)
+  const [musclePartToDelete, setMusclePartToDelete] = useState(null)
+  const [musclePartDeleteLoading, setMusclePartDeleteLoading] = useState(false)
 
   // API base URL
   const API_URL = "https://api.cnergy.site/exercises.php"
@@ -126,7 +151,16 @@ const ExerciseMuscleManager = () => {
 
   const handleApiError = (error) => {
     if (error.response) {
-      setError(error.response.data.message || "Server error occurred")
+      let errorMessage = error.response.data.message || "Server error occurred"
+      
+      // Check for foreign key constraint errors and provide user-friendly message
+      if (errorMessage.includes("Integrity constraint violation") || 
+          errorMessage.includes("foreign key constraint") ||
+          errorMessage.includes("member_workout_exercise")) {
+        errorMessage = "Cannot delete this exercise because it is currently being used in member workout programs. Please remove it from all workout programs before deleting."
+      }
+      
+      setError(errorMessage)
     } else if (error.request) {
       setError("Unable to connect to server")
     } else {
@@ -267,30 +301,60 @@ const ExerciseMuscleManager = () => {
     }
   }
 
-  const handleDeleteExercise = async (id) => {
-    if (!confirm("Are you sure you want to delete this exercise?")) {
-      return
-    }
+  const handleDeleteClick = (exercise) => {
+    setExerciseToDelete(exercise)
+    setDeleteDialogOpen(true)
+    setError("")
+  }
 
-    setIsLoading(true)
+  const handleConfirmDelete = async () => {
+    if (!exerciseToDelete) return
+
+    setDeleteLoading(true)
     setError("")
 
     try {
       const response = await axios.post(API_URL, {
         action: "delete_exercise",
-        id: id,
+        id: exerciseToDelete.id,
       })
 
       if (response.data.success) {
         await fetchExercises()
+        setDeleteDialogOpen(false)
+        setExerciseToDelete(null)
+        setError("")
+        
+        // Show success toast
+        toast({
+          title: "Exercise Deleted Successfully",
+          description: `${exerciseToDelete.name} has been removed from the exercise library.`,
+          className: "border-green-200 bg-green-50 text-green-900 shadow-md",
+          duration: 3000,
+        })
       } else {
-        setError(response.data.message || "Failed to delete exercise")
+        let errorMessage = response.data.message || "Failed to delete exercise"
+        
+        // Check for foreign key constraint errors
+        if (errorMessage.includes("Integrity constraint violation") || 
+            errorMessage.includes("foreign key constraint") ||
+            errorMessage.includes("member_workout_exercise")) {
+          errorMessage = "Cannot delete this exercise because it is currently being used in member workout programs. Please remove it from all workout programs before deleting."
+        }
+        
+        setError(errorMessage)
       }
     } catch (error) {
       handleApiError(error)
     } finally {
-      setIsLoading(false)
+      setDeleteLoading(false)
     }
+  }
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false)
+    setExerciseToDelete(null)
+    setError("")
   }
 
   const handleEditExercise = (exercise) => {
@@ -444,6 +508,16 @@ const ExerciseMuscleManager = () => {
         await fetchMuscleParts(selectedMuscleGroup || null)
         await fetchMuscles() // Also refresh main muscles list
         handleCloseMusclePartDialog()
+        
+        // Show success toast
+        toast({
+          title: selectedMusclePart ? "Muscle Part Updated Successfully" : "Muscle Part Added Successfully",
+          description: selectedMusclePart 
+            ? `${musclePartName.trim()} has been updated.`
+            : `${musclePartName.trim()} has been added to the muscle parts library.`,
+          className: "border-green-200 bg-green-50 text-green-900 shadow-md",
+          duration: 3000,
+        })
       } else {
         setError(response.data.message || "Failed to save muscle part")
       }
@@ -454,31 +528,52 @@ const ExerciseMuscleManager = () => {
     }
   }
 
-  const handleDeleteMusclePart = async (id) => {
-    if (!confirm("Are you sure you want to delete this muscle part?")) {
-      return
-    }
+  const handleDeleteMusclePartClick = (musclePart) => {
+    setMusclePartToDelete(musclePart)
+    setMusclePartDeleteDialogOpen(true)
+    setError("")
+  }
 
-    setIsLoading(true)
+  const handleConfirmDeleteMusclePart = async () => {
+    if (!musclePartToDelete) return
+
+    setMusclePartDeleteLoading(true)
     setError("")
 
     try {
       const response = await axios.post(API_URL, {
         action: "delete_muscle",
-        id: id,
+        id: musclePartToDelete.id,
       })
 
       if (response.data.success) {
         await fetchMuscleParts(selectedMuscleGroup || null)
         await fetchMuscles()
+        setMusclePartDeleteDialogOpen(false)
+        setMusclePartToDelete(null)
+        setError("")
+        
+        // Show success toast
+        toast({
+          title: "Muscle Part Deleted Successfully",
+          description: `${musclePartToDelete.name} has been removed.`,
+          className: "border-green-200 bg-green-50 text-green-900 shadow-md",
+          duration: 3000,
+        })
       } else {
         setError(response.data.message || "Failed to delete muscle part")
       }
     } catch (error) {
       handleApiError(error)
     } finally {
-      setIsLoading(false)
+      setMusclePartDeleteLoading(false)
     }
+  }
+
+  const handleCancelDeleteMusclePart = () => {
+    setMusclePartDeleteDialogOpen(false)
+    setMusclePartToDelete(null)
+    setError("")
   }
 
   const handleEditMusclePart = (musclePart) => {
@@ -515,30 +610,52 @@ const ExerciseMuscleManager = () => {
     fetchMuscleParts(actualGroupId || null)
   }
 
-  const handleDeleteMuscle = async (id) => {
-    if (!confirm("Are you sure you want to delete this muscle group?")) {
-      return
-    }
+  const handleDeleteMuscleClick = (muscle) => {
+    setMuscleGroupToDelete(muscle)
+    setMuscleGroupDeleteDialogOpen(true)
+    setError("")
+  }
 
-    setIsLoading(true)
+  const handleConfirmDeleteMuscle = async () => {
+    if (!muscleGroupToDelete) return
+
+    setMuscleGroupDeleteLoading(true)
     setError("")
 
     try {
       const response = await axios.post(API_URL, {
         action: "delete_muscle",
-        id: id,
+        id: muscleGroupToDelete.id,
       })
 
       if (response.data.success) {
         await fetchMuscles()
+        await fetchMuscleGroups()
+        setMuscleGroupDeleteDialogOpen(false)
+        setMuscleGroupToDelete(null)
+        setError("")
+        
+        // Show success toast
+        toast({
+          title: "Muscle Group Deleted Successfully",
+          description: `${muscleGroupToDelete.name} has been removed.`,
+          className: "border-green-200 bg-green-50 text-green-900 shadow-md",
+          duration: 3000,
+        })
       } else {
-        setError(response.data.message || "Failed to delete muscle")
+        setError(response.data.message || "Failed to delete muscle group")
       }
     } catch (error) {
       handleApiError(error)
     } finally {
-      setIsLoading(false)
+      setMuscleGroupDeleteLoading(false)
     }
+  }
+
+  const handleCancelDeleteMuscle = () => {
+    setMuscleGroupDeleteDialogOpen(false)
+    setMuscleGroupToDelete(null)
+    setError("")
   }
 
   const handleEditMuscle = (muscle) => {
@@ -578,11 +695,43 @@ const ExerciseMuscleManager = () => {
     muscle.name.toLowerCase().includes(musclePartSearchQuery.toLowerCase()),
   )
 
-  const filteredExercises = exercises.filter(
-    (exercise) =>
+  const filteredExercises = exercises.filter((exercise) => {
+    // Search filter
+    const matchesSearch =
       exercise.name.toLowerCase().includes(exerciseSearchQuery.toLowerCase()) ||
-      (exercise.description && exercise.description.toLowerCase().includes(exerciseSearchQuery.toLowerCase())),
-  )
+      (exercise.description && exercise.description.toLowerCase().includes(exerciseSearchQuery.toLowerCase()))
+    
+    // Muscle group filter
+    const matchesMuscleGroup = !selectedExerciseMuscleGroup || 
+      exercise.target_muscles?.some((muscle) => {
+        // Check if any target muscle matches the selected group
+        if (muscle.id === parseInt(selectedExerciseMuscleGroup)) return true
+        // Check if any target muscle's parent matches the selected group
+        if (muscle.parent_id === parseInt(selectedExerciseMuscleGroup)) return true
+        return false
+      })
+    
+    // Muscle part filter
+    const matchesMusclePart = !selectedExerciseMusclePart ||
+      exercise.target_muscles?.some((muscle) => {
+        // Check if any target muscle matches the selected part
+        if (muscle.id === parseInt(selectedExerciseMusclePart)) return true
+        return false
+      })
+    
+    return matchesSearch && matchesMuscleGroup && matchesMusclePart
+  })
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredExercises.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedExercises = filteredExercises.slice(startIndex, endIndex)
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [exerciseSearchQuery, selectedExerciseMuscleGroup, selectedExerciseMusclePart])
 
   const filteredMuscles = muscles.filter((muscle) =>
     muscle.name.toLowerCase().includes(muscleSearchQuery.toLowerCase()),
@@ -627,8 +776,8 @@ const ExerciseMuscleManager = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-4">
-                <div className="relative w-full max-w-md">
+              <div className="flex gap-4 flex-wrap">
+                <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="search"
@@ -638,96 +787,158 @@ const ExerciseMuscleManager = () => {
                     onChange={(e) => setExerciseSearchQuery(e.target.value)}
                   />
                 </div>
+                <Select 
+                  value={selectedExerciseMuscleGroup || "all"} 
+                  onValueChange={(value) => setSelectedExerciseMuscleGroup(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter by muscle group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Muscle Groups</SelectItem>
+                    {muscleGroups.filter(group => group.id && group.name).map((group) => (
+                      <SelectItem key={group.id} value={group.id.toString()}>
+                        {group.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select 
+                  value={selectedExerciseMusclePart || "all"} 
+                  onValueChange={(value) => setSelectedExerciseMusclePart(value === "all" ? "" : value)}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter by muscle part" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Muscle Parts</SelectItem>
+                    {muscleParts.filter(part => part.id && part.name).map((part) => (
+                      <SelectItem key={part.id} value={part.id.toString()}>
+                        {part.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button onClick={handleAddExercise} disabled={isLoading}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Exercise
                 </Button>
               </div>
 
-              <div className="rounded-md border">
+              <div className="rounded-lg border bg-card">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Target Muscles</TableHead>
-                      <TableHead>Media</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-32">Actions</TableHead>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="font-semibold w-[200px]">Exercise Name</TableHead>
+                      <TableHead className="font-semibold min-w-[280px]">Target Muscles</TableHead>
+                      <TableHead className="font-semibold w-[120px]">Media</TableHead>
+                      <TableHead className="font-semibold">Description</TableHead>
+                      <TableHead className="font-semibold w-[120px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredExercises.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                          {isLoading
-                            ? "Loading exercises..."
-                            : exerciseSearchQuery
-                              ? "No exercises found matching your search"
-                              : "No exercises found"}
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                          <div className="flex flex-col items-center gap-2">
+                            <Dumbbell className="h-8 w-8 text-muted-foreground/50" />
+                            <p className="text-sm font-medium">
+                              {isLoading
+                                ? "Loading exercises..."
+                                : exerciseSearchQuery
+                                  ? "No exercises found matching your search"
+                                  : "No exercises found"}
+                            </p>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredExercises.map((exercise) => (
-                        <TableRow key={exercise.id}>
-                          <TableCell className="font-medium">{exercise.name}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {exercise.target_muscles?.map((muscle) => (
-                                <Badge
-                                  key={muscle.id}
-                                  variant={
-                                    muscle.role === "primary"
-                                      ? "default"
-                                      : muscle.role === "secondary"
-                                        ? "secondary"
-                                        : "outline"
-                                  }
-                                  className="text-xs"
-                                >
-                                  {muscle.name} ({muscle.role})
-                                </Badge>
-                              )) || <span className="text-muted-foreground text-sm">No muscles</span>}
+                      paginatedExercises.map((exercise) => (
+                        <TableRow key={exercise.id} className="hover:bg-muted/50 transition-colors">
+                          <TableCell className="font-semibold py-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">{exercise.name}</span>
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              {exercise.image_url && (
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                  <ImageIcon className="h-3 w-3" />
-                                  Image
+                          <TableCell className="py-4">
+                            <div className="flex flex-wrap gap-1.5 max-w-[400px]">
+                              {exercise.target_muscles && exercise.target_muscles.length > 0 ? (
+                                exercise.target_muscles.map((muscle) => (
+                                  <Badge
+                                    key={muscle.id}
+                                    variant={
+                                      muscle.role === "primary"
+                                        ? "default"
+                                        : muscle.role === "secondary"
+                                          ? "secondary"
+                                          : "outline"
+                                    }
+                                    className="text-xs font-medium px-2 py-0.5"
+                                  >
+                                    {muscle.name}
+                                    <span className="ml-1 text-[10px] opacity-75">({muscle.role})</span>
+                                  </Badge>
+                                ))
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">No muscles assigned</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">
+                            <div className="flex items-center gap-2">
+                              {exercise.image_url && exercise.video_url ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                                    <ImageIcon className="h-3.5 w-3.5" />
+                                    <span className="text-xs font-medium">Image</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                                    <Play className="h-3.5 w-3.5" />
+                                    <span className="text-xs font-medium">Video</span>
+                                  </div>
                                 </div>
-                              )}
-                              {exercise.video_url && (
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Play className="h-3 w-3" />
-                                  Video
+                              ) : exercise.image_url ? (
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                                  <ImageIcon className="h-3.5 w-3.5" />
+                                  <span className="text-xs font-medium">Image</span>
                                 </div>
-                              )}
-                              {!exercise.image_url && !exercise.video_url && (
-                                <span className="text-xs text-muted-foreground">No media</span>
+                              ) : exercise.video_url ? (
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                                  <Play className="h-3.5 w-3.5" />
+                                  <span className="text-xs font-medium">Video</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">No media</span>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="max-w-md">
-                            <div className="truncate" title={exercise.description}>
-                              {exercise.description || "No description"}
+                          <TableCell className="py-4 max-w-[400px]">
+                            <div 
+                              className="text-sm text-muted-foreground line-clamp-2 leading-relaxed" 
+                              title={exercise.description || "No description available"}
+                            >
+                              {exercise.description || (
+                                <span className="italic text-muted-foreground/70">No description available</span>
+                              )}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
+                          <TableCell className="py-4">
+                            <div className="flex items-center justify-end gap-2">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleEditExercise(exercise)}
                                 disabled={isLoading}
+                                className="h-8 w-8 p-0"
                               >
                                 <Edit className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => handleDeleteExercise(exercise.id)}
+                                onClick={() => handleDeleteClick(exercise)}
                                 disabled={isLoading}
+                                className="h-8 w-8 p-0"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -739,6 +950,64 @@ const ExerciseMuscleManager = () => {
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Pagination */}
+              {filteredExercises.length > 0 && (
+                <div className="flex items-center justify-between px-2 py-4">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1} to {Math.min(endIndex, filteredExercises.length)} of {filteredExercises.length} exercises
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1 || isLoading}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        if (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= currentPage - 1 && page <= currentPage + 1)
+                        ) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              disabled={isLoading}
+                              className="w-8 h-8 p-0"
+                            >
+                              {page}
+                            </Button>
+                          )
+                        } else if (page === currentPage - 2 || page === currentPage + 2) {
+                          return (
+                            <span key={page} className="px-2 text-muted-foreground">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages || isLoading}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -770,83 +1039,88 @@ const ExerciseMuscleManager = () => {
                 </Button>
               </div>
 
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Image</TableHead>
-                      <TableHead className="w-32">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredMuscleGroups.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                          {isLoading
-                            ? "Loading muscle groups..."
-                            : muscleSearchQuery
-                              ? "No muscle groups found matching your search"
-                              : "No muscle groups found"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredMuscleGroups.map((muscle) => (
-                        <TableRow key={muscle.id}>
-                          <TableCell className="font-medium">{muscle.name}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center">
-                              {muscle.image_url ? (
-                                <div className="relative group">
-                                  <img
-                                    src={muscle.image_url}
-                                    alt={muscle.name}
-                                    className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-                                    onError={(e) => {
-                                      e.target.style.display = 'none'
-                                      e.target.nextSibling.style.display = 'flex'
-                                    }}
-                                  />
-                                  <div
-                                    className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium"
-                                    style={{ display: 'none' }}
-                                  >
-                                    No Image
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium">
-                                  No Image
-                                </div>
-                              )}
+              {filteredMuscleGroups.length === 0 ? (
+                <div className="rounded-lg border bg-card p-12">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <Target className="h-12 w-12 text-muted-foreground/50" />
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {isLoading
+                        ? "Loading muscle groups..."
+                        : muscleSearchQuery
+                          ? "No muscle groups found matching your search"
+                          : "No muscle groups found"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {filteredMuscleGroups.map((muscle) => (
+                    <Card key={muscle.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+                      <div className="relative aspect-square bg-muted overflow-hidden">
+                        {muscle.image_url ? (
+                          <>
+                            <img
+                              src={muscle.image_url}
+                              alt={muscle.name}
+                              className="w-full h-full object-cover"
+                              onLoad={(e) => {
+                                // Hide placeholder when image loads successfully
+                                const placeholder = e.target.nextElementSibling
+                                if (placeholder) {
+                                  placeholder.style.display = 'none'
+                                }
+                              }}
+                              onError={(e) => {
+                                // Hide image and show placeholder on error
+                                e.target.style.display = 'none'
+                                const placeholder = e.target.nextElementSibling
+                                if (placeholder) {
+                                  placeholder.style.display = 'flex'
+                                }
+                              }}
+                            />
+                            <div
+                              className="absolute inset-0 w-full h-full flex items-center justify-center text-muted-foreground bg-muted"
+                              style={{ display: 'none' }}
+                            >
+                              <ImageIcon className="h-12 w-12 opacity-50" />
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditMuscle(muscle)}
-                                disabled={isLoading}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                            <ImageIcon className="h-12 w-12 opacity-50" />
+                          </div>
+                        )}
+                      </div>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-base">{muscle.name}</h3>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditMuscle(muscle)}
+                              disabled={isLoading}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
                               <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => handleDeleteMuscle(muscle.id)}
+                                onClick={() => handleDeleteMuscleClick(muscle)}
                                 disabled={isLoading}
+                                className="h-8 w-8 p-0"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -860,20 +1134,20 @@ const ExerciseMuscleManager = () => {
               </CardTitle>
               <CardDescription>Add, edit, or remove specific muscle parts within muscle groups</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-4">
-                <div className="relative w-full max-w-md">
+            <CardContent className="space-y-3">
+              <div className="flex gap-3 items-center">
+                <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     type="search"
                     placeholder="Search muscle parts..."
-                    className="pl-8"
+                    className="pl-8 h-9"
                     value={musclePartSearchQuery}
                     onChange={(e) => setMusclePartSearchQuery(e.target.value)}
                   />
                 </div>
                 <Select value={selectedMuscleGroup || "all"} onValueChange={handleMuscleGroupFilter}>
-                  <SelectTrigger className="w-48">
+                  <SelectTrigger className="w-48 h-9">
                     <SelectValue placeholder="Filter by muscle group" />
                   </SelectTrigger>
                   <SelectContent>
@@ -885,86 +1159,82 @@ const ExerciseMuscleManager = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button onClick={handleAddMusclePart} disabled={isLoading}>
+                <Button onClick={handleAddMusclePart} disabled={isLoading} className="h-9">
                   <Plus className="h-4 w-4 mr-2" />
                   Add Muscle Part
                 </Button>
               </div>
 
-              <div className="rounded-md border">
+              <div className="rounded-lg border bg-card">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Muscle Group</TableHead>
-                      <TableHead>Image</TableHead>
-                      <TableHead className="w-32">Actions</TableHead>
+                    <TableRow className="hover:bg-transparent border-b">
+                      <TableHead className="font-semibold h-10 px-4">Muscle Part Name</TableHead>
+                      <TableHead className="font-semibold h-10 px-4">Muscle Group</TableHead>
+                      <TableHead className="font-semibold h-10 px-4 w-[120px]">Image</TableHead>
+                      <TableHead className="font-semibold h-10 px-4 w-[100px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredMuscleParts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                          {isLoading
-                            ? "Loading muscle parts..."
-                            : musclePartSearchQuery
-                              ? "No muscle parts found matching your search"
-                              : selectedMuscleGroup
-                                ? "No muscle parts found for selected group"
-                                : "No muscle parts found"}
+                        <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
+                          <div className="flex flex-col items-center gap-2">
+                            <Target className="h-8 w-8 text-muted-foreground/50" />
+                            <p className="text-sm font-medium">
+                              {isLoading
+                                ? "Loading muscle parts..."
+                                : musclePartSearchQuery
+                                  ? "No muscle parts found matching your search"
+                                  : selectedMuscleGroup
+                                    ? "No muscle parts found for selected group"
+                                    : "No muscle parts found"}
+                            </p>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ) : (
                       filteredMuscleParts.map((muscle) => (
-                        <TableRow key={muscle.id}>
-                          <TableCell className="font-medium">{muscle.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{muscle.parent_name}</Badge>
+                        <TableRow key={muscle.id} className="hover:bg-muted/50 transition-colors border-b">
+                          <TableCell className="font-medium py-2 px-4">
+                            <span className="text-sm">{muscle.name}</span>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center">
+                          <TableCell className="py-2 px-4">
+                            <Badge variant="outline" className="font-normal text-xs">
+                              {muscle.parent_name || "No group"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-4">
+                            <div className="flex items-center justify-start">
                               {muscle.image_url ? (
-                                <div className="relative group">
-                                  <img
-                                    src={muscle.image_url}
-                                    alt={muscle.name}
-                                    className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-                                    onError={(e) => {
-                                      e.target.style.display = 'none'
-                                      e.target.nextSibling.style.display = 'flex'
-                                    }}
-                                  />
-                                  <div
-                                    className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium"
-                                    style={{ display: 'none' }}
-                                  >
-                                    No Image
-                                  </div>
+                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                                  <ImageIcon className="h-3.5 w-3.5" />
+                                  <span className="text-xs font-medium">Image</span>
                                 </div>
                               ) : (
-                                <div className="w-16 h-16 bg-gray-100 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-400 text-xs font-medium">
-                                  No Image
-                                </div>
+                                <span className="text-xs text-muted-foreground">No Image</span>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
+                          <TableCell className="py-2 px-4">
+                            <div className="flex items-center justify-end gap-1.5">
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleEditMusclePart(muscle)}
                                 disabled={isLoading}
+                                className="h-7 w-7 p-0"
                               >
-                                <Edit className="h-4 w-4" />
+                                <Edit className="h-3.5 w-3.5" />
                               </Button>
                               <Button
                                 variant="destructive"
                                 size="sm"
-                                onClick={() => handleDeleteMusclePart(muscle.id)}
+                                onClick={() => handleDeleteMusclePartClick(muscle)}
                                 disabled={isLoading}
+                                className="h-7 w-7 p-0"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           </TableCell>
@@ -981,263 +1251,334 @@ const ExerciseMuscleManager = () => {
 
       {/* Exercise Dialog */}
       <Dialog open={exerciseDialogOpen} onOpenChange={setExerciseDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedExercise ? "Edit Exercise" : "Add Exercise"}</DialogTitle>
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="text-2xl">{selectedExercise ? "Edit Exercise" : "Add Exercise"}</DialogTitle>
+            <DialogDescription>
+              {selectedExercise ? "Update exercise details and target muscles" : "Create a new exercise with details, instructions, and target muscles"}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="exercise-name">Exercise Name *</Label>
-                <Input
-                  id="exercise-name"
-                  placeholder="Enter exercise name"
-                  value={exerciseName}
-                  onChange={(e) => setExerciseName(e.target.value)}
-                  disabled={isLoading}
-                />
+          <div className="space-y-6 py-4">
+            {/* Basic Information Section */}
+            <div className="space-y-4">
+              <div className="pb-2 border-b">
+                <h3 className="text-lg font-semibold">Basic Information</h3>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="exercise-name" className="text-sm font-semibold">
+                    Exercise Name <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="exercise-name"
+                    placeholder="e.g., Barbell Bench Press"
+                    value={exerciseName}
+                    onChange={(e) => setExerciseName(e.target.value)}
+                    disabled={isLoading}
+                    className="h-11"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="exercise-description" className="text-sm font-semibold">
+                    Description
+                  </Label>
+                  <Textarea
+                    id="exercise-description"
+                    placeholder="Provide a brief overview of the exercise..."
+                    value={exerciseDescription}
+                    onChange={(e) => setExerciseDescription(e.target.value)}
+                    disabled={isLoading}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="exercise-description">Description</Label>
-              <Textarea
-                id="exercise-description"
-                placeholder="Enter exercise description (optional)"
-                value={exerciseDescription}
-                onChange={(e) => setExerciseDescription(e.target.value)}
-                disabled={isLoading}
-                rows={3}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="exercise-instructions">Instructions</Label>
-                <Textarea
-                  id="exercise-instructions"
-                  placeholder="Enter step-by-step instructions"
-                  value={exerciseInstructions}
-                  onChange={(e) => setExerciseInstructions(e.target.value)}
-                  disabled={isLoading}
-                  rows={4}
-                />
+            {/* Instructions & Benefits Section */}
+            <div className="space-y-4">
+              <div className="pb-2 border-b">
+                <h3 className="text-lg font-semibold">Details</h3>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="exercise-benefits">Benefits</Label>
-                <Textarea
-                  id="exercise-benefits"
-                  placeholder="Enter exercise benefits"
-                  value={exerciseBenefits}
-                  onChange={(e) => setExerciseBenefits(e.target.value)}
-                  disabled={isLoading}
-                  rows={4}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Label>Muscle Groups</Label>
-              <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border rounded-md p-3">
-                {muscleGroups.map((muscleGroup) => {
-                  const isSelected = selectedMuscleGroups.includes(muscleGroup.id)
-                  return (
-                    <div key={muscleGroup.id} className="flex items-center space-x-2 p-1">
-                      <Checkbox
-                        id={`muscle-group-${muscleGroup.id}`}
-                        checked={isSelected}
-                        onCheckedChange={() => handleMuscleGroupToggle(muscleGroup.id)}
-                        disabled={isLoading}
-                      />
-                      <div className="flex items-center space-x-2">
-                        <div className="flex items-center justify-center">
-                          {muscleGroup.image_url ? (
-                            <img
-                              src={muscleGroup.image_url}
-                              alt={muscleGroup.name}
-                              className="w-8 h-8 object-cover rounded-lg border border-gray-200"
-                              onError={(e) => {
-                                e.target.style.display = 'none'
-                                e.target.nextSibling.style.display = 'flex'
-                              }}
-                            />
-                          ) : null}
-                          <div
-                            className="w-8 h-8 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400 text-xs"
-                            style={{ display: muscleGroup.image_url ? 'none' : 'flex' }}
-                          >
-                            📷
-                          </div>
-                        </div>
-                        <Label
-                          htmlFor={`muscle-group-${muscleGroup.id}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {muscleGroup.name}
-                        </Label>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="exercise-instructions" className="text-sm font-semibold">
+                    Instructions
+                  </Label>
+                  <Textarea
+                    id="exercise-instructions"
+                    placeholder="Step 1: Set up...&#10;Step 2: Position...&#10;Step 3: Execute..."
+                    value={exerciseInstructions}
+                    onChange={(e) => setExerciseInstructions(e.target.value)}
+                    disabled={isLoading}
+                    rows={5}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="exercise-benefits" className="text-sm font-semibold">
+                    Benefits
+                  </Label>
+                  <Textarea
+                    id="exercise-benefits"
+                    placeholder="• Builds strength&#10;• Improves posture&#10;• Increases muscle mass"
+                    value={exerciseBenefits}
+                    onChange={(e) => setExerciseBenefits(e.target.value)}
+                    disabled={isLoading}
+                    rows={5}
+                    className="resize-none"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <Label>Muscle Targets with Roles</Label>
-              <div className="space-y-2">
-                <Input
-                  placeholder="Search muscle targets..."
-                  value={muscleTargetSearchQuery}
-                  onChange={(e) => setMuscleTargetSearchQuery(e.target.value)}
-                  disabled={isLoading}
-                />
-                <div className="grid grid-cols-1 gap-3 max-h-64 overflow-y-auto border rounded-md p-3">
-                  {muscleParts
-                    .filter(
-                      (muscle) =>
-                        muscle.name.toLowerCase().includes(muscleTargetSearchQuery.toLowerCase()) ||
-                        (muscle.parent_name &&
-                          muscle.parent_name.toLowerCase().includes(muscleTargetSearchQuery.toLowerCase())),
-                    )
-                    .map((muscle) => {
-                      const selectedMuscle = selectedMuscles.find((m) => m.id === muscle.id)
-                      const isSelected = !!selectedMuscle
-
+            {/* Target Muscles Section */}
+            <div className="space-y-4">
+              <div className="pb-2 border-b">
+                <h3 className="text-lg font-semibold">Target Muscles</h3>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">Muscle Groups</Label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-40 overflow-y-auto border rounded-lg p-4 bg-muted/30">
+                    {muscleGroups.map((muscleGroup) => {
+                      const isSelected = selectedMuscleGroups.includes(muscleGroup.id)
                       return (
-                        <div key={muscle.id} className="flex items-center justify-between space-x-3 p-2 border rounded">
-                          <div className="flex items-center space-x-3">
-                            <Checkbox
-                              id={`muscle-target-${muscle.id}`}
-                              checked={isSelected}
-                              onCheckedChange={() => handleMuscleToggle(muscle.id)}
-                              disabled={isLoading}
-                            />
-                            <div className="flex items-center space-x-2">
-                              {muscle.image_url && (
-                                <img
-                                  src={muscle.image_url || "/placeholder.svg"}
-                                  alt={muscle.name}
-                                  className="w-8 h-8 object-cover rounded"
-                                />
-                              )}
-                              <Label
-                                htmlFor={`muscle-target-${muscle.id}`}
-                                className="text-sm font-normal cursor-pointer"
-                              >
-                                {muscle.name}
-                                {muscle.parent_name && (
-                                  <span className="text-muted-foreground"> ({muscle.parent_name})</span>
-                                )}
-                              </Label>
-                            </div>
-                          </div>
-                          {isSelected && (
-                            <Select
-                              value={selectedMuscle.role || "primary"}
-                              onValueChange={(value) => handleMuscleRoleChange(muscle.id, value)}
-                              disabled={isLoading}
+                        <div 
+                          key={muscleGroup.id} 
+                          className={`flex items-center space-x-3 p-2 rounded-md border transition-colors cursor-pointer ${
+                            isSelected 
+                              ? 'bg-primary/10 border-primary' 
+                              : 'bg-background border-border hover:bg-muted/50'
+                          }`}
+                          onClick={() => handleMuscleGroupToggle(muscleGroup.id)}
+                        >
+                          <Checkbox
+                            id={`muscle-group-${muscleGroup.id}`}
+                            checked={isSelected}
+                            onCheckedChange={() => handleMuscleGroupToggle(muscleGroup.id)}
+                            disabled={isLoading}
+                          />
+                          <div className="flex items-center space-x-2 flex-1">
+                            {muscleGroup.image_url ? (
+                              <img
+                                src={muscleGroup.image_url}
+                                alt={muscleGroup.name}
+                                className="w-10 h-10 object-cover rounded-md border border-border"
+                                onError={(e) => {
+                                  e.target.style.display = 'none'
+                                }}
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-muted rounded-md border border-border flex items-center justify-center">
+                                <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            <Label
+                              htmlFor={`muscle-group-${muscleGroup.id}`}
+                              className="text-sm font-medium cursor-pointer flex-1"
                             >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="primary">Primary</SelectItem>
-                                <SelectItem value="secondary">Secondary</SelectItem>
-                                <SelectItem value="stabilizer">Stabilizer</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
+                              {muscleGroup.name}
+                            </Label>
+                          </div>
                         </div>
                       )
                     })}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">Specific Muscle Parts</Label>
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search muscle parts..."
+                        value={muscleTargetSearchQuery}
+                        onChange={(e) => setMuscleTargetSearchQuery(e.target.value)}
+                        disabled={isLoading}
+                        className="pl-9 h-10"
+                      />
+                    </div>
+                    <div className="space-y-2 max-h-64 overflow-y-auto border rounded-lg p-3 bg-muted/30">
+                      {muscleParts
+                        .filter(
+                          (muscle) =>
+                            muscle.name.toLowerCase().includes(muscleTargetSearchQuery.toLowerCase()) ||
+                            (muscle.parent_name &&
+                              muscle.parent_name.toLowerCase().includes(muscleTargetSearchQuery.toLowerCase())),
+                        )
+                        .map((muscle) => {
+                          const selectedMuscle = selectedMuscles.find((m) => m.id === muscle.id)
+                          const isSelected = !!selectedMuscle
+
+                          return (
+                            <div 
+                              key={muscle.id} 
+                              className={`flex items-center justify-between p-3 rounded-md border transition-colors ${
+                                isSelected 
+                                  ? 'bg-primary/10 border-primary' 
+                                  : 'bg-background border-border hover:bg-muted/50'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-3 flex-1">
+                                <Checkbox
+                                  id={`muscle-target-${muscle.id}`}
+                                  checked={isSelected}
+                                  onCheckedChange={() => handleMuscleToggle(muscle.id)}
+                                  disabled={isLoading}
+                                />
+                                <div className="flex-1">
+                                  <Label
+                                    htmlFor={`muscle-target-${muscle.id}`}
+                                    className="text-sm font-medium cursor-pointer block"
+                                  >
+                                    {muscle.name}
+                                  </Label>
+                                  {muscle.parent_name && (
+                                    <span className="text-xs text-muted-foreground">{muscle.parent_name}</span>
+                                  )}
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Select
+                                  value={selectedMuscle.role || "primary"}
+                                  onValueChange={(value) => handleMuscleRoleChange(muscle.id, value)}
+                                  disabled={isLoading}
+                                >
+                                  <SelectTrigger className="w-36 h-9">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="primary">Primary</SelectItem>
+                                    <SelectItem value="secondary">Secondary</SelectItem>
+                                    <SelectItem value="stabilizer">Stabilizer</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+                          )
+                        })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Image Upload */}
-            <div className="space-y-3">
-              <Label>Exercise Image</Label>
-              <div className="flex items-center gap-4">
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleExerciseImageChange}
-                  disabled={isLoading}
-                  className="flex-1"
-                />
-                {exerciseImagePreview && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setExerciseImagePreview("")
-                      setExerciseImageFile(null)
-                    }}
-                    disabled={isLoading}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+            {/* Media Section */}
+            <div className="space-y-4">
+              <div className="pb-2 border-b">
+                <h3 className="text-lg font-semibold">Media</h3>
               </div>
-              {exerciseImagePreview && (
-                <div className="mt-2">
-                  <img
-                    src={exerciseImagePreview || "/placeholder.svg"}
-                    alt="Preview"
-                    className="w-32 h-32 object-cover rounded border"
-                  />
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Image Upload */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">Exercise Image</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleExerciseImageChange}
+                        disabled={isLoading}
+                        className="flex-1 h-10"
+                      />
+                      {exerciseImagePreview && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setExerciseImagePreview("")
+                            setExerciseImageFile(null)
+                          }}
+                          disabled={isLoading}
+                          className="h-10"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {exerciseImagePreview && (
+                      <div className="border rounded-lg p-3 bg-muted/30">
+                        <img
+                          src={exerciseImagePreview}
+                          alt="Preview"
+                          className="w-full h-48 object-cover rounded-md border"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Video Upload */}
-            <div className="space-y-3">
-              <Label>Exercise Video</Label>
-              <div className="flex items-center gap-4">
-                <Input
-                  type="file"
-                  accept="video/*"
-                  onChange={handleExerciseVideoChange}
-                  disabled={isLoading}
-                  className="flex-1"
-                />
-                {exerciseVideoPreview && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setExerciseVideoPreview("")
-                      setExerciseVideoFile(null)
-                    }}
-                    disabled={isLoading}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-              {exerciseVideoPreview && (
-                <div className="mt-2">
-                  <video src={exerciseVideoPreview} controls className="w-64 h-36 object-cover rounded border" />
+                {/* Video Upload */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold">Exercise Video</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="file"
+                        accept="video/*"
+                        onChange={handleExerciseVideoChange}
+                        disabled={isLoading}
+                        className="flex-1 h-10"
+                      />
+                      {exerciseVideoPreview && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setExerciseVideoPreview("")
+                            setExerciseVideoFile(null)
+                          }}
+                          disabled={isLoading}
+                          className="h-10"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    {exerciseVideoPreview && (
+                      <div className="border rounded-lg p-3 bg-muted/30">
+                        <video 
+                          src={exerciseVideoPreview} 
+                          controls 
+                          className="w-full h-48 object-cover rounded-md border" 
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCloseExerciseDialog} disabled={isLoading}>
+          <DialogFooter className="pt-4 border-t gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleCloseExerciseDialog} 
+              disabled={isLoading}
+              className="h-10"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSaveExercise} disabled={!exerciseName.trim() || isLoading}>
+            <Button 
+              onClick={handleSaveExercise} 
+              disabled={!exerciseName.trim() || isLoading}
+              className="h-10 min-w-[120px]"
+            >
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Saving...
                 </>
               ) : selectedExercise ? (
-                "Update Exercise"
+                "Update"
               ) : (
-                "Add Exercise"
+                "Add"
               )}
             </Button>
           </DialogFooter>
@@ -1245,31 +1586,35 @@ const ExerciseMuscleManager = () => {
       </Dialog>
 
       <Dialog open={muscleDialogOpen} onOpenChange={setMuscleDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{selectedMuscle ? "Edit Muscle Group" : "Add Muscle Group"}</DialogTitle>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="text-2xl">{selectedMuscle ? "Edit Muscle Group" : "Add Muscle Group"}</DialogTitle>
+            <DialogDescription>
+              {selectedMuscle ? "Update muscle group details and image" : "Create a new muscle group with name and optional image"}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="muscle-name">Muscle Group Name *</Label>
+          <div className="space-y-6 py-4">
+            <div className="space-y-3">
+              <Label htmlFor="muscle-name" className="text-sm font-semibold">Muscle Group Name *</Label>
               <Input
                 id="muscle-name"
                 placeholder="Enter muscle group name"
                 value={muscleName}
                 onChange={(e) => setMuscleName(e.target.value)}
                 disabled={isLoading}
+                className="h-11"
               />
             </div>
 
             <div className="space-y-3">
-              <Label>Muscle Group Image</Label>
-              <div className="flex items-center gap-4">
+              <Label className="text-sm font-semibold">Muscle Group Image</Label>
+              <div className="flex items-center gap-3">
                 <Input
                   type="file"
                   accept="image/*"
                   onChange={handleMuscleImageChange}
                   disabled={isLoading}
-                  className="flex-1"
+                  className="flex-1 h-10"
                 />
                 {muscleImagePreview && (
                   <Button
@@ -1281,36 +1626,39 @@ const ExerciseMuscleManager = () => {
                       setMuscleImageFile(null)
                     }}
                     disabled={isLoading}
+                    className="h-10"
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
               {muscleImagePreview && (
-                <div className="mt-2">
-                  <img
-                    src={muscleImagePreview || "/placeholder.svg"}
-                    alt="Preview"
-                    className="w-24 h-24 object-cover rounded border"
-                  />
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <div className="flex items-center justify-center">
+                    <img
+                      src={muscleImagePreview || "/placeholder.svg"}
+                      alt="Preview"
+                      className="w-48 h-48 object-cover rounded-md border shadow-sm"
+                    />
+                  </div>
                 </div>
               )}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCloseMuscleDialog} disabled={isLoading}>
+          <DialogFooter className="pt-4 border-t gap-2">
+            <Button variant="outline" onClick={handleCloseMuscleDialog} disabled={isLoading} className="h-10">
               Cancel
             </Button>
-            <Button onClick={handleSaveMuscle} disabled={!muscleName.trim() || isLoading}>
+            <Button onClick={handleSaveMuscle} disabled={!muscleName.trim() || isLoading} className="h-10 min-w-[120px]">
               {isLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Saving...
                 </>
               ) : selectedMuscle ? (
-                "Update Muscle Group"
+                "Update"
               ) : (
-                "Add Muscle Group"
+                "Add"
               )}
             </Button>
           </DialogFooter>
@@ -1318,26 +1666,30 @@ const ExerciseMuscleManager = () => {
       </Dialog>
 
       <Dialog open={musclePartDialogOpen} onOpenChange={setMusclePartDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{selectedMusclePart ? "Edit Muscle Part" : "Add Muscle Part"}</DialogTitle>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="text-2xl">{selectedMusclePart ? "Edit Muscle Part" : "Add Muscle Part"}</DialogTitle>
+            <DialogDescription>
+              {selectedMusclePart ? "Update muscle part details and image" : "Create a new muscle part with name, parent group, and optional image"}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="muscle-part-name">Muscle Part Name *</Label>
+          <div className="space-y-6 py-4">
+            <div className="space-y-3">
+              <Label htmlFor="muscle-part-name" className="text-sm font-semibold">Muscle Part Name *</Label>
               <Input
                 id="muscle-part-name"
                 placeholder="Enter muscle part name"
                 value={musclePartName}
                 onChange={(e) => setMusclePartName(e.target.value)}
                 disabled={isLoading}
+                className="h-11"
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="parent-muscle-group">Parent Muscle Group *</Label>
+            <div className="space-y-3">
+              <Label htmlFor="parent-muscle-group" className="text-sm font-semibold">Parent Muscle Group *</Label>
               <Select value={musclePartParentId} onValueChange={setMusclePartParentId} disabled={isLoading}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11">
                   <SelectValue placeholder="Select parent muscle group" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1351,14 +1703,14 @@ const ExerciseMuscleManager = () => {
             </div>
 
             <div className="space-y-3">
-              <Label>Muscle Part Image</Label>
-              <div className="flex items-center gap-4">
+              <Label className="text-sm font-semibold">Muscle Part Image</Label>
+              <div className="flex items-center gap-3">
                 <Input
                   type="file"
                   accept="image/*"
                   onChange={handleMusclePartImageChange}
                   disabled={isLoading}
-                  className="flex-1"
+                  className="flex-1 h-10"
                 />
                 {musclePartImagePreview && (
                   <Button
@@ -1370,34 +1722,33 @@ const ExerciseMuscleManager = () => {
                       setMusclePartImageFile(null)
                     }}
                     disabled={isLoading}
+                    className="h-10"
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
               {musclePartImagePreview && (
-                <div className="mt-2 flex justify-center">
-                  <div className="relative group">
+                <div className="border rounded-lg p-4 bg-muted/30">
+                  <div className="flex items-center justify-center">
                     <img
                       src={musclePartImagePreview}
                       alt="Preview"
-                      className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200 shadow-sm"
+                      className="w-48 h-48 object-cover rounded-md border shadow-sm"
                     />
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg flex items-center justify-center">
-                      <span className="text-white opacity-0 group-hover:opacity-100 text-xs font-medium">Preview</span>
-                    </div>
                   </div>
                 </div>
               )}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCloseMusclePartDialog} disabled={isLoading}>
+          <DialogFooter className="pt-4 border-t gap-2">
+            <Button variant="outline" onClick={handleCloseMusclePartDialog} disabled={isLoading} className="h-10">
               Cancel
             </Button>
             <Button
               onClick={handleSaveMusclePart}
               disabled={!musclePartName.trim() || !musclePartParentId || isLoading}
+              className="h-10 min-w-[120px]"
             >
               {isLoading ? (
                 <>
@@ -1405,9 +1756,154 @@ const ExerciseMuscleManager = () => {
                   Saving...
                 </>
               ) : selectedMusclePart ? (
-                "Update Muscle Part"
+                "Update"
               ) : (
-                "Add Muscle Part"
+                "Add"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Exercise</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. Please confirm that you want to delete this exercise.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{exerciseToDelete?.name}</strong>? This action cannot be undone.
+            </p>
+            {exerciseToDelete && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Note:</strong> If this exercise is currently assigned to any member workout programs, the deletion will fail. You'll need to remove it from all programs first.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={handleCancelDelete} 
+              disabled={deleteLoading}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleConfirmDelete} 
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Exercise"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Muscle Group Delete Confirmation Dialog */}
+      <Dialog open={muscleGroupDeleteDialogOpen} onOpenChange={setMuscleGroupDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Muscle Group</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. Please confirm that you want to delete this muscle group.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{muscleGroupToDelete?.name}</strong>? This action cannot be undone.
+            </p>
+            {muscleGroupToDelete && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Note:</strong> If this muscle group has associated muscle parts or exercises, the deletion may fail. You'll need to remove all associations first.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelDeleteMuscle}
+              disabled={muscleGroupDeleteLoading}
+              className="h-10"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteMuscle}
+              disabled={muscleGroupDeleteLoading}
+              className="h-10"
+            >
+              {muscleGroupDeleteLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Muscle Part Delete Confirmation Dialog */}
+      <Dialog open={musclePartDeleteDialogOpen} onOpenChange={setMusclePartDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Muscle Part</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. Please confirm that you want to delete this muscle part.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{musclePartToDelete?.name}</strong>? This action cannot be undone.
+            </p>
+            {musclePartToDelete && (
+              <div className="bg-muted p-3 rounded-md">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Note:</strong> If this muscle part is currently assigned to any exercises, the deletion may fail. You'll need to remove it from all exercises first.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCancelDeleteMusclePart}
+              disabled={musclePartDeleteLoading}
+              className="h-10"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDeleteMusclePart}
+              disabled={musclePartDeleteLoading}
+              className="h-10"
+            >
+              {musclePartDeleteLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
               )}
             </Button>
           </DialogFooter>

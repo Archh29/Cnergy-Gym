@@ -27,6 +27,7 @@ const AttendanceTracking = ({ userId }) => {
   const [loading, setLoading] = useState(false)
   const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
+  const [sessionTypeFilter, setSessionTypeFilter] = useState("all") // "all", "session", "guest" - only shown when filterType === "guests"
   const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
   const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
   const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
@@ -264,7 +265,29 @@ const AttendanceTracking = ({ userId }) => {
         return planName.includes("standard") && !planName.includes("premium")
       })
     } else if (filterType === "guests") {
-      filtered = filtered.filter(entry => entry.user_type === "guest")
+      // Filter for Gym Session - includes both guest sessions and gym session subscriptions
+      filtered = filtered.filter(entry => {
+        // Guest sessions
+        const isGuest = entry.user_type === "guest"
+        // Gym session subscriptions (with account)
+        const isGymSession = entry.is_session === true || entry.plan_id === 6
+        // Fallback: check plan_name
+        const planName = (entry.plan_name || "").toLowerCase()
+        const isGymSessionByName = planName.includes("session") || planName.includes("gym session")
+        
+        const isGymSessionEntry = isGuest || isGymSession || isGymSessionByName
+        
+        if (!isGymSessionEntry) return false
+        
+        // Apply session type filter if Gym Session is selected
+        if (sessionTypeFilter === "guest") {
+          return entry.user_type === "guest"
+        } else if (sessionTypeFilter === "session") {
+          return entry.user_type !== "guest" && (isGymSession || isGymSessionByName)
+        }
+        
+        return true
+      })
     } else if (filterType === "active") {
       // Filter to show only active members (currently in gym)
       filtered = filtered.filter(entry => !entry.check_out || entry.check_out.includes("Still in gym"))
@@ -287,6 +310,10 @@ const AttendanceTracking = ({ userId }) => {
 
       console.log("🔍 Debug - Raw attendance data:", attendanceRes.data)
       console.log("🔍 Debug - Sample entry:", attendanceRes.data[0])
+      // Debug: Log plan info for first few entries
+      attendanceRes.data.slice(0, 5).forEach((entry, idx) => {
+        console.log(`🔍 Entry ${idx} - Name: ${entry.name}, Plan ID: ${entry.plan_id}, Plan Name: ${entry.plan_name}, is_session: ${entry.is_session}, is_standard: ${entry.is_standard}, is_premium: ${entry.is_premium}`)
+      })
       if (attendanceRes.data && attendanceRes.data.length > 0) {
         // Log checkout times to debug
         attendanceRes.data.slice(0, 3).forEach((entry, idx) => {
@@ -717,8 +744,16 @@ const AttendanceTracking = ({ userId }) => {
       return planName.includes("standard") && !planName.includes("premium")
     }).length
 
-    // Day Pass users: guests
-    const dayPass = filtered.filter(e => e.user_type === "guest").length
+    // Gym Session users: both guest sessions and gym session subscriptions
+    const dayPass = filtered.filter(e => {
+      // Guest sessions
+      if (e.user_type === "guest") return true
+      // Gym session subscriptions (with account)
+      if (e.is_session === true || e.plan_id === 6) return true
+      // Fallback: check plan_name
+      const planName = (e.plan_name || "").toLowerCase()
+      return planName.includes("session") || planName.includes("gym session")
+    }).length
 
     const active = filtered.filter(e => !e.check_out || e.check_out.includes("Still in gym")).length
 
@@ -781,12 +816,12 @@ const AttendanceTracking = ({ userId }) => {
       selectedYear,
       selectedDate
     })
-  }, [filteredAttendance.length, currentPage, itemsPerPage, quickFilter, filterType, selectedMonth, selectedYear, selectedDate])
+  }, [filteredAttendance.length, currentPage, itemsPerPage, quickFilter, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate])
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterType, selectedMonth, selectedYear, selectedDate, quickFilter])
+  }, [searchQuery, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate, quickFilter])
 
   return (
     <div className="w-full max-w-[99.5%] mx-auto p-4 space-y-4">
@@ -929,17 +964,17 @@ const AttendanceTracking = ({ userId }) => {
               </CardContent>
             </Card>
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-purple-300 ${filterType === "guests" ? "border-2 border-purple-400 bg-purple-50 shadow-md" : ""
+              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${filterType === "guests" ? "border-2 border-blue-400 bg-blue-50 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("guests")}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Day Pass</CardTitle>
+                <CardTitle className="text-sm font-medium text-slate-600">Gym Session</CardTitle>
                 <Users className="h-4 w-4 text-blue-500" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-slate-900">{analytics.dayPass}</div>
-                <p className="text-xs text-slate-500 mt-1">Day pass check-ins</p>
+                <p className="text-xs text-slate-500 mt-1">Gym session check-ins</p>
               </CardContent>
             </Card>
             <Card
@@ -970,29 +1005,51 @@ const AttendanceTracking = ({ userId }) => {
 
           {/* Filters Row */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-            <div className="flex items-center gap-3 flex-nowrap overflow-x-auto">
+            <div className={`flex items-center ${filterType === "guests" ? "gap-2 flex-wrap" : "gap-3 flex-nowrap overflow-x-auto"}`}>
               <div className="relative flex-shrink-0">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
                 <Input
-                  placeholder="Search members, emails, or names..."
+                  placeholder={filterType === "guests" ? "Search..." : "Search members, emails, or names..."}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 w-56 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                  className={`pl-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm ${filterType === "guests" ? "w-48 text-sm h-9" : "w-56"}`}
                 />
               </div>
-              <Label htmlFor="user-type-filter" className="flex-shrink-0 whitespace-nowrap">Type:</Label>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-40 flex-shrink-0" id="user-type-filter">
-                  <SelectValue placeholder="All Types" />
+              <Label htmlFor="user-type-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Plan:</Label>
+              <Select value={filterType} onValueChange={(value) => {
+                setFilterType(value)
+                // Reset session type filter when plan filter changes
+                if (value !== "guests") {
+                  setSessionTypeFilter("all")
+                }
+              }}>
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-32 h-9 text-sm" : "w-40"}`} id="user-type-filter">
+                  <SelectValue placeholder="All Plans" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="all">All Plans</SelectItem>
                   <SelectItem value="premium">Premium</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="guests">Day Pass</SelectItem>
+                  <SelectItem value="guests">Gym Session</SelectItem>
                 </SelectContent>
               </Select>
-              <Label htmlFor="quick-filter" className="flex-shrink-0 whitespace-nowrap">Quick Filter:</Label>
+              {/* Type filter - only show when Gym Session is selected */}
+              {filterType === "guests" && (
+                <>
+                  <Label htmlFor="session-type-filter" className="flex-shrink-0 whitespace-nowrap text-sm">Type:</Label>
+                  <Select value={sessionTypeFilter} onValueChange={setSessionTypeFilter}>
+                    <SelectTrigger className="w-28 flex-shrink-0 h-9 text-sm" id="session-type-filter">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="session">Session</SelectItem>
+                      <SelectItem value="guest">Guest Session</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </>
+              )}
+              <Label htmlFor="quick-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>{filterType === "guests" ? "Quick:" : "Quick Filter:"}</Label>
               <Select value={quickFilter} onValueChange={(value) => {
                 setQuickFilter(value)
                 // Clear specific filters when quick filter changes
@@ -1000,7 +1057,7 @@ const AttendanceTracking = ({ userId }) => {
                 setSelectedMonth("all-time")
                 setSelectedYear("all-time")
               }}>
-                <SelectTrigger className="w-36 flex-shrink-0" id="quick-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="quick-filter">
                   <SelectValue placeholder="Today" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1011,13 +1068,13 @@ const AttendanceTracking = ({ userId }) => {
                   <SelectItem value="all-time">All Time</SelectItem>
                 </SelectContent>
               </Select>
-              <Label htmlFor="month-filter" className="flex-shrink-0 whitespace-nowrap">Month:</Label>
+              <Label htmlFor="month-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Month:</Label>
               <Select value={selectedMonth} onValueChange={(value) => {
                 setSelectedMonth(value)
                 setSelectedDate("")
                 setQuickFilter("all-time") // Reset quick filter when using specific filters
               }}>
-                <SelectTrigger className="w-36 flex-shrink-0" id="month-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="month-filter">
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1036,13 +1093,13 @@ const AttendanceTracking = ({ userId }) => {
                   <SelectItem value="12">December</SelectItem>
                 </SelectContent>
               </Select>
-              <Label htmlFor="year-filter" className="flex-shrink-0 whitespace-nowrap">Year:</Label>
+              <Label htmlFor="year-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Year:</Label>
               <Select value={selectedYear} onValueChange={(value) => {
                 setSelectedYear(value)
                 setSelectedDate("")
                 setQuickFilter("all-time") // Reset quick filter when using specific filters
               }}>
-                <SelectTrigger className="w-28 flex-shrink-0" id="year-filter">
+                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-24 h-9 text-sm" : "w-32"}`} id="year-filter">
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1091,13 +1148,22 @@ const AttendanceTracking = ({ userId }) => {
                   ) : (
                     paginatedAttendance.map((entry, index) => (
                       <TableRow key={`${entry.user_type}-${entry.id}-${index}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                        <TableCell className="font-medium text-slate-900">{entry.name}</TableCell>
+                        <TableCell className="font-medium text-slate-900">
+                          {entry.name}
+                          {entry.user_type === 'guest' && (
+                            <span className="ml-2 text-xs text-slate-500">(Guest)</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <span
                             className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${entry.user_type === "guest"
                               ? "bg-blue-100 text-blue-800"
                               : (() => {
-                                // Check is_premium/is_standard flags first
+                                // Check is_session flag first for Gym Session/Day Pass
+                                if (entry.is_session === true || entry.plan_id === 6) {
+                                  return "bg-blue-100 text-blue-800"
+                                }
+                                // Check is_premium/is_standard flags
                                 if (entry.is_premium === true || entry.plan_id === 2) {
                                   return "bg-yellow-100 text-yellow-800"
                                 } else if (entry.is_standard === true || entry.plan_id === 3) {
@@ -1105,7 +1171,9 @@ const AttendanceTracking = ({ userId }) => {
                                 }
                                 // Fallback: check plan_name
                                 const planName = (entry.plan_name || "").toLowerCase()
-                                if (planName.includes("premium")) {
+                                if (planName.includes("session") || planName.includes("gym session")) {
+                                  return "bg-blue-100 text-blue-800"
+                                } else if (planName.includes("premium")) {
                                   return "bg-yellow-100 text-yellow-800"
                                 } else if (planName.includes("standard")) {
                                   return "bg-gray-100 text-gray-800"
@@ -1116,9 +1184,23 @@ const AttendanceTracking = ({ userId }) => {
                               }`}
                           >
                             {entry.user_type === "guest"
-                              ? "Day Pass"
+                              ? "Session"
                               : (() => {
-                                // Check is_premium/is_standard flags first
+                                // Debug log for type detection
+                                if (entry.name && (entry.name.includes('Eaarl') || entry.name.includes('jerry') || entry.name.includes('julieto'))) {
+                                  console.log(`🔍 Type Detection for ${entry.name}:`, {
+                                    is_session: entry.is_session,
+                                    plan_id: entry.plan_id,
+                                    plan_name: entry.plan_name,
+                                    is_standard: entry.is_standard,
+                                    is_premium: entry.is_premium
+                                  })
+                                }
+                                // Check is_session flag first for Gym Session/Day Pass
+                                if (entry.is_session === true || entry.plan_id === 6) {
+                                  return "Session"
+                                }
+                                // Check is_premium/is_standard flags
                                 if (entry.is_premium === true || entry.plan_id === 2) {
                                   return "Premium"
                                 } else if (entry.is_standard === true || entry.plan_id === 3) {
@@ -1126,7 +1208,9 @@ const AttendanceTracking = ({ userId }) => {
                                 }
                                 // Fallback: check plan_name
                                 const planName = (entry.plan_name || "").toLowerCase()
-                                if (planName.includes("premium")) {
+                                if (planName.includes("session") || planName.includes("gym session")) {
+                                  return "Session"
+                                } else if (planName.includes("premium")) {
                                   return "Premium"
                                 } else if (planName.includes("standard")) {
                                   return "Standard"

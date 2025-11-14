@@ -33,6 +33,7 @@ import {
   Star,
   Users,
   CheckCircle,
+  XCircle,
   Eye,
   EyeOff,
   Shield,
@@ -83,6 +84,7 @@ const ViewCoach = () => {
   const [coachStats, setCoachStats] = useState({
     totalCoaches: 0,
     availableCoaches: 0,
+    unavailableCoaches: 0,
     averageRating: 0,
     averagePerSessionRate: 0,
     totalClients: 0,
@@ -329,6 +331,7 @@ const ViewCoach = () => {
         setCoachStats({
           totalCoaches: 0,
           availableCoaches: 0,
+          unavailableCoaches: 0,
           averageRating: '0.0',
           averagePerSessionRate: '0.00',
           totalClients: 0,
@@ -342,9 +345,11 @@ const ViewCoach = () => {
       // Calculate stats from the coaches array
       const activeCoaches = coaches.filter(c => c.account_status !== 'deactivated')
       const availableCoaches = activeCoaches.filter(c => c.is_available)
+      const unavailableCoaches = activeCoaches.filter(c => !c.is_available)
 
       const totalCoaches = activeCoaches.length
       const availableCount = availableCoaches.length
+      const unavailableCount = unavailableCoaches.length
 
       // Calculate average rating
       const ratings = activeCoaches.map(c => parseFloat(c.rating) || 0).filter(r => r > 0)
@@ -384,6 +389,7 @@ const ViewCoach = () => {
       setCoachStats({
         totalCoaches,
         availableCoaches: availableCount,
+        unavailableCoaches: unavailableCount,
         averageRating,
         averagePerSessionRate,
         totalClients,
@@ -399,6 +405,7 @@ const ViewCoach = () => {
       setCoachStats({
         totalCoaches: 0,
         availableCoaches: 0,
+        unavailableCoaches: 0,
         averageRating: '0.0',
         averagePerSessionRate: '0.00',
         totalClients: 0,
@@ -950,7 +957,7 @@ const ViewCoach = () => {
   return (
     <div className="space-y-6 pb-6">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group">
           <CardContent className="flex items-center p-6 relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
@@ -972,6 +979,18 @@ const ViewCoach = () => {
             <div className="flex-1 relative z-10">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Available</p>
               <p className="text-3xl font-bold text-green-700">{coachStats.availableCoaches}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-red-100 to-red-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <XCircle className="h-6 w-6 text-red-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Unavailable</p>
+              <p className="text-3xl font-bold text-red-700">{coachStats.unavailableCoaches}</p>
             </div>
           </CardContent>
         </Card>

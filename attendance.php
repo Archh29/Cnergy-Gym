@@ -6,27 +6,28 @@ session_start();
 require 'activity_logger.php';
 
 // Helper function to get staff_id from multiple sources
-function getStaffIdFromRequest($data = null) {
+function getStaffIdFromRequest($data = null)
+{
     // First, try from request data
     if ($data && isset($data['staff_id']) && !empty($data['staff_id'])) {
         return $data['staff_id'];
     }
-    
+
     // Second, try from session
     if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
         return $_SESSION['user_id'];
     }
-    
+
     // Third, try from GET parameters
     if (isset($_GET['staff_id']) && !empty($_GET['staff_id'])) {
         return $_GET['staff_id'];
     }
-    
+
     // Fourth, try from POST parameters
     if (isset($_POST['staff_id']) && !empty($_POST['staff_id'])) {
         return $_POST['staff_id'];
     }
-    
+
     // Last resort: return null (will be logged as system)
     return null;
 }
@@ -211,42 +212,115 @@ function getAttendance(PDO $pdo): void
             $params[] = $dateFilter;
         }
 
+        // Check if attendance table has subscription_id column
+        $checkSubscriptionId = $pdo->query("SHOW COLUMNS FROM attendance LIKE 'subscription_id'");
+        $hasSubscriptionId = $checkSubscriptionId->rowCount() > 0;
+
         // Get regular member attendance with plan information
         // Only users with monthly access (plan_id 2, 3, 5, 6) can have attendance
-        $memberSql = "SELECT a.id, a.user_id, a.check_in, a.check_out,
-                             CONCAT(u.fname, ' ', u.lname) AS name,
-                             u.email,
-                             'member' AS user_type,
-                             (SELECT p.plan_name 
-                              FROM subscription s
-                              JOIN member_subscription_plan p ON s.plan_id = p.id
-                              WHERE s.user_id = u.id 
-                              AND s.status_id = 2 
-                              AND s.end_date > NOW()
-                              AND s.plan_id IN (2, 3, 5, 6)
-                              ORDER BY s.end_date DESC
-                              LIMIT 1) AS plan_name,
-                             (SELECT s.plan_id 
-                              FROM subscription s
-                              WHERE s.user_id = u.id 
-                              AND s.status_id = 2 
-                              AND s.end_date > NOW()
-                              AND s.plan_id IN (2, 3, 5, 6)
-                              ORDER BY s.end_date DESC
-                              LIMIT 1) AS plan_id,
-                             CASE WHEN a.check_out IS NOT NULL
-                                  THEN TIMESTAMPDIFF(MINUTE, a.check_in, a.check_out)
-                                  ELSE NULL
-                             END AS duration_minutes
-                      FROM `attendance` a
-                      JOIN `user` u ON a.user_id = u.id
-                      " . $whereClause . "
-                      ORDER BY a.check_in DESC
-                      LIMIT 50";
+        if ($hasSubscriptionId) {
+            // Use subscription_id if available to get the exact plan for this attendance
+            // For subscription_id lookup, get plan regardless of status/expiration (we want the plan that was active when attendance was recorded)
+            // For fallback, use current active subscription
+            $memberSql = "SELECT a.id, a.user_id, a.check_in, a.check_out,
+                                 CONCAT(u.fname, ' ', u.lname) AS name,
+                                 u.email,
+                                 'member' AS user_type,
+                                 COALESCE(
+                                     (SELECT p.plan_name 
+                                      FROM subscription s
+                                      JOIN member_subscription_plan p ON s.plan_id = p.id
+                                      WHERE s.id = a.subscription_id
+                                      LIMIT 1),
+                                     (SELECT p.plan_name 
+                                      FROM subscription s
+                                      JOIN member_subscription_plan p ON s.plan_id = p.id
+                                      WHERE s.user_id = u.id 
+                                      AND s.status_id = 2 
+                                      AND DATE(s.start_date) <= DATE(a.check_in)
+                                      AND (s.end_date >= a.check_in OR DATE(s.end_date) >= DATE(a.check_in))
+                                      AND s.plan_id IN (2, 3, 5, 6)
+                                      ORDER BY 
+                                        CASE WHEN s.plan_id = 6 THEN 0 ELSE 1 END,
+                                        s.end_date DESC
+                                      LIMIT 1)
+                                 ) AS plan_name,
+                                 COALESCE(
+                                     (SELECT s.plan_id 
+                                      FROM subscription s
+                                      WHERE s.id = a.subscription_id
+                                      LIMIT 1),
+                                     (SELECT s.plan_id 
+                                      FROM subscription s
+                                      WHERE s.user_id = u.id 
+                                      AND s.status_id = 2 
+                                      AND DATE(s.start_date) <= DATE(a.check_in)
+                                      AND (s.end_date >= a.check_in OR DATE(s.end_date) >= DATE(a.check_in))
+                                      AND s.plan_id IN (2, 3, 5, 6)
+                                      ORDER BY 
+                                        CASE WHEN s.plan_id = 6 THEN 0 ELSE 1 END,
+                                        s.end_date DESC
+                                      LIMIT 1)
+                                 ) AS plan_id,
+                                 CASE WHEN a.check_out IS NOT NULL
+                                      THEN TIMESTAMPDIFF(MINUTE, a.check_in, a.check_out)
+                                      ELSE NULL
+                                 END AS duration_minutes
+                          FROM `attendance` a
+                          JOIN `user` u ON a.user_id = u.id
+                          " . $whereClause . "
+                          ORDER BY a.check_in DESC
+                          LIMIT 50";
+        } else {
+            // Fallback to subscription that was active at check-in time (or currently active)
+            // This ensures we get the correct plan even if it has expired
+            $memberSql = "SELECT a.id, a.user_id, a.check_in, a.check_out,
+                                 CONCAT(u.fname, ' ', u.lname) AS name,
+                                 u.email,
+                                 'member' AS user_type,
+                                 (SELECT p.plan_name 
+                                  FROM subscription s
+                                  JOIN member_subscription_plan p ON s.plan_id = p.id
+                                  WHERE s.user_id = u.id 
+                                  AND s.status_id = 2 
+                                  AND DATE(s.start_date) <= DATE(a.check_in)
+                                  AND (s.end_date >= a.check_in OR DATE(s.end_date) >= DATE(a.check_in))
+                                  AND s.plan_id IN (2, 3, 5, 6)
+                                  ORDER BY 
+                                    CASE WHEN s.plan_id = 6 THEN 0 ELSE 1 END,
+                                    s.end_date DESC
+                                  LIMIT 1) AS plan_name,
+                                 (SELECT s.plan_id 
+                                  FROM subscription s
+                                  WHERE s.user_id = u.id 
+                                  AND s.status_id = 2 
+                                  AND DATE(s.start_date) <= DATE(a.check_in)
+                                  AND (s.end_date >= a.check_in OR DATE(s.end_date) >= DATE(a.check_in))
+                                  AND s.plan_id IN (2, 3, 5, 6)
+                                  ORDER BY 
+                                    CASE WHEN s.plan_id = 6 THEN 0 ELSE 1 END,
+                                    s.end_date DESC
+                                  LIMIT 1) AS plan_id,
+                                 CASE WHEN a.check_out IS NOT NULL
+                                      THEN TIMESTAMPDIFF(MINUTE, a.check_in, a.check_out)
+                                      ELSE NULL
+                                 END AS duration_minutes
+                          FROM `attendance` a
+                          JOIN `user` u ON a.user_id = u.id
+                          " . $whereClause . "
+                          ORDER BY a.check_in DESC
+                          LIMIT 50";
+        }
 
         $stmt = $pdo->prepare($memberSql);
         $stmt->execute($params);
         $memberAttendance = $stmt->fetchAll();
+
+        // Debug: Log what we got from the query
+        error_log("DEBUG - Member attendance count: " . count($memberAttendance));
+        foreach (array_slice($memberAttendance, 0, 5) as $idx => $att) {
+            error_log("DEBUG - Attendance $idx: User: " . ($att['name'] ?? 'N/A') . ", Plan ID: " . ($att['plan_id'] ?? 'NULL') . ", Plan Name: " . ($att['plan_name'] ?? 'NULL'));
+        }
 
         // Get guest session attendance (approved and paid guests)
         $guestWhereClause = "WHERE gs.status = 'approved' AND gs.paid = 1";
@@ -262,6 +336,8 @@ function getAttendance(PDO $pdo): void
                         gs.guest_name AS name,
                         CONCAT(gs.guest_name, ' (', gs.guest_type, ')') AS email,
                         'guest' AS user_type,
+                        'Session' AS plan_name,
+                        6 AS plan_id,
                         CASE WHEN gs.valid_until < NOW()
                              THEN TIMESTAMPDIFF(MINUTE, gs.created_at, gs.valid_until)
                              ELSE NULL
@@ -325,36 +401,58 @@ function getAttendance(PDO $pdo): void
             $planName = $r['plan_name'] ?? '';
             $planId = $r['plan_id'] ?? null;
             $planNameLower = strtolower($planName);
-            
-            // Determine if premium or standard
+
+            // Debug logging for attendance type detection
+            error_log("DEBUG Attendance Type Detection - User: " . ($r['name'] ?? 'N/A') . ", Plan ID: " . ($planId ?? 'NULL') . ", Plan Name: " . ($planName ?? 'NULL'));
+
+            // Determine if premium, standard, or session
             $isPremium = false;
             $isStandard = false;
-            
-            if ($planId == 2) {
+            $isSession = false;
+
+            // Convert plan_id to integer for comparison
+            $planIdInt = is_numeric($planId) ? intval($planId) : null;
+
+            // Check if this is a Gym Session/Day Pass plan first (check plan_id first, then plan_name)
+            if (
+                $planIdInt === 6 ||
+                strpos($planNameLower, 'walk in') !== false ||
+                strpos($planNameLower, 'day pass') !== false ||
+                strpos($planNameLower, 'gym session') !== false ||
+                (strpos($planNameLower, 'session') !== false && $planIdInt !== 2 && $planIdInt !== 3)
+            ) {
+                $isSession = true;
+                error_log("DEBUG - Set isSession = true for User: " . ($r['name'] ?? 'N/A') . ", Plan ID: $planIdInt, Plan Name: $planName");
+            } elseif ($planIdInt === 2) {
                 // Plan ID 2 is always premium (Monthly with membership)
                 $isPremium = true;
-            } elseif ($planId == 3) {
+                error_log("DEBUG - Set isPremium = true for User: " . ($r['name'] ?? 'N/A') . ", Plan ID: $planIdInt");
+            } elseif ($planIdInt === 3) {
                 // Plan ID 3 is always standard (Monthly standalone)
                 $isStandard = true;
+                error_log("DEBUG - Set isStandard = true for User: " . ($r['name'] ?? 'N/A') . ", Plan ID: $planIdInt");
             } elseif (!empty($planName)) {
-                // For other plans (5, 6), check plan_name
-                if (strpos($planNameLower, 'premium') !== false) {
-                    $isPremium = true;
-                } elseif (strpos($planNameLower, 'standard') !== false) {
-                    $isStandard = true;
-                } else {
-                    // Default: if plan_name contains "monthly" or "access", check if it has "with membership" (premium) or not (standard)
-                    if (strpos($planNameLower, 'monthly') !== false || strpos($planNameLower, 'access') !== false) {
-                        if (strpos($planNameLower, 'with membership') !== false || strpos($planNameLower, 'membership') !== false) {
-                            $isPremium = true;
-                        } else {
-                            $isStandard = true;
+                // For other plans (5, etc.), check plan_name
+                // But make sure we don't override session detection
+                if (!$isSession) {
+                    if (strpos($planNameLower, 'premium') !== false) {
+                        $isPremium = true;
+                    } elseif (strpos($planNameLower, 'standard') !== false) {
+                        $isStandard = true;
+                    } else {
+                        // Default: if plan_name contains "monthly" or "access", check if it has "with membership" (premium) or not (standard)
+                        if (strpos($planNameLower, 'monthly') !== false || strpos($planNameLower, 'access') !== false) {
+                            if (strpos($planNameLower, 'with membership') !== false || strpos($planNameLower, 'membership') !== false) {
+                                $isPremium = true;
+                            } else {
+                                $isStandard = true;
+                            }
                         }
                     }
                 }
             }
 
-            return [
+            $result = [
                 'id' => $r['id'],
                 'name' => $r['name'],
                 'check_in' => $r['check_in'] ? $formatDateTime($r['check_in']) : null,
@@ -367,7 +465,13 @@ function getAttendance(PDO $pdo): void
                 'plan_id' => $planId,
                 'is_premium' => $isPremium,
                 'is_standard' => $isStandard,
+                'is_session' => $isSession,
             ];
+
+            // Final debug log
+            error_log("DEBUG - Final flags for User: " . ($r['name'] ?? 'N/A') . " - isSession: " . ($isSession ? 'true' : 'false') . ", isPremium: " . ($isPremium ? 'true' : 'false') . ", isStandard: " . ($isStandard ? 'true' : 'false'));
+
+            return $result;
         }, $allAttendance);
 
         echo json_encode($formatted ?: []);

@@ -30,7 +30,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Archive, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X, Percent, ArchiveRestore, GripVertical, CircleDollarSign } from "lucide-react"
+import { Plus, Archive, Edit, Loader2, Users, TrendingUp, CreditCard, Search, X, Percent, ArchiveRestore, GripVertical } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
 
@@ -505,45 +505,33 @@ const SubscriptionPlans = () => {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Total Plans</p>
-                <p className="text-2xl font-bold">{analytics.totalPlans}</p>
-                <p className="text-xs text-muted-foreground">Available plans</p>
+      <div className="grid gap-5 md:grid-cols-2">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-gray-50 to-white overflow-hidden group">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gray-200 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="flex items-center justify-between relative z-10">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">Total Plans</p>
+                <p className="text-4xl font-bold text-gray-900">{analytics.totalPlans}</p>
+                <p className="text-sm text-slate-500 font-medium">Available plans</p>
               </div>
-              <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <CreditCard className="h-5 w-5 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Active Subscriptions</p>
-                <p className="text-2xl font-bold">{analytics.activeSubscriptions}</p>
-                <p className="text-xs text-muted-foreground">Premium & standard</p>
-              </div>
-              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <Users className="h-5 w-5 text-green-600" />
+              <div className="p-4 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 shadow-md group-hover:scale-110 transition-transform">
+                <CreditCard className="h-7 w-7 text-white" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card className="border hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Monthly Revenue</p>
-                <p className="text-2xl font-bold">{formatCurrency(analytics.monthlyRevenue)}</p>
-                <p className="text-xs text-muted-foreground">From subscriptions</p>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group">
+          <CardContent className="p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="flex items-center justify-between relative z-10">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">Active Subscriptions</p>
+                <p className="text-4xl font-bold text-orange-600">{analytics.activeSubscriptions}</p>
+                <p className="text-sm text-slate-500 font-medium">Premium & standard</p>
               </div>
-              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <CircleDollarSign className="h-5 w-5 text-green-600" />
+              <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 shadow-md group-hover:scale-110 transition-transform">
+                <Users className="h-7 w-7 text-orange-700" />
               </div>
             </div>
           </CardContent>

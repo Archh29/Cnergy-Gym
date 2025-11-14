@@ -45,7 +45,35 @@ import {
   CalendarDays,
   PowerOff,
   RotateCw,
+  AlertTriangle,
 } from "lucide-react"
+
+// Helper function to generate standard password from user's name
+// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(FirstCap, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "Rj Lo Ta" -> "RjLo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
+const generateStandardPassword = (fname, mname, lname) => {
+  // Get first 2 letters of first name: first letter uppercase, second lowercase
+  const first = (fname || "").trim()
+  const firstNamePart = first.length > 0 
+    ? (first.substring(0, 1).toUpperCase() + (first.length > 1 ? first.substring(1, 2).toLowerCase() : ""))
+    : ""
+  
+  // Get first 2 letters of middle name ONLY if it exists: first letter uppercase, second lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  const middleNamePart = middle.length > 0
+    ? (middle.substring(0, 1).toUpperCase() + (middle.length > 1 ? middle.substring(1, 2).toLowerCase() : ""))
+    : ""
+  
+  // Get first 2 letters of last name: all lowercase
+  const last = (lname || "").trim()
+  const lastNamePart = last.length > 0 
+    ? last.substring(0, 2).toLowerCase()
+    : ""
+  
+  // Combine: FirstName2(FirstCap) + MiddleName2(FirstCap, if exists) + #2023 + LastName2(lowercase)
+  // If no middle name, middleNamePart will be empty string, so result will be: FirstName2#2023LastName2
+  return `${firstNamePart}${middleNamePart}#2023${lastNamePart}`
+}
 
 const memberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
@@ -104,6 +132,8 @@ const ViewMembers = ({ userId }) => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
   const [isDeactivateDialogOpen, setIsDeactivateDialogOpen] = useState(false)
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false)
+  const [errorDialogData, setErrorDialogData] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -117,7 +147,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym#1",
+      password: "",
       bday: "",
       user_type_id: 4,
     },
@@ -419,8 +449,8 @@ const ViewMembers = ({ userId }) => {
       // Remove client-side email validation - let backend handle it
       console.log("Creating member with data:", data)
 
-      // Always use the standard default password - staff cannot change it
-      const password = "CnergyGym#1"
+      // Generate standard password from user's name
+      const password = generateStandardPassword(data.fname, data.mname, data.lname)
 
       const formattedData = {
         fname: data.fname.trim(),
@@ -449,6 +479,35 @@ const ViewMembers = ({ userId }) => {
       console.log("Response status:", response.status)
       console.log("Response ok:", response.ok)
 
+      if (!response.ok) {
+        const result = await response.json()
+        console.log("Error response result:", result)
+
+        if (response.status === 409) {
+          // Handle duplicate user/name error with proper modal
+          setErrorDialogData({
+            title: result.error || "Duplicate Entry Detected",
+            message: result.message || "This user already exists in the system.",
+            duplicateType: result.duplicate_type || "unknown",
+            existingUser: result.existing_user || null
+          })
+          setIsErrorDialogOpen(true)
+          setIsLoading(false)
+          return
+        }
+        
+        // Other errors
+        setErrorDialogData({
+          title: result.error || "Error",
+          message: result.message || "Failed to add user. Please try again.",
+          duplicateType: result.duplicate_type || "unknown",
+          existingUser: result.existing_user || null
+        })
+        setIsErrorDialogOpen(true)
+        setIsLoading(false)
+        return
+      }
+
       const result = await response.json()
       console.log("Response result:", result)
 
@@ -473,7 +532,7 @@ const ViewMembers = ({ userId }) => {
           mname: "",
           lname: "",
           email: "",
-          password: "CnergyGym#1",
+          password: "",
           bday: "",
           user_type_id: 4,
         })
@@ -487,12 +546,14 @@ const ViewMembers = ({ userId }) => {
       console.error("Error message:", error.message)
       console.error("Full error object:", error)
 
-      // Check if it's an email-related error
-      const errorMessage = error.message || "Failed to add user. Please try again."
-      const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
-
-      // Show error message in alert (simple approach)
-      alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
+      // Generic error fallback
+      setErrorDialogData({
+        title: "Error",
+        message: error.message || "Failed to add user. Please try again.",
+        duplicateType: "unknown",
+        existingUser: null
+      })
+      setIsErrorDialogOpen(true)
     }
     setIsLoading(false)
   }
@@ -630,22 +691,28 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym#1",
+      password: "",
       bday: "",
       user_type_id: 4,
     })
-    // Ensure password is set in form
-    form.setValue("password", "CnergyGym#1")
     setShowPassword(false)
     setIsAddDialogOpen(true)
   }
 
-  // Ensure password is always set when dialog opens
+  // Generate and update password when form values change
   useEffect(() => {
     if (isAddDialogOpen) {
-      form.setValue("password", "CnergyGym#1", { shouldValidate: true, shouldDirty: true })
+      const currentValues = form.getValues()
+      if (currentValues.fname || currentValues.lname) {
+        const generatedPassword = generateStandardPassword(
+          currentValues.fname || "",
+          currentValues.mname || "",
+          currentValues.lname || ""
+        )
+        form.setValue("password", generatedPassword, { shouldValidate: true, shouldDirty: true })
+      }
     }
-  }, [isAddDialogOpen, form])
+  }, [isAddDialogOpen, form.watch("fname"), form.watch("mname"), form.watch("lname")])
 
   return (
     <div className="space-y-6 pb-6">
@@ -662,37 +729,37 @@ const ViewMembers = ({ userId }) => {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card
-              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-gray-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
               onClick={() => {
                 setStatusFilter("all")
                 setCurrentView("active")
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
-                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-                <div className="p-2.5 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
-                  <Users className="h-4 w-4 text-blue-700" />
+                <div className="absolute top-0 right-0 w-20 h-20 bg-gray-200 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <Users className="h-4 w-4 text-white" />
                 </div>
                 <div className="relative z-10 text-center">
-                  <p className="text-2xl font-bold text-blue-700 mb-0.5">{filteredMembers.length}</p>
+                  <p className="text-2xl font-bold text-gray-900 mb-0.5">{filteredMembers.length}</p>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Users</p>
                 </div>
               </CardContent>
             </Card>
             <Card
-              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-amber-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              className="border-0 shadow-md hover:shadow-lg transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
               onClick={() => {
                 setStatusFilter("pending")
                 setCurrentView("active")
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
-                <div className="absolute top-0 right-0 w-20 h-20 bg-amber-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-                <div className="p-2.5 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
-                  <Clock className="h-4 w-4 text-amber-700" />
+                <div className="absolute top-0 right-0 w-20 h-20 bg-orange-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                <div className="p-2.5 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
+                  <Clock className="h-4 w-4 text-orange-700" />
                 </div>
                 <div className="relative z-10 text-center">
-                  <p className="text-2xl font-bold text-amber-700 mb-0.5">
+                  <p className="text-2xl font-bold text-orange-600 mb-0.5">
                     {filteredMembers.filter((m) => m.account_status === "pending").length}
                   </p>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending</p>
@@ -1282,8 +1349,13 @@ const ViewMembers = ({ userId }) => {
                 control={form.control}
                 name="password"
                 render={({ field }) => {
-                  // Ensure field value is always set to default password
-                  const displayValue = field.value || "CnergyGym#1"
+                  // Generate password from form values
+                  const formValues = form.watch()
+                  const displayValue = field.value || generateStandardPassword(
+                    formValues.fname || "",
+                    formValues.mname || "",
+                    formValues.lname || ""
+                  )
 
                   return (
                     <FormItem>
@@ -1301,12 +1373,22 @@ const ViewMembers = ({ userId }) => {
                             onFocus={(e) => e.target.blur()}
                             tabIndex={-1}
                             onChange={(e) => {
-                              // Always reset to default password if user tries to change it
-                              field.onChange("CnergyGym#1")
+                              // Always reset to generated password if user tries to change it
+                              const generatedPwd = generateStandardPassword(
+                                formValues.fname || "",
+                                formValues.mname || "",
+                                formValues.lname || ""
+                              )
+                              field.onChange(generatedPwd)
                             }}
                             onBlur={() => {
                               // Ensure value is always set on blur
-                              field.onChange("CnergyGym#1")
+                              const generatedPwd = generateStandardPassword(
+                                formValues.fname || "",
+                                formValues.mname || "",
+                                formValues.lname || ""
+                              )
+                              field.onChange(generatedPwd)
                             }}
                           />
                           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -1659,6 +1741,60 @@ const ViewMembers = ({ userId }) => {
                   Deactivate
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Error Dialog for Duplicate User/Name */}
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent className="sm:max-w-lg" hideClose={true}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-6 w-6" />
+              {errorDialogData?.title || "Duplicate Entry Detected"}
+            </DialogTitle>
+            <DialogDescription className="text-base font-medium text-gray-700 mt-2">
+              Cannot Create User Account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+              <p className="text-sm text-red-800 font-medium leading-relaxed">
+                {errorDialogData?.message || "A user with this information already exists in the system."}
+              </p>
+            </div>
+            
+            {errorDialogData?.existingUser && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-gray-900 text-sm">Existing User Details:</h4>
+                <div className="space-y-1 text-sm text-gray-700">
+                  <div>
+                    <span className="font-medium">Name:</span>{" "}
+                    {errorDialogData.existingUser.fname} {errorDialogData.existingUser.mname || ""} {errorDialogData.existingUser.lname}
+                  </div>
+                  {errorDialogData.existingUser.email && (
+                    <div>
+                      <span className="font-medium">Email:</span> {errorDialogData.existingUser.email}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-xs text-blue-800 leading-relaxed">
+                <strong>What to do:</strong> This account cannot be created because the information already exists in the system. 
+                Please use a different name combination or email address to create a new account.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              onClick={() => setIsErrorDialogOpen(false)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5"
+            >
+              Understood
             </Button>
           </DialogFooter>
         </DialogContent>

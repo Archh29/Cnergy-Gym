@@ -28,19 +28,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Database configuration - Remote Database
+// Database configuration - Online MySQL Database (matching session.php)
 $host = "localhost";
 $dbname = "u773938685_cnergydb";
 $username = "u773938685_archh29";
 $password = "Gwapoko385@";
 
-
 // Connect to database
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password, [
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);
+    // Ensure proper UTF-8 encoding for special characters like peso sign
+    $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // Set MySQL timezone to Philippines
+    $pdo->exec("SET time_zone = '+08:00'");
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode([
@@ -178,14 +181,14 @@ function getAllSubscriptions($pdo)
         ");
 
     $subscriptions = $stmt->fetchAll();
-    
+
     // Recalculate end_date for Walk In plans and day-based plans
     date_default_timezone_set('Asia/Manila');
     foreach ($subscriptions as &$subscription) {
         $plan_id = $subscription['plan_id'];
         $plan_name = strtolower($subscription['plan_name'] ?? '');
         $duration_days = $subscription['duration_days'] ?? 0;
-        
+
         // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
         // Walk In plans expire at 9 PM PH time on the same day
         if ($plan_id == 6 || $plan_name === 'walk in') {
@@ -194,7 +197,7 @@ function getAllSubscriptions($pdo)
                 $end_date_obj = clone $start_date_obj;
                 $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
                 $subscription['end_date'] = $end_date_obj->format('Y-m-d H:i:s');
-                
+
                 // Also update the display_status check for Walk In plans (use datetime comparison)
                 $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
                 if ($subscription['status_name'] === 'approved' && $end_date_obj >= $now) {
@@ -220,8 +223,11 @@ function getAllSubscriptions($pdo)
     }
     unset($subscription); // Break reference
 
-    // Get payment information for each subscription
+    // Mark regular subscriptions
     foreach ($subscriptions as &$subscription) {
+        $subscription['is_guest_session'] = false;
+        $subscription['subscription_type'] = 'regular';
+
         try {
             // First, check if payment table has status column
             $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
@@ -262,6 +268,136 @@ function getAllSubscriptions($pdo)
             $subscription['total_paid'] = 0;
         }
     }
+    unset($subscription); // Break reference
+
+    // ============================================
+    // ADD GUEST SESSIONS (DAY PASS WITHOUT ACCOUNT)
+    // ============================================
+    try {
+        date_default_timezone_set('Asia/Manila');
+        $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+
+        // First, get Day Pass plan details from member_subscription_plan table
+        $dayPassPlan = null;
+        try {
+            $planStmt = $pdo->query("
+                SELECT id, plan_name, price, duration_months, duration_days
+                FROM member_subscription_plan
+                WHERE LOWER(plan_name) LIKE '%day pass%' 
+                   OR LOWER(plan_name) LIKE '%walk in%'
+                   OR id = 6
+                ORDER BY id ASC
+                LIMIT 1
+            ");
+            $dayPassPlan = $planStmt->fetch();
+        } catch (Exception $e) {
+            error_log("Error fetching Day Pass plan: " . $e->getMessage());
+        }
+
+        // Default values if plan not found
+        $dayPassPlanId = $dayPassPlan['id'] ?? 6;
+        $dayPassPlanName = $dayPassPlan['plan_name'] ?? 'Day Pass';
+        $dayPassPrice = floatval($dayPassPlan['price'] ?? 150.00);
+        $dayPassDurationMonths = intval($dayPassPlan['duration_months'] ?? 0);
+        $dayPassDurationDays = intval($dayPassPlan['duration_days'] ?? 1);
+
+        $guestStmt = $pdo->query("
+            SELECT 
+                gs.id,
+                gs.guest_name,
+                gs.guest_type,
+                gs.amount_paid,
+                gs.valid_until as end_date,
+                gs.created_at as start_date,
+                gs.created_at,
+                gs.status,
+                gs.paid,
+                gs.receipt_number,
+                gs.payment_method,
+                gs.qr_token,
+                gs.cashier_id,
+                gs.change_given
+            FROM guest_session gs
+            WHERE (gs.status = 'approved' AND gs.paid = 1)
+            ORDER BY gs.created_at DESC
+        ");
+
+        $guestSessions = $guestStmt->fetchAll();
+
+        // Transform guest sessions to match subscription format
+        foreach ($guestSessions as $guest) {
+            try {
+                // Parse guest name
+                $nameParts = explode(' ', trim($guest['guest_name']), 2);
+                $fname = $nameParts[0] ?? '';
+                $lname = $nameParts[1] ?? '';
+                $mname = '';
+
+                // Calculate end_date as 9 PM on the same day as created_at (same as Walk In plans)
+                $start_date_obj = new DateTime($guest['created_at'], new DateTimeZone('Asia/Manila'));
+                $end_date_obj = clone $start_date_obj;
+                $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+                $calculated_end_date = $end_date_obj->format('Y-m-d H:i:s');
+
+                // Determine display status based on calculated end date
+                $displayStatus = 'Active';
+                if ($end_date_obj < $now) {
+                    $displayStatus = 'Expired';
+                }
+
+                // Create subscription-like object for guest session
+                $guestSubscription = [
+                    'id' => 'guest_' . $guest['id'],
+                    'subscription_id' => null,
+                    'guest_session_id' => $guest['id'],
+                    'user_id' => null,
+                    'fname' => $fname,
+                    'mname' => $mname,
+                    'lname' => $lname,
+                    'email' => null,
+                    'plan_id' => $dayPassPlanId,
+                    'plan_name' => $dayPassPlanName,
+                    'price' => $dayPassPrice,
+                    'duration_months' => $dayPassDurationMonths,
+                    'duration_days' => $dayPassDurationDays,
+                    'start_date' => $guest['created_at'],
+                    'end_date' => $calculated_end_date, // Use calculated 9 PM end date
+                    'created_at' => $guest['created_at'],
+                    'amount_paid' => floatval($guest['amount_paid']),
+                    'discounted_price' => null,
+                    'status_id' => null,
+                    'status_name' => 'approved',
+                    'display_status' => $displayStatus,
+                    'is_guest_session' => true,
+                    'subscription_type' => 'guest',
+                    'guest_name' => $guest['guest_name'],
+                    'guest_type' => $guest['guest_type'],
+                    'receipt_number' => $guest['receipt_number'],
+                    'payment_method' => $guest['payment_method'] ?? 'cash',
+                    'qr_token' => $guest['qr_token'],
+                    'cashier_id' => $guest['cashier_id'],
+                    'change_given' => floatval($guest['change_given'] ?? 0),
+                    'paid' => $guest['paid'],
+                    'payment_count' => 1,
+                    'total_paid' => floatval($guest['amount_paid']),
+                    'payments' => []
+                ];
+
+                $subscriptions[] = $guestSubscription;
+            } catch (Exception $e) {
+                error_log("Error processing guest session {$guest['id']}: " . $e->getMessage());
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Error fetching guest sessions: " . $e->getMessage());
+    }
+
+    // Sort all subscriptions by created_at descending
+    usort($subscriptions, function ($a, $b) {
+        $dateA = strtotime($a['created_at'] ?? '1970-01-01');
+        $dateB = strtotime($b['created_at'] ?? '1970-01-01');
+        return $dateB - $dateA;
+    });
 
     echo json_encode([
         "success" => true,
@@ -309,6 +445,130 @@ function getPendingSubscriptions($pdo)
 
     $stmt->execute();
     $pendingSubscriptions = $stmt->fetchAll();
+
+    // Mark regular subscriptions
+    foreach ($pendingSubscriptions as &$sub) {
+        $sub['is_guest_session'] = false;
+        $sub['subscription_type'] = 'regular';
+    }
+    unset($sub);
+
+    // ============================================
+    // ADD PENDING GUEST SESSIONS (DAY PASS WITHOUT ACCOUNT)
+    // ============================================
+    try {
+        // First, get Day Pass plan details from member_subscription_plan table
+        $dayPassPlan = null;
+        try {
+            $planStmt = $pdo->query("
+                SELECT id, plan_name, price, duration_months, duration_days
+                FROM member_subscription_plan
+                WHERE LOWER(plan_name) LIKE '%day pass%' 
+                   OR LOWER(plan_name) LIKE '%walk in%'
+                   OR id = 6
+                ORDER BY id ASC
+                LIMIT 1
+            ");
+            $dayPassPlan = $planStmt->fetch();
+        } catch (Exception $e) {
+            error_log("Error fetching Day Pass plan: " . $e->getMessage());
+        }
+
+        // Default values if plan not found
+        $dayPassPlanId = $dayPassPlan['id'] ?? 6;
+        $dayPassPlanName = $dayPassPlan['plan_name'] ?? 'Day Pass';
+        $dayPassPrice = floatval($dayPassPlan['price'] ?? 150.00);
+        $dayPassDurationMonths = intval($dayPassPlan['duration_months'] ?? 0);
+        $dayPassDurationDays = intval($dayPassPlan['duration_days'] ?? 1);
+
+        $guestStmt = $pdo->query("
+            SELECT 
+                gs.id,
+                gs.guest_name,
+                gs.guest_type,
+                gs.amount_paid,
+                gs.valid_until as end_date,
+                gs.created_at as start_date,
+                gs.created_at,
+                gs.status,
+                gs.paid,
+                gs.receipt_number,
+                gs.payment_method,
+                gs.qr_token,
+                gs.cashier_id,
+                gs.change_given
+            FROM guest_session gs
+            WHERE gs.status = 'pending' 
+            OR (gs.status = 'approved' AND gs.paid = 0)
+            ORDER BY gs.id DESC
+        ");
+
+        $pendingGuestSessions = $guestStmt->fetchAll();
+
+        // Transform pending guest sessions to match subscription format
+        foreach ($pendingGuestSessions as $guest) {
+            try {
+                // Parse guest name
+                $nameParts = explode(' ', trim($guest['guest_name']), 2);
+                $fname = $nameParts[0] ?? '';
+                $lname = $nameParts[1] ?? '';
+                $mname = '';
+
+                // Calculate end_date as 9 PM on the same day as created_at (same as Walk In plans)
+                date_default_timezone_set('Asia/Manila');
+                $start_date_obj = new DateTime($guest['created_at'], new DateTimeZone('Asia/Manila'));
+                $end_date_obj = clone $start_date_obj;
+                $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+                $calculated_end_date = $end_date_obj->format('Y-m-d H:i:s');
+
+                // Create subscription-like object for pending guest session
+                $guestSubscription = [
+                    'subscription_id' => 'guest_' . $guest['id'],
+                    'id' => 'guest_' . $guest['id'],
+                    'guest_session_id' => $guest['id'],
+                    'user_id' => null,
+                    'fname' => $fname,
+                    'mname' => $mname,
+                    'lname' => $lname,
+                    'email' => null,
+                    'plan_id' => $dayPassPlanId,
+                    'plan_name' => $dayPassPlanName,
+                    'price' => $dayPassPrice,
+                    'duration_months' => $dayPassDurationMonths,
+                    'duration_days' => $dayPassDurationDays,
+                    'start_date' => $guest['created_at'],
+                    'end_date' => $calculated_end_date, // Use calculated 9 PM end date
+                    'created_at' => $guest['created_at'],
+                    'status_id' => null,
+                    'status_name' => $guest['status'] === 'pending' ? 'pending_approval' : 'pending_payment',
+                    'is_guest_session' => true,
+                    'subscription_type' => 'guest',
+                    'guest_name' => $guest['guest_name'],
+                    'guest_type' => $guest['guest_type'],
+                    'amount_paid' => floatval($guest['amount_paid']),
+                    'receipt_number' => $guest['receipt_number'],
+                    'payment_method' => $guest['payment_method'] ?? 'cash',
+                    'qr_token' => $guest['qr_token'],
+                    'cashier_id' => $guest['cashier_id'],
+                    'change_given' => floatval($guest['change_given'] ?? 0),
+                    'paid' => $guest['paid']
+                ];
+
+                $pendingSubscriptions[] = $guestSubscription;
+            } catch (Exception $e) {
+                error_log("Error processing pending guest session {$guest['id']}: " . $e->getMessage());
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Error fetching pending guest sessions: " . $e->getMessage());
+    }
+
+    // Sort all pending subscriptions by created_at descending
+    usort($pendingSubscriptions, function ($a, $b) {
+        $dateA = strtotime($a['created_at'] ?? '1970-01-01');
+        $dateB = strtotime($b['created_at'] ?? '1970-01-01');
+        return $dateB - $dateA;
+    });
 
     // Debug logging
     if (count($pendingSubscriptions) > 0) {
@@ -393,6 +653,142 @@ function getAvailableUsers($pdo)
 
 function getSubscriptionById($pdo, $id)
 {
+    // Check if this is a guest session ID (starts with "guest_")
+    if (strpos($id, 'guest_') === 0) {
+        // Extract the actual guest session ID
+        $guestId = str_replace('guest_', '', $id);
+
+        try {
+            $guestStmt = $pdo->prepare("
+                SELECT 
+                    gs.id,
+                    gs.guest_name,
+                    gs.guest_type,
+                    gs.amount_paid,
+                    gs.valid_until as end_date,
+                    gs.created_at as start_date,
+                    gs.created_at,
+                    gs.status,
+                    gs.paid,
+                    gs.receipt_number,
+                    gs.payment_method,
+                    gs.qr_token,
+                    gs.cashier_id,
+                    gs.change_given
+                FROM guest_session gs
+                WHERE gs.id = ?
+            ");
+
+            $guestStmt->execute([$guestId]);
+            $guest = $guestStmt->fetch();
+
+            if (!$guest) {
+                http_response_code(404);
+                echo json_encode([
+                    "success" => false,
+                    "error" => "Guest session not found"
+                ]);
+                return;
+            }
+
+            // Get Day Pass plan details from member_subscription_plan table
+            $dayPassPlan = null;
+            try {
+                $planStmt = $pdo->query("
+                    SELECT id, plan_name, price, duration_months, duration_days
+                    FROM member_subscription_plan
+                    WHERE LOWER(plan_name) LIKE '%day pass%' 
+                       OR LOWER(plan_name) LIKE '%walk in%'
+                       OR id = 6
+                    ORDER BY id ASC
+                    LIMIT 1
+                ");
+                $dayPassPlan = $planStmt->fetch();
+            } catch (Exception $e) {
+                error_log("Error fetching Day Pass plan: " . $e->getMessage());
+            }
+
+            // Default values if plan not found
+            $dayPassPlanId = $dayPassPlan['id'] ?? 6;
+            $dayPassPlanName = $dayPassPlan['plan_name'] ?? 'Day Pass';
+            $dayPassPrice = floatval($dayPassPlan['price'] ?? 150.00);
+            $dayPassDurationMonths = intval($dayPassPlan['duration_months'] ?? 0);
+            $dayPassDurationDays = intval($dayPassPlan['duration_days'] ?? 1);
+
+            // Parse guest name
+            $nameParts = explode(' ', trim($guest['guest_name']), 2);
+            $fname = $nameParts[0] ?? '';
+            $lname = $nameParts[1] ?? '';
+            $mname = '';
+
+            // Calculate end_date as 9 PM on the same day as created_at (same as Walk In plans)
+            date_default_timezone_set('Asia/Manila');
+            $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+            $start_date_obj = new DateTime($guest['created_at'], new DateTimeZone('Asia/Manila'));
+            $end_date_obj = clone $start_date_obj;
+            $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+            $calculated_end_date = $end_date_obj->format('Y-m-d H:i:s');
+
+            // Determine display status based on calculated end date
+            $displayStatus = 'Active';
+            if ($end_date_obj < $now) {
+                $displayStatus = 'Expired';
+            }
+
+            // Transform to subscription format
+            $subscription = [
+                'id' => 'guest_' . $guest['id'],
+                'subscription_id' => null,
+                'guest_session_id' => $guest['id'],
+                'user_id' => null,
+                'fname' => $fname,
+                'mname' => $mname,
+                'lname' => $lname,
+                'email' => null,
+                'plan_id' => $dayPassPlanId,
+                'plan_name' => $dayPassPlanName,
+                'price' => $dayPassPrice,
+                'duration_months' => $dayPassDurationMonths,
+                'duration_days' => $dayPassDurationDays,
+                'start_date' => $guest['created_at'],
+                'end_date' => $calculated_end_date, // Use calculated 9 PM end date
+                'created_at' => $guest['created_at'],
+                'amount_paid' => floatval($guest['amount_paid']),
+                'discounted_price' => null,
+                'status_id' => null,
+                'status_name' => $guest['status'] === 'approved' ? 'approved' : $guest['status'],
+                'display_status' => $displayStatus,
+                'is_guest_session' => true,
+                'subscription_type' => 'guest',
+                'guest_name' => $guest['guest_name'],
+                'guest_type' => $guest['guest_type'],
+                'receipt_number' => $guest['receipt_number'],
+                'payment_method' => $guest['payment_method'] ?? 'cash',
+                'qr_token' => $guest['qr_token'],
+                'cashier_id' => $guest['cashier_id'],
+                'change_given' => floatval($guest['change_given'] ?? 0),
+                'paid' => $guest['paid'],
+                'payment_count' => 1,
+                'total_paid' => floatval($guest['amount_paid']),
+                'payments' => []
+            ];
+
+            echo json_encode([
+                "success" => true,
+                "subscription" => $subscription
+            ]);
+            return;
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                "success" => false,
+                "error" => "Error fetching guest session: " . $e->getMessage()
+            ]);
+            return;
+        }
+    }
+
+    // Regular subscription lookup
     $stmt = $pdo->prepare("
             SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, s.amount_paid, s.discounted_price,
                    u.fname, u.mname, u.lname, u.email,
@@ -416,6 +812,10 @@ function getSubscriptionById($pdo, $id)
         ]);
         return;
     }
+
+    // Mark as regular subscription
+    $subscription['is_guest_session'] = false;
+    $subscription['subscription_type'] = 'regular';
 
     echo json_encode([
         "success" => true,
@@ -502,9 +902,20 @@ function getAvailablePlansForUser($pdo, $user_id)
     $availablePlans = [];
     $hasActiveMemberFee = in_array(1, $activePlanIds);
 
+    // Check if user has active monthly subscription (Premium or Standard)
+    $hasActiveMonthlySubscription = in_array(2, $activePlanIds) || in_array(3, $activePlanIds);
+
     foreach ($allPlans as $plan) {
         $planId = $plan['id'];
+        $planNameLower = strtolower($plan['plan_name'] ?? '');
         $isPlanActive = in_array($planId, $activePlanIds);
+
+        // Check if this is a Gym Session/Day Pass plan
+        $isGymSessionPlan = ($planId == 6 ||
+            $planNameLower === 'walk in' ||
+            $planNameLower === 'day pass' ||
+            $planNameLower === 'gym session' ||
+            $planNameLower === 'session');
 
         // Plan 1 (Member Fee) - available if not active
         if ($planId == 1) {
@@ -521,6 +932,13 @@ function getAvailablePlansForUser($pdo, $user_id)
         // Plan 3 (Non-Member Plan Monthly) - available if no Plan 1 is active AND Plan 3 is not active
         elseif ($planId == 3) {
             if (!$hasActiveMemberFee && !$isPlanActive) {
+                $availablePlans[] = $plan;
+            }
+        }
+        // Gym Session/Day Pass plans - hide if user has active monthly subscription (Premium or Standard)
+        elseif ($isGymSessionPlan) {
+            // Only show Gym Session if user does NOT have active monthly subscription
+            if (!$hasActiveMonthlySubscription && !$isPlanActive) {
                 $availablePlans[] = $plan;
             }
         }
@@ -643,23 +1061,31 @@ function createManualSubscription($pdo, $data)
 
         // Set timezone to Philippines
         date_default_timezone_set('Asia/Manila');
-        $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
-        
-        // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
-        // Walk In plans expire at 9 PM PH time on the same day
-        if ($plan_id == 6 || strtolower($plan['plan_name']) === 'walk in') {
+
+        // Special handling for Walk In/Day Pass/Gym Session plans (plan_id = 6 or plan_name = 'Walk In' or 'Day Pass' or 'Gym Session')
+        // For Day Pass plans, always use current date/time in Philippines timezone
+        $planNameLower = strtolower($plan['plan_name']);
+        if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
+            // Use current date/time in Philippines timezone for Day Pass
+            $start_date_obj = new DateTime('now', new DateTimeZone('Asia/Manila'));
             $end_date_obj = clone $start_date_obj;
             $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
             $end_date = $end_date_obj->format('Y-m-d H:i:s');
-        } 
+            // Format start_date for database (use current date/time)
+            $start_date = $start_date_obj->format('Y-m-d H:i:s');
+        }
         // Handle plans with duration_days (day-based plans)
         elseif (!empty($plan['duration_days']) && $plan['duration_days'] > 0) {
+            // For other plans, use the provided start_date
+            $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
             $end_date_obj = clone $start_date_obj;
             $end_date_obj->add(new DateInterval('P' . intval($plan['duration_days']) . 'D'));
             $end_date = $end_date_obj->format('Y-m-d');
         }
         // Handle regular monthly plans
         else {
+            // For other plans, use the provided start_date
+            $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
             // Calculate actual months based on payment amount (for advance payments)
             // If user pays for multiple months, calculate how many months they paid for
             $planPrice = floatval($plan['price']);
@@ -876,6 +1302,36 @@ function createManualSubscription($pdo, $data)
             }
         }
 
+        // Create automatic attendance for Day Pass/Gym Session subscriptions
+        // Check if this is a Day Pass plan (plan_id = 6 or plan_name contains 'Day Pass', 'Walk In', or 'Gym Session')
+        if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
+            try {
+                // Check if attendance table has subscription_id column
+                $checkAttendanceColumns = $pdo->query("SHOW COLUMNS FROM attendance");
+                $attendanceColumns = $checkAttendanceColumns->fetchAll(PDO::FETCH_COLUMN);
+                $hasSubscriptionId = in_array('subscription_id', $attendanceColumns);
+
+                // Use Philippines timezone for check-in time
+                $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                $checkInTime = $phTime->format('Y-m-d H:i:s');
+
+                if ($hasSubscriptionId) {
+                    // Insert attendance with subscription_id reference
+                    $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in, subscription_id) VALUES (?, ?, ?)");
+                    $attendanceStmt->execute([$user_id, $checkInTime, $subscription_id]);
+                } else {
+                    // Insert attendance without subscription_id (for older schema)
+                    $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in) VALUES (?, ?)");
+                    $attendanceStmt->execute([$user_id, $checkInTime]);
+                }
+
+                error_log("Successfully created automatic attendance for Day Pass subscription: User ID: $user_id, Subscription ID: $subscription_id");
+            } catch (Exception $e) {
+                // Log the error but don't fail the entire transaction
+                error_log("Failed to create automatic attendance for Day Pass subscription: " . $e->getMessage());
+            }
+        }
+
         // Log activity using centralized logger
         $staffId = $data['staff_id'] ?? null;
         error_log("DEBUG: Received staff_id: " . ($staffId ?? 'NULL') . " from request data");
@@ -970,14 +1426,14 @@ function approveSubscription($pdo, $data)
         date_default_timezone_set('Asia/Manila');
         $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
         $plan_id = $subscription['plan_id'];
-        
+
         // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
         // Walk In plans expire at 9 PM PH time on the same day
         if ($plan_id == 6 || strtolower($subscription['plan_name']) === 'walk in') {
             $end_date_obj = clone $start_date_obj;
             $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
             $corrected_end_date = $end_date_obj->format('Y-m-d H:i:s');
-        } 
+        }
         // Handle plans with duration_days (day-based plans)
         elseif (!empty($subscription['duration_days']) && $subscription['duration_days'] > 0) {
             $end_date_obj = clone $start_date_obj;
@@ -1283,14 +1739,14 @@ function approveSubscriptionWithPayment($pdo, $data)
         date_default_timezone_set('Asia/Manila');
         $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
         $plan_id = $subscription['plan_id'];
-        
+
         // Special handling for Walk In plans (plan_id = 6 or plan_name = 'Walk In')
         // Walk In plans expire at 9 PM PH time on the same day
         if ($plan_id == 6 || strtolower($subscription['plan_name']) === 'walk in') {
             $end_date_obj = clone $start_date_obj;
             $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
             $corrected_end_date = $end_date_obj->format('Y-m-d H:i:s');
-        } 
+        }
         // Handle plans with duration_days (day-based plans)
         elseif (!empty($subscription['duration_days']) && $subscription['duration_days'] > 0) {
             $end_date_obj = clone $start_date_obj;

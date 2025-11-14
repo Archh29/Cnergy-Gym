@@ -13,7 +13,6 @@ import AttendanceTracking from "./attendancetracking"
 import MonitorSubscriptions from "./monitorsubscription"
 import CoachAssignments from "./coachassignments"
 import Sales from "./sales"
-import GuestManagement from "./guestmanagement"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function StaffDashboardClient() {
@@ -180,8 +179,6 @@ export default function StaffDashboardClient() {
         return <Announcement userId={userId} />
       case "AttendanceTracking":
         return <AttendanceTracking userId={userId} />
-      case "DayPassAccess":
-        return <GuestManagement userId={userId} />
       case "MonitorSubscriptions":
         return <MonitorSubscriptions userId={userId} />
       case "Sales":

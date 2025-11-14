@@ -209,32 +209,29 @@ function getProductsData($pdo)
 
 function getSalesData($pdo)
 {
+	// Debug: Check if any guest sales exist in database
+	try {
+		$testStmt = $pdo->query("SELECT COUNT(*) as count FROM sales WHERE sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass')");
+		$testResult = $testStmt->fetch();
+		error_log("DEBUG sales_api: Total guest sales in database: " . ($testResult['count'] ?? 0));
+
+		// Also check recent guest sales
+		$recentStmt = $pdo->query("SELECT id, sale_type, receipt_number, sale_date, total_amount FROM sales WHERE sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass') ORDER BY sale_date DESC LIMIT 5");
+		$recentSales = $recentStmt->fetchAll();
+		if (!empty($recentSales)) {
+			error_log("DEBUG sales_api: Recent guest sales in DB: " . json_encode($recentSales));
+		} else {
+			error_log("DEBUG sales_api: No guest sales found in database!");
+		}
+	} catch (Exception $e) {
+		error_log("DEBUG sales_api: Error checking guest sales: " . $e->getMessage());
+	}
+
 	$saleType = $_GET['sale_type'] ?? '';
 	$dateFilter = $_GET['date_filter'] ?? '';
 	$month = $_GET['month'] ?? '';
 	$year = $_GET['year'] ?? '';
 	$customDate = $_GET['custom_date'] ?? '';
-
-	error_log("DEBUG sales_api START: sale_type=$saleType, date_filter=$dateFilter, month=$month, year=$year, custom_date=$customDate");
-
-	// STEP 1: Direct test query to verify guest sales exist in database
-	try {
-		$directTestQuery = "SELECT COUNT(*) as count FROM sales WHERE sale_type = 'Guest'";
-		$directTestStmt = $pdo->query($directTestQuery);
-		$directTestResult = $directTestStmt->fetch();
-		$totalGuestInDB = (int) ($directTestResult['count'] ?? 0);
-		error_log("DEBUG sales_api STEP 1: Direct count query found $totalGuestInDB guest sales in database");
-
-		// Also get a sample of guest sales
-		$sampleQuery = "SELECT id, receipt_number, sale_date, total_amount FROM sales WHERE sale_type = 'Guest' ORDER BY sale_date DESC LIMIT 5";
-		$sampleStmt = $pdo->query($sampleQuery);
-		$sampleSales = $sampleStmt->fetchAll();
-		if (!empty($sampleSales)) {
-			error_log("DEBUG sales_api STEP 1: Sample guest sales: " . json_encode($sampleSales));
-		}
-	} catch (Exception $e) {
-		error_log("DEBUG sales_api STEP 1 ERROR: " . $e->getMessage());
-	}
 
 	// Build date WHERE conditions (reusable for both queries)
 	$dateWhereConditions = [];
@@ -275,11 +272,24 @@ function getSalesData($pdo)
 		}
 	}
 
+	// Build WHERE conditions for main query
+	$whereConditions = [];
+	$params = [];
+
+	if ($saleType && $saleType !== 'all') {
+		$whereConditions[] = "s.sale_type = ?";
+		$params[] = $saleType;
+	}
+
+	// Add date conditions to main query
+	$whereConditions = array_merge($whereConditions, $dateWhereConditions);
+	$params = array_merge($params, $dateParams);
+
+	$whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
+
 	// CRITICAL: First, get ALL guest sales separately to ensure they're never missed
-	// Guest sales should ALWAYS be included, regardless of sale_type filter (unless explicitly filtered out)
-	// NOTE: Database only has 'Guest' as sale_type enum value (not 'Walk-in', 'Walkin', 'Day Pass')
 	// Build WHERE clause for guest sales (same date filters, but always include guest types)
-	$guestWhereConditions = ["s.sale_type = 'Guest'"];
+	$guestWhereConditions = ["s.sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass')"];
 	$guestParams = [];
 
 	// Apply same date filters to guest sales
@@ -288,97 +298,8 @@ function getSalesData($pdo)
 		$guestParams = array_merge($guestParams, $dateParams);
 	}
 
-	// If sale_type filter is set to 'Guest', include it in guest query
-	// Otherwise, ignore sale_type filter for guest sales (they should always be included)
-	if ($saleType && $saleType !== 'all' && strtolower($saleType) === 'guest') {
-		// If filtering for guest type, make sure we only get that specific type
-		$guestWhereConditions = ["s.sale_type = 'Guest'"];
-		$guestParams = [];
-		if (!empty($dateWhereConditions)) {
-			$guestWhereConditions = array_merge($guestWhereConditions, $dateWhereConditions);
-			$guestParams = array_merge($guestParams, $dateParams);
-		}
-	}
-	// If filtering for non-guest types, guest sales will be excluded from main query but we still want them
-	// So we'll merge them in later
-
 	$guestWhereClause = "WHERE " . implode(" AND ", $guestWhereConditions);
 
-	// Build WHERE conditions for main query (exclude guest sales - they'll be merged later)
-	$whereConditions = [];
-	$params = [];
-
-	if ($saleType && $saleType !== 'all') {
-		// Only apply sale_type filter if it's NOT 'Guest' (guest sales are handled separately)
-		if (strtolower($saleType) !== 'guest') {
-			$whereConditions[] = "s.sale_type = ?";
-			$params[] = $saleType;
-		}
-	}
-
-	// Always exclude guest sales from main query (they're handled separately)
-	$whereConditions[] = "s.sale_type != 'Guest'";
-
-	// Add date conditions to main query
-	if (!empty($dateWhereConditions)) {
-		$whereConditions = array_merge($whereConditions, $dateWhereConditions);
-		$params = array_merge($params, $dateParams);
-	}
-
-	$whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
-
-	// Debug: Check if any guest sales exist in database (after date filters are built)
-	try {
-		// Check total guest sales
-		$testStmt = $pdo->query("SELECT COUNT(*) as count FROM sales WHERE sale_type = 'Guest'");
-		$testResult = $testStmt->fetch();
-		$totalGuestSalesInDB = (int) ($testResult['count'] ?? 0);
-		error_log("DEBUG sales_api: ========== TOTAL GUEST SALES IN DATABASE: $totalGuestSalesInDB ==========");
-
-		// Check recent guest sales with date filters applied
-		$recentQuery = "SELECT id, sale_type, receipt_number, sale_date, total_amount FROM sales WHERE sale_type = 'Guest'";
-		if (!empty($dateWhereConditions)) {
-			// Convert date conditions to work without table alias for this simple query
-			$simpleDateConditions = [];
-			$simpleDateParams = [];
-			foreach ($dateWhereConditions as $condition) {
-				$simpleCondition = str_replace('s.sale_date', 'sale_date', $condition);
-				$simpleDateConditions[] = $simpleCondition;
-			}
-			$simpleDateParams = $dateParams;
-			if (!empty($simpleDateConditions)) {
-				$recentQuery .= " AND " . implode(" AND ", $simpleDateConditions);
-			}
-			$recentStmt = $pdo->prepare($recentQuery . " ORDER BY sale_date DESC LIMIT 10");
-			$recentStmt->execute($simpleDateParams);
-		} else {
-			$recentStmt = $pdo->query($recentQuery . " ORDER BY sale_date DESC LIMIT 10");
-		}
-		$recentSales = $recentStmt->fetchAll();
-		if (!empty($recentSales)) {
-			error_log("DEBUG sales_api: Recent guest sales in DB (with date filters): " . json_encode($recentSales));
-			error_log("DEBUG sales_api: Found " . count($recentSales) . " recent guest sales matching date filters");
-		} else {
-			error_log("DEBUG sales_api: ⚠️ NO GUEST SALES FOUND IN DATABASE (with date filters)!");
-		}
-
-		// Check if sales_details exist for guest sales
-		$detailsStmt = $pdo->query("SELECT COUNT(*) as count FROM sales_details sd INNER JOIN sales s ON sd.sale_id = s.id WHERE s.sale_type = 'Guest' AND sd.guest_session_id IS NOT NULL");
-		$detailsResult = $detailsStmt->fetch();
-		error_log("DEBUG sales_api: Guest sales with sales_details linking to guest_session: " . ($detailsResult['count'] ?? 0));
-
-		// Check guest sales that can be matched by receipt_number
-		$receiptStmt = $pdo->query("SELECT COUNT(*) as count FROM sales s INNER JOIN guest_session gs ON s.receipt_number = gs.receipt_number WHERE s.sale_type = 'Guest' AND s.receipt_number IS NOT NULL");
-		$receiptResult = $receiptStmt->fetch();
-		error_log("DEBUG sales_api: Guest sales matchable by receipt_number: " . ($receiptResult['count'] ?? 0));
-	} catch (Exception $e) {
-		error_log("DEBUG sales_api: Error checking guest sales: " . $e->getMessage());
-		error_log("DEBUG sales_api: Error trace: " . $e->getTraceAsString());
-	}
-
-	// CRITICAL: Guest sales query - match by receipt_number FIRST (most reliable)
-	// Many old guest sales don't have sales_details entries, so we rely on receipt_number matching
-	// This query MUST return ALL guest sales, even if they don't have sales_details or guest_session matches
 	$guestSalesQuery = "
 		SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type,
 		       COALESCE(s.payment_method, 'cash') AS payment_method, 
@@ -392,26 +313,12 @@ function getSalesData($pdo)
 		       NULL AS subscription_member_fullname,
 		       NULL AS coach_id,
 		       NULL AS coach_fullname,
-		       -- Match by receipt_number FIRST (most reliable for old records without sales_details)
-		       -- Then try matching by sales_details.guest_session_id (for new records)
-		       COALESCE(
-		           gs_by_receipt.guest_name,
-		           gs_by_detail.guest_name,
-		           NULL
-		       ) AS guest_name
+		       gs.guest_name
 		FROM `sales` s
-		-- Join sales_details without filtering on guest_session_id (we want all details)
 		LEFT JOIN `sales_details` sd ON s.id = sd.sale_id
-		-- Match by receipt_number FIRST (most reliable - works for old records without sales_details)
-		LEFT JOIN `guest_session` gs_by_receipt ON (
-			s.receipt_number IS NOT NULL 
-			AND s.receipt_number != ''
-			AND s.receipt_number = gs_by_receipt.receipt_number
-		)
-		-- Also try matching by sales_details.guest_session_id (for new records with sales_details)
-		LEFT JOIN `guest_session` gs_by_detail ON (
-			sd.guest_session_id IS NOT NULL 
-			AND sd.guest_session_id = gs_by_detail.id
+		LEFT JOIN `guest_session` gs ON (
+			(sd.guest_session_id IS NOT NULL AND sd.guest_session_id = gs.id)
+			OR (s.receipt_number = gs.receipt_number AND s.receipt_number IS NOT NULL)
 		)
 		$guestWhereClause
 		ORDER BY s.sale_date DESC
@@ -479,91 +386,49 @@ function getSalesData($pdo)
 				LIMIT 1
 			)
 		LEFT JOIN `user` u_coach ON cml.coach_id = u_coach.id
-		WHERE s.sale_type != 'Guest'
+		WHERE s.sale_type NOT IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass')
 		" . ($whereClause ? " AND " . str_replace("WHERE ", "", $whereClause) : "") . "
 		ORDER BY s.sale_date DESC
 	");
 
-	// Get non-guest sales first
-	try {
-		$stmt->execute($params);
-		$salesData = $stmt->fetchAll();
-		error_log("DEBUG sales_api: ✅ Non-guest sales query executed successfully, found " . count($salesData) . " sales");
-	} catch (Exception $e) {
-		error_log("DEBUG sales_api: ❌ ERROR executing non-guest sales query: " . $e->getMessage());
-		$salesData = [];
-	}
+	$stmt->execute($params);
 
-	// Get guest sales separately - CRITICAL: This MUST work
-	error_log("DEBUG sales_api: Executing guest sales query with params: " . json_encode($guestParams));
+	// Get guest sales separately
+	$guestStmt = $pdo->prepare($guestSalesQuery);
+	$guestStmt->execute($guestParams);
+	$guestSalesData = $guestStmt->fetchAll();
+
 	error_log("DEBUG sales_api: Guest sales query: " . $guestSalesQuery);
-	try {
-		$guestStmt = $pdo->prepare($guestSalesQuery);
-		$guestStmt->execute($guestParams);
-		$guestSalesData = $guestStmt->fetchAll();
-		error_log("DEBUG sales_api: ✅ Guest sales query executed successfully, found " . count($guestSalesData) . " guest sales");
-	} catch (Exception $e) {
-		error_log("DEBUG sales_api: ❌ ERROR executing guest sales query: " . $e->getMessage());
-		error_log("DEBUG sales_api: Query was: " . $guestSalesQuery);
-		error_log("DEBUG sales_api: Error trace: " . $e->getTraceAsString());
-		$guestSalesData = [];
-	}
+	error_log("DEBUG sales_api: Guest params: " . json_encode($guestParams));
+	error_log("DEBUG sales_api: Found " . count($guestSalesData) . " guest sales from dedicated query");
 
 	// Log each guest sale found
 	foreach ($guestSalesData as $gs) {
 		error_log("DEBUG sales_api GUEST SALE: ID={$gs['id']}, Type={$gs['sale_type']}, Receipt={$gs['receipt_number']}, Guest Name=" . ($gs['guest_name'] ?? 'NULL'));
 	}
 
+	$salesData = $stmt->fetchAll();
+
 	// Merge guest sales with main sales data
-	// CRITICAL: Always include guest sales unless explicitly filtered out by sale_type
+	// Remove any duplicates (in case a guest sale was already in main query)
 	$mainSaleIds = array_column($salesData, 'id');
 	$uniqueGuestSales = [];
-
-	// Only include guest sales if:
-	// 1. sale_type filter is 'all' (include everything)
-	// 2. sale_type filter is 'Guest' (include guest sales)
-	// 3. sale_type filter is not set (include everything)
-	$shouldIncludeGuestSales = !$saleType || $saleType === 'all' || strtolower($saleType) === 'guest';
-
-	if ($shouldIncludeGuestSales) {
-		foreach ($guestSalesData as $gs) {
-			if (!in_array($gs['id'], $mainSaleIds)) {
-				$uniqueGuestSales[] = $gs;
-				error_log("DEBUG sales_api: Adding guest sale ID {$gs['id']}, Type: {$gs['sale_type']}, Receipt: " . ($gs['receipt_number'] ?? 'N/A'));
-			} else {
-				error_log("DEBUG sales_api: Guest sale ID {$gs['id']} already in main query, skipping duplicate");
-			}
+	foreach ($guestSalesData as $gs) {
+		if (!in_array($gs['id'], $mainSaleIds)) {
+			$uniqueGuestSales[] = $gs;
+		} else {
+			error_log("DEBUG sales_api: Guest sale ID {$gs['id']} already in main query, skipping duplicate");
 		}
-	} else {
-		error_log("DEBUG sales_api: Excluding guest sales because sale_type filter is set to non-guest type: $saleType");
 	}
 
 	$salesData = array_merge($salesData, $uniqueGuestSales);
 
-	error_log("DEBUG sales_api: ========== MERGE RESULTS ==========");
-	error_log("DEBUG sales_api: Non-guest sales: " . (count($salesData) - count($uniqueGuestSales)));
-	error_log("DEBUG sales_api: Guest sales being added: " . count($uniqueGuestSales));
-	error_log("DEBUG sales_api: Total rows after merging: " . count($salesData));
-
-	// Verify guest sales are in the merged data
-	$guestCountInMerged = 0;
-	foreach ($salesData as $sale) {
-		if (isset($sale['sale_type']) && $sale['sale_type'] === 'Guest') {
-			$guestCountInMerged++;
-		}
-	}
-	error_log("DEBUG sales_api: Guest sales count in merged data: $guestCountInMerged");
-
-	if ($guestCountInMerged === 0 && $shouldIncludeGuestSales) {
-		error_log("DEBUG sales_api: ⚠️⚠️⚠️ WARNING: No guest sales in merged data but shouldIncludeGuestSales is true!");
-		error_log("DEBUG sales_api: Guest sales data count: " . count($guestSalesData));
-		error_log("DEBUG sales_api: Unique guest sales count: " . count($uniqueGuestSales));
-	}
+	error_log("DEBUG sales_api: Total rows after merging: " . count($salesData) . " (main: " . (count($salesData) - count($uniqueGuestSales)) . ", unique guest: " . count($uniqueGuestSales) . ")");
 
 	// Debug: Log raw query results for guest sales
 	$guestSalesInRawData = 0;
 	foreach ($salesData as $row) {
-		if ($row['sale_type'] === 'Guest') {
+		if (in_array($row['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 			$guestSalesInRawData++;
 			error_log("DEBUG sales_api RAW: Found guest sale row - Sale ID: {$row['id']}, Type: {$row['sale_type']}, Receipt: " . ($row['receipt_number'] ?? 'N/A') . ", Guest Name from JOIN: " . ($row['guest_name'] ?? 'NULL') . ", Guest Session ID from details: " . ($row['guest_session_id'] ?? 'NULL'));
 		}
@@ -600,9 +465,9 @@ function getSalesData($pdo)
 			$coachName = !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null;
 			$coachId = !empty($row['coach_id']) ? (int) $row['coach_id'] : null;
 
-			// For guest sales, use guest_name instead of user_name
+			// For guest/walk-in sales, use guest_name instead of user_name
 			$displayName = null;
-			if ($row['sale_type'] === 'Guest') {
+			if (in_array($row['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 				$displayName = $guestName ?: $memberName; // Fallback to memberName if guestName is empty
 				// Debug log for guest sales
 				if (empty($guestName)) {
@@ -646,40 +511,6 @@ function getSalesData($pdo)
 				error_log("DEBUG sales_api: Sale ID {$row['id']}, Payment method from DB: " . var_export($rawPaymentMethod, true) . ", Subscription PM: " . var_export($subPaymentMethod, true) . ", Final normalized: '$paymentMethod', Receipt: " . ($row['receipt_number'] ?? 'N/A'));
 			}
 
-			// For guest sales, set plan_name immediately
-			$planName = null;
-			$planId = null;
-			$planPrice = null;
-
-			if ($row['sale_type'] === 'Guest') {
-				// Guest sessions are always "Gym Session" plan
-				// Try to get plan_name from member_subscription_plan where plan_id = 6 (Gym Session)
-				try {
-					$planStmt = $pdo->prepare("
-						SELECT id, plan_name, price, duration_months, duration_days
-						FROM member_subscription_plan
-						WHERE id = 6 OR LOWER(plan_name) IN ('gym session', 'day pass', 'walk in', 'session')
-						LIMIT 1
-					");
-					$planStmt->execute();
-					$gymSessionPlan = $planStmt->fetch();
-
-					if ($gymSessionPlan && !empty($gymSessionPlan['plan_name'])) {
-						$planName = $gymSessionPlan['plan_name'];
-						$planId = $gymSessionPlan['id'];
-						$planPrice = !empty($gymSessionPlan['price']) ? (float) $gymSessionPlan['price'] : null;
-					} else {
-						// Fallback to "Gym Session" if plan not found
-						$planName = 'Gym Session';
-						$planId = 6;
-					}
-				} catch (Exception $e) {
-					error_log("Error fetching Gym Session plan for guest sale: " . $e->getMessage());
-					$planName = 'Gym Session';
-					$planId = 6;
-				}
-			}
-
 			$salesGrouped[$saleId] = [
 				'id' => $row['id'],
 				'total_amount' => (float) $row['total_amount'],
@@ -698,15 +529,6 @@ function getSalesData($pdo)
 				'coach_name' => $coachName,
 				'sales_details' => []
 			];
-
-			// Set plan_name for guest sales immediately
-			if ($planName) {
-				$salesGrouped[$saleId]['plan_name'] = $planName;
-				$salesGrouped[$saleId]['plan_id'] = $planId;
-				if ($planPrice !== null) {
-					$salesGrouped[$saleId]['plan_price'] = $planPrice;
-				}
-			}
 
 			// For subscription sales, store plan info at sale level even if no sales_details
 			// NOTE: This is a temporary value - it will be overwritten later by subscription lookup to ensure accuracy
@@ -729,88 +551,52 @@ function getSalesData($pdo)
 			if (empty($salesGrouped[$saleId]['guest_name']) && !empty($row['guest_name'])) {
 				$salesGrouped[$saleId]['guest_name'] = trim($row['guest_name']);
 				// Update user_name for guest sales
-				if ($salesGrouped[$saleId]['sale_type'] === 'Guest') {
+				if (in_array($salesGrouped[$saleId]['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 					$salesGrouped[$saleId]['user_name'] = trim($row['guest_name']);
 				}
 			}
 
 			// For guest sales, if guest_name is still empty, try to fetch it directly from guest_session
-			// This is a fallback in case the JOIN didn't work (e.g., NULL values in JOIN conditions)
-			if ($salesGrouped[$saleId]['sale_type'] === 'Guest' && empty($salesGrouped[$saleId]['guest_name'])) {
-				error_log("DEBUG sales_api: Guest sale (ID: $saleId) has empty guest_name, attempting lookup...");
-				error_log("DEBUG sales_api: Receipt number: " . ($salesGrouped[$saleId]['receipt_number'] ?? 'NULL'));
+			if (in_array($salesGrouped[$saleId]['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass']) && empty($salesGrouped[$saleId]['guest_name'])) {
+				// Try to get guest_name from sales_details -> guest_session
+				$guestSessionId = null;
+				if (!empty($salesGrouped[$saleId]['sales_details']) && is_array($salesGrouped[$saleId]['sales_details'])) {
+					foreach ($salesGrouped[$saleId]['sales_details'] as $detail) {
+						if (!empty($detail['guest_session_id'])) {
+							$guestSessionId = $detail['guest_session_id'];
+							break;
+						}
+					}
+				}
 
-				// FIRST: Try matching by receipt_number (most reliable for old records)
-				if (!empty($salesGrouped[$saleId]['receipt_number'])) {
+				// If we have guest_session_id, fetch guest_name directly
+				if ($guestSessionId) {
 					try {
-						$gsStmt = $pdo->prepare("SELECT id, guest_name FROM guest_session WHERE receipt_number = ? LIMIT 1");
+						$gsStmt = $pdo->prepare("SELECT guest_name FROM guest_session WHERE id = ? LIMIT 1");
+						$gsStmt->execute([$guestSessionId]);
+						$guestSession = $gsStmt->fetch();
+						if ($guestSession && !empty($guestSession['guest_name'])) {
+							$salesGrouped[$saleId]['guest_name'] = trim($guestSession['guest_name']);
+							$salesGrouped[$saleId]['user_name'] = trim($guestSession['guest_name']);
+						}
+					} catch (Exception $e) {
+						error_log("Failed to fetch guest_name for sale $saleId: " . $e->getMessage());
+					}
+				}
+
+				// If still no guest_name, try matching by receipt_number
+				if (empty($salesGrouped[$saleId]['guest_name']) && !empty($salesGrouped[$saleId]['receipt_number'])) {
+					try {
+						$gsStmt = $pdo->prepare("SELECT guest_name FROM guest_session WHERE receipt_number = ? LIMIT 1");
 						$gsStmt->execute([$salesGrouped[$saleId]['receipt_number']]);
 						$guestSession = $gsStmt->fetch();
 						if ($guestSession && !empty($guestSession['guest_name'])) {
 							$salesGrouped[$saleId]['guest_name'] = trim($guestSession['guest_name']);
 							$salesGrouped[$saleId]['user_name'] = trim($guestSession['guest_name']);
-							error_log("DEBUG sales_api: ✅ Found guest_name by receipt_number: " . $guestSession['guest_name']);
-							// Also try to get guest_session_id for sales_details
-							if (!empty($guestSession['id'])) {
-								// Check if sales_details exists, if not create it
-								$checkDetailsStmt = $pdo->prepare("SELECT id FROM sales_details WHERE sale_id = ? AND guest_session_id = ? LIMIT 1");
-								$checkDetailsStmt->execute([$saleId, $guestSession['id']]);
-								$existingDetail = $checkDetailsStmt->fetch();
-								if (!$existingDetail) {
-									// Try to create sales_details entry if it doesn't exist
-									try {
-										$createDetailsStmt = $pdo->prepare("INSERT INTO sales_details (sale_id, guest_session_id, quantity, price) VALUES (?, ?, 1, ?)");
-										$createDetailsStmt->execute([$saleId, $guestSession['id'], $salesGrouped[$saleId]['total_amount']]);
-										error_log("DEBUG sales_api: ✅ Created missing sales_details for sale $saleId, guest_session " . $guestSession['id']);
-									} catch (Exception $e) {
-										error_log("DEBUG sales_api: Could not create sales_details (may already exist): " . $e->getMessage());
-									}
-								}
-							}
-						} else {
-							error_log("DEBUG sales_api: ❌ No guest_session found with receipt_number: " . $salesGrouped[$saleId]['receipt_number']);
 						}
 					} catch (Exception $e) {
-						error_log("DEBUG sales_api: Error fetching guest_name by receipt_number for sale $saleId: " . $e->getMessage());
+						error_log("Failed to fetch guest_name by receipt_number for sale $saleId: " . $e->getMessage());
 					}
-				}
-
-				// SECOND: Try to get guest_name from sales_details -> guest_session (for new records)
-				if (empty($salesGrouped[$saleId]['guest_name'])) {
-					$guestSessionId = null;
-					if (!empty($salesGrouped[$saleId]['sales_details']) && is_array($salesGrouped[$saleId]['sales_details'])) {
-						foreach ($salesGrouped[$saleId]['sales_details'] as $detail) {
-							if (!empty($detail['guest_session_id'])) {
-								$guestSessionId = $detail['guest_session_id'];
-								break;
-							}
-						}
-					}
-
-					// If we have guest_session_id, fetch guest_name directly
-					if ($guestSessionId) {
-						try {
-							$gsStmt = $pdo->prepare("SELECT guest_name FROM guest_session WHERE id = ? LIMIT 1");
-							$gsStmt->execute([$guestSessionId]);
-							$guestSession = $gsStmt->fetch();
-							if ($guestSession && !empty($guestSession['guest_name'])) {
-								$salesGrouped[$saleId]['guest_name'] = trim($guestSession['guest_name']);
-								$salesGrouped[$saleId]['user_name'] = trim($guestSession['guest_name']);
-								error_log("DEBUG sales_api: ✅ Found guest_name by guest_session_id: " . $guestSession['guest_name']);
-							}
-						} catch (Exception $e) {
-							error_log("DEBUG sales_api: Error fetching guest_name by guest_session_id for sale $saleId: " . $e->getMessage());
-						}
-					}
-				}
-
-				// FINAL FALLBACK: If still no guest_name, use receipt_number or "Guest"
-				if (empty($salesGrouped[$saleId]['guest_name'])) {
-					$salesGrouped[$saleId]['guest_name'] = !empty($salesGrouped[$saleId]['receipt_number'])
-						? 'Guest (' . $salesGrouped[$saleId]['receipt_number'] . ')'
-						: 'Guest';
-					$salesGrouped[$saleId]['user_name'] = $salesGrouped[$saleId]['guest_name'];
-					error_log("DEBUG sales_api: ⚠️ Using fallback guest_name: " . $salesGrouped[$saleId]['guest_name']);
 				}
 			}
 			// For subscription sales, update plan info if not set and available in this row
@@ -1146,7 +932,7 @@ function getSalesData($pdo)
 			}
 
 			// Process guest sessions to set plan_name
-			if ($sale['sale_type'] === 'Guest') {
+			if (in_array($sale['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 				// For guest sessions, set plan_name to "Gym Session"
 				// Guest sessions are always "Gym Session" plan
 				// Always set plan_name for guest sessions (even if already set, ensure it's correct)
@@ -1181,7 +967,7 @@ function getSalesData($pdo)
 	// Debug: Log guest sales count
 	$guestSalesCount = 0;
 	foreach ($salesGrouped as $sale) {
-		if ($sale['sale_type'] === 'Guest') {
+		if (in_array($sale['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 			$guestSalesCount++;
 			error_log("DEBUG sales_api: Found guest sale - ID: {$sale['id']}, Type: {$sale['sale_type']}, Guest Name: " . ($sale['guest_name'] ?? 'N/A') . ", User Name: " . ($sale['user_name'] ?? 'N/A') . ", Receipt: " . ($sale['receipt_number'] ?? 'N/A'));
 		}
@@ -1190,48 +976,27 @@ function getSalesData($pdo)
 
 	// Fallback: Directly query for guest sales that might have been missed
 	// This ensures we catch any guest sales that weren't returned by the main query
-	// Apply same date filters as main query
 	try {
 		$existingSaleIds = !empty($salesGrouped) ? array_keys($salesGrouped) : [];
-		$fallbackWhereConditions = ["s.sale_type = 'Guest'"];
-		$fallbackParams = [];
-
-		// Apply same date filters
-		if (!empty($dateWhereConditions)) {
-			$fallbackWhereConditions = array_merge($fallbackWhereConditions, $dateWhereConditions);
-			$fallbackParams = array_merge($fallbackParams, $dateParams);
-		}
+		$fallbackQuery = "
+			SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type, 
+			       s.payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
+			       sd.guest_session_id, gs.guest_name
+			FROM sales s
+			LEFT JOIN sales_details sd ON s.id = sd.sale_id
+			LEFT JOIN guest_session gs ON (sd.guest_session_id = gs.id OR s.receipt_number = gs.receipt_number)
+			WHERE s.sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass')
+		";
 
 		if (!empty($existingSaleIds)) {
 			$placeholders = implode(',', array_fill(0, count($existingSaleIds), '?'));
-			$fallbackWhereConditions[] = "s.id NOT IN ($placeholders)";
-			$fallbackParams = array_merge($fallbackParams, $existingSaleIds);
+			$fallbackQuery .= " AND s.id NOT IN ($placeholders)";
+			$fallbackStmt = $pdo->prepare($fallbackQuery);
+			$fallbackStmt->execute($existingSaleIds);
+		} else {
+			$fallbackStmt = $pdo->prepare($fallbackQuery);
+			$fallbackStmt->execute();
 		}
-
-		$fallbackWhereClause = "WHERE " . implode(" AND ", $fallbackWhereConditions);
-
-		$fallbackQuery = "
-			SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type, 
-			       COALESCE(s.payment_method, 'cash') AS payment_method, 
-			       s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
-			       sd.guest_session_id, 
-			       COALESCE(gs_by_receipt.guest_name, gs_by_detail.guest_name, NULL) AS guest_name
-			FROM sales s
-			LEFT JOIN sales_details sd ON s.id = sd.sale_id
-			LEFT JOIN guest_session gs_by_receipt ON (
-				s.receipt_number IS NOT NULL 
-				AND s.receipt_number != ''
-				AND s.receipt_number = gs_by_receipt.receipt_number
-			)
-			LEFT JOIN guest_session gs_by_detail ON (
-				sd.guest_session_id IS NOT NULL 
-				AND sd.guest_session_id = gs_by_detail.id
-			)
-			$fallbackWhereClause
-		";
-
-		$fallbackStmt = $pdo->prepare($fallbackQuery);
-		$fallbackStmt->execute($fallbackParams);
 
 		$fallbackSales = $fallbackStmt->fetchAll();
 
@@ -1306,7 +1071,7 @@ function getSalesData($pdo)
 	// Final count after fallback
 	$finalGuestCount = 0;
 	foreach ($salesGrouped as $sale) {
-		if ($sale['sale_type'] === 'Guest') {
+		if (in_array($sale['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 			$finalGuestCount++;
 		}
 	}
@@ -1316,7 +1081,7 @@ function getSalesData($pdo)
 	// This is a safety net - directly query the sales table for any guest sales
 	// Apply same date filters as the main query
 	try {
-		$finalCheckWhereConditions = ["sale_type = 'Guest'"];
+		$finalCheckWhereConditions = ["sale_type IN ('Guest', 'Walk-in', 'Walkin', 'Day Pass')"];
 		$finalCheckParams = [];
 
 		// Apply same date filters
@@ -1368,19 +1133,10 @@ function getSalesData($pdo)
 				SELECT s.id, s.user_id, s.total_amount, s.sale_date, s.sale_type, 
 				       COALESCE(s.payment_method, 'cash') AS payment_method, 
 				       s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
-				       sd.guest_session_id, 
-				       COALESCE(gs_by_receipt.guest_name, gs_by_detail.guest_name, NULL) AS guest_name
+				       sd.guest_session_id, gs.guest_name
 				FROM sales s
 				LEFT JOIN sales_details sd ON s.id = sd.sale_id
-				LEFT JOIN guest_session gs_by_receipt ON (
-					s.receipt_number IS NOT NULL 
-					AND s.receipt_number != ''
-					AND s.receipt_number = gs_by_receipt.receipt_number
-				)
-				LEFT JOIN guest_session gs_by_detail ON (
-					sd.guest_session_id IS NOT NULL 
-					AND sd.guest_session_id = gs_by_detail.id
-				)
+				LEFT JOIN guest_session gs ON (sd.guest_session_id = gs.id OR s.receipt_number = gs.receipt_number)
 				WHERE s.id IN ($placeholders)
 			";
 			$missingStmt = $pdo->prepare($missingQuery);
@@ -1456,45 +1212,12 @@ function getSalesData($pdo)
 
 	// Final count after final check
 	$finalFinalGuestCount = 0;
-	$guestSaleDetails = [];
 	foreach ($salesGrouped as $sale) {
-		if ($sale['sale_type'] === 'Guest') {
+		if (in_array($sale['sale_type'], ['Guest', 'Walk-in', 'Walkin', 'Day Pass'])) {
 			$finalFinalGuestCount++;
-			$guestSaleDetails[] = [
-				'id' => $sale['id'],
-				'type' => $sale['sale_type'],
-				'guest_name' => $sale['guest_name'] ?? 'N/A',
-				'user_name' => $sale['user_name'] ?? 'N/A',
-				'receipt' => $sale['receipt_number'] ?? 'N/A',
-				'plan_name' => $sale['plan_name'] ?? 'N/A',
-				'amount' => $sale['total_amount'] ?? 0
-			];
 		}
 	}
-	error_log("DEBUG sales_api FINAL FINAL: ========== TOTAL GUEST SALES IN FINAL RESULT: $finalFinalGuestCount out of " . count($salesGrouped) . " total sales ==========");
-	if ($finalFinalGuestCount > 0) {
-		error_log("DEBUG sales_api FINAL FINAL: Guest sales details: " . json_encode($guestSaleDetails));
-	} else {
-		error_log("DEBUG sales_api FINAL FINAL: ⚠️ WARNING: NO GUEST SALES IN FINAL RESULT!");
-		error_log("DEBUG sales_api FINAL FINAL: sale_type filter: " . ($saleType ?: 'not set'));
-		error_log("DEBUG sales_api FINAL FINAL: shouldIncludeGuestSales was: " . ($shouldIncludeGuestSales ?? 'not set'));
-	}
-
-	// FINAL VERIFICATION: Check what's actually being returned
-	$finalGuestCount = 0;
-	$finalGuestIds = [];
-	foreach ($salesGrouped as $saleId => $sale) {
-		if (isset($sale['sale_type']) && $sale['sale_type'] === 'Guest') {
-			$finalGuestCount++;
-			$finalGuestIds[] = $saleId;
-		}
-	}
-	error_log("DEBUG sales_api RETURN: About to return JSON with $finalGuestCount guest sales out of " . count($salesGrouped) . " total");
-	if ($finalGuestCount > 0) {
-		error_log("DEBUG sales_api RETURN: Guest sale IDs being returned: " . implode(', ', $finalGuestIds));
-	} else {
-		error_log("DEBUG sales_api RETURN: ⚠️⚠️⚠️ NO GUEST SALES IN FINAL JSON OUTPUT!");
-	}
+	error_log("DEBUG sales_api FINAL FINAL: Total guest sales after final check: $finalFinalGuestCount out of " . count($salesGrouped) . " total sales");
 
 	echo json_encode(["sales" => array_values($salesGrouped)]);
 }
@@ -1608,7 +1331,7 @@ function getAnalyticsData($pdo)
 			COALESCE(SUM(CASE WHEN sale_type = 'Product' THEN total_amount ELSE 0 END), 0) AS product_sales,
 			COALESCE(SUM(CASE WHEN sale_type = 'Subscription' THEN total_amount ELSE 0 END), 0) AS subscription_sales,
 			COALESCE(SUM(CASE WHEN sale_type IN ('Coaching', 'Coach Assignment', 'Coach') THEN total_amount ELSE 0 END), 0) AS coach_assignment_sales,
-			COALESCE(SUM(CASE WHEN sale_type = 'Guest' THEN total_amount ELSE 0 END), 0) AS walkin_sales
+			COALESCE(SUM(CASE WHEN sale_type IN ('Walk-in', 'Walkin', 'Guest', 'Day Pass') THEN total_amount ELSE 0 END), 0) AS walkin_sales
 		FROM `sales`
 		$whereClause
 	");

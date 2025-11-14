@@ -67,7 +67,6 @@ const Sidebar = ({
     { name: "MonitorSubscriptions", icon: <FaClipboardList className="mr-2 h-4 w-4" /> },
     { name: "Sales", icon: <FaShoppingCart className="mr-2 h-4 w-4" /> },
     { name: "AttendanceTracking", icon: <FaCheckCircle className="mr-2 h-4 w-4" /> },
-    { name: "DayPassAccess", icon: <FaUserFriends className="mr-2 h-4 w-4" /> },
     { name: "CoachAssignments", icon: <FaTasks className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
   ]

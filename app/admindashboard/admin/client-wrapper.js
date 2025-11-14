@@ -18,7 +18,6 @@ import CoachAssignments from "./coachassignment"
 import Exercises from "./exercises"
 import FreePrograms from "./freeprograms"
 import Sales from "./sales"
-import GuestManagement from "./guestmanagement"
 import Promotions from "./promotions"
 import Merchandise from "./merchandise"
 import AdminChat from "./admin-chat"
@@ -202,8 +201,6 @@ export default function AdminDashboardClient() {
         return <Announcement />
       case "AttendanceTracking":
         return <AttendanceTracking userId={userId} />
-      case "DayPassAccess":
-        return <GuestManagement />
       case "MonitorSubscriptions":
         return <MonitorSubscriptions userId={userId} />
       case "Sales":

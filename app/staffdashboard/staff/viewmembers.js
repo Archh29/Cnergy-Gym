@@ -43,7 +43,35 @@ import {
   EyeOff,
   Ban,
   CalendarDays,
+  AlertTriangle,
 } from "lucide-react"
+
+// Helper function to generate standard password from user's name
+// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(FirstCap, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "Rj Lo Ta" -> "RjLo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
+const generateStandardPassword = (fname, mname, lname) => {
+  // Get first 2 letters of first name: first letter uppercase, second lowercase
+  const first = (fname || "").trim()
+  const firstNamePart = first.length > 0 
+    ? (first.substring(0, 1).toUpperCase() + (first.length > 1 ? first.substring(1, 2).toLowerCase() : ""))
+    : ""
+  
+  // Get first 2 letters of middle name ONLY if it exists: first letter uppercase, second lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  const middleNamePart = middle.length > 0
+    ? (middle.substring(0, 1).toUpperCase() + (middle.length > 1 ? middle.substring(1, 2).toLowerCase() : ""))
+    : ""
+  
+  // Get first 2 letters of last name: all lowercase
+  const last = (lname || "").trim()
+  const lastNamePart = last.length > 0 
+    ? last.substring(0, 2).toLowerCase()
+    : ""
+  
+  // Combine: FirstName2(FirstCap) + MiddleName2(FirstCap, if exists) + #2023 + LastName2(lowercase)
+  // If no middle name, middleNamePart will be empty string, so result will be: FirstName2#2023LastName2
+  return `${firstNamePart}${middleNamePart}#2023${lastNamePart}`
+}
 
 const memberSchema = z.object({
   fname: z.string().min(1, "First name is required").max(50, "First name must be less than 50 characters"),
@@ -104,6 +132,8 @@ const ViewMembers = ({ userId }) => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [isVerificationDialogOpen, setIsVerificationDialogOpen] = useState(false)
+  const [isErrorDialogOpen, setIsErrorDialogOpen] = useState(false)
+  const [errorDialogData, setErrorDialogData] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
@@ -117,7 +147,7 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym#1",
+      password: "",
       gender_id: "",
       bday: "",
       user_type_id: 4,
@@ -418,8 +448,8 @@ const ViewMembers = ({ userId }) => {
       console.log("Creating member with data:", data)
       console.log("Password from form:", data.password)
 
-      // Ensure password is always set
-      const password = data.password && data.password.trim() !== "" ? data.password : "CnergyGym#1"
+      // Generate standard password from user's name
+      const password = generateStandardPassword(data.fname, data.mname, data.lname)
 
       const formattedData = {
         fname: data.fname.trim(),
@@ -449,6 +479,35 @@ const ViewMembers = ({ userId }) => {
       console.log("Response status:", response.status)
       console.log("Response ok:", response.ok)
 
+      if (!response.ok) {
+        const result = await response.json()
+        console.log("Error response result:", result)
+
+        if (response.status === 409) {
+          // Handle duplicate user/name error with proper modal
+          setErrorDialogData({
+            title: result.error || "Duplicate Entry Detected",
+            message: result.message || "This user already exists in the system.",
+            duplicateType: result.duplicate_type || "unknown",
+            existingUser: result.existing_user || null
+          })
+          setIsErrorDialogOpen(true)
+          setIsLoading(false)
+          return
+        }
+        
+        // Other errors
+        setErrorDialogData({
+          title: result.error || "Error",
+          message: result.message || "Failed to add member. Please try again.",
+          duplicateType: result.duplicate_type || "unknown",
+          existingUser: result.existing_user || null
+        })
+        setIsErrorDialogOpen(true)
+        setIsLoading(false)
+        return
+      }
+
       const result = await response.json()
       console.log("Response result:", result)
 
@@ -472,12 +531,14 @@ const ViewMembers = ({ userId }) => {
       console.error("Error message:", error.message)
       console.error("Full error object:", error)
 
-      // Check if it's an email-related error
-      const errorMessage = error.message || "Failed to add member. Please try again."
-      const isEmailError = errorMessage.toLowerCase().includes("email") || errorMessage.toLowerCase().includes("already exists")
-
-      // Show error message in alert (simple approach)
-      alert((isEmailError ? "Email Already Exists: " : "Error: ") + errorMessage)
+      // Generic error fallback
+      setErrorDialogData({
+        title: "Error",
+        message: error.message || "Failed to add member. Please try again.",
+        duplicateType: "unknown",
+        existingUser: null
+      })
+      setIsErrorDialogOpen(true)
     }
     setIsLoading(false)
   }
@@ -569,24 +630,30 @@ const ViewMembers = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyGym#1",
+      password: "",
       gender_id: "",
       bday: "",
       user_type_id: 4,
       account_status: "approved",
     })
-    // Ensure password is set in form
-    form.setValue("password", "CnergyGym#1")
     setShowPassword(false)
     setIsAddDialogOpen(true)
   }
 
-  // Ensure password is always set when dialog opens
+  // Generate and update password when form values change
   useEffect(() => {
     if (isAddDialogOpen) {
-      form.setValue("password", "CnergyGym#1", { shouldValidate: true, shouldDirty: true })
+      const currentValues = form.getValues()
+      if (currentValues.fname || currentValues.lname) {
+        const generatedPassword = generateStandardPassword(
+          currentValues.fname || "",
+          currentValues.mname || "",
+          currentValues.lname || ""
+        )
+        form.setValue("password", generatedPassword, { shouldValidate: true, shouldDirty: true })
+      }
     }
-  }, [isAddDialogOpen, form])
+  }, [isAddDialogOpen, form.watch("fname"), form.watch("mname"), form.watch("lname")])
 
   return (
     <div className="space-y-6">
@@ -1088,27 +1155,49 @@ const ViewMembers = ({ userId }) => {
               <FormField
                 control={form.control}
                 name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password*</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="********"
-                          value={field.value || "CnergyGym#1"}
-                          readOnly
-                          className="bg-muted cursor-not-allowed"
-                          onFocus={(e) => e.target.blur()}
-                          tabIndex={-1}
-                          onChange={(e) => {
-                            // Always set to default password, prevent user changes
-                            field.onChange("CnergyGym#1")
-                          }}
-                          onBlur={field.onBlur}
-                          name={field.name}
-                          ref={field.ref}
-                        />
+                render={({ field }) => {
+                  // Generate password from form values
+                  const formValues = form.watch()
+                  const displayValue = field.value || generateStandardPassword(
+                    formValues.fname || "",
+                    formValues.mname || "",
+                    formValues.lname || ""
+                  )
+
+                  return (
+                    <FormItem>
+                      <FormLabel>Password*</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            placeholder="********"
+                            value={displayValue}
+                            readOnly
+                            className="bg-muted cursor-not-allowed"
+                            onFocus={(e) => e.target.blur()}
+                            tabIndex={-1}
+                            onChange={(e) => {
+                              // Always set to generated password, prevent user changes
+                              const generatedPwd = generateStandardPassword(
+                                formValues.fname || "",
+                                formValues.mname || "",
+                                formValues.lname || ""
+                              )
+                              field.onChange(generatedPwd)
+                            }}
+                            onBlur={() => {
+                              // Ensure value is always set on blur
+                              const generatedPwd = generateStandardPassword(
+                                formValues.fname || "",
+                                formValues.mname || "",
+                                formValues.lname || ""
+                              )
+                              field.onChange(generatedPwd)
+                            }}
+                            name={field.name}
+                            ref={field.ref}
+                          />
                         <Button
                           type="button"
                           variant="ghost"
@@ -1125,7 +1214,8 @@ const ViewMembers = ({ userId }) => {
                     </div>
                     <FormMessage />
                   </FormItem>
-                )}
+                  )
+                }}
               />
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -1395,6 +1485,60 @@ const ViewMembers = ({ userId }) => {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Error Dialog for Duplicate User/Name */}
+      <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
+        <DialogContent className="sm:max-w-lg" hideClose={true}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-6 w-6" />
+              {errorDialogData?.title || "Duplicate Entry Detected"}
+            </DialogTitle>
+            <DialogDescription className="text-base font-medium text-gray-700 mt-2">
+              Cannot Create User Account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+              <p className="text-sm text-red-800 font-medium leading-relaxed">
+                {errorDialogData?.message || "A user with this information already exists in the system."}
+              </p>
+            </div>
+            
+            {errorDialogData?.existingUser && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                <h4 className="font-semibold text-gray-900 text-sm">Existing User Details:</h4>
+                <div className="space-y-1 text-sm text-gray-700">
+                  <div>
+                    <span className="font-medium">Name:</span>{" "}
+                    {errorDialogData.existingUser.fname} {errorDialogData.existingUser.mname || ""} {errorDialogData.existingUser.lname}
+                  </div>
+                  {errorDialogData.existingUser.email && (
+                    <div>
+                      <span className="font-medium">Email:</span> {errorDialogData.existingUser.email}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-xs text-blue-800 leading-relaxed">
+                <strong>What to do:</strong> This account cannot be created because the information already exists in the system. 
+                Please use a different name combination or email address to create a new account.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              onClick={() => setIsErrorDialogOpen(false)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5"
+            >
+              Understood
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
