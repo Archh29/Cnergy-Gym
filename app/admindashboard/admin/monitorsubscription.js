@@ -1682,15 +1682,11 @@ const SubscriptionMonitor = ({ userId }) => {
                               <TableCell>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium">{subscription.plan_name}</div>
-                                  {(() => {
-                                    const months = calculateMonths(subscription)
-                                    return months > 1 ? (
-                                      <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        {months} month{months > 1 ? 's' : ''}
-                                      </Badge>
-                                    ) : null
-                                  })()}
+                                  {subscription.is_package_component && (
+                                    <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                      Bundled
+                                    </Badge>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -1997,7 +1993,14 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               </TableCell>
                               <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium">{subscription.plan_name}</div>
+                                  {subscription.is_package_component && (
+                                    <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                      Bundled
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -2303,7 +2306,14 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               </TableCell>
                               <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium">{subscription.plan_name}</div>
+                                  {subscription.is_package_component && (
+                                    <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                      Bundled
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell>
                                 <Badge
@@ -2610,15 +2620,11 @@ const SubscriptionMonitor = ({ userId }) => {
                               <TableCell>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium">{subscription.plan_name}</div>
-                                  {(() => {
-                                    const months = calculateMonths(subscription)
-                                    return months > 1 ? (
-                                      <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        {months} month{months > 1 ? 's' : ''}
-                                      </Badge>
-                                    ) : null
-                                  })()}
+                                  {subscription.is_package_component && (
+                                    <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                      Bundled
+                                    </Badge>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>

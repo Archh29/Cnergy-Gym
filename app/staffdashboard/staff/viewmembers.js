@@ -204,30 +204,32 @@ const ViewMembers = ({ userId }) => {
     }
   }
 
-  useEffect(() => {
-    const fetchMembers = async () => {
-      try {
-        setIsLoading(true)
-        const response = await fetch("https://api.cnergy.site/member_management.php")
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        const data = await response.json()
-        setMembers(Array.isArray(data) ? data : [])
-        setFilteredMembers(Array.isArray(data) ? data : [])
-      } catch (error) {
-        console.error("Error fetching members:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch members. Please check your connection and try again.",
-          variant: "destructive",
-        })
-        setMembers([])
-        setFilteredMembers([])
-      } finally {
-        setIsLoading(false)
+  // Move fetchMembers outside useEffect so it can be called from the refresh button
+  const fetchMembers = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch("https://api.cnergy.site/member_management.php")
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
+      const data = await response.json()
+      setMembers(Array.isArray(data) ? data : [])
+      setFilteredMembers(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("Error fetching members:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch members. Please check your connection and try again.",
+        variant: "destructive",
+      })
+      setMembers([])
+      setFilteredMembers([])
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchMembers()
   }, [toast])
 

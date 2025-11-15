@@ -1722,15 +1722,6 @@ const SubscriptionMonitor = ({ userId }) => {
                               <TableCell>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <div className="font-medium">{subscription.plan_name}</div>
-                                  {(() => {
-                                    const months = calculateMonths(subscription)
-                                    return months > 1 ? (
-                                      <Badge variant="outline" className="text-xs font-medium bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        {months} month{months > 1 ? 's' : ''}
-                                      </Badge>
-                                    ) : null
-                                  })()}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -2233,7 +2224,14 @@ const SubscriptionMonitor = ({ userId }) => {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="font-medium flex items-center gap-2 flex-wrap">
+                                {subscription.plan_name}
+                                {subscription.is_package_component && (
+                                  <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                    Bundled
+                                  </Badge>
+                                )}
+                              </div>
                               <div className="text-sm text-muted-foreground">
                                 {formatCurrency(subscription.price)}/month
                               </div>
@@ -2355,7 +2353,14 @@ const SubscriptionMonitor = ({ userId }) => {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <div className="font-medium">{subscription.plan_name}</div>
+                              <div className="font-medium flex items-center gap-2 flex-wrap">
+                                {subscription.plan_name}
+                                {subscription.is_package_component && (
+                                  <Badge variant="outline" className="text-xs font-medium bg-purple-50 text-purple-700 border-purple-200">
+                                    Bundled
+                                  </Badge>
+                                )}
+                              </div>
                               <div className="text-sm text-muted-foreground">
                                 {formatCurrency(subscription.price)}/month
                               </div>

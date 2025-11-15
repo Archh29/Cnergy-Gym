@@ -47,6 +47,10 @@ import {
   RotateCw,
   RefreshCw,
   AlertTriangle,
+  Tag,
+  GraduationCap,
+  UserCircle,
+  X,
 } from "lucide-react"
 
 // Helper function to generate standard password from user's name
@@ -142,6 +146,12 @@ const ViewMembers = ({ userId }) => {
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
   const { toast } = useToast()
+  
+  // Discount management states
+  const [memberDiscounts, setMemberDiscounts] = useState({}) // { userId: [{ discount_type, is_active, ... }] }
+  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false)
+  const [discountDialogMember, setDiscountDialogMember] = useState(null)
+  const [discountLoading, setDiscountLoading] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(memberSchema),
@@ -199,32 +209,157 @@ const ViewMembers = ({ userId }) => {
     }
   }
 
-  useEffect(() => {
-    const fetchMembers = async () => {
-      try {
-        setIsLoading(true)
-        const response = await fetch("https://api.cnergy.site/member_management.php")
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        const data = await response.json()
-        setMembers(Array.isArray(data) ? data : [])
-        setFilteredMembers(Array.isArray(data) ? data : [])
-      } catch (error) {
-        console.error("Error fetching members:", error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch members. Please check your connection and try again.",
-          variant: "destructive",
-        })
-        setMembers([])
-        setFilteredMembers([])
-      } finally {
-        setIsLoading(false)
+  // Move fetchMembers outside useEffect so it can be called from the refresh button
+  const fetchMembers = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch("https://api.cnergy.site/member_management.php")
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
+      const data = await response.json()
+      setMembers(Array.isArray(data) ? data : [])
+      setFilteredMembers(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("Error fetching members:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch members. Please check your connection and try again.",
+        variant: "destructive",
+      })
+      setMembers([])
+      setFilteredMembers([])
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  // Fetch discount eligibility for a member
+  const fetchMemberDiscounts = async (memberId) => {
+    try {
+      const response = await fetch(`https://api.cnergy.site/user_discount.php?action=get&user_id=${memberId}`)
+      if (!response.ok) throw new Error('Failed to fetch discounts')
+      const result = await response.json()
+      if (result.success) {
+        setMemberDiscounts(prev => ({
+          ...prev,
+          [memberId]: result.data || []
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching member discounts:', error)
+    }
+  }
+
+  // Fetch discounts for all members
+  const fetchAllMemberDiscounts = async () => {
+    const memberIds = members.map(m => m.id)
+    for (const memberId of memberIds) {
+      await fetchMemberDiscounts(memberId)
+    }
+  }
+
+  // Get active discount for a member
+  const getActiveDiscount = (memberId) => {
+    const discounts = memberDiscounts[memberId] || []
+    return discounts.find(d => d.is_active === 1 || d.is_active === true) || null
+  }
+
+  // Open discount management dialog
+  const handleManageDiscount = async (member) => {
+    setDiscountDialogMember(member)
+    setIsDiscountDialogOpen(true)
+    await fetchMemberDiscounts(member.id)
+  }
+
+  // Add discount tag
+  const handleAddDiscount = async (discountType, expiresAt = null, notes = null) => {
+    if (!discountDialogMember) return
+    
+    setDiscountLoading(true)
+    try {
+      const response = await fetch('https://api.cnergy.site/user_discount.php?action=add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: discountDialogMember.id,
+          discount_type: discountType,
+          verified_by: userId,
+          expires_at: expiresAt,
+          notes: notes
+        })
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Tagged ${discountDialogMember.fname} ${discountDialogMember.lname} as ${discountType === 'student' ? 'Student' : 'Senior (55+)'}`,
+        })
+        await fetchMemberDiscounts(discountDialogMember.id)
+        await fetchAllMemberDiscounts() // Refresh all discounts
+      } else {
+        throw new Error(result.error || 'Failed to add discount')
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add discount tag",
+        variant: "destructive",
+      })
+    } finally {
+      setDiscountLoading(false)
+    }
+  }
+
+  // Remove discount tag
+  const handleRemoveDiscount = async (discountId) => {
+    if (!discountDialogMember) return
+    
+    setDiscountLoading(true)
+    try {
+      const response = await fetch('https://api.cnergy.site/user_discount.php?action=remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          discount_id: discountId,
+          user_id: discountDialogMember.id,
+          verified_by: userId
+        })
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: "Discount tag removed successfully",
+        })
+        await fetchMemberDiscounts(discountDialogMember.id)
+        await fetchAllMemberDiscounts() // Refresh all discounts
+      } else {
+        throw new Error(result.error || 'Failed to remove discount')
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove discount tag",
+        variant: "destructive",
+      })
+    } finally {
+      setDiscountLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchMembers()
   }, [toast])
+
+  // Fetch discounts when members are loaded
+  useEffect(() => {
+    if (members.length > 0) {
+      fetchAllMemberDiscounts()
+    }
+  }, [members.length])
 
   useEffect(() => {
     let filtered = members
@@ -1196,7 +1331,7 @@ const ViewMembers = ({ userId }) => {
                           <span className="text-primary font-semibold text-sm">{initials}</span>
                         </div>
                         <div className="text-left flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <div className="font-semibold text-gray-900 truncate">
                               {member.fname} {member.mname} {member.lname}
                             </div>
@@ -1205,6 +1340,34 @@ const ViewMembers = ({ userId }) => {
                                 NEW
                               </Badge>
                             )}
+                            {(() => {
+                              const activeDiscount = getActiveDiscount(member.id)
+                              if (activeDiscount) {
+                                return (
+                                  <Badge 
+                                    className={`text-xs px-2 py-0.5 font-semibold ${
+                                      activeDiscount.discount_type === 'student' 
+                                        ? 'bg-blue-100 text-blue-700 border-blue-300' 
+                                        : 'bg-purple-100 text-purple-700 border-purple-300'
+                                    }`}
+                                    variant="outline"
+                                  >
+                                    {activeDiscount.discount_type === 'student' ? (
+                                      <>
+                                        <GraduationCap className="h-3 w-3 mr-1 inline" />
+                                        Student
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UserCircle className="h-3 w-3 mr-1 inline" />
+                                        55+
+                                      </>
+                                    )}
+                                  </Badge>
+                                )
+                              }
+                              return null
+                            })()}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                             <Mail className="h-3 w-3" />
@@ -1278,6 +1441,18 @@ const ViewMembers = ({ userId }) => {
                           title="Reactivate Account"
                         >
                           <RotateCw className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {/* Show Discount Management button for approved accounts */}
+                      {member.account_status === "approved" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleManageDiscount(member)}
+                          className="h-9 w-9 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Manage Discount Tags"
+                        >
+                          <Tag className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -2269,6 +2444,145 @@ const ViewMembers = ({ userId }) => {
               className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-medium px-6 py-2.5 shadow-sm hover:shadow-md transition-all"
             >
               I Understand
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discount Management Dialog */}
+      <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 mr-3">
+                <Tag className="h-5 w-5 text-blue-600" />
+              </div>
+              Manage Discount Tags
+            </DialogTitle>
+            <DialogDescription className="text-base text-gray-600">
+              Tag this member for discounted pricing. ID verification is done outside the system.
+            </DialogDescription>
+          </DialogHeader>
+          {discountDialogMember && (
+            <div className="space-y-5 py-4">
+              {/* Member Information */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {discountDialogMember.fname} {discountDialogMember.mname || ''} {discountDialogMember.lname}
+                    </p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {discountDialogMember.email}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Discount Tags */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-900">Current Discount Tags</h3>
+                {(() => {
+                  const discounts = memberDiscounts[discountDialogMember.id] || []
+                  const activeDiscounts = discounts.filter(d => d.is_active === 1 || d.is_active === true)
+                  
+                  if (activeDiscounts.length === 0) {
+                    return (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                        <p className="text-sm text-gray-600">No active discount tags</p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      {activeDiscounts.map((discount) => (
+                        <div
+                          key={discount.id}
+                          className={`flex items-center justify-between p-3 rounded-lg border-2 ${
+                            discount.discount_type === 'student'
+                              ? 'bg-blue-50 border-blue-200'
+                              : 'bg-purple-50 border-purple-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {discount.discount_type === 'student' ? (
+                              <GraduationCap className="h-5 w-5 text-blue-600" />
+                            ) : (
+                              <UserCircle className="h-5 w-5 text-purple-600" />
+                            )}
+                            <div>
+                              <p className="font-semibold text-gray-900">
+                                {discount.discount_type === 'student' ? 'Student Discount' : 'Senior (55+) Discount'}
+                              </p>
+                              {discount.verified_at && (
+                                <p className="text-xs text-gray-600">
+                                  Verified: {formatDateOnlyPH(discount.verified_at)}
+                                </p>
+                              )}
+                              {discount.expires_at && (
+                                <p className="text-xs text-gray-600">
+                                  Expires: {formatDateOnlyPH(discount.expires_at)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveDiscount(discount.id)}
+                            disabled={discountLoading}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Add Discount Tags */}
+              <div className="space-y-3 pt-4 border-t">
+                <h3 className="font-semibold text-gray-900">Add Discount Tag</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleAddDiscount('student')}
+                    disabled={discountLoading}
+                    className="h-auto py-4 flex flex-col items-center gap-2 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50"
+                  >
+                    <GraduationCap className="h-6 w-6 text-blue-600" />
+                    <span className="font-semibold text-blue-700">Student</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleAddDiscount('senior')}
+                    disabled={discountLoading}
+                    className="h-auto py-4 flex flex-col items-center gap-2 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50"
+                  >
+                    <UserCircle className="h-6 w-6 text-purple-600" />
+                    <span className="font-semibold text-purple-700">55+</span>
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 text-center">
+                  Note: ID verification is done outside the system. Only tag members after verifying their eligibility.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDiscountDialogOpen(false)}
+              disabled={discountLoading}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

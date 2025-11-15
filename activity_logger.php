@@ -41,8 +41,8 @@ function logStaffActivity($pdo, $staffId, $action, $description, $category = "Ge
             VALUES (?, ?, NOW())
         ");
         
-        // Execute with staffId (can be null)
-        $stmt->execute([$staffId]);
+        // Execute with staffId (can be null) and activity message
+        $stmt->execute([$staffId, $activityMessage]);
         
         return true;
     } catch (Exception $e) {
