@@ -122,6 +122,7 @@ const ViewMembers = ({ userId }) => {
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("pending")
+  const [discountFilter, setDiscountFilter] = useState("all") // "all", "student", "senior", "both"
   const [sortBy, setSortBy] = useState("newest")
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
@@ -259,10 +260,33 @@ const ViewMembers = ({ userId }) => {
     }
   }
 
-  // Get active discount for a member
+  // Get active discount for a member (not expired)
   const getActiveDiscount = (memberId) => {
     const discounts = memberDiscounts[memberId] || []
-    return discounts.find(d => d.is_active === 1 || d.is_active === true) || null
+    if (discounts.length === 0) {
+      return null
+    }
+    
+    const now = new Date()
+    
+    const activeDiscount = discounts.find(d => {
+      // Check if discount is active (handle both number and string formats)
+      const isActive = d.is_active === 1 || d.is_active === true || d.is_active === '1'
+      if (!isActive) {
+        return false
+      }
+      
+      // If expires_at is null, it's a senior discount (never expires)
+      if (!d.expires_at || d.expires_at === null) {
+        return true
+      }
+      
+      // Check if expiration date is in the future
+      const expiresAt = new Date(d.expires_at)
+      return expiresAt >= now
+    })
+    
+    return activeDiscount || null
   }
 
   // Open discount management dialog
@@ -361,6 +385,13 @@ const ViewMembers = ({ userId }) => {
     }
   }, [members.length])
 
+  // Also fetch discounts when members array changes (not just length)
+  useEffect(() => {
+    if (members.length > 0 && Object.keys(memberDiscounts).length === 0) {
+      fetchAllMemberDiscounts()
+    }
+  }, [members])
+
   useEffect(() => {
     let filtered = members
 
@@ -398,6 +429,29 @@ const ViewMembers = ({ userId }) => {
           `${member.fname} ${member.lname}`.toLowerCase().includes(lowercaseQuery) ||
           member.email?.toLowerCase().includes(lowercaseQuery),
       )
+    }
+
+    // Filter by discount type
+    if (discountFilter !== "all") {
+      filtered = filtered.filter((member) => {
+        const activeDiscount = getActiveDiscount(member.id)
+        if (!activeDiscount) {
+          return false // No active discount, exclude
+        }
+        
+        const discountType = activeDiscount.discount_type
+        
+        if (discountFilter === "student") {
+          return discountType === "student"
+        } else if (discountFilter === "senior") {
+          return discountType === "senior"
+        } else if (discountFilter === "both") {
+          // "both" means user has either student or senior discount
+          return discountType === "student" || discountType === "senior"
+        }
+        
+        return false
+      })
     }
 
     // Filter by custom date (takes priority over month/year filters)
@@ -469,7 +523,8 @@ const ViewMembers = ({ userId }) => {
 
     setFilteredMembers(filtered)
     setCurrentPage(1)
-  }, [searchQuery, statusFilter, sortBy, monthFilter, yearFilter, members, currentView, customDate, useCustomDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, statusFilter, discountFilter, sortBy, monthFilter, yearFilter, members, currentView, customDate, useCustomDate, memberDiscounts])
 
   const indexOfLastMember = currentPage * membersPerPage
   const indexOfFirstMember = indexOfLastMember - membersPerPage
@@ -524,9 +579,11 @@ const ViewMembers = ({ userId }) => {
     return createdDateMidnight.getTime() === today.getTime()
   }
 
-  const handleViewMember = (member) => {
+  const handleViewMember = async (member) => {
     setSelectedMember(member)
     setIsViewDialogOpen(true)
+    // Fetch discount data for this member
+    await fetchMemberDiscounts(member.id)
   }
 
   const handleEditMember = (member) => {
@@ -1170,6 +1227,17 @@ const ViewMembers = ({ userId }) => {
                 <SelectItem value="rejected">Expired</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={discountFilter} onValueChange={setDiscountFilter}>
+              <SelectTrigger className="w-48 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
+                <SelectValue placeholder="Filter by discount" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Discounts</SelectItem>
+                <SelectItem value="student">🎓 Student Discount</SelectItem>
+                <SelectItem value="senior">👤 Senior (55+) Discount</SelectItem>
+                <SelectItem value="both">Both Discounts</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={monthFilter} onValueChange={setMonthFilter}>
               <SelectTrigger className="w-36 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
                 <SelectValue placeholder="Month" />
@@ -1345,7 +1413,7 @@ const ViewMembers = ({ userId }) => {
                               if (activeDiscount) {
                                 return (
                                   <Badge 
-                                    className={`text-xs px-2 py-0.5 font-semibold ${
+                                    className={`text-xs px-2 py-1 font-semibold border ${
                                       activeDiscount.discount_type === 'student' 
                                         ? 'bg-blue-100 text-blue-700 border-blue-300' 
                                         : 'bg-purple-100 text-purple-700 border-purple-300'
@@ -1650,6 +1718,40 @@ const ViewMembers = ({ userId }) => {
                       {getStatusBadge(selectedMember.account_status)}
                     </div>
                   </div>
+                  {/* Discount Duration */}
+                  {(() => {
+                    const activeDiscount = getActiveDiscount(selectedMember.id)
+                    if (activeDiscount) {
+                      const discountType = activeDiscount.discount_type
+                      const expiresAt = activeDiscount.expires_at
+                      
+                      return (
+                        <div className="col-span-2 space-y-1">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discount Duration</span>
+                          <div className="mt-1 flex items-center gap-2">
+                            {discountType === 'student' ? (
+                              <Badge className="bg-blue-100 text-blue-700 border border-blue-300 px-3 py-1">
+                                <GraduationCap className="h-3 w-3 mr-1" />
+                                Student Discount
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-purple-100 text-purple-700 border border-purple-300 px-3 py-1">
+                                <UserCircle className="h-3 w-3 mr-1" />
+                                Senior (55+) Discount
+                              </Badge>
+                            )}
+                            <span className="text-sm font-medium text-gray-900">
+                              {expiresAt 
+                                ? `Expires: ${formatDateOnlyPH(expiresAt)}`
+                                : 'Permanent (Never expires)'
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
               </div>
             </div>
@@ -2487,10 +2589,9 @@ const ViewMembers = ({ userId }) => {
               <div className="space-y-3">
                 <h3 className="font-semibold text-gray-900">Current Discount Tags</h3>
                 {(() => {
-                  const discounts = memberDiscounts[discountDialogMember.id] || []
-                  const activeDiscounts = discounts.filter(d => d.is_active === 1 || d.is_active === true)
+                  const activeDiscount = getActiveDiscount(discountDialogMember.id)
                   
-                  if (activeDiscounts.length === 0) {
+                  if (!activeDiscount) {
                     return (
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
                         <p className="text-sm text-gray-600">No active discount tags</p>
@@ -2500,48 +2601,49 @@ const ViewMembers = ({ userId }) => {
 
                   return (
                     <div className="space-y-2">
-                      {activeDiscounts.map((discount) => (
-                        <div
-                          key={discount.id}
-                          className={`flex items-center justify-between p-3 rounded-lg border-2 ${
-                            discount.discount_type === 'student'
-                              ? 'bg-blue-50 border-blue-200'
-                              : 'bg-purple-50 border-purple-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {discount.discount_type === 'student' ? (
-                              <GraduationCap className="h-5 w-5 text-blue-600" />
-                            ) : (
-                              <UserCircle className="h-5 w-5 text-purple-600" />
-                            )}
-                            <div>
-                              <p className="font-semibold text-gray-900">
-                                {discount.discount_type === 'student' ? 'Student Discount' : 'Senior (55+) Discount'}
+                      <div
+                        className={`flex items-center justify-between p-3 rounded-lg border-2 ${
+                          activeDiscount.discount_type === 'student'
+                            ? 'bg-blue-50 border-blue-200'
+                            : 'bg-purple-50 border-purple-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {activeDiscount.discount_type === 'student' ? (
+                            <GraduationCap className="h-5 w-5 text-blue-600" />
+                          ) : (
+                            <UserCircle className="h-5 w-5 text-purple-600" />
+                          )}
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {activeDiscount.discount_type === 'student' ? 'Student Discount' : 'Senior (55+) Discount'}
+                            </p>
+                            {activeDiscount.verified_at && (
+                              <p className="text-xs text-gray-600">
+                                Verified: {formatDateOnlyPH(activeDiscount.verified_at)}
                               </p>
-                              {discount.verified_at && (
-                                <p className="text-xs text-gray-600">
-                                  Verified: {formatDateOnlyPH(discount.verified_at)}
-                                </p>
-                              )}
-                              {discount.expires_at && (
-                                <p className="text-xs text-gray-600">
-                                  Expires: {formatDateOnlyPH(discount.expires_at)}
-                                </p>
-                              )}
-                            </div>
+                            )}
+                            {activeDiscount.expires_at ? (
+                              <p className="text-xs text-gray-600">
+                                Expires: {formatDateOnlyPH(activeDiscount.expires_at)}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-green-600 font-medium">
+                                Permanent (Never expires)
+                              </p>
+                            )}
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveDiscount(discount.id)}
-                            disabled={discountLoading}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
                         </div>
-                      ))}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveDiscount(activeDiscount.id)}
+                          disabled={discountLoading}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )
                 })()}
@@ -2550,26 +2652,48 @@ const ViewMembers = ({ userId }) => {
               {/* Add Discount Tags */}
               <div className="space-y-3 pt-4 border-t">
                 <h3 className="font-semibold text-gray-900">Add Discount Tag</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAddDiscount('student')}
-                    disabled={discountLoading}
-                    className="h-auto py-4 flex flex-col items-center gap-2 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50"
-                  >
-                    <GraduationCap className="h-6 w-6 text-blue-600" />
-                    <span className="font-semibold text-blue-700">Student</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleAddDiscount('senior')}
-                    disabled={discountLoading}
-                    className="h-auto py-4 flex flex-col items-center gap-2 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50"
-                  >
-                    <UserCircle className="h-6 w-6 text-purple-600" />
-                    <span className="font-semibold text-purple-700">55+</span>
-                  </Button>
-                </div>
+                {(() => {
+                  const activeDiscount = getActiveDiscount(discountDialogMember.id)
+                  const hasActiveDiscount = !!activeDiscount
+                  
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => handleAddDiscount('student')}
+                          disabled={discountLoading || hasActiveDiscount}
+                          className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${
+                            hasActiveDiscount
+                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                              : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                        >
+                          <GraduationCap className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-blue-600'}`} />
+                          <span className={`font-semibold ${hasActiveDiscount ? 'text-gray-500' : 'text-blue-700'}`}>Student</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleAddDiscount('senior')}
+                          disabled={discountLoading || hasActiveDiscount}
+                          className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${
+                            hasActiveDiscount
+                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                              : 'border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                          }`}
+                        >
+                          <UserCircle className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-purple-600'}`} />
+                          <span className={`font-semibold ${hasActiveDiscount ? 'text-gray-500' : 'text-purple-700'}`}>55+</span>
+                        </Button>
+                      </div>
+                      {hasActiveDiscount && (
+                        <p className="text-xs text-orange-600 text-center font-medium">
+                          Remove the current discount tag before adding a new one. Members can only have one active discount at a time.
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
                 <p className="text-xs text-gray-500 text-center">
                   Note: ID verification is done outside the system. Only tag members after verifying their eligibility.
                 </p>

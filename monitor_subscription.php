@@ -1010,6 +1010,19 @@ function getAvailablePlansForUser($pdo, $user_id)
     $activeSubscriptions = $activeSubscriptionsStmt->fetchAll();
     $activePlanIds = array_column($activeSubscriptions, 'plan_id');
 
+    // Check if user has Plan ID 5 (package) - if so, they have Plan ID 1 and 2 components
+    $hasActivePlan5 = in_array(5, $activePlanIds);
+    
+    // Check if Plan ID 1 exists (either standalone or from Plan ID 5 package)
+    $hasActiveMemberFee = in_array(1, $activePlanIds) || $hasActivePlan5;
+
+    // Check if user has active monthly subscription (Premium or Standard)
+    $hasActiveMonthlySubscription = in_array(2, $activePlanIds) || in_array(3, $activePlanIds);
+    
+    // Check if user has ONLY Plan ID 6 active (for Plan ID 5 availability)
+    $hasOnlyPlan6 = count($activePlanIds) === 1 && in_array(6, $activePlanIds);
+    $hasNoActivePlans = count($activePlanIds) === 0;
+
     // Get all subscription plans
     $plansStmt = $pdo->query("
             SELECT 
@@ -1017,6 +1030,7 @@ function getAvailablePlansForUser($pdo, $user_id)
                 plan_name,
                 price,
                 duration_months,
+                duration_days,
                 is_member_only,
                 discounted_price
             FROM member_subscription_plan 
@@ -1024,11 +1038,7 @@ function getAvailablePlansForUser($pdo, $user_id)
         ");
     $allPlans = $plansStmt->fetchAll();
 
-    $availablePlans = [];
-    $hasActiveMemberFee = in_array(1, $activePlanIds);
-
-    // Check if user has active monthly subscription (Premium or Standard)
-    $hasActiveMonthlySubscription = in_array(2, $activePlanIds) || in_array(3, $activePlanIds);
+    $plansWithAvailability = [];
 
     foreach ($allPlans as $plan) {
         $planId = $plan['id'];
@@ -1042,43 +1052,87 @@ function getAvailablePlansForUser($pdo, $user_id)
             $planNameLower === 'gym session' ||
             $planNameLower === 'session');
 
-        // Plan 1 (Member Fee) - available if not active
-        if ($planId == 1) {
-            if (!$isPlanActive) {
-                $availablePlans[] = $plan;
+        // Initialize plan with availability info
+        $plan['is_available'] = true;
+        $plan['unavailable_reason'] = null;
+
+        // Plan ID 5 (Gym Membership + 1 Month Package)
+        if ($planId == 5) {
+            // Available if: user has no active plans OR only Plan ID 6 is active
+            if ($hasNoActivePlans || $hasOnlyPlan6) {
+                $plan['is_available'] = true;
+            } else {
+                $plan['is_available'] = false;
+                $plan['unavailable_reason'] = "Only available for new clients with no active subscriptions (except Gym Session)";
             }
         }
-        // Plan 2 (Member Plan Monthly) - only available if Plan 1 is active AND Plan 2 is not active
+        // Plan ID 1 (Gym Membership) - Always available for advance payment/renewal
+        elseif ($planId == 1) {
+            $plan['is_available'] = true;
+            // No reason needed - always available
+        }
+        // Plan ID 2 (Member Plan Monthly) - Always available for advance payment/renewal
         elseif ($planId == 2) {
-            if ($hasActiveMemberFee && !$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
+            $plan['is_available'] = true;
+            // No reason needed - always available
         }
-        // Plan 3 (Non-Member Plan Monthly) - available if no Plan 1 is active AND Plan 3 is not active
+        // Plan ID 3 (Non-Member Plan Monthly)
         elseif ($planId == 3) {
-            if (!$hasActiveMemberFee && !$isPlanActive) {
-                $availablePlans[] = $plan;
+            // If plan is active, allow renewal
+            if ($isPlanActive) {
+                $plan['is_available'] = true;
+            } else {
+                // If plan is NOT active: Locked if user has membership fee OR combination package
+                if ($hasActiveMemberFee || $hasActivePlan5) {
+                    $plan['is_available'] = false;
+                    $plan['unavailable_reason'] = $hasActivePlan5 
+                        ? "Cannot select: User has the Membership + 1 Month Access package which includes membership. Consider the Member Monthly Plan for better value with member discounts."
+                        : "Cannot select: User already has Gym Membership (Plan ID 1). Consider the Member Monthly Plan for better value with member discounts.";
+                } 
+                // Locked if user has active monthly plan
+                elseif ($hasActiveMonthlySubscription) {
+                    $plan['is_available'] = false;
+                    $plan['unavailable_reason'] = "Cannot select: User has an active monthly subscription. Please wait for it to expire before switching plans.";
+                } else {
+                    $plan['is_available'] = true;
+                }
             }
         }
-        // Gym Session/Day Pass plans - hide if user has active monthly subscription (Premium or Standard)
+        // Plan ID 6 (Gym Session / Day Pass)
         elseif ($isGymSessionPlan) {
-            // Only show Gym Session if user does NOT have active monthly subscription
-            if (!$hasActiveMonthlySubscription && !$isPlanActive) {
-                $availablePlans[] = $plan;
+            // If plan is active, allow renewal
+            if ($isPlanActive) {
+                $plan['is_available'] = true;
+            } else {
+                // If plan is NOT active: Locked if user has active monthly plans (2, 3, or 5)
+                if ($hasActiveMonthlySubscription || $hasActivePlan5) {
+                    $plan['is_available'] = false;
+                    $plan['unavailable_reason'] = $hasActivePlan5
+                        ? "Cannot select: User has the Membership + 1 Month Access package which includes monthly access. Day Pass is not available while you have monthly access."
+                        : "Cannot select: User has an active monthly subscription. Please wait for it to expire before purchasing a Day Pass.";
+                }
+                // Locked if user has active day pass
+                elseif (in_array(6, $activePlanIds)) {
+                    $plan['is_available'] = false;
+                    $plan['unavailable_reason'] = "Cannot select: User already has an active Day Pass. Please wait for it to expire before purchasing another one.";
+                } else {
+                    $plan['is_available'] = true;
+                }
             }
         }
-        // Other plans - available if not active
+        // Other plans - Always available (for advance payment/renewal)
         else {
-            if (!$isPlanActive) {
-                $availablePlans[] = $plan;
-            }
+            $plan['is_available'] = true;
+            // No reason needed - always available
         }
+
+        $plansWithAvailability[] = $plan;
     }
 
     echo json_encode([
         "success" => true,
-        "plans" => $availablePlans,
-        "count" => count($availablePlans),
+        "plans" => $plansWithAvailability,
+        "count" => count($plansWithAvailability),
         "active_plan_ids" => $activePlanIds,
         "active_subscriptions" => $activeSubscriptions,
         "has_active_member_fee" => $hasActiveMemberFee
@@ -1106,6 +1160,36 @@ function createManualSubscription($pdo, $data)
     $payment_amount = floatval($data['amount_paid']); // Frontend sends 'amount_paid'
     $discount_type = $data['discount_type'] ?? 'none';
     $created_by = $data['created_by'] ?? 'admin';
+    $quantity = isset($data['quantity']) ? intval($data['quantity']) : 1; // Quantity for advance payment/renewal
+    
+    // Automatically check user discount eligibility for plan_id 2 or 3 (Monthly plans)
+    // Only override if discount_type is 'none' and plan is eligible
+    if ($discount_type === 'none' && ($plan_id == 2 || $plan_id == 3)) {
+        try {
+            $discountStmt = $pdo->prepare("
+                SELECT discount_type
+                FROM user_discount_eligibility
+                WHERE user_id = ? 
+                AND is_active = 1
+                AND (expires_at IS NULL OR expires_at >= CURDATE())
+                ORDER BY 
+                    CASE discount_type 
+                        WHEN 'senior' THEN 1 
+                        WHEN 'student' THEN 2 
+                    END
+                LIMIT 1
+            ");
+            $discountStmt->execute([$user_id]);
+            $userDiscount = $discountStmt->fetch();
+            
+            if ($userDiscount && !empty($userDiscount['discount_type'])) {
+                $discount_type = $userDiscount['discount_type'];
+            }
+        } catch (Exception $e) {
+            error_log("Error checking user discount eligibility: " . $e->getMessage());
+            // Continue with 'none' if there's an error
+        }
+    }
 
     // Get PayMongo payment fields
     $paymentIntentId = $data['payment_intent_id'] ?? null;
@@ -1211,26 +1295,38 @@ function createManualSubscription($pdo, $data)
         else {
             // For other plans, use the provided start_date
             $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
-            // Calculate actual months based on payment amount (for advance payments)
-            // If user pays for multiple months, calculate how many months they paid for
-            $planPrice = floatval($plan['price']);
+            
+            // Use quantity if provided, otherwise calculate from payment amount
             $actualMonths = 1; // Default to 1 month
-
-            if ($planPrice > 0) {
-                // Calculate how many months the payment covers
-                $monthsPaid = floor($payment_amount / $planPrice);
-                if ($monthsPaid > 0) {
-                    $actualMonths = $monthsPaid;
+            
+            if ($quantity > 1) {
+                // Use quantity directly (for Plan ID 1, 2, 3 advance payment/renewal)
+                if ($plan_id == 1) {
+                    // Plan ID 1: quantity is in years, convert to months
+                    $actualMonths = $quantity * 12;
                 } else {
-                    // If payment is less than plan price, use plan's duration_months
-                    $actualMonths = $plan['duration_months'] ?? 1;
+                    // Plan ID 2, 3: quantity is in months
+                    $actualMonths = $quantity;
                 }
             } else {
-                // If plan price is 0, use plan's duration_months
-                $actualMonths = $plan['duration_months'] ?? 1;
+                // Fallback: Calculate from payment amount if quantity not provided
+                $planPrice = floatval($plan['price']);
+                if ($planPrice > 0) {
+                    // Calculate how many months the payment covers
+                    $monthsPaid = floor($payment_amount / $planPrice);
+                    if ($monthsPaid > 0) {
+                        $actualMonths = $monthsPaid;
+                    } else {
+                        // If payment is less than plan price, use plan's duration_months
+                        $actualMonths = $plan['duration_months'] ?? 1;
+                    }
+                } else {
+                    // If plan price is 0, use plan's duration_months
+                    $actualMonths = $plan['duration_months'] ?? 1;
+                }
             }
 
-            // Calculate end date based on actual months paid
+            // Calculate end date based on actual months
             $end_date_obj = clone $start_date_obj;
             $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
             $end_date = $end_date_obj->format('Y-m-d');
@@ -1245,8 +1341,10 @@ function createManualSubscription($pdo, $data)
             throw new Exception("Approved status not found in database");
         }
 
-        // Check for existing active subscriptions to prevent duplicates
+        // Check for existing active subscriptions
         // CRITICAL: Only consider subscriptions with confirmed payments
+        // For Plan ID 1, 2, 3: Allow renewal/advance payment by extending end_date
+        // For other plans: Prevent duplicates
         $existingStmt = $pdo->prepare("
                 SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
                 FROM subscription s 
@@ -1265,8 +1363,53 @@ function createManualSubscription($pdo, $data)
         $existingStmt->execute([$user_id, $plan_id]);
         $existingSubscription = $existingStmt->fetch();
 
-        if ($existingSubscription) {
+        // For Plan ID 1, 2, 3: Allow renewal/advance payment by extending end_date
+        if ($existingSubscription && ($plan_id == 1 || $plan_id == 2 || $plan_id == 3)) {
+            // Calculate extension months
+            $extensionMonths = 0;
+            if ($quantity > 1) {
+                if ($plan_id == 1) {
+                    $extensionMonths = $quantity * 12; // Years to months
+                } else {
+                    $extensionMonths = $quantity; // Months
+                }
+            } else {
+                // Fallback: Calculate from payment amount
+                $planPrice = floatval($plan['price']);
+                if ($planPrice > 0) {
+                    $extensionMonths = floor($payment_amount / $planPrice);
+                }
+            }
+            
+            if ($extensionMonths > 0) {
+                // Extend existing subscription's end_date
+                $existingEndDate = new DateTime($existingSubscription['end_date'], new DateTimeZone('Asia/Manila'));
+                $newEndDate = clone $existingEndDate;
+                $newEndDate->add(new DateInterval('P' . $extensionMonths . 'M'));
+                $end_date = $newEndDate->format('Y-m-d');
+                
+                // Update existing subscription
+                $updateStmt = $pdo->prepare("
+                    UPDATE subscription 
+                    SET end_date = ?, 
+                        amount_paid = amount_paid + ?,
+                        discounted_price = discounted_price + ?
+                    WHERE id = ?
+                ");
+                $updateStmt->execute([$end_date, $payment_amount, $payment_amount, $existingSubscription['id']]);
+                $subscription_id = $existingSubscription['id'];
+                
+                // Create payment record for the renewal
+                // (Payment record creation code will be handled below)
+                $isRenewal = true;
+            } else {
+                throw new Exception("Invalid quantity or payment amount for renewal");
+            }
+        } elseif ($existingSubscription) {
+            // For other plans (not 1, 2, 3): Prevent duplicates
             throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
+        } else {
+            $isRenewal = false;
         }
 
         // Check for existing pending requests to prevent duplicates
@@ -1293,27 +1436,30 @@ function createManualSubscription($pdo, $data)
         $receiptNumber = $data['receipt_number'] ?? generateSubscriptionReceiptNumber($pdo);
         $cashierId = $data['cashier_id'] ?? null;
 
-        // Create subscription - use Philippines timezone for created_at if column exists
-        $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
-        $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
+        // Only create new subscription if not a renewal
+        if (!isset($isRenewal) || !$isRenewal) {
+            // Create subscription - use Philippines timezone for created_at if column exists
+            $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
+            $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
 
-        $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $phTimeString = $phTime->format('Y-m-d H:i:s');
+            $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+            $phTimeString = $phTime->format('Y-m-d H:i:s');
 
-        if ($hasCreatedAt) {
-            $subscriptionStmt = $pdo->prepare("
-                    INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-            $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $phTimeString]);
-        } else {
-            $subscriptionStmt = $pdo->prepare("
-                    INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-            $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+            if ($hasCreatedAt) {
+                $subscriptionStmt = $pdo->prepare("
+                        INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given, created_at) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $phTimeString]);
+            } else {
+                $subscriptionStmt = $pdo->prepare("
+                        INSERT INTO subscription (user_id, plan_id, status_id, start_date, end_date, discounted_price, discount_type, amount_paid, payment_method, receipt_number, cashier_id, change_given) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                $subscriptionStmt->execute([$user_id, $plan_id, $status['id'], $start_date, $end_date, $payment_amount, $discount_type, $payment_amount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+            }
+            $subscription_id = $pdo->lastInsertId();
         }
-        $subscription_id = $pdo->lastInsertId();
 
         // Create payment record - only for confirmed payments
         try {

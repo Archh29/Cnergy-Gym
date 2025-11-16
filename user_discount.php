@@ -221,6 +221,20 @@ if ($method === 'POST' && $action === 'add') {
         ");
         $deactivateStmt->execute([$userId, $discountType]);
         
+        // Automatically set expiration date based on discount type:
+        // - Student: 1 year from now
+        // - Senior (55+): NULL (forever, no expiration)
+        if ($discountType === 'student') {
+            // Student discount expires in 1 year
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+1 year'));
+        } else if ($discountType === 'senior') {
+            // Senior discount never expires
+            $expiresAt = null;
+        } else {
+            // Fallback: use provided expires_at or null
+            $expiresAt = $expiresAt ?: null;
+        }
+        
         // Insert new discount eligibility
         $insertStmt = $pdo->prepare("
             INSERT INTO user_discount_eligibility 
@@ -231,7 +245,7 @@ if ($method === 'POST' && $action === 'add') {
             $userId,
             $discountType,
             $verifiedBy,
-            $expiresAt ?: null,
+            $expiresAt,
             $notes ?: null
         ]);
         

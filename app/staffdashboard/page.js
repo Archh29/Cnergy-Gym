@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
-import { CheckCircle, AlertCircle, Clock, Wifi } from "lucide-react"
+import { CheckCircle, AlertCircle, Clock, Wifi, X } from "lucide-react"
 import StaffDashboardClient from "./staff/client-wrapper"
 
 // Error Boundary Component
@@ -451,46 +451,83 @@ const App = () => {
         </div>
       </div>
 
-      {/* Enhanced Notification */}
+      {/* Modern Enhanced Notification */}
       {notification.show && (
-        <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-right duration-300">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:max-w-md z-[9999] animate-in slide-in-from-top-2 fade-in-0 duration-300">
           <div
             className={`
-              max-w-sm rounded-lg shadow-lg border p-4 bg-white whitespace-pre-line
+              relative rounded-xl shadow-2xl border-2 backdrop-blur-sm overflow-hidden
               ${notification.type === "error"
-                ? "border-red-200 bg-red-50"
+                ? "border-red-300/50 bg-gradient-to-br from-red-50 to-red-100/80"
                 : notification.type === "warning"
-                  ? "border-orange-200 bg-orange-50"
-                  : "border-green-200 bg-green-50"
+                  ? "border-orange-300/50 bg-gradient-to-br from-orange-50 to-orange-100/80"
+                  : "border-green-300/50 bg-gradient-to-br from-green-50 to-green-100/80"
               }
             `}
           >
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
+            {/* Animated border effect */}
+            <div className={`absolute inset-0 ${notification.type === "error" ? "bg-red-500/10" : notification.type === "warning" ? "bg-orange-500/10" : "bg-green-500/10"} animate-pulse`} />
+            
+            <div className="relative flex items-start gap-4 p-5">
+              {/* Icon with background circle */}
+              <div className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full ${
+                notification.type === "error"
+                  ? "bg-red-100"
+                  : notification.type === "warning"
+                    ? "bg-orange-100"
+                    : "bg-green-100"
+              }`}>
                 {notification.type === "error" ? (
-                  <AlertCircle className="w-5 h-5 text-red-500" />
+                  <AlertCircle className="w-5 h-5 text-red-600" />
                 ) : notification.type === "warning" ? (
-                  <Clock className="w-5 h-5 text-orange-500" />
+                  <Clock className="w-5 h-5 text-orange-600" />
                 ) : (
-                  <CheckCircle className="w-5 h-5 text-green-500" />
+                  <CheckCircle className="w-5 h-5 text-green-600" />
                 )}
               </div>
-              <div className="flex-1">
+              
+              {/* Message content */}
+              <div className="flex-1 min-w-0">
                 <p
-                  className={`text-sm font-medium whitespace-pre-line ${notification.type === "error"
-                    ? "text-red-800"
-                    : notification.type === "warning"
-                      ? "text-orange-800"
-                      : "text-green-800"
-                    }`}
-                >
-                  {notification.message}
-                </p>
+                  className={`text-sm font-semibold leading-relaxed whitespace-pre-line break-words ${
+                    notification.type === "error"
+                      ? "text-red-900"
+                      : notification.type === "warning"
+                        ? "text-orange-900"
+                        : "text-green-900"
+                  }`}
+                  dangerouslySetInnerHTML={{ __html: notification.message.replace(/₱/g, '&#8369;') }}
+                />
               </div>
+              
+              {/* Close button */}
+              <button
+                onClick={() => setNotification({ show: false, message: "", type: "" })}
+                className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                  notification.type === "error"
+                    ? "hover:bg-red-200/50 text-red-600"
+                    : notification.type === "warning"
+                      ? "hover:bg-orange-200/50 text-orange-600"
+                      : "hover:bg-green-200/50 text-green-600"
+                }`}
+                aria-label="Close notification"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
+            
+            {/* Progress bar */}
+            <div className={`h-1 ${notification.type === "error" ? "bg-red-500" : notification.type === "warning" ? "bg-orange-500" : "bg-green-500"}`} style={{ animation: 'shrink 8s linear forwards' }} />
           </div>
         </div>
       )}
+      
+      <style jsx>{`
+        @keyframes shrink {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      `}</style>
 
       {/* Main Content */}
       <ErrorBoundary>

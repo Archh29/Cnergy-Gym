@@ -31,6 +31,8 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
+  UserCircle,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -56,11 +58,13 @@ const SubscriptionMonitor = ({ userId }) => {
   const [selectedUserInfo, setSelectedUserInfo] = useState(null)
   const [userSearchQuery, setUserSearchQuery] = useState("")
   const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const [userActiveDiscount, setUserActiveDiscount] = useState(null) // Track user's active discount
+  const [planQuantity, setPlanQuantity] = useState(1) // Quantity for advance payment/renewal (months for Plan 2/3, years for Plan 1)
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    discount_type: "regular",
+    discount_type: "none",
     amount_paid: "",
     payment_method: "cash",
     amount_received: "",
@@ -102,7 +106,7 @@ const SubscriptionMonitor = ({ userId }) => {
             config[key] = {
               name: discount.name,
               discount: discount.amount,
-              description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
+              description: discount.amount === 0 ? "No discount" : `${discount.name} - &#8369;${discount.amount} off`
             }
           })
           return config
@@ -114,8 +118,8 @@ const SubscriptionMonitor = ({ userId }) => {
     // Fallback to default discounts with original keys
     return {
       regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+      student: { name: "Student Discount", discount: 150, description: "Student discount - &#8369;150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - &#8369;200 off" }
     }
   })
 
@@ -560,6 +564,7 @@ const SubscriptionMonitor = ({ userId }) => {
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
         amount_paid: totalAmount,
+        quantity: planQuantity || 1, // Quantity for advance payment/renewal
         payment_method: paymentMethod,
         amount_received: receivedAmount,
         change_given: change,
@@ -791,6 +796,8 @@ const SubscriptionMonitor = ({ userId }) => {
     setSelectedUserInfo(null)
     setUserSearchQuery("")
     setShowUserDropdown(false)
+    setUserActiveDiscount(null)
+    setPlanQuantity(1)
     // Reset to all plans
     fetchSubscriptionPlans()
   }
@@ -798,29 +805,75 @@ const SubscriptionMonitor = ({ userId }) => {
   const handlePlanChange = (planId) => {
     const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
     if (selectedPlan) {
-      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, subscriptionForm.discount_type)
+      // Reset quantity when plan changes
+      setPlanQuantity(1)
+      
+      // Only apply discount for plan_id 2 or 3 (Monthly plans) if user has active discount
+      let discountType = "none"
+      if ((planId == 2 || planId == 3) && userActiveDiscount) {
+        discountType = userActiveDiscount
+      }
+      
+      // Calculate price: base price * quantity, then apply discount
+      const basePrice = parseFloat(selectedPlan.price || 0)
+      const totalPrice = basePrice * planQuantity
+      const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
+      
       setSubscriptionForm((prev) => ({
         ...prev,
         plan_id: planId,
+        discount_type: discountType,
         amount_paid: discountedPrice.toString(),
       }))
     }
   }
+  
+  // Handle quantity change for advance payment/renewal
+  const handleQuantityChange = (quantity) => {
+    const qty = Math.max(1, parseInt(quantity) || 1)
+    setPlanQuantity(qty)
+    
+    if (subscriptionForm.plan_id) {
+      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
+      if (selectedPlan) {
+        // Only apply discount for plan_id 2 or 3 (Monthly plans) if user has active discount
+        let discountType = subscriptionForm.discount_type || "none"
+        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && userActiveDiscount) {
+          discountType = userActiveDiscount
+        }
+        
+        // Calculate price: base price * quantity, then apply discount
+        const basePrice = parseFloat(selectedPlan.price || 0)
+        const totalPrice = basePrice * qty
+        const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
+        
+        setSubscriptionForm((prev) => ({
+          ...prev,
+          discount_type: discountType,
+          amount_paid: discountedPrice.toString(),
+        }))
+      }
+    }
+  }
 
-  const handleDiscountTypeChange = (discountType) => {
-    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-    if (selectedPlan) {
-      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, discountType)
-      setSubscriptionForm((prev) => ({
-        ...prev,
-        discount_type: discountType,
-        amount_paid: discountedPrice.toString(),
-      }))
-    } else {
-      setSubscriptionForm((prev) => ({
-        ...prev,
-        discount_type: discountType,
-      }))
+
+  // Fetch user's active discount eligibility
+  const fetchUserDiscount = async (userId) => {
+    try {
+      const response = await fetch(`https://api.cnergy.site/user_discount.php?action=get_active&user_id=${userId}`)
+      if (!response.ok) throw new Error('Failed to fetch user discount')
+      const result = await response.json()
+      if (result.success && result.discount_type) {
+        setUserActiveDiscount(result.discount_type)
+        return result.discount_type
+      } else {
+        setUserActiveDiscount(null)
+        return null
+      }
+    } catch (error) {
+      console.error('Error fetching user discount:', error)
+      setUserActiveDiscount(null)
+      return null
     }
   }
 
@@ -830,7 +883,11 @@ const SubscriptionMonitor = ({ userId }) => {
         ...prev,
         user_id: userId,
         plan_id: "", // Reset plan selection
+        discount_type: "none", // Reset discount
+        amount_paid: "", // Reset amount
       }))
+      setUserActiveDiscount(null) // Reset discount
+      setPlanQuantity(1) // Reset quantity
 
       if (userId) {
         // Find the user from availableUsers array
@@ -845,11 +902,15 @@ const SubscriptionMonitor = ({ userId }) => {
           setUserSearchQuery("")
         }
         
+        // Fetch user's active discount
+        await fetchUserDiscount(userId)
+        
         // Fetch available plans for the user
         await fetchAvailablePlansForUser(userId)
       } else {
         setSelectedUserInfo(null)
         setUserSearchQuery("")
+        setUserActiveDiscount(null)
         // Reset to all plans if no user selected
         fetchSubscriptionPlans()
       }
@@ -857,6 +918,7 @@ const SubscriptionMonitor = ({ userId }) => {
       console.error("Error in handleUserSelection:", error)
       setSelectedUserInfo(null)
       setUserSearchQuery("")
+      setUserActiveDiscount(null)
       setMessage({ type: "error", text: "Failed to load user information" })
     }
   }
@@ -2919,21 +2981,61 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
+                  <Select 
+                    value={subscriptionForm.plan_id} 
+                    onValueChange={handlePlanChange}
+                  >
                     <SelectTrigger className="h-10 text-sm border border-gray-300">
                       <SelectValue placeholder="Select a plan" />
                     </SelectTrigger>
                     <SelectContent>
-                      {subscriptionPlans.map((plan) => (
-                        <SelectItem key={plan.id} value={plan.id.toString()}>
-                          {plan.plan_name}
-                        </SelectItem>
-                      ))}
+                      {subscriptionPlans.map((plan) => {
+                        const isAvailable = plan.is_available !== false
+                        return (
+                          <SelectItem 
+                            key={plan.id} 
+                            value={plan.id.toString()}
+                            disabled={!isAvailable}
+                            className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
+                          >
+                            <div className="flex flex-col">
+                              <span>{plan.plan_name}</span>
+                              {!isAvailable && plan.unavailable_reason && (
+                                <span className="text-xs text-gray-500 mt-0.5">
+                                  {plan.unavailable_reason}
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        )
+                      })}
                     </SelectContent>
                   </Select>
                 )}
               </div>
             </div>
+
+            {/* Quantity Input for Plan ID 1, 2, 3 (Advance Payment/Renewal) */}
+            {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-700 font-semibold">
+                  How much of the plan do you want to renew or advance payment?
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={planQuantity}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  placeholder="Enter quantity"
+                  className="h-10 text-sm border border-gray-300"
+                />
+                <p className="text-xs text-gray-500">
+                  {subscriptionForm.plan_id == 1 
+                    ? "Enter number of years for Gym Membership" 
+                    : "Enter number of months for Monthly Plan"}
+                </p>
+              </div>
+            )}
 
             {/* Second Row: Amount to Pay and Payment Method */}
             <div className="grid grid-cols-2 gap-4">
@@ -2961,37 +3063,25 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
 
             {/* Discount Section */}
-            <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Discount Options</h3>
-              <div className="grid grid-cols-3 gap-3">
-                {Object.entries(discountConfig).map(([key, config]) => (
-                  <Button
-                    key={key}
-                    type="button"
-                    variant={subscriptionForm.discount_type === key ? "default" : "outline"}
-                    className={`h-auto py-3 px-3 ${subscriptionForm.discount_type === key
-                      ? "bg-gray-800 hover:bg-gray-700 text-white border-gray-800"
-                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                      }`}
-                    onClick={() => {
-                      setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
-                      // Auto-calculate amount when discount changes
-                      if (subscriptionForm.plan_id) {
-                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
-                        if (selectedPlan) {
-                          const discountedPrice = calculateDiscountedPrice(selectedPlan.price, key)
-                          setSubscriptionForm(prev => ({ ...prev, amount_paid: discountedPrice.toString() }))
-                        }
-                      }
-                    }}
-                  >
-                    <div className="flex flex-col items-center w-full">
-                      <span className="text-sm font-medium">{config.name}</span>
-                    </div>
-                  </Button>
-                ))}
+            {/* User Discount Status */}
+            {selectedUserInfo && userActiveDiscount && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2">
+                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${
+                    userActiveDiscount === 'student' 
+                      ? 'bg-blue-100 text-blue-700 border border-blue-300' 
+                      : 'bg-purple-100 text-purple-700 border border-purple-300'
+                  }`}>
+                    {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
+                  </div>
+                  <span className="text-sm text-gray-600">
+                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 
+                      ? 'Discount will be automatically applied'
+                      : 'Discount only applies to Monthly plans (Plan ID 2 or 3)'}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Price Breakdown */}
             {subscriptionForm.plan_id && (
@@ -3002,18 +3092,21 @@ const SubscriptionMonitor = ({ userId }) => {
                     const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
                     const planPrice = parseFloat(selectedPlan?.price || 0)
                     const amountPaid = parseFloat(subscriptionForm.amount_paid || 0)
-                    const months = planPrice > 0 && amountPaid > 0 ? Math.floor(amountPaid / planPrice) : 1
                     const discount = discountConfig[subscriptionForm.discount_type]?.discount || 0
-                    const hasDiscount = subscriptionForm.discount_type !== 'regular' && discount > 0
+                    const hasDiscount = subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && discount > 0
+                    
+                    // Calculate original total: base price * quantity
+                    const quantity = planQuantity || 1
+                    const originalTotal = planPrice * quantity
 
                     return (
                       <>
                         <div className="flex justify-between">
                           <span>Original Price:</span>
                           <span className="font-medium text-gray-900">
-                            {months > 1 ? (
+                            {quantity > 1 ? (
                               <span>
-                                ₱{planPrice.toFixed(2)} × {months} month{months > 1 ? 's' : ''} = ₱{(planPrice * months).toFixed(2)}
+                                ₱{planPrice.toFixed(2)} × {quantity} {subscriptionForm.plan_id == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
                               </span>
                             ) : (
                               `₱${planPrice.toFixed(2)}`
@@ -3021,9 +3114,9 @@ const SubscriptionMonitor = ({ userId }) => {
                           </span>
                         </div>
                         {hasDiscount && (
-                          <div className="flex justify-between">
+                          <div className="flex justify-between text-blue-700">
                             <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                            <span className="font-medium text-gray-700">-₱{discount.toFixed(2)}</span>
+                            <span className="font-medium">-₱{discount.toFixed(2)}</span>
                           </div>
                         )}
                         <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
