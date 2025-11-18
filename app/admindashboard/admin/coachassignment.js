@@ -506,49 +506,34 @@ const CoachAssignments = ({ userId }) => {
       )}
 
       {/* Enhanced Dashboard Stats - Matching Monitoring Subscription Style */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white to-white overflow-hidden group">
-          <CardContent className="flex items-center p-6 relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
-              <UserCheck className="h-6 w-6 text-slate-700" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="border-0 shadow-xl hover:shadow-2xl transition-all duration-300 bg-gradient-to-br from-white via-slate-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-8 relative">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-slate-100 rounded-full -mr-20 -mt-20 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 mr-6 shadow-lg group-hover:scale-110 transition-transform">
+              <UserCheck className="h-8 w-8 text-slate-700" />
             </div>
             <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
                 Assigned Members
               </p>
-              <p className="text-3xl font-bold text-slate-900">{dashboardStats.assigned_members || assignedMembers.length}</p>
-              <p className="text-xs text-slate-500 mt-1">Active assignments</p>
+              <p className="text-4xl font-bold text-slate-900 mb-1">{dashboardStats.assigned_members || assignedMembers.length}</p>
+              <p className="text-sm text-slate-500">Active assignments</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group">
-          <CardContent className="flex items-center p-6 relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
-              <Users className="h-6 w-6 text-orange-700" />
+        <Card className="border-0 shadow-xl hover:shadow-2xl transition-all duration-300 bg-gradient-to-br from-orange-50 via-white to-orange-50 overflow-hidden group">
+          <CardContent className="flex items-center p-8 relative">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-orange-100 rounded-full -mr-20 -mt-20 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-200 mr-6 shadow-lg group-hover:scale-110 transition-transform">
+              <Users className="h-8 w-8 text-orange-700" />
             </div>
             <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">
                 Total Coaches
               </p>
-              <p className="text-3xl font-bold text-slate-900">{dashboardStats.total_coaches}</p>
-              <p className="text-xs text-slate-500 mt-1">Available coaches</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group">
-          <CardContent className="flex items-center p-6 relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
-              <UserPlus className="h-6 w-6 text-blue-700" />
-            </div>
-            <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                Unassigned Members
-              </p>
-              <p className="text-3xl font-bold text-slate-900">{availableMembers.length}</p>
-              <p className="text-xs text-slate-500 mt-1">Available for assignment</p>
+              <p className="text-4xl font-bold text-slate-900 mb-1">{dashboardStats.total_coaches}</p>
+              <p className="text-sm text-slate-500">Available coaches</p>
             </div>
           </CardContent>
         </Card>

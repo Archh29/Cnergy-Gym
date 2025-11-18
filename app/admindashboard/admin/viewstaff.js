@@ -37,6 +37,32 @@ const validateEmail = (email) => {
   return emailRegex.test(email)
 }
 
+// Helper function to generate standard password for staff
+// Format: St + First2LettersOfFirstName(lowercase) + First2LettersOfMiddleName(lowercase, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "John Michael Doe" -> "StjoMi#2023do", "Jane Doe" (no middle name) -> "Stja#2023do"
+const generateStaffPassword = (fname, mname, lname) => {
+  // Get first 2 letters of first name: both lowercase
+  const first = (fname || "").trim()
+  const firstNamePart = first.length > 0 
+    ? (first.substring(0, 2).toLowerCase())
+    : ""
+  
+  // Get first 2 letters of middle name ONLY if it exists: both lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  const middleNamePart = middle.length > 0
+    ? (middle.substring(0, 2).toLowerCase())
+    : ""
+  
+  // Get first 2 letters of last name: all lowercase
+  const last = (lname || "").trim()
+  const lastNamePart = last.length > 0 
+    ? last.substring(0, 2).toLowerCase()
+    : ""
+  
+  // Combine: St + FirstName2(lowercase) + MiddleName2(lowercase, if exists) + #2023 + LastName2(lowercase)
+  return `St${firstNamePart}${middleNamePart}#2023${lastNamePart}`
+}
+
 const ViewStaff = () => {
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -48,7 +74,7 @@ const ViewStaff = () => {
   const [loading, setLoading] = useState(true)
   const [formData, setFormData] = useState({
     email: "",
-    password: "CnergyStaff#1",
+    password: "",
     user_type_id: 2, // Always Staff
     fname: "",
     mname: "",
@@ -73,12 +99,23 @@ const ViewStaff = () => {
     fetchArchivedStaff() // Also fetch archived staff count on mount
   }, [])
 
-  // Ensure password is always set when Add Staff dialog opens
+  // Auto-generate password when name fields change
+  useEffect(() => {
+    if (formData.fname || formData.lname) {
+      const generatedPassword = generateStaffPassword(formData.fname, formData.mname, formData.lname)
+      setFormData((prev) => ({
+        ...prev,
+        password: generatedPassword,
+      }))
+    }
+  }, [formData.fname, formData.mname, formData.lname])
+
+  // Ensure password is reset when Add Staff dialog opens
   useEffect(() => {
     if (open) {
       setFormData((prev) => ({
         ...prev,
-        password: "CnergyStaff#1",
+        password: "",
       }))
       setShowPassword(false)
     }
@@ -179,7 +216,26 @@ const ViewStaff = () => {
     }
 
     // Date validation
-    if (!data.bday) errors.bday = "Date of birth is required"
+    if (!data.bday) {
+      errors.bday = "Date of birth is required"
+    } else {
+      // Validate age - must be at least 18 years old
+      const today = new Date()
+      const birthDate = new Date(data.bday)
+      const age = today.getFullYear() - birthDate.getFullYear()
+      const monthDiff = today.getMonth() - birthDate.getMonth()
+      const dayDiff = today.getDate() - birthDate.getDate()
+      
+      // Calculate exact age
+      let exactAge = age
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        exactAge--
+      }
+      
+      if (exactAge < 18) {
+        errors.bday = "Staff must be at least 18 years old"
+      }
+    }
 
     return errors
   }
@@ -227,12 +283,13 @@ const ViewStaff = () => {
   const handleAddStaff = async (e) => {
     e.preventDefault()
 
-    // Always use the standard default password
+    // Generate standard password from name
     // Handle middle name - convert null/undefined/empty to empty string (database doesn't allow NULL)
     // Set default gender_id (1 = Male) since gender field was removed from UI
+    const generatedPassword = generateStaffPassword(formData.fname, formData.mname, formData.lname)
     const staffData = {
       ...formData,
-      password: "CnergyStaff#1",
+      password: generatedPassword,
       mname: formData.mname && formData.mname.trim() !== '' ? formData.mname.trim() : '',
       gender_id: formData.gender_id || 1, // Default to 1 (Male) if not set
     }
@@ -475,14 +532,15 @@ const ViewStaff = () => {
                         type={showPassword ? "text" : "password"}
                         id="password"
                         name="password"
-                        value={formData.password || "CnergyStaff#1"}
+                        value={formData.password || generateStaffPassword(formData.fname, formData.mname, formData.lname)}
                         readOnly
                         className="bg-blue-50 border-blue-200 text-blue-900 cursor-not-allowed h-11 pr-36 font-mono"
                         onFocus={(e) => e.target.blur()}
                         tabIndex={-1}
                         onChange={(e) => {
-                          // Always reset to default password if user tries to change it
-                          setFormData({ ...formData, password: "CnergyStaff#1" })
+                          // Always reset to generated password if user tries to change it
+                          const generatedPwd = generateStaffPassword(formData.fname, formData.mname, formData.lname)
+                          setFormData({ ...formData, password: generatedPwd })
                         }}
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -527,7 +585,7 @@ const ViewStaff = () => {
                       value={formData.bday}
                       onChange={handleInputChange}
                       required
-                      max={new Date().toISOString().split('T')[0]}
+                      max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                       className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
                     />
                     {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
@@ -864,7 +922,7 @@ const ViewStaff = () => {
                 value={formData.bday}
                 onChange={handleInputChange}
                 required
-                max={new Date().toISOString().split('T')[0]}
+                max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                 className={`h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.bday ? "border-red-500" : ""}`}
               />
               {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}

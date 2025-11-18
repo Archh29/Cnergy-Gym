@@ -59,6 +59,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const [userSearchQuery, setUserSearchQuery] = useState("")
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [userActiveDiscount, setUserActiveDiscount] = useState(null) // Track user's active discount
+  const [userActiveSubscriptions, setUserActiveSubscriptions] = useState([]) // Track user's active subscriptions
   const [planQuantity, setPlanQuantity] = useState(1) // Quantity for advance payment/renewal (months for Plan 2/3, years for Plan 1)
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
@@ -324,6 +325,8 @@ const SubscriptionMonitor = ({ userId }) => {
         console.log("Active plan IDs:", response.data.active_plan_ids)
 
         setSubscriptionPlans(response.data.plans || [])
+        // Store active subscriptions for display
+        setUserActiveSubscriptions(response.data.active_subscriptions || [])
         return {
           availablePlans: response.data.plans || [],
           existingSubscriptions: response.data.active_subscriptions || [],
@@ -602,7 +605,6 @@ const SubscriptionMonitor = ({ userId }) => {
 
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
-        setMessage({ type: "success", text: "Manual subscription created and payment processed successfully!" });
       } else {
         throw new Error(response.data.message || "Failed to create manual subscription");
       }
@@ -809,9 +811,10 @@ const SubscriptionMonitor = ({ userId }) => {
       // Reset quantity when plan changes
       setPlanQuantity(1)
       
-      // Only apply discount for plan_id 2 or 3 (Monthly plans) if user has active discount
+      // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
+      // Plan ID 5 includes Monthly Access Premium, so discount should apply
       let discountType = "none"
-      if ((planId == 2 || planId == 3) && userActiveDiscount) {
+      if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
         discountType = userActiveDiscount
       }
       
@@ -837,9 +840,10 @@ const SubscriptionMonitor = ({ userId }) => {
     if (subscriptionForm.plan_id) {
       const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
       if (selectedPlan) {
-        // Only apply discount for plan_id 2 or 3 (Monthly plans) if user has active discount
+        // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
+        // Plan ID 5 includes Monthly Access Premium, so discount should apply
         let discountType = subscriptionForm.discount_type || "none"
-        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && userActiveDiscount) {
+        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) && userActiveDiscount) {
           discountType = userActiveDiscount
         }
         
@@ -888,6 +892,7 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_paid: "", // Reset amount
       }))
       setUserActiveDiscount(null) // Reset discount
+      setUserActiveSubscriptions([]) // Reset active subscriptions
       setPlanQuantity(1) // Reset quantity
 
       if (userId) {
@@ -912,6 +917,7 @@ const SubscriptionMonitor = ({ userId }) => {
         setSelectedUserInfo(null)
         setUserSearchQuery("")
         setUserActiveDiscount(null)
+        setUserActiveSubscriptions([])
         // Reset to all plans if no user selected
         fetchSubscriptionPlans()
       }
@@ -1647,9 +1653,6 @@ const SubscriptionMonitor = ({ userId }) => {
               <div>
                 <CardTitle className="flex items-center gap-3 text-2xl font-bold text-slate-900 mb-1">
                   Monitor Subscription
-                  <Badge variant="outline" className="ml-2 bg-gradient-to-r from-yellow-50 to-yellow-100 text-yellow-700 border-yellow-300 font-semibold shadow-sm">
-                    {analytics.pending} pending
-                  </Badge>
                 </CardTitle>
                 <CardDescription className="text-slate-600 font-medium">Monitor subscription status and track upcoming expirations</CardDescription>
               </div>
@@ -3324,6 +3327,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     <SelectContent>
                       {subscriptionPlans.map((plan) => {
                         const isAvailable = plan.is_available !== false
+                        const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
                         return (
                           <SelectItem 
                             key={plan.id} 
@@ -3331,11 +3335,18 @@ const SubscriptionMonitor = ({ userId }) => {
                             disabled={!isAvailable}
                             className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
                           >
-                            <div className="flex flex-col">
-                              <span>{plan.plan_name}</span>
-                              {!isAvailable && plan.unavailable_reason && (
-                                <span className="text-xs text-gray-500 mt-0.5">
-                                  {plan.unavailable_reason}
+                            <div className="flex flex-col w-full">
+                              <div className="flex items-center justify-between w-full">
+                                <span>{plan.plan_name}</span>
+                                {isActivePlan && (
+                                  <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs ml-2">
+                                    Active
+                                  </Badge>
+                                )}
+                              </div>
+                              {isActivePlan && isAvailable && (
+                                <span className="text-xs text-gray-600 mt-0.5">
+                                  Renewal/Advance Payment - Will extend existing subscription
                                 </span>
                               )}
                             </div>
@@ -3352,7 +3363,9 @@ const SubscriptionMonitor = ({ userId }) => {
             {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
               <div className="space-y-2">
                 <Label className="text-sm text-gray-700 font-semibold">
-                  How much of the plan do you want to renew or advance payment?
+                  {userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(subscriptionForm.plan_id))
+                    ? "Renewal/Advance Payment - How much to extend?"
+                    : "How much of the plan do you want to renew or advance payment?"}
                 </Label>
                 <Input
                   type="number"
@@ -3395,6 +3408,67 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             </div>
 
+            {/* Active Subscriptions Indicator */}
+            {selectedUserInfo && userActiveSubscriptions.length > 0 && (
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex items-start gap-3">
+                  <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">Active Subscriptions</span>
+                      <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs">
+                        {userActiveSubscriptions.length} Active
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-gray-600">
+                      This member has active subscription(s). Selecting the same plan will extend/renew their subscription.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {userActiveSubscriptions.map((sub, index) => {
+                        const endDate = new Date(sub.end_date)
+                        const isExpiringSoon = endDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+                        const isSelectedPlan = subscriptionForm.plan_id && parseInt(subscriptionForm.plan_id) === parseInt(sub.plan_id)
+                        
+                        return (
+                          <div 
+                            key={index}
+                            className={`p-3 rounded-md border ${
+                              isSelectedPlan 
+                                ? 'bg-blue-50 border-blue-300' 
+                                : 'bg-white border-green-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <CheckCircle className={`h-4 w-4 ${isSelectedPlan ? 'text-blue-600' : 'text-green-600'}`} />
+                                <span className="text-sm font-medium text-gray-900">{sub.plan_name}</span>
+                                {isSelectedPlan && (
+                                  <Badge className="bg-blue-600 text-white text-xs ml-2">
+                                    Selected Plan - This will extend/renew
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-4 text-xs text-gray-600">
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                <span>Expires: {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                              </div>
+                              {isExpiringSoon && (
+                                <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300 text-xs">
+                                  Expiring Soon
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Discount Section */}
             {/* User Discount Status */}
             {selectedUserInfo && userActiveDiscount && (
@@ -3408,9 +3482,9 @@ const SubscriptionMonitor = ({ userId }) => {
                     {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
                   </div>
                   <span className="text-sm text-gray-600">
-                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 
+                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5
                       ? 'Discount will be automatically applied'
-                      : 'Discount only applies to Monthly plans (Plan ID 2 or 3)'}
+                      : 'Discount only applies to Monthly plans (Plan ID 2, 3, or 5)'}
                   </span>
                 </div>
               </div>

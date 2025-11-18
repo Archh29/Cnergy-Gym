@@ -68,6 +68,32 @@ const validateEmail = (email) => {
   return emailRegex.test(email)
 }
 
+// Helper function to generate standard password for coach
+// Format: Co + First2LettersOfFirstName(lowercase) + First2LettersOfMiddleName(lowercase, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "John Michael Doe" -> "CojoMi#2023do", "Jane Doe" (no middle name) -> "Coja#2023do"
+const generateCoachPassword = (fname, mname, lname) => {
+  // Get first 2 letters of first name: both lowercase
+  const first = (fname || "").trim()
+  const firstNamePart = first.length > 0 
+    ? (first.substring(0, 2).toLowerCase())
+    : ""
+  
+  // Get first 2 letters of middle name ONLY if it exists: both lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  const middleNamePart = middle.length > 0
+    ? (middle.substring(0, 2).toLowerCase())
+    : ""
+  
+  // Get first 2 letters of last name: all lowercase
+  const last = (lname || "").trim()
+  const lastNamePart = last.length > 0 
+    ? last.substring(0, 2).toLowerCase()
+    : ""
+  
+  // Combine: Co + FirstName2(lowercase) + MiddleName2(lowercase, if exists) + #2023 + LastName2(lowercase)
+  return `Co${firstNamePart}${middleNamePart}#2023${lastNamePart}`
+}
+
 const ViewCoach = ({ userId }) => {
   const [coaches, setCoaches] = useState([])
   const [filteredCoaches, setFilteredCoaches] = useState([])
@@ -186,7 +212,26 @@ const ViewCoach = ({ userId }) => {
     }
 
     // Date validation
-    if (!data.bday) errors.bday = "Date of birth is required"
+    if (!data.bday) {
+      errors.bday = "Date of birth is required"
+    } else {
+      // Validate age - must be at least 18 years old
+      const today = new Date()
+      const birthDate = new Date(data.bday)
+      const age = today.getFullYear() - birthDate.getFullYear()
+      const monthDiff = today.getMonth() - birthDate.getMonth()
+      const dayDiff = today.getDate() - birthDate.getDate()
+      
+      // Calculate exact age
+      let exactAge = age
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        exactAge--
+      }
+      
+      if (exactAge < 18) {
+        errors.bday = "Coach must be at least 18 years old"
+      }
+    }
     if (!data.gender_id) errors.gender_id = "Please select a gender"
     if (data.gender_id && ![1, 2].includes(Number.parseInt(data.gender_id))) {
       errors.gender_id = "Please select a valid gender"
@@ -280,7 +325,7 @@ const ViewCoach = ({ userId }) => {
       mname: "",
       lname: "",
       email: "",
-      password: "CnergyCoach#1",
+      password: "",
       gender_id: "",
       bday: "",
       user_type_id: 3,
@@ -440,6 +485,17 @@ const ViewCoach = ({ userId }) => {
     fetchCoachStats()
   }, [coaches])
 
+  // Auto-generate password when name fields change
+  useEffect(() => {
+    if (formData.fname || formData.lname) {
+      const generatedPassword = generateCoachPassword(formData.fname, formData.mname, formData.lname)
+      setFormData((prev) => ({
+        ...prev,
+        password: generatedPassword,
+      }))
+    }
+  }, [formData.fname, formData.mname, formData.lname])
+
   const fetchCoaches = async () => {
     setIsLoading(true)
     try {
@@ -491,14 +547,16 @@ const ViewCoach = ({ userId }) => {
     try {
       setIsLoading(true)
 
+      // Generate standard password from name
       // Prepare data for both User and Coaches tables
+      const generatedPassword = generateCoachPassword(formData.fname, formData.mname, formData.lname)
       const formattedData = {
         // User table data
         fname: formData.fname,
         mname: formData.mname,
         lname: formData.lname,
         email: formData.email,
-        password: formData.password,
+        password: generatedPassword,
         gender_id: Number.parseInt(formData.gender_id),
         bday: formData.bday,
         user_type_id: Number.parseInt(formData.user_type_id),
@@ -695,7 +753,12 @@ const ViewCoach = ({ userId }) => {
         fetchCoachStats()
         await fetchActivityLogs()
 
-        toast({ title: "Success", description: "Coach updated successfully!" })
+        const coachName = `${formData.fname}${formData.mname ? ` ${formData.mname}` : ''} ${formData.lname}`.trim()
+        toast({
+          title: "Coach Profile Updated",
+          description: `${coachName}'s profile has been successfully updated. All changes have been saved.`,
+          className: "border-green-200 bg-gradient-to-r from-green-50 to-emerald-50",
+        })
       } else {
         throw new Error(response.data.error || "Failed to update coach.")
       }
@@ -1340,14 +1403,15 @@ const ViewCoach = ({ userId }) => {
                     type={showPassword ? "text" : "password"}
                     id="password"
                     name="password"
-                    value={formData.password || "CnergyCoach#1"}
+                    value={formData.password || generateCoachPassword(formData.fname, formData.mname, formData.lname)}
                     readOnly
                     className="bg-blue-50 border-blue-200 text-blue-900 cursor-not-allowed h-11 pr-36 font-mono"
                     onFocus={(e) => e.target.blur()}
                     tabIndex={-1}
                     onChange={(e) => {
-                      // Always reset to default password if user tries to change it
-                      setFormData({ ...formData, password: "CnergyCoach#1" })
+                      // Always reset to generated password if user tries to change it
+                      const generatedPwd = generateCoachPassword(formData.fname, formData.mname, formData.lname)
+                      setFormData({ ...formData, password: generatedPwd })
                     }}
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -1389,7 +1453,7 @@ const ViewCoach = ({ userId }) => {
                   name="bday"
                   value={formData.bday}
                   onChange={handleInputChange}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                   className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
                 />
                 {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}
@@ -1681,7 +1745,7 @@ const ViewCoach = ({ userId }) => {
                   name="bday"
                   value={formData.bday}
                   onChange={handleInputChange}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                   className={`h-11 ${validationErrors.bday ? "border-red-500" : ""}`}
                 />
                 {validationErrors.bday && <p className="text-sm text-red-500">{validationErrors.bday}</p>}

@@ -344,7 +344,7 @@ function getAllSubscriptions($pdo)
 
         // For package components, use the original package subscription ID for payment lookup
         $paymentSubscriptionId = $subscription['package_subscription_id'] ?? $subscription['id'];
-        
+
         // Remove the suffix from ID if it's a package component for payment lookup
         if (isset($subscription['is_package_component']) && $subscription['is_package_component']) {
             $paymentSubscriptionId = $subscription['package_subscription_id'];
@@ -377,7 +377,7 @@ function getAllSubscriptions($pdo)
 
             $subscription['payments'] = [];
             $subscription['payment_count'] = $paymentInfo['payment_count'] ?? 0;
-            
+
             // For package components, show the full payment amount (they share the same payment)
             // Or you could split it proportionally if needed
             $subscription['total_paid'] = $paymentInfo['total_paid'] ?? 0;
@@ -1012,13 +1012,13 @@ function getAvailablePlansForUser($pdo, $user_id)
 
     // Check if user has Plan ID 5 (package) - if so, they have Plan ID 1 and 2 components
     $hasActivePlan5 = in_array(5, $activePlanIds);
-    
+
     // Check if Plan ID 1 exists (either standalone or from Plan ID 5 package)
     $hasActiveMemberFee = in_array(1, $activePlanIds) || $hasActivePlan5;
 
     // Check if user has active monthly subscription (Premium or Standard)
     $hasActiveMonthlySubscription = in_array(2, $activePlanIds) || in_array(3, $activePlanIds);
-    
+
     // Check if user has ONLY Plan ID 6 active (for Plan ID 5 availability)
     $hasOnlyPlan6 = count($activePlanIds) === 1 && in_array(6, $activePlanIds);
     $hasNoActivePlans = count($activePlanIds) === 0;
@@ -1071,10 +1071,24 @@ function getAvailablePlansForUser($pdo, $user_id)
             $plan['is_available'] = true;
             // No reason needed - always available
         }
-        // Plan ID 2 (Member Plan Monthly) - Always available for advance payment/renewal
+        // Plan ID 2 (Member Plan Monthly / Monthly Access Premium) - Requires active membership
         elseif ($planId == 2) {
-            $plan['is_available'] = true;
-            // No reason needed - always available
+            // Check if this plan is already active (allow renewal/advance payment)
+            $isPlanActive = in_array(2, $activePlanIds);
+
+            if ($isPlanActive) {
+                // If plan is active, allow renewal/advance payment
+                $plan['is_available'] = true;
+            } else {
+                // If plan is NOT active: Requires active membership (Plan ID 1 or Plan ID 5)
+                if (!$hasActiveMemberFee && !$hasActivePlan5) {
+                    $plan['is_available'] = false;
+                    $plan['unavailable_reason'] = "Cannot select: Monthly Access Premium requires an active Gym Membership. Please avail Gym Membership (Plan ID 1) or Gym Membership + 1 Month Access Package (Plan ID 5) first.";
+                } else {
+                    // User has membership, allow Monthly Access Premium
+                    $plan['is_available'] = true;
+                }
+            }
         }
         // Plan ID 3 (Non-Member Plan Monthly)
         elseif ($planId == 3) {
@@ -1085,10 +1099,10 @@ function getAvailablePlansForUser($pdo, $user_id)
                 // If plan is NOT active: Locked if user has membership fee OR combination package
                 if ($hasActiveMemberFee || $hasActivePlan5) {
                     $plan['is_available'] = false;
-                    $plan['unavailable_reason'] = $hasActivePlan5 
+                    $plan['unavailable_reason'] = $hasActivePlan5
                         ? "Cannot select: User has the Membership + 1 Month Access package which includes membership. Consider the Member Monthly Plan for better value with member discounts."
                         : "Cannot select: User already has Gym Membership (Plan ID 1). Consider the Member Monthly Plan for better value with member discounts.";
-                } 
+                }
                 // Locked if user has active monthly plan
                 elseif ($hasActiveMonthlySubscription) {
                     $plan['is_available'] = false;
@@ -1161,10 +1175,11 @@ function createManualSubscription($pdo, $data)
     $discount_type = $data['discount_type'] ?? 'none';
     $created_by = $data['created_by'] ?? 'admin';
     $quantity = isset($data['quantity']) ? intval($data['quantity']) : 1; // Quantity for advance payment/renewal
-    
-    // Automatically check user discount eligibility for plan_id 2 or 3 (Monthly plans)
+
+    // Automatically check user discount eligibility for plan_id 2, 3, or 5 (Monthly plans or package with monthly access)
+    // Plan ID 5 includes Monthly Access Premium, so discount should apply
     // Only override if discount_type is 'none' and plan is eligible
-    if ($discount_type === 'none' && ($plan_id == 2 || $plan_id == 3)) {
+    if ($discount_type === 'none' && ($plan_id == 2 || $plan_id == 3 || $plan_id == 5)) {
         try {
             $discountStmt = $pdo->prepare("
                 SELECT discount_type
@@ -1181,7 +1196,7 @@ function createManualSubscription($pdo, $data)
             ");
             $discountStmt->execute([$user_id]);
             $userDiscount = $discountStmt->fetch();
-            
+
             if ($userDiscount && !empty($userDiscount['discount_type'])) {
                 $discount_type = $userDiscount['discount_type'];
             }
@@ -1295,10 +1310,10 @@ function createManualSubscription($pdo, $data)
         else {
             // For other plans, use the provided start_date
             $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
-            
+
             // Use quantity if provided, otherwise calculate from payment amount
             $actualMonths = 1; // Default to 1 month
-            
+
             if ($quantity > 1) {
                 // Use quantity directly (for Plan ID 1, 2, 3 advance payment/renewal)
                 if ($plan_id == 1) {
@@ -1380,14 +1395,14 @@ function createManualSubscription($pdo, $data)
                     $extensionMonths = floor($payment_amount / $planPrice);
                 }
             }
-            
+
             if ($extensionMonths > 0) {
                 // Extend existing subscription's end_date
                 $existingEndDate = new DateTime($existingSubscription['end_date'], new DateTimeZone('Asia/Manila'));
                 $newEndDate = clone $existingEndDate;
                 $newEndDate->add(new DateInterval('P' . $extensionMonths . 'M'));
                 $end_date = $newEndDate->format('Y-m-d');
-                
+
                 // Update existing subscription
                 $updateStmt = $pdo->prepare("
                     UPDATE subscription 
@@ -1398,7 +1413,7 @@ function createManualSubscription($pdo, $data)
                 ");
                 $updateStmt->execute([$end_date, $payment_amount, $payment_amount, $existingSubscription['id']]);
                 $subscription_id = $existingSubscription['id'];
-                
+
                 // Create payment record for the renewal
                 // (Payment record creation code will be handled below)
                 $isRenewal = true;
@@ -1600,6 +1615,56 @@ function createManualSubscription($pdo, $data)
             } catch (Exception $e) {
                 // Log the error but don't fail the entire transaction
                 error_log("Failed to create automatic attendance for Day Pass subscription: " . $e->getMessage());
+            }
+        }
+
+        // Create automatic attendance for Monthly Access subscriptions (Premium, Standard, and Package)
+        // Plan ID 2 = Premium Monthly (Member Plan Monthly)
+        // Plan ID 3 = Standard Monthly (Non-Member Plan Monthly)
+        // Plan ID 5 = Gym Membership + 1 Month Package (includes monthly access)
+        if ($plan_id == 2 || $plan_id == 3 || $plan_id == 5) {
+            try {
+                // Check if user already has attendance for today (prevent duplicates)
+                $todayDate = date('Y-m-d');
+                $existingAttendanceStmt = $pdo->prepare("
+                    SELECT id 
+                    FROM attendance 
+                    WHERE user_id = ? 
+                    AND DATE(check_in) = ?
+                    LIMIT 1
+                ");
+                $existingAttendanceStmt->execute([$user_id, $todayDate]);
+                $existingAttendance = $existingAttendanceStmt->fetch();
+
+                // Only create attendance if user doesn't already have one for today
+                if (!$existingAttendance) {
+                    // Check if attendance table has subscription_id column
+                    $checkAttendanceColumns = $pdo->query("SHOW COLUMNS FROM attendance");
+                    $attendanceColumns = $checkAttendanceColumns->fetchAll(PDO::FETCH_COLUMN);
+                    $hasSubscriptionId = in_array('subscription_id', $attendanceColumns);
+
+                    // Use Philippines timezone for check-in time
+                    $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                    $checkInTime = $phTime->format('Y-m-d H:i:s');
+
+                    if ($hasSubscriptionId) {
+                        // Insert attendance with subscription_id reference
+                        $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in, subscription_id) VALUES (?, ?, ?)");
+                        $attendanceStmt->execute([$user_id, $checkInTime, $subscription_id]);
+                    } else {
+                        // Insert attendance without subscription_id (for older schema)
+                        $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in) VALUES (?, ?)");
+                        $attendanceStmt->execute([$user_id, $checkInTime]);
+                    }
+
+                    $planName = $plan_id == 2 ? 'Premium Monthly' : ($plan_id == 3 ? 'Standard Monthly' : 'Gym Membership + Monthly Access Package');
+                    error_log("Successfully created automatic attendance for Monthly Access subscription: User ID: $user_id, Subscription ID: $subscription_id, Plan: $planName");
+                } else {
+                    error_log("User ID: $user_id already has attendance for today, skipping automatic attendance creation");
+                }
+            } catch (Exception $e) {
+                // Log the error but don't fail the entire transaction
+                error_log("Failed to create automatic attendance for Monthly Access subscription: " . $e->getMessage());
             }
         }
 

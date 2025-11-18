@@ -66,36 +66,44 @@ $data = array_merge($_POST, $input);
 // Helper function to validate admin/staff
 function validateAdminStaff($pdo, $userId) {
     try {
-        if (!$userId || !is_numeric($userId)) {
-            error_log("validateAdminStaff: Invalid userId provided: " . var_export($userId, true));
+        // Convert to integer and validate
+        $userId = is_numeric($userId) ? (int)$userId : null;
+        
+        if (!$userId || $userId <= 0) {
+            error_log("validateAdminStaff: Invalid userId provided - Type: " . gettype($userId) . ", Value: " . var_export($userId, true));
             return false;
         }
         
+        // First check if user exists and get their type
         $stmt = $pdo->prepare("
-            SELECT id, user_type_id, fname, lname 
+            SELECT id, user_type_id, fname, lname, is_deleted
             FROM user 
-            WHERE id = ? AND user_type_id IN (1, 2)
+            WHERE id = ?
         ");
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
         
-        if ($user === false) {
-            error_log("validateAdminStaff: User not found or not admin/staff - User ID: $userId");
+        if ($user === false || !$user) {
+            error_log("validateAdminStaff: User not found - User ID: $userId");
             return false;
         }
         
-        // Check if user is deleted (optional check)
-        $checkDeletedStmt = $pdo->prepare("SELECT is_deleted FROM user WHERE id = ?");
-        $checkDeletedStmt->execute([$userId]);
-        $deletedCheck = $checkDeletedStmt->fetch();
-        if ($deletedCheck && ($deletedCheck['is_deleted'] == 1 || $deletedCheck['is_deleted'] === true)) {
+        // Check if user is deleted
+        if (isset($user['is_deleted']) && ($user['is_deleted'] == 1 || $user['is_deleted'] === true)) {
             error_log("validateAdminStaff: User is deleted - User ID: $userId");
+            return false;
+        }
+        
+        // Check if user is admin (type 1) or staff (type 2)
+        $userTypeId = isset($user['user_type_id']) ? (int)$user['user_type_id'] : null;
+        if ($userTypeId !== 1 && $userTypeId !== 2) {
+            error_log("validateAdminStaff: User is not admin/staff - User ID: $userId, User Type: $userTypeId");
             return false;
         }
         
         return true;
     } catch (Exception $e) {
-        error_log("validateAdminStaff: Error validating user - " . $e->getMessage());
+        error_log("validateAdminStaff: Error validating user - " . $e->getMessage() . " | User ID: " . var_export($userId, true));
         return false;
     }
 }
@@ -176,8 +184,9 @@ if ($method === 'POST' && $action === 'add') {
         exit();
     }
     
+    // Validate and convert verified_by to integer
     if (!$verifiedBy) {
-        error_log("user_discount.php add: verified_by is missing or empty");
+        error_log("user_discount.php add: verified_by is missing or empty. Data received: " . json_encode($data));
         http_response_code(400);
         echo json_encode([
             "success" => false,
@@ -186,8 +195,29 @@ if ($method === 'POST' && $action === 'add') {
         exit();
     }
     
+    // Convert to integer if it's a string
+    $verifiedBy = is_numeric($verifiedBy) ? (int)$verifiedBy : null;
+    if (!$verifiedBy || $verifiedBy <= 0) {
+        error_log("user_discount.php add: verified_by is not a valid number. Received: " . var_export($data['verified_by'], true));
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "error" => "Invalid Admin/Staff ID format. Must be a valid number."
+        ]);
+        exit();
+    }
+    
     if (!validateAdminStaff($pdo, $verifiedBy)) {
-        error_log("user_discount.php add: Permission validation failed - verified_by: $verifiedBy");
+        error_log("user_discount.php add: Permission validation failed - verified_by: $verifiedBy (type: " . gettype($verifiedBy) . ")");
+        // Get more details about why validation failed
+        $debugStmt = $pdo->prepare("SELECT id, user_type_id, fname, lname, is_deleted FROM user WHERE id = ?");
+        $debugStmt->execute([$verifiedBy]);
+        $debugUser = $debugStmt->fetch();
+        if ($debugUser) {
+            error_log("user_discount.php add: User found but validation failed - User Type: " . ($debugUser['user_type_id'] ?? 'null') . ", Is Deleted: " . ($debugUser['is_deleted'] ?? 'null'));
+        } else {
+            error_log("user_discount.php add: User not found in database - ID: $verifiedBy");
+        }
         http_response_code(403);
         echo json_encode([
             "success" => false,
@@ -297,8 +327,9 @@ if ($method === 'POST' && $action === 'remove') {
         exit();
     }
     
+    // Validate and convert verified_by to integer
     if (!$verifiedBy) {
-        error_log("user_discount.php add: verified_by is missing or empty");
+        error_log("user_discount.php remove: verified_by is missing or empty. Data received: " . json_encode($data));
         http_response_code(400);
         echo json_encode([
             "success" => false,
@@ -307,8 +338,20 @@ if ($method === 'POST' && $action === 'remove') {
         exit();
     }
     
+    // Convert to integer if it's a string
+    $verifiedBy = is_numeric($verifiedBy) ? (int)$verifiedBy : null;
+    if (!$verifiedBy || $verifiedBy <= 0) {
+        error_log("user_discount.php remove: verified_by is not a valid number. Received: " . var_export($data['verified_by'], true));
+        http_response_code(400);
+        echo json_encode([
+            "success" => false,
+            "error" => "Invalid Admin/Staff ID format. Must be a valid number."
+        ]);
+        exit();
+    }
+    
     if (!validateAdminStaff($pdo, $verifiedBy)) {
-        error_log("user_discount.php add: Permission validation failed - verified_by: $verifiedBy");
+        error_log("user_discount.php remove: Permission validation failed - verified_by: $verifiedBy (type: " . gettype($verifiedBy) . ")");
         http_response_code(403);
         echo json_encode([
             "success" => false,

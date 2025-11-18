@@ -47,6 +47,10 @@ import {
   PowerOff,
   RotateCw,
   RefreshCw,
+  GraduationCap,
+  UserCircle,
+  UserPlus,
+  Tag,
 } from "lucide-react"
 
 // Helper function to generate standard password from user's name
@@ -145,6 +149,10 @@ const ViewMembers = ({ userId }) => {
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
   const { toast } = useToast()
+  
+  // Discount management states
+  const [memberDiscounts, setMemberDiscounts] = useState({}) // { userId: [{ discount_type, is_active, ... }] }
+  const [selectedDiscountType, setSelectedDiscountType] = useState(null) // For Add Client form
 
   const form = useForm({
     resolver: zodResolver(memberSchema),
@@ -204,6 +212,31 @@ const ViewMembers = ({ userId }) => {
     }
   }
 
+  // Fetch discount eligibility for a member
+  const fetchMemberDiscounts = async (memberId) => {
+    try {
+      const response = await fetch(`https://api.cnergy.site/user_discount.php?action=get&user_id=${memberId}`)
+      if (!response.ok) throw new Error('Failed to fetch discounts')
+      const result = await response.json()
+      if (result.success) {
+        setMemberDiscounts(prev => ({
+          ...prev,
+          [memberId]: result.data || []
+        }))
+      }
+    } catch (error) {
+      console.error('Error fetching member discounts:', error)
+    }
+  }
+
+  // Fetch discounts for all members
+  const fetchAllMemberDiscounts = async (membersList) => {
+    const memberIds = membersList.map(m => m.id)
+    for (const memberId of memberIds) {
+      await fetchMemberDiscounts(memberId)
+    }
+  }
+
   // Move fetchMembers outside useEffect so it can be called from the refresh button
   const fetchMembers = async () => {
     try {
@@ -213,8 +246,11 @@ const ViewMembers = ({ userId }) => {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      setMembers(Array.isArray(data) ? data : [])
-      setFilteredMembers(Array.isArray(data) ? data : [])
+      const membersArray = Array.isArray(data) ? data : []
+      setMembers(membersArray)
+      setFilteredMembers(membersArray)
+      // Fetch discounts for all members after loading members
+      await fetchAllMemberDiscounts(membersArray)
     } catch (error) {
       console.error("Error fetching members:", error)
       toast({
@@ -227,6 +263,35 @@ const ViewMembers = ({ userId }) => {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Get active discount for a member (not expired)
+  const getActiveDiscount = (memberId) => {
+    const discounts = memberDiscounts[memberId] || []
+    if (discounts.length === 0) {
+      return null
+    }
+    
+    const now = new Date()
+    
+    const activeDiscount = discounts.find(d => {
+      // Check if discount is active (handle both number and string formats)
+      const isActive = d.is_active === 1 || d.is_active === true || d.is_active === '1'
+      if (!isActive) {
+        return false
+      }
+      
+      // If expires_at is null, it's a senior discount (never expires)
+      if (!d.expires_at || d.expires_at === null) {
+        return true
+      }
+      
+      // Check if expiration date is in the future
+      const expiresAt = new Date(d.expires_at)
+      return expiresAt >= now
+    })
+    
+    return activeDiscount || null
   }
 
   useEffect(() => {
@@ -383,9 +448,17 @@ const ViewMembers = ({ userId }) => {
     if (!member.created_at) return false
     const createdDate = safeDate(member.created_at)
     if (!createdDate) return false
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    return createdDate > sevenDaysAgo
+
+    // Get today's date at midnight (00:00:00)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Get creation date at midnight (00:00:00)
+    const createdDateMidnight = new Date(createdDate)
+    createdDateMidnight.setHours(0, 0, 0, 0)
+
+    // Show "NEW" badge only if created on the same calendar day (disappears after midnight)
+    return createdDateMidnight.getTime() === today.getTime()
   }
 
   const handleViewMember = (member) => {
@@ -676,19 +749,90 @@ const ViewMembers = ({ userId }) => {
         // Format user's full name before closing dialog
         const fullName = `${data.fname}${data.mname ? ` ${data.mname}` : ''} ${data.lname}`.trim()
 
-        // Show success toast with improved wording and formatting
-        toast({
-          title: "Client Added Successfully",
-          description: `${fullName} has been added to the system and can now access the mobile application.`,
-          duration: 5000,
-        })
+        // Get the newly created member ID from the response
+        const newMemberId = result.member?.id || result.data?.id || null
+
+        // Add discount tag if one was selected - use the member ID from response
+        if (selectedDiscountType && newMemberId) {
+          try {
+            console.log("Adding discount tag for member ID:", newMemberId, "Type:", selectedDiscountType)
+            console.log("Verified by (userId):", userId, "Type:", typeof userId)
+            
+            // Ensure userId is a number
+            const verifiedById = userId ? Number(userId) : null
+            if (!verifiedById || isNaN(verifiedById)) {
+              throw new Error("Invalid admin/staff ID. Please refresh the page and try again.")
+            }
+            
+            const discountResponse = await fetch('https://api.cnergy.site/user_discount.php?action=add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_id: newMemberId,
+                discount_type: selectedDiscountType,
+                verified_by: verifiedById,
+                expires_at: null,
+                notes: 'Applied during account creation'
+              })
+            })
+            
+            if (!discountResponse.ok) {
+              const errorText = await discountResponse.text()
+              console.error("Discount API error response:", errorText)
+              throw new Error(`HTTP ${discountResponse.status}: ${errorText}`)
+            }
+            
+            const discountResult = await discountResponse.json()
+            console.log("Discount API response:", discountResult)
+            
+            if (discountResult.success) {
+              // Show success toast with discount info
+              toast({
+                title: "Client Added Successfully",
+                description: `${fullName} has been added and tagged as ${selectedDiscountType === 'student' ? 'Student' : 'Senior (55+)'} discount eligible.`,
+                duration: 5000,
+              })
+            } else {
+              throw new Error(discountResult.error || 'Failed to add discount tag')
+            }
+          } catch (discountError) {
+            console.error("Error adding discount tag:", discountError)
+            // Show success for account creation but warning for discount
+            toast({
+              title: "Client Added Successfully",
+              description: `${fullName} has been added to the system. However, the discount tag could not be applied.`,
+              duration: 5000,
+            })
+            toast({
+              title: "Discount Tag Error",
+              description: discountError.message || "Please add the discount tag manually from the member's profile.",
+              variant: "destructive",
+              duration: 6000,
+            })
+          }
+        } else {
+          // Show success toast without discount info
+          toast({
+            title: "Client Added Successfully",
+            description: `${fullName} has been added to the system and can now access the mobile application.`,
+            duration: 5000,
+          })
+        }
 
         // Then update members list and close dialog
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
-        setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
-        setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
+        const membersArray = Array.isArray(updatedMembers) ? updatedMembers : []
+        setMembers(membersArray)
+        setFilteredMembers(membersArray)
+        
+        // Refresh discounts after member list is updated
+        if (selectedDiscountType && newMemberId) {
+          await fetchAllMemberDiscounts(membersArray)
+        }
+
         setIsAddDialogOpen(false)
+        setSelectedDiscountType(null) // Reset discount selection
         form.reset()
       } else {
         // Prioritize the detailed message over the generic error
@@ -977,6 +1121,15 @@ const ViewMembers = ({ userId }) => {
             </div>
             <div className="flex gap-3">
               <Button
+                onClick={fetchMembers}
+                variant="outline"
+                size="sm"
+                className="h-10 w-10 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300"
+                title="Refresh"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
                 className={`h-10 px-4 font-medium transition-all ${
                   currentView === "active" 
@@ -985,15 +1138,6 @@ const ViewMembers = ({ userId }) => {
                 }`}
               >
                 {currentView === "active" ? "Active" : "Deactivated"}
-              </Button>
-              <Button
-                onClick={fetchMembers}
-                variant="outline"
-                size="sm"
-                className="h-10 w-10 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300"
-                title="Refresh"
-              >
-                <RefreshCw className="h-4 w-4" />
               </Button>
               <Button
                 onClick={handleOpenAddDialog}
@@ -1188,7 +1332,7 @@ const ViewMembers = ({ userId }) => {
                           <span className="text-primary font-semibold text-sm">{initials}</span>
                         </div>
                         <div className="text-left flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <div className="font-semibold text-gray-900 truncate">
                               {member.fname} {member.mname} {member.lname}
                             </div>
@@ -1197,6 +1341,34 @@ const ViewMembers = ({ userId }) => {
                                 NEW
                               </Badge>
                             )}
+                            {(() => {
+                              const activeDiscount = getActiveDiscount(member.id)
+                              if (activeDiscount) {
+                                return (
+                                  <Badge 
+                                    className={`text-xs px-2 py-1 font-semibold border ${
+                                      activeDiscount.discount_type === 'student' 
+                                        ? 'bg-blue-100 text-blue-700 border-blue-300' 
+                                        : 'bg-purple-100 text-purple-700 border-purple-300'
+                                    }`}
+                                    variant="outline"
+                                  >
+                                    {activeDiscount.discount_type === 'student' ? (
+                                      <>
+                                        <GraduationCap className="h-3 w-3 mr-1 inline" />
+                                        Student
+                                      </>
+                                    ) : (
+                                      <>
+                                        <UserCircle className="h-3 w-3 mr-1 inline" />
+                                        55+
+                                      </>
+                                    )}
+                                  </Badge>
+                                )
+                              }
+                              return null
+                            })()}
                           </div>
                           <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
                             <Mail className="h-3 w-3" />
@@ -1314,18 +1486,18 @@ const ViewMembers = ({ userId }) => {
         </CardContent>
       </Card>
 
-      {/* Account Verification Dialog */}
+      {/* Account Creation Dialog */}
       <Dialog open={isVerificationDialogOpen} onOpenChange={setIsVerificationDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader className="space-y-3 pb-4 border-b">
             <DialogTitle className="flex items-center text-2xl font-semibold">
               <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 mr-3">
-                <Shield className="h-5 w-5 text-blue-600" />
+                <UserPlus className="h-5 w-5 text-blue-600" />
               </div>
-              Account Verification
+              Account Creation
             </DialogTitle>
             <DialogDescription className="text-base text-gray-600">
-              Review and verify this member's account details to grant access to the mobile application.
+              Review the account details before creating this member's account.
             </DialogDescription>
           </DialogHeader>
           {selectedMember && (
@@ -1367,14 +1539,6 @@ const ViewMembers = ({ userId }) => {
                   </div>
                 </div>
               </div>
-              {/* Information Note */}
-              <div className="bg-blue-50 border-l-4 border-blue-400 rounded-r-lg p-4">
-                <p className="text-sm text-blue-900 leading-relaxed">
-                  <strong className="font-semibold">Note:</strong> Approving this account will grant the member full access to the mobile application. 
-                  Pending verification requests that are not approved within 3 days will be automatically rejected, 
-                  and rejected accounts older than 1 month will be automatically removed from the system.
-                </p>
-              </div>
             </div>
           )}
           <DialogFooter className="gap-3 pt-4 border-t">
@@ -1399,7 +1563,7 @@ const ViewMembers = ({ userId }) => {
               ) : (
                 <>
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Approve Account
+                  Approve
                 </>
               )}
             </Button>
@@ -1731,11 +1895,59 @@ const ViewMembers = ({ userId }) => {
                   )
                 }}
               />
+              
+              {/* Discount Tag Selection */}
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center gap-2 mb-2">
+                  <Tag className="h-5 w-5 text-blue-600" />
+                  <h3 className="font-semibold text-gray-900 text-base">Discount Eligibility</h3>
+                </div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Verify the client's ID and select a discount tag if they are eligible. This can be done during account creation.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSelectedDiscountType(selectedDiscountType === 'student' ? null : 'student')}
+                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
+                      selectedDiscountType === 'student'
+                        ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
+                        : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
+                    }`}
+                  >
+                    <GraduationCap className={`h-6 w-6 ${selectedDiscountType === 'student' ? 'text-blue-700' : 'text-blue-600'}`} />
+                    <span className={`font-semibold ${selectedDiscountType === 'student' ? 'text-blue-800' : 'text-blue-700'}`}>Student</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSelectedDiscountType(selectedDiscountType === 'senior' ? null : 'senior')}
+                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
+                      selectedDiscountType === 'senior'
+                        ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
+                        : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
+                    }`}
+                  >
+                    <UserCircle className={`h-6 w-6 ${selectedDiscountType === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
+                    <span className={`font-semibold ${selectedDiscountType === 'senior' ? 'text-purple-800' : 'text-purple-700'}`}>55+</span>
+                  </Button>
+                </div>
+                <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    <strong className="font-semibold">Important:</strong> Only tag members after verifying their ID and eligibility. ID verification must be done outside the system before applying discount tags.
+                  </p>
+                </div>
+              </div>
+
               <DialogFooter className="pt-4 border-t gap-3">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsAddDialogOpen(false)}
+                  onClick={() => {
+                    setIsAddDialogOpen(false)
+                    setSelectedDiscountType(null)
+                  }}
                   className="h-11 px-6"
                 >
                   Cancel
