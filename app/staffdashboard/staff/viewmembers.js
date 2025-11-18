@@ -153,6 +153,9 @@ const ViewMembers = ({ userId }) => {
   // Discount management states
   const [memberDiscounts, setMemberDiscounts] = useState({}) // { userId: [{ discount_type, is_active, ... }] }
   const [selectedDiscountType, setSelectedDiscountType] = useState(null) // For Add Client form
+  const [isDiscountDialogOpen, setIsDiscountDialogOpen] = useState(false)
+  const [discountDialogMember, setDiscountDialogMember] = useState(null)
+  const [discountLoading, setDiscountLoading] = useState(false)
 
   const form = useForm({
     resolver: zodResolver(memberSchema),
@@ -292,6 +295,51 @@ const ViewMembers = ({ userId }) => {
     })
     
     return activeDiscount || null
+  }
+
+  // Open discount management dialog
+  const handleManageDiscount = async (member) => {
+    setDiscountDialogMember(member)
+    setIsDiscountDialogOpen(true)
+    await fetchMemberDiscounts(member.id)
+  }
+
+  // Add discount tag
+  const handleAddDiscount = async (discountType) => {
+    if (!discountDialogMember) return
+    
+    setDiscountLoading(true)
+    try {
+      const response = await fetch('https://api.cnergy.site/user_discount.php?action=add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: discountDialogMember.id,
+          discount_type: discountType,
+          verified_by: Number(userId)
+        })
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Tagged ${discountDialogMember.fname} ${discountDialogMember.lname} as ${discountType === 'student' ? 'Student' : 'Senior (55+)'}`,
+        })
+        await fetchMemberDiscounts(discountDialogMember.id)
+        await fetchAllMemberDiscounts(members) // Refresh all discounts
+      } else {
+        throw new Error(result.error || 'Failed to add discount')
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add discount tag",
+        variant: "destructive",
+      })
+    } finally {
+      setDiscountLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -1444,6 +1492,18 @@ const ViewMembers = ({ userId }) => {
                           <RotateCw className="h-4 w-4" />
                         </Button>
                       )}
+                      {/* Show Discount Management button for approved accounts */}
+                      {member.account_status === "approved" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleManageDiscount(member)}
+                          className="h-9 w-9 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Manage Discount Tags"
+                        >
+                          <Tag className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )
@@ -1649,6 +1709,40 @@ const ViewMembers = ({ userId }) => {
                       {getStatusBadge(selectedMember.account_status)}
                     </div>
                   </div>
+                  {/* Discount Duration */}
+                  {(() => {
+                    const activeDiscount = getActiveDiscount(selectedMember.id)
+                    if (activeDiscount) {
+                      const discountType = activeDiscount.discount_type
+                      const expiresAt = activeDiscount.expires_at
+                      
+                      return (
+                        <div className="col-span-2 space-y-1">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Discount Duration</span>
+                          <div className="mt-1 flex items-center gap-2">
+                            {discountType === 'student' ? (
+                              <Badge className="bg-blue-100 text-blue-700 border border-blue-300 px-3 py-1">
+                                <GraduationCap className="h-3 w-3 mr-1" />
+                                Student Discount
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-purple-100 text-purple-700 border border-purple-300 px-3 py-1">
+                                <UserCircle className="h-3 w-3 mr-1" />
+                                Senior (55+) Discount
+                              </Badge>
+                            )}
+                            <span className="text-sm font-medium text-gray-900">
+                              {expiresAt 
+                                ? `Expires: ${formatDateOnlyPH(expiresAt)}`
+                                : 'Permanent (Never expires)'
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
               </div>
             </div>
@@ -2536,6 +2630,158 @@ const ViewMembers = ({ userId }) => {
               className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-medium px-6 py-2.5 shadow-sm hover:shadow-md transition-all"
             >
               I Understand
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Discount Management Dialog */}
+      <Dialog open={isDiscountDialogOpen} onOpenChange={setIsDiscountDialogOpen}>
+        <DialogContent className="sm:max-w-lg" hideClose>
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <DialogTitle className="flex items-center text-2xl font-semibold">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 mr-3">
+                <Tag className="h-5 w-5 text-blue-600" />
+              </div>
+              Manage Discount Tags
+            </DialogTitle>
+            <DialogDescription className="text-base text-gray-600">
+              Tag this user for discounted pricing. ID verification is done outside the system.
+            </DialogDescription>
+          </DialogHeader>
+          {discountDialogMember && (
+            <div className="space-y-5 py-4">
+              {/* User Information */}
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                    <User className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg text-gray-900 mb-1">
+                      {discountDialogMember.fname} {discountDialogMember.mname || ''} {discountDialogMember.lname}
+                    </p>
+                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      {discountDialogMember.email}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Discount Tags */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-gray-900">Current Discount Tags</h3>
+                {(() => {
+                  const activeDiscount = getActiveDiscount(discountDialogMember.id)
+                  
+                  if (!activeDiscount) {
+                    return (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                        <p className="text-sm text-gray-600">No active discount tags</p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      <div
+                        className={`flex items-center justify-between p-3 rounded-lg border-2 ${
+                          activeDiscount.discount_type === 'student'
+                            ? 'bg-blue-50 border-blue-200'
+                            : 'bg-purple-50 border-purple-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {activeDiscount.discount_type === 'student' ? (
+                            <GraduationCap className="h-5 w-5 text-blue-600" />
+                          ) : (
+                            <UserCircle className="h-5 w-5 text-purple-600" />
+                          )}
+                          <div>
+                            <p className="font-semibold text-gray-900">
+                              {activeDiscount.discount_type === 'student' ? 'Student Discount' : 'Senior (55+) Discount'}
+                            </p>
+                            {activeDiscount.verified_at && (
+                              <p className="text-xs text-gray-600">
+                                Verified: {formatDateOnlyPH(activeDiscount.verified_at)}
+                              </p>
+                            )}
+                            {activeDiscount.expires_at ? (
+                              <p className="text-xs text-gray-600">
+                                Expires: {formatDateOnlyPH(activeDiscount.expires_at)}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-green-600 font-medium">
+                                Permanent (Never expires)
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Add Discount Tags */}
+              <div className="space-y-3 pt-4 border-t">
+                <h3 className="font-semibold text-gray-900">Add Discount Tag</h3>
+                {(() => {
+                  const activeDiscount = getActiveDiscount(discountDialogMember.id)
+                  const hasActiveDiscount = !!activeDiscount
+                  
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => handleAddDiscount('student')}
+                          disabled={discountLoading || hasActiveDiscount}
+                          className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${
+                            hasActiveDiscount
+                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                              : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                          }`}
+                        >
+                          <GraduationCap className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-blue-600'}`} />
+                          <span className={`font-semibold ${hasActiveDiscount ? 'text-gray-500' : 'text-blue-700'}`}>Student</span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => handleAddDiscount('senior')}
+                          disabled={discountLoading || hasActiveDiscount}
+                          className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${
+                            hasActiveDiscount
+                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                              : 'border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                          }`}
+                        >
+                          <UserCircle className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-purple-600'}`} />
+                          <span className={`font-semibold ${hasActiveDiscount ? 'text-gray-500' : 'text-purple-700'}`}>55+</span>
+                        </Button>
+                      </div>
+                      {hasActiveDiscount && (
+                        <p className="text-xs text-orange-600 text-center font-medium">
+                          Remove the current discount tag before adding a new one. Users can only have one active discount at a time.
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+                <p className="text-xs text-gray-500 text-center">
+                  Note: ID verification is done outside the system. Only tag users after verifying their eligibility.
+                </p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsDiscountDialogOpen(false)}
+              disabled={discountLoading}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3483,8 +3483,8 @@ const SubscriptionMonitor = ({ userId }) => {
                   </div>
                   <span className="text-sm text-gray-600">
                     {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5
-                      ? 'Discount will be automatically applied'
-                      : 'Discount only applies to Monthly plans (Plan ID 2, 3, or 5)'}
+                      ? 'Discount will be automatically applied to this plan'
+                      : 'Discount is available for Monthly Access plans'}
                   </span>
                 </div>
               </div>

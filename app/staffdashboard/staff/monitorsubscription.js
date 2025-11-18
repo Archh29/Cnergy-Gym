@@ -31,6 +31,8 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  GraduationCap,
+  UserCircle,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -54,12 +56,16 @@ const SubscriptionMonitor = ({ userId }) => {
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
   const [availableUsers, setAvailableUsers] = useState([])
   const [selectedUserInfo, setSelectedUserInfo] = useState(null)
+  const [userSearchQuery, setUserSearchQuery] = useState("")
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const [userActiveDiscount, setUserActiveDiscount] = useState(null) // Track user's active discount
   const [userActiveSubscriptions, setUserActiveSubscriptions] = useState([]) // Track user's active subscriptions
+  const [planQuantity, setPlanQuantity] = useState(1) // Quantity for advance payment/renewal (months for Plan 2/3, years for Plan 1)
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
     plan_id: "",
     start_date: new Date().toISOString().split("T")[0],
-    discount_type: "regular",
+    discount_type: "none",
     amount_paid: "",
     payment_method: "cash",
     amount_received: "",
@@ -765,12 +771,56 @@ const SubscriptionMonitor = ({ userId }) => {
   const handlePlanChange = (planId) => {
     const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
     if (selectedPlan) {
-      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, subscriptionForm.discount_type)
+      // Reset quantity when plan changes
+      setPlanQuantity(1)
+      
+      // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
+      // Plan ID 5 includes Monthly Access Premium, so discount should apply
+      let discountType = "none"
+      if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
+        discountType = userActiveDiscount
+      }
+      
+      // Calculate price: base price * quantity, then apply discount
+      const basePrice = parseFloat(selectedPlan.price || 0)
+      const totalPrice = basePrice * planQuantity
+      const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
+      
       setSubscriptionForm((prev) => ({
         ...prev,
         plan_id: planId,
+        discount_type: discountType,
         amount_paid: discountedPrice.toString(),
       }))
+    }
+  }
+  
+  // Handle quantity change for advance payment/renewal
+  const handleQuantityChange = (quantity) => {
+    const qty = Math.max(1, parseInt(quantity) || 1)
+    setPlanQuantity(qty)
+    
+    if (subscriptionForm.plan_id) {
+      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
+      if (selectedPlan) {
+        // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
+        // Plan ID 5 includes Monthly Access Premium, so discount should apply
+        let discountType = subscriptionForm.discount_type || "none"
+        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) && userActiveDiscount) {
+          discountType = userActiveDiscount
+        }
+        
+        // Calculate price: base price * quantity, then apply discount
+        const basePrice = parseFloat(selectedPlan.price || 0)
+        const totalPrice = basePrice * qty
+        const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
+        
+        setSubscriptionForm((prev) => ({
+          ...prev,
+          discount_type: discountType,
+          amount_paid: discountedPrice.toString(),
+        }))
+      }
     }
   }
 
@@ -791,20 +841,61 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
+  // Fetch user's active discount eligibility
+  const fetchUserDiscount = async (userId) => {
+    try {
+      const response = await fetch(`https://api.cnergy.site/user_discount.php?action=get_active&user_id=${userId}`)
+      if (!response.ok) throw new Error('Failed to fetch user discount')
+      const result = await response.json()
+      if (result.success && result.discount_type) {
+        setUserActiveDiscount(result.discount_type)
+        return result.discount_type
+      } else {
+        setUserActiveDiscount(null)
+        return null
+      }
+    } catch (error) {
+      console.error('Error fetching user discount:', error)
+      setUserActiveDiscount(null)
+      return null
+    }
+  }
+
   const handleUserSelection = async (userId) => {
     try {
       setSubscriptionForm((prev) => ({
         ...prev,
         user_id: userId,
         plan_id: "", // Reset plan selection
+        discount_type: "none", // Reset discount
+        amount_paid: "", // Reset amount
       }))
+      setUserActiveDiscount(null) // Reset discount
       setUserActiveSubscriptions([]) // Reset active subscriptions
+      setPlanQuantity(1) // Reset quantity
 
       if (userId) {
-        const userInfo = await fetchAvailablePlansForUser(userId)
-        setSelectedUserInfo(userInfo)
+        // Find the user from availableUsers array
+        const user = availableUsers.find(u => u.id.toString() === userId.toString())
+        if (user) {
+          setSelectedUserInfo(user)
+          // Update search query to show selected user's name
+          setUserSearchQuery(`${user.fname || ''} ${user.lname || ''}`.trim())
+        } else {
+          // If user not found in availableUsers, try to fetch it
+          setSelectedUserInfo(null)
+          setUserSearchQuery("")
+        }
+        
+        // Fetch user's active discount
+        await fetchUserDiscount(userId)
+        
+        // Fetch available plans for the user
+        await fetchAvailablePlansForUser(userId)
       } else {
         setSelectedUserInfo(null)
+        setUserSearchQuery("")
+        setUserActiveDiscount(null)
         setUserActiveSubscriptions([])
         // Reset to all plans if no user selected
         fetchSubscriptionPlans()
@@ -812,7 +903,8 @@ const SubscriptionMonitor = ({ userId }) => {
     } catch (error) {
       console.error("Error in handleUserSelection:", error)
       setSelectedUserInfo(null)
-      setUserActiveSubscriptions([])
+      setUserSearchQuery("")
+      setUserActiveDiscount(null)
       setMessage({ type: "error", text: "Failed to load user information" })
     }
   }
@@ -2796,9 +2888,16 @@ const SubscriptionMonitor = ({ userId }) => {
       </Card>
 
       {/* Manual Subscription Creation Dialog */}
-      <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={setIsCreateSubscriptionDialogOpen}>
+      <Dialog open={isCreateSubscriptionDialogOpen} onOpenChange={(open) => {
+        setIsCreateSubscriptionDialogOpen(open)
+        if (!open) {
+          // Reset search when dialog closes
+          setUserSearchQuery("")
+          setShowUserDropdown(false)
+        }
+      }}>
         <DialogContent
-          className="max-w-2xl"
+          className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto overflow-x-hidden"
           onOpenAutoFocus={async (e) => {
             // Fetch subscription details when modal opens for approval
             if (currentSubscriptionId) {
@@ -2820,41 +2919,101 @@ const SubscriptionMonitor = ({ userId }) => {
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* First Row: User Name and Plan Name */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Member Name *</Label>
+              <div className="space-y-2 relative">
+                <Label className="text-sm text-gray-700 font-semibold">User Name</Label>
                 {currentSubscriptionId ? (
                   <Input
-                    value={selectedUserInfo ? `${selectedUserInfo.fname} ${selectedUserInfo.lname}` : 'Loading...'}
+                    value={selectedUserInfo ? `${selectedUserInfo.fname || ''} ${selectedUserInfo.lname || ''}`.trim() : 'Loading...'}
                     disabled
-                    placeholder="Loading member details..."
+                    placeholder="Loading user details..."
+                    className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select value={subscriptionForm.user_id} onValueChange={handleUserSelection}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id.toString()}>
-                          {`${user.fname} ${user.lname} (${user.email})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                      <Input
+                        value={userSearchQuery || (selectedUserInfo ? `${selectedUserInfo.fname || ''} ${selectedUserInfo.lname || ''}`.trim() : "")}
+                        onChange={(e) => {
+                          setUserSearchQuery(e.target.value)
+                          setShowUserDropdown(true)
+                          // Clear user selection if user starts typing
+                          if (e.target.value !== userSearchQuery && subscriptionForm.user_id) {
+                            setSubscriptionForm(prev => ({ ...prev, user_id: "" }))
+                            setSelectedUserInfo(null)
+                          }
+                        }}
+                        onFocus={() => setShowUserDropdown(true)}
+                        placeholder="Search user by name or email..."
+                        className="h-10 text-sm border border-gray-300 pl-10"
+                      />
+                    </div>
+                    {showUserDropdown && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-10" 
+                          onClick={() => setShowUserDropdown(false)}
+                        />
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                          {(() => {
+                            const filteredUsers = availableUsers.filter((user) => {
+                              const searchLower = userSearchQuery.toLowerCase()
+                              const fullName = `${user.fname} ${user.lname}`.toLowerCase()
+                              const email = (user.email || '').toLowerCase()
+                              return fullName.includes(searchLower) || email.includes(searchLower)
+                            })
+                            
+                            if (filteredUsers.length === 0) {
+                              return (
+                                <div className="p-3 text-sm text-gray-500 text-center">
+                                  No users found
+                                </div>
+                              )
+                            }
+                            
+                            return filteredUsers.map((user) => (
+                              <div
+                                key={user.id}
+                                onClick={() => {
+                                  handleUserSelection(user.id.toString())
+                                  setShowUserDropdown(false)
+                                }}
+                                className="p-3 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium text-sm text-gray-900">
+                                  {user.fname || ''} {user.lname || ''}
+                                </div>
+                                {user.email && (
+                                  <div className="text-xs text-gray-500 mt-0.5">
+                                    {user.email}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="space-y-2">
-                <Label>Plan Name *</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Plan Name</Label>
                 {currentSubscriptionId ? (
                   <Input
                     value={subscriptionForm.plan_name || 'Loading...'}
                     disabled
                     placeholder="Loading plan details..."
+                    className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select value={subscriptionForm.plan_id} onValueChange={handlePlanChange}>
-                    <SelectTrigger>
+                  <Select 
+                    value={subscriptionForm.plan_id} 
+                    onValueChange={handlePlanChange}
+                  >
+                    <SelectTrigger className="h-10 text-sm border border-gray-300">
                       <SelectValue placeholder="Select a plan" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2890,19 +3049,47 @@ const SubscriptionMonitor = ({ userId }) => {
                   </Select>
                 )}
               </div>
+            </div>
+
+            {/* Quantity Input for Plan ID 1, 2, 3 (Advance Payment/Renewal) */}
+            {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
               <div className="space-y-2">
-                <Label>Amount to Pay *</Label>
+                <Label className="text-sm text-gray-700 font-semibold">
+                  {userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(subscriptionForm.plan_id))
+                    ? "Renewal/Advance Payment - How much to extend?"
+                    : "How much of the plan do you want to renew or advance payment?"}
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={planQuantity}
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                  placeholder="Enter quantity"
+                  className="h-10 text-sm border border-gray-300"
+                />
+                <p className="text-xs text-gray-500">
+                  {subscriptionForm.plan_id == 1 
+                    ? "Enter number of years for Gym Membership" 
+                    : "Enter number of months for Monthly Plan"}
+                </p>
+              </div>
+            )}
+
+            {/* Second Row: Amount to Pay and Payment Method */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-700 font-semibold">Amount to Pay</Label>
                 <Input
                   value={subscriptionForm.amount_paid || '0.00'}
                   disabled
                   placeholder="Amount to pay"
-                  className="bg-gray-50 text-gray-900 font-medium"
+                  className="h-10 text-sm border border-gray-300 bg-gray-50 text-gray-900 font-medium"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Payment Method</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Payment Method</Label>
                 <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10 text-sm border border-gray-300">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2975,37 +3162,25 @@ const SubscriptionMonitor = ({ userId }) => {
             )}
 
             {/* Discount Section */}
-            <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Discount Options</h3>
-              <div className="grid grid-cols-3 gap-3">
-                {Object.entries(discountConfig).map(([key, config]) => (
-                  <Button
-                    key={key}
-                    type="button"
-                    variant={subscriptionForm.discount_type === key ? "default" : "outline"}
-                    className={`h-auto py-3 px-3 ${subscriptionForm.discount_type === key
-                      ? "bg-gray-800 hover:bg-gray-700 text-white border-gray-800"
-                      : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300"
-                      }`}
-                    onClick={() => {
-                      setSubscriptionForm(prev => ({ ...prev, discount_type: key }))
-                      // Auto-calculate amount when discount changes
-                      if (subscriptionForm.plan_id) {
-                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
-                        if (selectedPlan) {
-                          const discountedPrice = calculateDiscountedPrice(selectedPlan.price, key)
-                          setSubscriptionForm(prev => ({ ...prev, amount_paid: discountedPrice.toString() }))
-                        }
-                      }
-                    }}
-                  >
-                    <div className="flex flex-col items-center w-full">
-                      <span className="text-sm font-medium">{config.name}</span>
-                    </div>
-                  </Button>
-                ))}
+            {/* User Discount Status */}
+            {selectedUserInfo && userActiveDiscount && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2">
+                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${
+                    userActiveDiscount === 'student' 
+                      ? 'bg-blue-100 text-blue-700 border border-blue-300' 
+                      : 'bg-purple-100 text-purple-700 border border-purple-300'
+                  }`}>
+                    {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
+                  </div>
+                  <span className="text-sm text-gray-600">
+                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5
+                      ? 'Discount will be automatically applied to this plan'
+                      : 'Discount is available for Monthly Access plans'}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Price Breakdown */}
             {subscriptionForm.plan_id && (
@@ -3016,18 +3191,21 @@ const SubscriptionMonitor = ({ userId }) => {
                     const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
                     const planPrice = parseFloat(selectedPlan?.price || 0)
                     const amountPaid = parseFloat(subscriptionForm.amount_paid || 0)
-                    const months = planPrice > 0 && amountPaid > 0 ? Math.floor(amountPaid / planPrice) : 1
                     const discount = discountConfig[subscriptionForm.discount_type]?.discount || 0
-                    const hasDiscount = subscriptionForm.discount_type !== 'regular' && discount > 0
+                    const hasDiscount = subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && discount > 0
+                    
+                    // Calculate original total: base price * quantity
+                    const quantity = planQuantity || 1
+                    const originalTotal = planPrice * quantity
 
                     return (
                       <>
                         <div className="flex justify-between">
                           <span>Original Price:</span>
                           <span className="font-medium text-gray-900">
-                            {months > 1 ? (
+                            {quantity > 1 ? (
                               <span>
-                                ₱{planPrice.toFixed(2)} × {months} month{months > 1 ? 's' : ''} = ₱{(planPrice * months).toFixed(2)}
+                                ₱{planPrice.toFixed(2)} × {quantity} {subscriptionForm.plan_id == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
                               </span>
                             ) : (
                               `₱${planPrice.toFixed(2)}`
@@ -3035,9 +3213,9 @@ const SubscriptionMonitor = ({ userId }) => {
                           </span>
                         </div>
                         {hasDiscount && (
-                          <div className="flex justify-between">
+                          <div className="flex justify-between text-blue-700">
                             <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                            <span className="font-medium text-gray-700">-₱{discount.toFixed(2)}</span>
+                            <span className="font-medium">-₱{discount.toFixed(2)}</span>
                           </div>
                         )}
                         <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
@@ -3060,7 +3238,7 @@ const SubscriptionMonitor = ({ userId }) => {
                   value={amountReceived}
                   onChange={(e) => setAmountReceived(e.target.value)}
                   placeholder="Enter amount received"
-                  className="bg-white"
+                  className="h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 {amountReceived && (
                   <div className="mt-2 p-3 bg-white rounded-md border border-gray-300">

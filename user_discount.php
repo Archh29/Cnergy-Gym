@@ -64,16 +64,17 @@ $input = json_decode(file_get_contents('php://input'), true) ?? [];
 $data = array_merge($_POST, $input);
 
 // Helper function to validate admin/staff
-function validateAdminStaff($pdo, $userId) {
+function validateAdminStaff($pdo, $userId)
+{
     try {
         // Convert to integer and validate
-        $userId = is_numeric($userId) ? (int)$userId : null;
-        
+        $userId = is_numeric($userId) ? (int) $userId : null;
+
         if (!$userId || $userId <= 0) {
             error_log("validateAdminStaff: Invalid userId provided - Type: " . gettype($userId) . ", Value: " . var_export($userId, true));
             return false;
         }
-        
+
         // First check if user exists and get their type
         $stmt = $pdo->prepare("
             SELECT id, user_type_id, fname, lname, is_deleted
@@ -82,25 +83,25 @@ function validateAdminStaff($pdo, $userId) {
         ");
         $stmt->execute([$userId]);
         $user = $stmt->fetch();
-        
+
         if ($user === false || !$user) {
             error_log("validateAdminStaff: User not found - User ID: $userId");
             return false;
         }
-        
+
         // Check if user is deleted
         if (isset($user['is_deleted']) && ($user['is_deleted'] == 1 || $user['is_deleted'] === true)) {
             error_log("validateAdminStaff: User is deleted - User ID: $userId");
             return false;
         }
-        
+
         // Check if user is admin (type 1) or staff (type 2)
-        $userTypeId = isset($user['user_type_id']) ? (int)$user['user_type_id'] : null;
+        $userTypeId = isset($user['user_type_id']) ? (int) $user['user_type_id'] : null;
         if ($userTypeId !== 1 && $userTypeId !== 2) {
             error_log("validateAdminStaff: User is not admin/staff - User ID: $userId, User Type: $userTypeId");
             return false;
         }
-        
+
         return true;
     } catch (Exception $e) {
         error_log("validateAdminStaff: Error validating user - " . $e->getMessage() . " | User ID: " . var_export($userId, true));
@@ -111,7 +112,7 @@ function validateAdminStaff($pdo, $userId) {
 // GET: Get discount eligibility for a user
 if ($method === 'GET' && $action === 'get') {
     $userId = $_GET['user_id'] ?? null;
-    
+
     if (!$userId || !is_numeric($userId)) {
         http_response_code(400);
         echo json_encode([
@@ -120,7 +121,7 @@ if ($method === 'GET' && $action === 'get') {
         ]);
         exit();
     }
-    
+
     try {
         $stmt = $pdo->prepare("
             SELECT 
@@ -142,7 +143,7 @@ if ($method === 'GET' && $action === 'get') {
         ");
         $stmt->execute([$userId]);
         $eligibilities = $stmt->fetchAll();
-        
+
         echo json_encode([
             "success" => true,
             "data" => $eligibilities
@@ -164,7 +165,7 @@ if ($method === 'POST' && $action === 'add') {
     $verifiedBy = $data['verified_by'] ?? null;
     $expiresAt = $data['expires_at'] ?? null;
     $notes = $data['notes'] ?? null;
-    
+
     // Validation
     if (!$userId || !is_numeric($userId)) {
         http_response_code(400);
@@ -174,7 +175,7 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     if (!in_array($discountType, ['student', 'senior'])) {
         http_response_code(400);
         echo json_encode([
@@ -183,7 +184,7 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     // Validate and convert verified_by to integer
     if (!$verifiedBy) {
         error_log("user_discount.php add: verified_by is missing or empty. Data received: " . json_encode($data));
@@ -194,9 +195,9 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     // Convert to integer if it's a string
-    $verifiedBy = is_numeric($verifiedBy) ? (int)$verifiedBy : null;
+    $verifiedBy = is_numeric($verifiedBy) ? (int) $verifiedBy : null;
     if (!$verifiedBy || $verifiedBy <= 0) {
         error_log("user_discount.php add: verified_by is not a valid number. Received: " . var_export($data['verified_by'], true));
         http_response_code(400);
@@ -206,7 +207,7 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     if (!validateAdminStaff($pdo, $verifiedBy)) {
         error_log("user_discount.php add: Permission validation failed - verified_by: $verifiedBy (type: " . gettype($verifiedBy) . ")");
         // Get more details about why validation failed
@@ -225,12 +226,12 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     // Verify user exists
     $userStmt = $pdo->prepare("SELECT id, fname, lname FROM user WHERE id = ?");
     $userStmt->execute([$userId]);
     $user = $userStmt->fetch();
-    
+
     if (!$user) {
         http_response_code(404);
         echo json_encode([
@@ -239,10 +240,10 @@ if ($method === 'POST' && $action === 'add') {
         ]);
         exit();
     }
-    
+
     try {
         $pdo->beginTransaction();
-        
+
         // Deactivate any existing active discount of the same type for this user
         $deactivateStmt = $pdo->prepare("
             UPDATE user_discount_eligibility 
@@ -250,7 +251,7 @@ if ($method === 'POST' && $action === 'add') {
             WHERE user_id = ? AND discount_type = ? AND is_active = 1
         ");
         $deactivateStmt->execute([$userId, $discountType]);
-        
+
         // Automatically set expiration date based on discount type:
         // - Student: 1 year from now
         // - Senior (55+): NULL (forever, no expiration)
@@ -264,7 +265,7 @@ if ($method === 'POST' && $action === 'add') {
             // Fallback: use provided expires_at or null
             $expiresAt = $expiresAt ?: null;
         }
-        
+
         // Insert new discount eligibility
         $insertStmt = $pdo->prepare("
             INSERT INTO user_discount_eligibility 
@@ -278,9 +279,9 @@ if ($method === 'POST' && $action === 'add') {
             $expiresAt,
             $notes ?: null
         ]);
-        
+
         $discountId = $pdo->lastInsertId();
-        
+
         // Log activity
         logStaffActivity(
             $pdo,
@@ -289,9 +290,9 @@ if ($method === 'POST' && $action === 'add') {
             "Tagged {$user['fname']} {$user['lname']} (ID: $userId) as " . ucfirst($discountType) . " discount eligible",
             "Discount Management"
         );
-        
+
         $pdo->commit();
-        
+
         echo json_encode([
             "success" => true,
             "message" => "Discount eligibility added successfully",
@@ -317,7 +318,7 @@ if ($method === 'POST' && $action === 'remove') {
     $discountId = $data['discount_id'] ?? null;
     $userId = $data['user_id'] ?? null;
     $verifiedBy = $data['verified_by'] ?? null;
-    
+
     if (!$discountId || !is_numeric($discountId)) {
         http_response_code(400);
         echo json_encode([
@@ -326,7 +327,7 @@ if ($method === 'POST' && $action === 'remove') {
         ]);
         exit();
     }
-    
+
     // Validate and convert verified_by to integer
     if (!$verifiedBy) {
         error_log("user_discount.php remove: verified_by is missing or empty. Data received: " . json_encode($data));
@@ -337,9 +338,9 @@ if ($method === 'POST' && $action === 'remove') {
         ]);
         exit();
     }
-    
+
     // Convert to integer if it's a string
-    $verifiedBy = is_numeric($verifiedBy) ? (int)$verifiedBy : null;
+    $verifiedBy = is_numeric($verifiedBy) ? (int) $verifiedBy : null;
     if (!$verifiedBy || $verifiedBy <= 0) {
         error_log("user_discount.php remove: verified_by is not a valid number. Received: " . var_export($data['verified_by'], true));
         http_response_code(400);
@@ -349,20 +350,29 @@ if ($method === 'POST' && $action === 'remove') {
         ]);
         exit();
     }
-    
-    if (!validateAdminStaff($pdo, $verifiedBy)) {
-        error_log("user_discount.php remove: Permission validation failed - verified_by: $verifiedBy (type: " . gettype($verifiedBy) . ")");
+
+    // Only admins can remove discount tags
+    $stmt = $pdo->prepare("
+        SELECT id, user_type_id, fname, lname, is_deleted
+        FROM user 
+        WHERE id = ?
+    ");
+    $stmt->execute([$verifiedBy]);
+    $user = $stmt->fetch();
+
+    if (!$user || $user['is_deleted'] == 1 || (int) $user['user_type_id'] !== 1) {
+        error_log("user_discount.php remove: Permission validation failed - verified_by: $verifiedBy, user_type_id: " . ($user['user_type_id'] ?? 'null'));
         http_response_code(403);
         echo json_encode([
             "success" => false,
-            "error" => "Invalid admin/staff user or insufficient permissions. User must be admin (type 1) or staff (type 2)."
+            "error" => "Only administrators can remove discount tags. Staff members cannot remove discount tags once they are added."
         ]);
         exit();
     }
-    
+
     try {
         $pdo->beginTransaction();
-        
+
         // Get discount info for logging
         $discountStmt = $pdo->prepare("
             SELECT ude.*, u.fname, u.lname 
@@ -372,7 +382,7 @@ if ($method === 'POST' && $action === 'remove') {
         ");
         $discountStmt->execute([$discountId]);
         $discount = $discountStmt->fetch();
-        
+
         if (!$discount) {
             http_response_code(404);
             echo json_encode([
@@ -381,7 +391,7 @@ if ($method === 'POST' && $action === 'remove') {
             ]);
             exit();
         }
-        
+
         // Deactivate the discount
         $updateStmt = $pdo->prepare("
             UPDATE user_discount_eligibility 
@@ -389,7 +399,7 @@ if ($method === 'POST' && $action === 'remove') {
             WHERE id = ?
         ");
         $updateStmt->execute([$discountId]);
-        
+
         // Log activity
         logStaffActivity(
             $pdo,
@@ -398,9 +408,9 @@ if ($method === 'POST' && $action === 'remove') {
             "Removed " . ucfirst($discount['discount_type']) . " discount eligibility from {$discount['fname']} {$discount['lname']} (ID: {$discount['user_id']})",
             "Discount Management"
         );
-        
+
         $pdo->commit();
-        
+
         echo json_encode([
             "success" => true,
             "message" => "Discount eligibility removed successfully"
@@ -419,7 +429,7 @@ if ($method === 'POST' && $action === 'remove') {
 // GET: Get active discount eligibility for a user (for subscription creation)
 if ($method === 'GET' && $action === 'get_active') {
     $userId = $_GET['user_id'] ?? null;
-    
+
     if (!$userId || !is_numeric($userId)) {
         http_response_code(400);
         echo json_encode([
@@ -428,7 +438,7 @@ if ($method === 'GET' && $action === 'get_active') {
         ]);
         exit();
     }
-    
+
     try {
         $stmt = $pdo->prepare("
             SELECT discount_type
@@ -445,7 +455,7 @@ if ($method === 'GET' && $action === 'get_active') {
         ");
         $stmt->execute([$userId]);
         $eligibility = $stmt->fetch();
-        
+
         echo json_encode([
             "success" => true,
             "discount_type" => $eligibility ? $eligibility['discount_type'] : null

@@ -12,6 +12,10 @@ import { PanelLeft, AlertCircle, CheckCircle, Clock, X, Menu } from "lucide-reac
 import AttendanceTracking from "./attendancetracking"
 import MonitorSubscriptions from "./monitorsubscription"
 import CoachAssignments from "./coachassignments"
+import Exercises from "./exercises"
+import FreePrograms from "./freeprograms"
+import Promotions from "./promotions"
+import Merchandise from "./merchandise"
 import Sales from "./sales"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
@@ -183,6 +187,14 @@ export default function StaffDashboardClient() {
         return <MonitorSubscriptions userId={userId} />
       case "CoachAssignments":
         return <CoachAssignments userId={userId} />
+      case "Exercises":
+        return <Exercises />
+      case "FreePrograms":
+        return <FreePrograms />
+      case "Promotions":
+        return <Promotions />
+      case "Merchandise":
+        return <Merchandise />
       case "Sales":
         return <Sales userId={userId} />
       default:

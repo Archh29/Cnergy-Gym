@@ -128,6 +128,7 @@ const ViewMembers = ({ userId }) => {
   const [monthFilter, setMonthFilter] = useState("")
   const [yearFilter, setYearFilter] = useState("")
   const [currentView, setCurrentView] = useState("active") // "active" or "archive"
+  const [userRole, setUserRole] = useState("admin") // Default to admin for admin dashboard
 
   // Custom date picker states
   const [customDate, setCustomDate] = useState(null)
@@ -378,6 +379,11 @@ const ViewMembers = ({ userId }) => {
 
   useEffect(() => {
     fetchMembers()
+    // Get user role from sessionStorage
+    if (typeof window !== 'undefined') {
+      const role = sessionStorage.getItem('user_role') || 'admin'
+      setUserRole(role)
+    }
   }, [toast])
 
   // Fetch discounts when members are loaded
@@ -2779,15 +2785,22 @@ const ViewMembers = ({ userId }) => {
                             )}
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveDiscount(activeDiscount.id)}
-                          disabled={discountLoading}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                        {userRole === 'admin' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveDiscount(activeDiscount.id)}
+                            disabled={discountLoading}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {userRole === 'staff' && (
+                          <div className="text-xs text-gray-500 italic px-2">
+                            Only admins can remove
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
