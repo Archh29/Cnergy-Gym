@@ -165,17 +165,7 @@ try {
             $name = trim($input['name']);
             $description = isset($input['description']) ? trim($input['description']) : null;
             $difficulty = isset($input['difficulty']) ? trim($input['difficulty']) : 'Beginner';
-            $exercises = isset($input['exercises']) && is_array($input['exercises']) ? $input['exercises'] : [];
-
-            // Validate exercises
-            if (empty($exercises)) {
-                http_response_code(400);
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'At least one exercise is required'
-                ]);
-                break;
-            }
+            $exercises = isset($input['exercises']) ? $input['exercises'] : [];
 
             // Check if program name already exists (only check active programs, not archived ones)
             $stmt = $pdo->prepare("SELECT id FROM programs WHERE name = ? AND COALESCE(is_archived, 0) = 0");
@@ -320,15 +310,27 @@ try {
 
                 // Archive or restore
                 if ($action === 'archive') {
+                    // Update programs table
                     $stmt = $pdo->prepare("UPDATE programs SET is_archived = 1 WHERE id = ?");
                     $stmt->execute([$id]);
+                    
+                    // Update programhdr table - set is_active to 0 when archiving
+                    $stmt = $pdo->prepare("UPDATE programhdr SET is_active = 0 WHERE program_id = ?");
+                    $stmt->execute([$id]);
+                    
                     echo json_encode([
                         'success' => true,
                         'message' => 'Program archived successfully'
                     ]);
                 } else { // restore
+                    // Update programs table
                     $stmt = $pdo->prepare("UPDATE programs SET is_archived = 0 WHERE id = ?");
                     $stmt->execute([$id]);
+                    
+                    // Update programhdr table - set is_active to 1 when restoring
+                    $stmt = $pdo->prepare("UPDATE programhdr SET is_active = 1 WHERE program_id = ?");
+                    $stmt->execute([$id]);
+                    
                     echo json_encode([
                         'success' => true,
                         'message' => 'Program restored successfully'
@@ -351,17 +353,7 @@ try {
             $name = trim($input['name']);
             $description = isset($input['description']) ? trim($input['description']) : null;
             $difficulty = isset($input['difficulty']) ? trim($input['difficulty']) : 'Beginner';
-            $exercises = isset($input['exercises']) && is_array($input['exercises']) ? $input['exercises'] : [];
-
-            // Validate exercises
-            if (empty($exercises)) {
-                http_response_code(400);
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'At least one exercise is required'
-                ]);
-                break;
-            }
+            $exercises = isset($input['exercises']) ? $input['exercises'] : [];
 
             // Check if program exists
             $stmt = $pdo->prepare("SELECT id FROM programs WHERE id = ?");

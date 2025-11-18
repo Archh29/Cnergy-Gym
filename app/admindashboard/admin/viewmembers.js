@@ -2431,53 +2431,86 @@ const ViewMembers = ({ userId }) => {
 
       {/* Error Dialog for Duplicate User/Name */}
       <Dialog open={isErrorDialogOpen} onOpenChange={setIsErrorDialogOpen}>
-        <DialogContent className="sm:max-w-lg" hideClose={true}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <AlertTriangle className="h-6 w-6" />
-              {errorDialogData?.title || "Duplicate Entry Detected"}
-            </DialogTitle>
-            <DialogDescription className="text-base font-medium text-gray-700 mt-2">
-              Cannot Create Client Account
-            </DialogDescription>
+        <DialogContent className="sm:max-w-2xl" hideClose={true}>
+          <DialogHeader className="space-y-4 pb-2">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 w-14 h-14 rounded-full bg-red-50 flex items-center justify-center border-2 border-red-200">
+                <AlertTriangle className="h-7 w-7 text-red-600" />
+              </div>
+              <div className="flex-1 pt-1">
+                <DialogTitle className="text-2xl font-bold text-slate-900 leading-tight">
+                  {errorDialogData?.title || "Duplicate Name Combination"}
+                </DialogTitle>
+                <DialogDescription className="text-base text-slate-600 mt-2 leading-relaxed">
+                  Cannot Create Client Account
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
-              <p className="text-sm text-red-800 font-medium leading-relaxed">
-                {errorDialogData?.message || "A client with this information already exists in the system."}
+          
+          <div className="py-2 space-y-4">
+            <div className="bg-gradient-to-r from-red-50 to-red-50/50 border-l-4 border-red-500 rounded-r-lg p-5">
+              <p className="text-sm font-semibold text-slate-900 mb-2">
+                Why This Error Occurred
+              </p>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                {errorDialogData?.message || "A client with this information already exists in the system. Please use a different name combination or email address to create a new account."}
               </p>
             </div>
             
             {errorDialogData?.existingUser && (
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
-                <h4 className="font-semibold text-gray-900 text-sm">Existing User Details:</h4>
-                <div className="space-y-1 text-sm text-gray-700">
-                  <div>
-                    <span className="font-medium">Name:</span>{" "}
-                    {errorDialogData.existingUser.fname} {errorDialogData.existingUser.mname || ""} {errorDialogData.existingUser.lname}
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-5 space-y-3">
+                <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+                  <User className="h-4 w-4 text-slate-600" />
+                  Existing Client Information
+                </h4>
+                <div className="space-y-2.5 text-sm text-slate-700 bg-white rounded-md p-4 border border-slate-100">
+                  <div className="flex items-start gap-3">
+                    <span className="font-semibold text-slate-900 min-w-[60px]">Name:</span>
+                    <span className="text-slate-700">
+                      {errorDialogData.existingUser.fname} {errorDialogData.existingUser.mname || ""} {errorDialogData.existingUser.lname}
+                    </span>
                   </div>
                   {errorDialogData.existingUser.email && (
-                    <div>
-                      <span className="font-medium">Email:</span> {errorDialogData.existingUser.email}
+                    <div className="flex items-start gap-3">
+                      <span className="font-semibold text-slate-900 min-w-[60px]">Email:</span>
+                      <span className="text-slate-700 break-all">{errorDialogData.existingUser.email}</span>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-xs text-blue-800 leading-relaxed">
-                <strong>What to do:</strong> This account cannot be created because the information already exists in the system. 
-                Please use a different name combination or email address to create a new account.
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+              <p className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                What You Can Do
               </p>
+              <ul className="space-y-2 text-sm text-slate-700 ml-4">
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600 mt-1.5">•</span>
+                  <span>Use a different first name or last name combination</span>
+                </li>
+                {errorDialogData?.duplicateType === 'email' && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-600 mt-1.5">•</span>
+                    <span>Use a different email address if creating a new account</span>
+                  </li>
+                )}
+                <li className="flex items-start gap-2">
+                  <span className="text-blue-600 mt-1.5">•</span>
+                  <span>Verify if this is the same person and update their existing account instead</span>
+                </li>
+              </ul>
             </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="pt-4 border-t border-slate-200">
             <Button 
               onClick={() => setIsErrorDialogOpen(false)}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2.5"
+              className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white font-medium px-8 py-2.5 shadow-sm hover:shadow-md transition-all"
             >
-              Understood
+              I Understand
             </Button>
           </DialogFooter>
         </DialogContent>

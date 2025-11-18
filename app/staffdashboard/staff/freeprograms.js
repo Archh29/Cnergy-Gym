@@ -229,7 +229,8 @@ const FreePrograms = ({ userId }) => {
       const response = await axios.put(`${PROGRAMS_API}?staff_id=${userId}`, {
         id: programToArchive.id,
         action: 'archive',
-        is_archived: 1
+        is_archived: 1,
+        is_active: 0
       })
 
       if (response.data.success) {
@@ -266,7 +267,8 @@ const FreePrograms = ({ userId }) => {
       const response = await axios.put(`${PROGRAMS_API}?staff_id=${userId}`, {
         id: programToRestore.id,
         action: 'restore',
-        is_archived: 0
+        is_archived: 0,
+        is_active: 1
       })
 
       if (response.data.success) {
@@ -374,20 +376,43 @@ const FreePrograms = ({ userId }) => {
   }
 
   const handleExerciseDetailChange = (exerciseId, field, value) => {
-    setExerciseDetails((prev) => ({
-      ...prev,
-      [exerciseId]: {
-        ...prev[exerciseId],
-        [field]: value
+    // Only allow numeric input (allow empty string for clearing)
+    const numericValue = value === "" ? "" : value.replace(/[^0-9]/g, "")
+    
+    setExerciseDetails((prev) => {
+      const currentDetails = prev[exerciseId] || {}
+      const newDetails = { ...currentDetails, [field]: numericValue }
+
+      // If sets is being changed, initialize repsPerSet array
+      if (field === 'sets') {
+        const numSets = parseInt(numericValue) || 0
+        const currentRepsPerSet = currentDetails.repsPerSet || []
+
+        // Initialize or resize repsPerSet array
+        if (numSets > 0) {
+          newDetails.repsPerSet = Array.from({ length: numSets }, (_, index) =>
+            currentRepsPerSet[index] || currentDetails.reps || ""
+          )
+        } else {
+          newDetails.repsPerSet = []
+        }
       }
-    }))
+
+      return {
+        ...prev,
+        [exerciseId]: newDetails
+      }
+    })
   }
 
   const handleSetRepsChange = (exerciseId, setIndex, reps) => {
+    // Only allow numeric input (allow empty string for clearing)
+    const numericReps = reps === "" ? "" : reps.replace(/[^0-9]/g, "")
+    
     setExerciseDetails((prev) => {
       const currentDetails = prev[exerciseId] || {}
       const repsPerSet = [...(currentDetails.repsPerSet || [])]
-      repsPerSet[setIndex] = reps
+      repsPerSet[setIndex] = numericReps
 
       return {
         ...prev,
@@ -803,6 +828,12 @@ const FreePrograms = ({ userId }) => {
                                       max="10"
                                       value={exerciseDetails[exercise.id]?.sets || ""}
                                       onChange={(e) => handleExerciseDetailChange(exercise.id, 'sets', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        // Allow: backspace, delete, tab, escape, enter, and numbers
+                                        if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                          e.preventDefault()
+                                        }
+                                      }}
                                       disabled={loadingStates.savingProgram}
                                       className="h-10"
                                     />
@@ -828,6 +859,12 @@ const FreePrograms = ({ userId }) => {
                                             placeholder="Enter number of reps"
                                             value={exerciseDetails[exercise.id]?.reps || ""}
                                             onChange={(e) => handleExerciseDetailChange(exercise.id, 'reps', e.target.value)}
+                                            onKeyDown={(e) => {
+                                              // Allow: backspace, delete, tab, escape, enter, and numbers
+                                              if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                                e.preventDefault()
+                                              }
+                                            }}
                                             disabled={loadingStates.savingProgram}
                                             className="h-10"
                                           />
@@ -854,6 +891,12 @@ const FreePrograms = ({ userId }) => {
                                                   placeholder="Reps"
                                                   value={repsPerSet[index] || ""}
                                                   onChange={(e) => handleSetRepsChange(exercise.id, index, e.target.value)}
+                                                  onKeyDown={(e) => {
+                                                    // Allow: backspace, delete, tab, escape, enter, and numbers
+                                                    if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                                      e.preventDefault()
+                                                    }
+                                                  }}
                                                   disabled={loadingStates.savingProgram}
                                                   className="h-10 flex-1"
                                                 />

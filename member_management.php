@@ -289,7 +289,7 @@ try {
                 $fullName = trim($existingName['fname'] . ' ' . ($existingName['mname'] ?? '') . ' ' . $existingName['lname']);
                 respond([
                     'error' => 'Duplicate Name Combination',
-                    'message' => "A member with the same first name and last name already exists in the system. The existing member '{$fullName}' (Email: {$existingName['email']}) is using this name combination. Please use a different name combination.",
+                    'message' => "A client with the same first name and last name combination already exists in the system. The existing client '{$fullName}' (Email: {$existingName['email']}) is currently using this name combination. Please use a different name combination to create a new account.",
                     'duplicate_type' => 'name',
                     'existing_user' => $existingName
                 ], 409);

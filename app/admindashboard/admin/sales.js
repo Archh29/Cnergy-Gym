@@ -439,7 +439,9 @@ const Sales = ({ userId }) => {
 
   const loadProducts = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`)
+      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`, {
+        timeout: 30000 // 30 second timeout
+      })
       console.log("Products loaded:", response.data.products)
       setProducts(response.data.products || [])
     } catch (error) {
@@ -825,7 +827,9 @@ const Sales = ({ userId }) => {
         params.append("custom_date", format(customDate, "yyyy-MM-dd"))
       }
 
-      const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
+      const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`, {
+        timeout: 30000 // 30 second timeout
+      })
       const salesData = response.data.sales || []
       // Log payment methods for debugging
       const subscriptionSales = salesData.filter(s => s.sale_type === 'Subscription')
@@ -893,7 +897,9 @@ const Sales = ({ userId }) => {
         params.append("year", yearFilter)
       }
 
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
+      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`, {
+        timeout: 30000 // 30 second timeout
+      })
       setAnalytics(
         response.data.analytics || {
           todaysSales: 0,

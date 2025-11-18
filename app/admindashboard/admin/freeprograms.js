@@ -25,6 +25,7 @@ axios.defaults.headers.common["Content-Type"] = "application/json"
 const FreePrograms = () => {
   const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedDifficulty, setSelectedDifficulty] = useState("all")
   const [programs, setPrograms] = useState([])
   const [exercises, setExercises] = useState([])
   const [muscleGroups, setMuscleGroups] = useState([])
@@ -426,13 +427,16 @@ const FreePrograms = () => {
   }
 
   const handleExerciseDetailChange = (exerciseId, field, value) => {
+    // Only allow numeric input (allow empty string for clearing)
+    const numericValue = value === "" ? "" : value.replace(/[^0-9]/g, "")
+    
     setExerciseDetails((prev) => {
       const currentDetails = prev[exerciseId] || {}
-      const newDetails = { ...currentDetails, [field]: value }
+      const newDetails = { ...currentDetails, [field]: numericValue }
 
       // If sets is being changed, initialize repsPerSet array
       if (field === 'sets') {
-        const numSets = parseInt(value) || 0
+        const numSets = parseInt(numericValue) || 0
         const currentRepsPerSet = currentDetails.repsPerSet || []
 
         // Initialize or resize repsPerSet array
@@ -453,10 +457,13 @@ const FreePrograms = () => {
   }
 
   const handleSetRepsChange = (exerciseId, setIndex, reps) => {
+    // Only allow numeric input (allow empty string for clearing)
+    const numericReps = reps === "" ? "" : reps.replace(/[^0-9]/g, "")
+    
     setExerciseDetails((prev) => {
       const currentDetails = prev[exerciseId] || {}
       const repsPerSet = [...(currentDetails.repsPerSet || [])]
-      repsPerSet[setIndex] = reps
+      repsPerSet[setIndex] = numericReps
 
       return {
         ...prev,
@@ -595,9 +602,32 @@ const FreePrograms = () => {
     return [...selected, ...unselected]
   }
 
-  const filteredPrograms = (programs || []).filter((program) =>
-    program?.name?.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const getDifficultyBadge = (difficulty) => {
+    const colors = {
+      Beginner: "bg-green-50 text-green-700 border border-green-200",
+      Intermediate: "bg-yellow-50 text-yellow-700 border border-yellow-200",
+      Advanced: "bg-red-50 text-red-700 border border-red-200",
+    }
+    const dots = {
+      Beginner: "bg-green-500",
+      Intermediate: "bg-yellow-500",
+      Advanced: "bg-red-500",
+    }
+    return (
+      <Badge className={`text-xs px-2 py-0.5 font-medium ${colors[difficulty] || colors.Beginner}`}>
+        <div className="flex items-center gap-1.5">
+          <div className={`w-2 h-2 rounded-full ${dots[difficulty] || dots.Beginner}`}></div>
+          {difficulty || "Beginner"}
+        </div>
+      </Badge>
+    )
+  }
+
+  const filteredPrograms = (programs || []).filter((program) => {
+    const matchesSearch = program?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesDifficulty = selectedDifficulty === "all" || program?.difficulty === selectedDifficulty
+    return matchesSearch && matchesDifficulty
+  })
 
   return (
     <div className="space-y-6">
@@ -644,12 +674,40 @@ const FreePrograms = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Tabs value={showArchived ? "archived" : "active"} onValueChange={(value) => setShowArchived(value === "archived")}>
-              <TabsList>
-                <TabsTrigger value="active">Active</TabsTrigger>
-                <TabsTrigger value="archived">Archived</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex items-center gap-3">
+              <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                <SelectTrigger className="h-11 w-[180px]">
+                  <SelectValue placeholder="Filter by difficulty" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Difficulties</SelectItem>
+                  <SelectItem value="Beginner">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                      Beginner
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Intermediate">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                      Intermediate
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Advanced">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                      Advanced
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Tabs value={showArchived ? "archived" : "active"} onValueChange={(value) => setShowArchived(value === "archived")}>
+                <TabsList>
+                  <TabsTrigger value="active">Active</TabsTrigger>
+                  <TabsTrigger value="archived">Archived</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </div>
 
           {filteredPrograms.length === 0 ? (
@@ -697,13 +755,16 @@ const FreePrograms = () => {
                       </div>
 
                       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                        <Badge
-                          variant="outline"
-                          className="bg-gray-50 border-gray-200 text-gray-700 font-medium px-3 py-1"
-                        >
-                          <Dumbbell className="h-3 w-3 mr-1.5" />
-                          {exerciseCount} {exerciseCount === 1 ? "exercise" : "exercises"}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className="bg-gray-50 border-gray-200 text-gray-700 font-medium px-3 py-1"
+                          >
+                            <Dumbbell className="h-3 w-3 mr-1.5" />
+                            {exerciseCount} {exerciseCount === 1 ? "exercise" : "exercises"}
+                          </Badge>
+                          {getDifficultyBadge(program.difficulty)}
+                        </div>
 
                         <div className="flex gap-1.5">
                           <Button
@@ -959,6 +1020,12 @@ const FreePrograms = () => {
                                 max="10"
                                 value={exerciseDetails[exercise.id]?.sets || ""}
                                 onChange={(e) => handleExerciseDetailChange(exercise.id, 'sets', e.target.value)}
+                                onKeyDown={(e) => {
+                                  // Allow: backspace, delete, tab, escape, enter, and numbers
+                                  if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                    e.preventDefault()
+                                  }
+                                }}
                                 disabled={loadingStates.savingProgram}
                                 className="h-10"
                               />
@@ -984,6 +1051,12 @@ const FreePrograms = () => {
                                       placeholder="Enter number of reps"
                                       value={exerciseDetails[exercise.id]?.reps || ""}
                                       onChange={(e) => handleExerciseDetailChange(exercise.id, 'reps', e.target.value)}
+                                      onKeyDown={(e) => {
+                                        // Allow: backspace, delete, tab, escape, enter, and numbers
+                                        if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                          e.preventDefault()
+                                        }
+                                      }}
                                       disabled={loadingStates.savingProgram}
                                       className="h-10"
                                     />
@@ -1010,6 +1083,12 @@ const FreePrograms = () => {
                                             placeholder="Reps"
                                             value={repsPerSet[index] || ""}
                                             onChange={(e) => handleSetRepsChange(exercise.id, index, e.target.value)}
+                                            onKeyDown={(e) => {
+                                              // Allow: backspace, delete, tab, escape, enter, and numbers
+                                              if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Escape', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                                                e.preventDefault()
+                                              }
+                                            }}
                                             disabled={loadingStates.savingProgram}
                                             className="h-10 flex-1"
                                           />

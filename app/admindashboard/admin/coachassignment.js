@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import axios from "axios"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -12,20 +12,28 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Search,
-  CheckCircle,
   XCircle,
   RefreshCw,
-  Activity,
   Users,
   UserCheck,
   Filter,
   CheckCircle2,
   XCircle as XCircleIcon,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
+  Package,
+  TrendingUp,
+  X,
+  User,
+  UserPlus,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const API_BASE_URL = "https://api.cnergy.site/admin_coach.php"
 const COACH_API_URL = "https://api.cnergy.site/addcoach.php"
+
+const ITEMS_PER_PAGE = 10
 
 const CoachAssignments = ({ userId }) => {
   const [searchQuery, setSearchQuery] = useState("")
@@ -35,7 +43,17 @@ const CoachAssignments = ({ userId }) => {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState(null)
+  
+  // Enhanced filters
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [rateTypeFilter, setRateTypeFilter] = useState("all")
+  const [dateFilter, setDateFilter] = useState("all")
+  const [coachMembersRateFilter, setCoachMembersRateFilter] = useState("all")
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  
   const [availableCoaches, setAvailableCoaches] = useState([])
   const [selectedCoachId, setSelectedCoachId] = useState("")
   const [selectedCoach, setSelectedCoach] = useState(null)
@@ -45,7 +63,7 @@ const CoachAssignments = ({ userId }) => {
   const [amountReceived, setAmountReceived] = useState("")
   const [referenceNumber, setReferenceNumber] = useState("")
 
-  const [currentUserId, setCurrentUserId] = useState(6) // Default admin ID, will be updated from session
+  const [currentUserId, setCurrentUserId] = useState(6)
 
   // Data states
   const [assignedMembers, setAssignedMembers] = useState([])
@@ -54,7 +72,6 @@ const CoachAssignments = ({ userId }) => {
     total_coaches: 0,
     total_members: 0,
   })
-  const [activityLog, setActivityLog] = useState([])
 
   const fetchAssignedMembers = async () => {
     try {
@@ -93,7 +110,6 @@ const CoachAssignments = ({ userId }) => {
       return
     }
 
-    // Calculate payment amount based on rate type
     let paymentAmount = 0
     switch (rateType) {
       case "monthly":
@@ -107,7 +123,6 @@ const CoachAssignments = ({ userId }) => {
         break
     }
 
-    // Validate payment for cash
     if (paymentMethod === "cash") {
       const received = parseFloat(amountReceived) || 0
       if (received < paymentAmount) {
@@ -119,10 +134,8 @@ const CoachAssignments = ({ userId }) => {
     setActionLoading(true)
     setError(null)
     try {
-      // Use currentUserId from state, fallback to userId prop
       const effectiveUserId = currentUserId || userId
       
-      // First, assign the coach
       const assignResponse = await axios.post(`${API_BASE_URL}?action=assign-coach`, {
         member_id: memberId,
         coach_id: selectedCoachId,
@@ -135,7 +148,6 @@ const CoachAssignments = ({ userId }) => {
         throw new Error(assignResponse.data.message || "Failed to assign coach")
       }
 
-      // Then process payment if amount > 0
       if (paymentAmount > 0) {
         const paymentData = {
           request_id: assignResponse.data.data?.assignment_id,
@@ -154,8 +166,7 @@ const CoachAssignments = ({ userId }) => {
         }
       }
 
-      // Refresh data
-      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog(), fetchAvailableMembers()])
+      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchAvailableMembers()])
       setAssignModalOpen(false)
       setSelectedMember(null)
       setSelectedMemberId("")
@@ -164,7 +175,8 @@ const CoachAssignments = ({ userId }) => {
       setRateType("monthly")
       setPaymentMethod("cash")
       setAmountReceived("")
-      setReceiptNumber("")
+      setReferenceNumber("")
+      setCurrentPage(1)
     } catch (err) {
       console.error("Error assigning coach:", err)
       setError("Failed to assign coach: " + (err.response?.data?.message || err.message))
@@ -173,22 +185,10 @@ const CoachAssignments = ({ userId }) => {
     }
   }
 
-  const fetchActivityLog = async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}?action=activity-log&limit=10`)
-      if (response.data.success) {
-        setActivityLog(response.data.activities || [])
-      }
-    } catch (err) {
-      console.error("Error fetching activity log:", err)
-    }
-  }
-
   const fetchAvailableCoaches = async () => {
     try {
       const response = await axios.get(COACH_API_URL)
       if (response.data && response.data.coaches) {
-        // Map and filter duplicates by ID
         const coachesMap = new Map()
         response.data.coaches.forEach(coach => {
           if (coach.id && !coachesMap.has(coach.id)) {
@@ -211,10 +211,8 @@ const CoachAssignments = ({ userId }) => {
 
   const fetchAvailableMembers = async () => {
     try {
-      // Fetch all members with gym membership (plan_id 1) for manual selection
       const response = await axios.get(`${API_BASE_URL}?action=available-members`)
       if (response.data.success) {
-        // Filter duplicates by member ID
         const membersMap = new Map()
         const members = response.data.members || []
         members.forEach(member => {
@@ -229,13 +227,11 @@ const CoachAssignments = ({ userId }) => {
     }
   }
 
-
-  // Load all data
   const loadAllData = async () => {
     setLoading(true)
     setError(null)
     try {
-      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchActivityLog(), fetchAvailableCoaches(), fetchAvailableMembers()])
+      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchAvailableCoaches(), fetchAvailableMembers()])
     } catch (err) {
       console.error("Error loading data:", err)
       setError("Failed to load data")
@@ -244,10 +240,8 @@ const CoachAssignments = ({ userId }) => {
     }
   }
 
-  // Get current user ID from session
   useEffect(() => {
     const getCurrentUser = async () => {
-      // First, try to get from sessionStorage (primary source when cookies don't work)
       const storedUserId = sessionStorage.getItem("user_id")
       if (storedUserId) {
         setCurrentUserId(parseInt(storedUserId))
@@ -255,7 +249,6 @@ const CoachAssignments = ({ userId }) => {
       }
 
       try {
-        // Try the session endpoint
         const response = await axios.get('https://api.cnergy.site/session.php', {
           withCredentials: true
         })
@@ -265,22 +258,18 @@ const CoachAssignments = ({ userId }) => {
           return
         }
       } catch (err) {
-        // 401 errors are expected with third-party cookie restrictions - handle silently
         if (err.response && err.response.status === 401) {
-          // Try to parse response data even if status is 401
           if (err.response.data && err.response.data.authenticated && err.response.data.user_id) {
             setCurrentUserId(err.response.data.user_id)
             sessionStorage.setItem("user_id", err.response.data.user_id)
             return
           }
         }
-        // Don't log 401 errors - they're expected
         if (!err.response || err.response.status !== 401) {
           console.error("Error getting current user from session:", err)
         }
       }
 
-      // Fallback: try to get user from admin_coach.php
       try {
         const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
         if (response.data && response.data.success && response.data.user_id) {
@@ -288,28 +277,23 @@ const CoachAssignments = ({ userId }) => {
           sessionStorage.setItem("user_id", response.data.user_id)
         }
       } catch (err) {
-        // Don't log 401 errors - they're expected
         if (!err.response || err.response.status !== 401) {
           console.error("Error getting current user from API:", err)
         }
-        // Keep default admin ID if all fail
       }
     }
     getCurrentUser()
   }, [])
 
-  // Initial load
   useEffect(() => {
     loadAllData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-refresh every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       fetchAssignedMembers()
       fetchDashboardStats()
-      fetchActivityLog()
       fetchAvailableMembers()
     }, 30000)
     return () => clearInterval(interval)
@@ -325,10 +309,10 @@ const CoachAssignments = ({ userId }) => {
     }
     setSelectedCoachId("")
     setSelectedCoach(null)
-      setRateType("")
-      setPaymentMethod("cash")
-      setAmountReceived("")
-      setReferenceNumber("")
+    setRateType("")
+    setPaymentMethod("cash")
+    setAmountReceived("")
+    setReferenceNumber("")
     setAssignModalOpen(true)
   }
 
@@ -337,10 +321,10 @@ const CoachAssignments = ({ userId }) => {
     setSelectedMemberId("")
     setSelectedCoachId("")
     setSelectedCoach(null)
-      setRateType("")
-      setPaymentMethod("cash")
-      setAmountReceived("")
-      setReferenceNumber("")
+    setRateType("")
+    setPaymentMethod("cash")
+    setAmountReceived("")
+    setReferenceNumber("")
     setAssignModalOpen(true)
   }
 
@@ -348,7 +332,6 @@ const CoachAssignments = ({ userId }) => {
     setSelectedCoachId(coachId)
     const coach = availableCoaches.find(c => c.id.toString() === coachId.toString())
     setSelectedCoach(coach || null)
-    // Reset rate type when coach changes
     setRateType("")
     setAmountReceived("")
   }
@@ -374,30 +357,16 @@ const CoachAssignments = ({ userId }) => {
     return Math.max(0, received - amount)
   }
 
-  const formatDate = (dateString) => {
+  const formatDateShort = (dateString) => {
     if (!dateString) return "N/A"
     const date = new Date(dateString)
     if (isNaN(date.getTime())) return "N/A"
-    // Format in Philippines timezone
-    return date.toLocaleString("en-US", {
+    return date.toLocaleDateString("en-US", {
       timeZone: "Asia/Manila",
       month: "short",
       day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
+      year: "numeric",
     })
-  }
-
-  const formatActivityAction = (action) => {
-    switch (action) {
-      case "assign_coach":
-        return "Assigned coach to member"
-      case "remove_coach_assignment":
-        return "Removed coach assignment"
-      default:
-        return action.replace(/_/g, " ")
-    }
   }
 
   const getInitials = (name) => {
@@ -409,44 +378,122 @@ const CoachAssignments = ({ userId }) => {
       .toUpperCase()
   }
 
-  const filteredMembers = assignedMembers.filter((assignment) => {
-    // Filter by coach if selected
-    if (selectedCoachFilter !== "all" && assignment.coach?.id?.toString() !== selectedCoachFilter) {
-      return false
+  const isDateRecent = (dateString, days = 7) => {
+    if (!dateString) return false
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffTime = Math.abs(now - date)
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays <= days
+  }
+
+  const isDateThisMonth = (dateString) => {
+    if (!dateString) return false
+    const date = new Date(dateString)
+    const now = new Date()
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
+  }
+
+  // Enhanced filtering with pagination
+  const filteredMembers = useMemo(() => {
+    return assignedMembers.filter((assignment) => {
+      // Coach filter
+      if (selectedCoachFilter !== "all" && assignment.coach?.id?.toString() !== selectedCoachFilter) {
+        return false
+      }
+
+      // Status filter
+      if (statusFilter !== "all") {
+        const status = assignment.status?.toLowerCase() || "active"
+        if (statusFilter === "active" && status !== "active") return false
+        if (statusFilter === "expired" && (assignment.expiresAt && new Date(assignment.expiresAt) >= new Date())) return false
+      }
+
+      // Rate type filter
+      if (rateTypeFilter !== "all" && assignment.rateType !== rateTypeFilter) {
+        return false
+      }
+
+      // Date filter
+      if (dateFilter !== "all") {
+        const assignedDate = assignment.assignedAt
+        if (dateFilter === "today" && !isDateRecent(assignedDate, 0)) return false
+        if (dateFilter === "week" && !isDateRecent(assignedDate, 7)) return false
+        if (dateFilter === "month" && !isDateThisMonth(assignedDate)) return false
+      }
+
+      // Search query
+      const matchesSearch =
+        assignment.member?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        assignment.coach?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        assignment.member?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        assignment.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase())
+
+      return matchesSearch
+    })
+  }, [assignedMembers, selectedCoachFilter, statusFilter, rateTypeFilter, dateFilter, searchQuery])
+
+  // Get members for selected coach
+  const coachMembers = useMemo(() => {
+    if (selectedCoachFilter === "all") return []
+    let members = filteredMembers.filter(assignment => assignment.coach?.id?.toString() === selectedCoachFilter)
+    
+    // Apply subscription/rate type filter for coach members
+    if (coachMembersRateFilter !== "all") {
+      members = members.filter(assignment => {
+        const assignmentRateType = assignment.rateType || ""
+        return assignmentRateType.toLowerCase() === coachMembersRateFilter.toLowerCase()
+      })
     }
+    
+    return members
+  }, [filteredMembers, selectedCoachFilter, coachMembersRateFilter])
 
-    // Filter by search query
-    const matchesSearch =
-      assignment.member?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      assignment.coach?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      assignment.member?.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      assignment.coach?.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  // Pagination
+  const totalPages = Math.ceil(filteredMembers.length / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedMembers = filteredMembers.slice(startIndex, endIndex)
 
-    return matchesSearch
-  })
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedCoachFilter, statusFilter, rateTypeFilter, dateFilter, searchQuery])
+
+  const clearFilters = () => {
+    setSelectedCoachFilter("all")
+    setStatusFilter("all")
+    setRateTypeFilter("all")
+    setDateFilter("all")
+    setSearchQuery("")
+    setCurrentPage(1)
+  }
+
+  const hasActiveFilters = selectedCoachFilter !== "all" || statusFilter !== "all" || rateTypeFilter !== "all" || dateFilter !== "all" || searchQuery !== ""
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>Loading coach assignments...</span>
+      <div className="flex items-center justify-center min-h-[500px]">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+          <span className="text-muted-foreground">Loading coach assignments...</span>
         </div>
       </div>
     )
   }
 
+  const selectedCoachName = availableCoaches.find(c => c.id.toString() === selectedCoachFilter)?.name || ""
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-6">
       {/* Error Alert */}
       {error && (
-        <Alert className="border-red-200 bg-red-50">
+        <Alert className="border-red-200 bg-red-50/80 backdrop-blur-sm">
           <XCircle className="h-4 w-4 text-red-600" />
           <AlertDescription className="text-red-800">
             {error}
             <Button
               variant="link"
-              className="p-0 h-auto ml-2 text-red-600"
+              className="p-0 h-auto ml-2 text-red-600 hover:text-red-700"
               onClick={() => {
                 setError(null)
                 loadAllData()
@@ -458,192 +505,307 @@ const CoachAssignments = ({ userId }) => {
         </Alert>
       )}
 
-      {/* Dashboard Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Assigned Members</p>
-                <p className="text-2xl font-bold">{dashboardStats.assigned_members || assignedMembers.length}</p>
-              </div>
+      {/* Enhanced Dashboard Stats - Matching Monitoring Subscription Style */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-white to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <UserCheck className="h-6 w-6 text-slate-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Assigned Members
+              </p>
+              <p className="text-3xl font-bold text-slate-900">{dashboardStats.assigned_members || assignedMembers.length}</p>
+              <p className="text-xs text-slate-500 mt-1">Active assignments</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Coaches</p>
-                <p className="text-2xl font-bold">{dashboardStats.total_coaches}</p>
-              </div>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Users className="h-6 w-6 text-orange-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Total Coaches
+              </p>
+              <p className="text-3xl font-bold text-slate-900">{dashboardStats.total_coaches}</p>
+              <p className="text-xs text-slate-500 mt-1">Available coaches</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Members</p>
-                <p className="text-2xl font-bold">{dashboardStats.total_members}</p>
-              </div>
+        <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-blue-50 to-white overflow-hidden group">
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <UserPlus className="h-6 w-6 text-blue-700" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                Unassigned Members
+              </p>
+              <p className="text-3xl font-bold text-slate-900">{availableMembers.length}</p>
+              <p className="text-xs text-slate-500 mt-1">Available for assignment</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
+        {/* Left Side - All Coaches */}
         <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
+          <Card className="shadow-lg border-0">
+            <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2">
-                    Coach Assignment Management
+                  <CardTitle className="text-xl font-semibold flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    All Coaches
                   </CardTitle>
-                  <CardDescription>View and manage coach assignments for members</CardDescription>
+                  <CardDescription className="mt-1">Select a coach to view their assigned members</CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={loadAllData} 
+                    disabled={loading} 
+                    className="shadow-sm h-9 w-9 p-0"
+                    title="Refresh"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                  </Button>
+                  <Button 
                     onClick={openManualConnectionModal}
-                    className="bg-blue-600 hover:bg-blue-700"
+                    className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
                     size="sm"
                   >
                     <UserCheck className="h-4 w-4 mr-2" />
-                    Create Manual Connection
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={loadAllData} disabled={loading}>
-                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-                    Refresh
+                    New Assignment
                   </Button>
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {/* Search */}
-              <div className="relative w-full max-w-md mb-6">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <CardContent className="p-6">
+              {/* Search Bar */}
+              <div className="relative mb-6">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Search members or coaches..."
-                  className="pl-8"
+                  placeholder="Search coaches by name..."
+                  className="pl-10 h-11 border-gray-200 focus:border-gray-400"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              {/* Assigned Members Table */}
-              <div className="space-y-4">
-                  {/* Coach Filter */}
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <Filter className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-medium">Filter by Coach:</span>
-                    </div>
-                    <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
-                      <SelectTrigger className="w-[250px]">
-                        <SelectValue placeholder="Select a coach" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Coaches ({assignedMembers.length})</SelectItem>
-                        {Array.from(new Map(availableCoaches
-                          .filter(coach => coach.id && coach.id.toString().trim() !== '')
-                          .map(coach => [coach.id, coach])).values())
-                          .map((coach, index) => {
-                            const memberCount = assignedMembers.filter(assignment => assignment.coach?.id?.toString() === coach.id.toString()).length
-                            return (
-                              <SelectItem key={`filter-coach-${coach.id}-${index}`} value={coach.id.toString()}>
-                                {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
-                              </SelectItem>
-                            )
-                          })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Member</TableHead>
-                        <TableHead>Assigned Coach</TableHead>
-                        <TableHead>Assigned Date</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredMembers.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                            {assignedMembers.length === 0 ? "No assigned members" : "No members match your search"}
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        filteredMembers.map((assignment) => (
-                          <TableRow key={assignment.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarImage src="/placeholder.svg?height=32&width=32" />
-                                  <AvatarFallback>{getInitials(assignment.member?.name)}</AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <div className="font-medium">{assignment.member?.name || "Unknown"}</div>
-                                  <div className="text-sm text-muted-foreground">{assignment.member?.email}</div>
-                                </div>
+
+              {/* Coaches List */}
+              <div className="space-y-3">
+                {availableCoaches
+                  .filter(coach => {
+                    if (!searchQuery) return true
+                    return coach.name.toLowerCase().includes(searchQuery.toLowerCase())
+                  })
+                  .map((coach) => {
+                    const memberCount = assignedMembers.filter(assignment => assignment.coach?.id?.toString() === coach.id.toString()).length
+                    const isSelected = selectedCoachFilter === coach.id.toString()
+                    return (
+                      <div
+                        key={coach.id}
+                        onClick={() => setSelectedCoachFilter(coach.id.toString())}
+                        className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50/50 shadow-md'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
+                              isSelected
+                                ? 'bg-blue-100'
+                                : 'bg-gray-100'
+                            }`}>
+                              <User className={`h-6 w-6 ${
+                                isSelected ? 'text-blue-700' : 'text-gray-700'
+                              }`} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h3 className={`font-semibold text-base ${
+                                  isSelected ? 'text-blue-900' : 'text-foreground'
+                                }`}>
+                                  {coach.name}
+                                </h3>
+                                {coach.is_available ? (
+                                  <Badge className="bg-emerald-100 text-emerald-800 text-xs">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Available
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-gray-100 text-gray-800 text-xs">
+                                    <XCircleIcon className="h-3 w-3 mr-1" />
+                                    Unavailable
+                                  </Badge>
+                                )}
                               </div>
-                            </TableCell>
-                            <TableCell className="font-medium">{assignment.coach?.name || "Unknown"}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {formatDate(assignment.assignedAt)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="default" className="bg-green-100 text-green-800">
-                                {assignment.status || "active"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+                              <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Users className="h-4 w-4" />
+                                  {memberCount} member{memberCount !== 1 ? 's' : ''}
+                                </span>
+                                {coach.monthly_rate > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <Package className="h-4 w-4" />
+                                    ₱{coach.monthly_rate.toFixed(0)}/monthly
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <div className="ml-4">
+                              <div className="h-6 w-6 rounded-full bg-blue-500 flex items-center justify-center">
+                                <CheckCircle2 className="h-4 w-4 text-white" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                
+                {availableCoaches.filter(coach => {
+                  if (!searchQuery) return true
+                  return coach.name.toLowerCase().includes(searchQuery.toLowerCase())
+                }).length === 0 && (
+                  <div className="text-center py-12">
+                    <Users className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-muted-foreground font-medium">No coaches found</p>
+                    {searchQuery && (
+                      <p className="text-sm text-muted-foreground mt-1">Try a different search term</p>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
         </div>
-        {/* Activity Log Sidebar */}
+
+        {/* Right Side - Coach Members */}
         <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-4 w-4" />
-                Recent Activity
-              </CardTitle>
+          <Card className="shadow-lg border-0">
+            <CardHeader className="border-b bg-gradient-to-r from-gray-50 to-white">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1">
+                  <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    {selectedCoachFilter !== "all" ? `${selectedCoachName}'s Members` : "Select a Coach"}
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    {selectedCoachFilter !== "all" 
+                      ? `Members assigned to this coach (${coachMembers.length})`
+                      : "Filter by coach to see members"}
+                  </CardDescription>
+                </div>
+              </div>
+              {selectedCoachFilter !== "all" && (
+                <div className="mt-4 space-y-3">
+                  {/* Subscription Filter */}
+                  <Select value={coachMembersRateFilter} onValueChange={setCoachMembersRateFilter}>
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="Filter by subscription..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Subscriptions</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="per_session">Session</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </CardHeader>
-            <CardContent>
-              <div className="h-64 overflow-y-auto space-y-4 pr-2">
-                {activityLog.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent activity</p>
+            <CardContent className="p-4">
+              <div className="h-[600px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                {selectedCoachFilter === "all" ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                    <User className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm text-muted-foreground font-medium">Select a coach</p>
+                    <p className="text-xs text-muted-foreground mt-1">from the left to view their members</p>
+                  </div>
+                ) : coachMembers.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                    <User className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm text-muted-foreground font-medium">
+                      {coachMembersRateFilter !== "all" 
+                        ? "No members found with this subscription type"
+                        : "No members assigned to this coach yet"}
+                    </p>
+                    {coachMembersRateFilter !== "all" && (
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        onClick={() => setCoachMembersRateFilter("all")}
+                        className="text-xs mt-2"
+                      >
+                        Clear filter
+                      </Button>
+                    )}
+                  </div>
                 ) : (
-                  activityLog.map((activity) => (
-                    <div key={activity.id} className="border-l-2 border-muted pl-4 pb-4">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium">{formatActivityAction(activity.action)}</p>
-                          {activity.details?.member_name && (
-                            <p className="text-xs text-muted-foreground">Member: {activity.details.member_name}</p>
-                          )}
-                          {activity.details?.coach_name && (
-                            <p className="text-xs text-muted-foreground">Coach: {activity.details.coach_name}</p>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            by {activity.admin_name} ({activity.details?.user_type || "admin"})
-                          </p>
+                  coachMembers.map((assignment) => (
+                    <div key={assignment.id} className="border rounded-lg p-3 hover:bg-gray-50/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10 border-2 border-gray-100">
+                          <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                          <AvatarFallback className="bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700 font-semibold text-xs">
+                            {getInitials(assignment.member?.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-foreground truncate">{assignment.member?.name || "Unknown"}</div>
+                          <div className="text-xs text-muted-foreground truncate">{assignment.member?.email}</div>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <Badge 
+                              variant="default" 
+                              className={`text-xs ${
+                                assignment.status === 'active' 
+                                  ? 'bg-emerald-100 text-emerald-800' 
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {assignment.status || "active"}
+                            </Badge>
+                            {assignment.rateType && (
+                              <Badge 
+                                variant="outline" 
+                                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                              >
+                                <Package className="h-3 w-3 mr-1" />
+                                {assignment.rateType === 'monthly' ? 'Monthly' : 
+                                 assignment.rateType === 'per_session' ? 'Session' : 
+                                 assignment.rateType}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {formatDateShort(assignment.assignedAt)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{formatDate(activity.created_at)}</p>
                     </div>
                   ))
                 )}
@@ -656,29 +818,37 @@ const CoachAssignments = ({ userId }) => {
       {/* Assign Coach Modal */}
       <Dialog open={assignModalOpen} onOpenChange={setAssignModalOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Manual Connection - POS System</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Assign a coach to a member and process payment.
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+              <UserCheck className="h-6 w-6 text-slate-700" />
+              New Coach Assignment
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mt-2">
+              Assign a coach to a member and process payment if applicable.
             </p>
           </DialogHeader>
-          <div className="space-y-6">
-            {/* Member Selection - only show if no member pre-selected */}
+          <div className="space-y-6 pt-6">
+            {/* Member Selection */}
             {!selectedMember && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Select Member (with Gym Membership - Plan ID 1 or 5)</label>
+                <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Select Member
+                </label>
                 <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a member..." />
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Search and select a member..." />
                   </SelectTrigger>
                   <SelectContent>
                     {availableMembers.length === 0 ? (
                       <SelectItem value="no-members" disabled>No members available</SelectItem>
                     ) : (
-                      // Filter out duplicates and ensure unique keys
                       Array.from(new Map(availableMembers.map(member => [member.id, member])).values()).map((member, index) => (
                         <SelectItem key={`member-${member.id}-${index}`} value={member.id.toString()}>
-                          {member.name} ({member.email})
+                          <div className="flex flex-col">
+                            <span className="font-medium">{member.name}</span>
+                            <span className="text-xs text-muted-foreground">{member.email}</span>
+                          </div>
                         </SelectItem>
                       ))
                     )}
@@ -687,45 +857,54 @@ const CoachAssignments = ({ userId }) => {
               </div>
             )}
 
-            {/* Member Info - show if member is pre-selected */}
+            {/* Selected Member Display */}
             {selectedMember && (
-              <div className="bg-muted/50 p-3 rounded-lg">
-                <h4 className="font-semibold mb-2 text-sm">Member Information</h4>
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarImage src="/placeholder.svg?height=40&width=40" />
-                    <AvatarFallback>{getInitials(selectedMember.name)}</AvatarFallback>
+              <div className="bg-gradient-to-r from-slate-50 to-white p-4 rounded-lg border-2 border-slate-200">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-12 w-12 border-2 border-slate-300">
+                    <AvatarImage src="/placeholder.svg?height=48&width=48" />
+                    <AvatarFallback className="bg-gradient-to-br from-slate-200 to-slate-300 text-slate-700 font-bold">
+                      {getInitials(selectedMember.name)}
+                    </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <div className="font-medium">{selectedMember.name || "Unknown"}</div>
-                    <div className="text-sm text-muted-foreground">{selectedMember.email || "N/A"}</div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-base text-foreground">{selectedMember.name || "Unknown"}</div>
+                    <div className="text-sm text-muted-foreground mt-0.5">{selectedMember.email || "N/A"}</div>
                   </div>
+                  <Badge variant="outline" className="bg-white">
+                    <UserCheck className="h-3 w-3 mr-1" />
+                    Selected
+                  </Badge>
                 </div>
               </div>
             )}
 
-            {/* Coach Selection with Availability */}
+            {/* Coach Selection */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Select Coach</label>
+              <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Select Coach
+              </label>
               <Select value={selectedCoachId} onValueChange={handleCoachSelect}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a coach..." />
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Search and select a coach..." />
                 </SelectTrigger>
                 <SelectContent>
                   {availableCoaches.length === 0 ? (
                     <SelectItem value="no-coaches" disabled>No coaches available</SelectItem>
                   ) : (
-                    // Filter out duplicates and ensure unique keys
                     Array.from(new Map(availableCoaches.map(coach => [coach.id, coach])).values()).map((coach, index) => (
                       <SelectItem key={`coach-${coach.id}-${index}`} value={coach.id.toString()} disabled={!coach.is_available}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 w-full">
                           {coach.is_available ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
                           ) : (
-                            <XCircleIcon className="h-4 w-4 text-red-600" />
+                            <XCircleIcon className="h-4 w-4 text-red-600 flex-shrink-0" />
                           )}
-                          <span>{coach.name}</span>
-                          {!coach.is_available && <span className="text-xs text-muted-foreground">(Unavailable)</span>}
+                          <span className="font-medium">{coach.name}</span>
+                          {!coach.is_available && (
+                            <Badge variant="secondary" className="ml-auto text-xs">Unavailable</Badge>
+                          )}
                         </div>
                       </SelectItem>
                     ))
@@ -733,16 +912,20 @@ const CoachAssignments = ({ userId }) => {
                 </SelectContent>
               </Select>
               {selectedCoach && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className={`flex items-center gap-2 text-sm p-2 rounded-md ${
+                  selectedCoach.is_available 
+                    ? 'bg-emerald-50 text-emerald-700' 
+                    : 'bg-red-50 text-red-700'
+                }`}>
                   {selectedCoach.is_available ? (
                     <>
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <span>Available</span>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span className="font-medium">Coach is available</span>
                     </>
                   ) : (
                     <>
-                      <XCircleIcon className="h-4 w-4 text-red-600" />
-                      <span>Unavailable</span>
+                      <XCircleIcon className="h-4 w-4" />
+                      <span className="font-medium">Coach is currently unavailable</span>
                     </>
                   )}
                 </div>
@@ -752,29 +935,41 @@ const CoachAssignments = ({ userId }) => {
             {/* Package Type Selection */}
             {selectedCoach && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Package Type</label>
+                <label className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Select Package Type
+                </label>
                 <Select value={rateType} onValueChange={(value) => { 
                   setRateType(value)
                   setAmountReceived("")
                   setReferenceNumber("")
                 }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select package type..." />
+                  <SelectTrigger className="h-11">
+                    <SelectValue placeholder="Choose a package type..." />
                   </SelectTrigger>
                   <SelectContent>
                     {selectedCoach.monthly_rate > 0 && (
                       <SelectItem value="monthly">
-                        Monthly - ₱{selectedCoach.monthly_rate.toFixed(2)}
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-medium">Monthly Package</span>
+                          <span className="text-sm text-muted-foreground ml-4">₱{selectedCoach.monthly_rate.toFixed(2)}</span>
+                        </div>
                       </SelectItem>
                     )}
                     {selectedCoach.session_package_rate > 0 && (
                       <SelectItem value="package">
-                        Package - ₱{selectedCoach.session_package_rate.toFixed(2)}
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-medium">Session Package</span>
+                          <span className="text-sm text-muted-foreground ml-4">₱{selectedCoach.session_package_rate.toFixed(2)}</span>
+                        </div>
                       </SelectItem>
                     )}
                     {selectedCoach.per_session_rate > 0 && (
                       <SelectItem value="per_session">
-                        Per Session - ₱{selectedCoach.per_session_rate.toFixed(2)}
+                        <div className="flex items-center justify-between w-full">
+                          <span className="font-medium">Per Session</span>
+                          <span className="text-sm text-muted-foreground ml-4">₱{selectedCoach.per_session_rate.toFixed(2)}</span>
+                        </div>
                       </SelectItem>
                     )}
                   </SelectContent>
@@ -782,85 +977,103 @@ const CoachAssignments = ({ userId }) => {
               </div>
             )}
 
-            {/* POS System */}
+            {/* Payment Section */}
             {selectedCoach && rateType && (
-              <div className="border-t pt-4 space-y-4">
-                <h4 className="font-semibold text-sm">Payment Information</h4>
+              <div className="border-t border-gray-200 pt-6 space-y-5">
+                <h4 className="text-base font-semibold text-foreground">Payment Details</h4>
                 
-                {/* Payment Amount Display */}
-                <div className="bg-blue-50 p-3 rounded-lg">
+                {/* Amount Due Display */}
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Amount Due:</span>
-                    <span className="text-lg font-bold text-blue-600">₱{calculatePaymentAmount().toFixed(2)}</span>
+                    <span className="text-sm font-semibold text-slate-700">Total Amount Due</span>
+                    <span className="text-2xl font-bold text-slate-900">₱{calculatePaymentAmount().toFixed(2)}</span>
                   </div>
                 </div>
 
                 {/* Payment Method */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Payment Method</label>
+                  <label className="text-sm font-semibold text-foreground">Payment Method</label>
                   <Select value={paymentMethod} onValueChange={(value) => { 
                     setPaymentMethod(value)
                     setAmountReceived("")
                     setReferenceNumber("")
                   }}>
-                    <SelectTrigger>
-                      <SelectValue />
+                    <SelectTrigger className="h-11 border-gray-300 focus:border-gray-500">
+                      <SelectValue placeholder="Select payment method" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="gcash">GCash</SelectItem>
+                      <SelectItem value="cash" className="cursor-pointer">
+                        <span className="font-medium">Cash</span>
+                      </SelectItem>
+                      <SelectItem value="gcash" className="cursor-pointer">
+                        <span className="font-medium">GCash</span>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Amount Received (for cash) */}
+                {/* Cash Payment Fields */}
                 {paymentMethod === "cash" && (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Amount Received</label>
+                    <label className="text-sm font-semibold text-foreground">Amount Received</label>
                     <Input
                       type="number"
                       step="0.01"
-                      placeholder="0.00"
+                      placeholder="Enter amount received..."
+                      className="h-11 text-base"
                       value={amountReceived}
                       onChange={(e) => setAmountReceived(e.target.value)}
                     />
+                    {amountReceived && parseFloat(amountReceived) < calculatePaymentAmount() && (
+                      <p className="text-xs text-red-600 flex items-center gap-1">
+                        <XCircle className="h-3 w-3" />
+                        Amount received is less than required amount
+                      </p>
+                    )}
                   </div>
                 )}
 
-                {/* Reference Number (for GCash) */}
+                {/* GCash Payment Fields */}
                 {paymentMethod === "gcash" && (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Reference Number <span className="text-red-500">*</span></label>
+                    <label className="text-sm font-semibold text-foreground">
+                      GCash Reference Number <span className="text-red-500">*</span>
+                    </label>
                     <Input
                       type="text"
-                      placeholder="Enter GCash reference number"
+                      placeholder="Enter GCash transaction reference..."
+                      className="h-11 text-base"
                       value={referenceNumber}
                       onChange={(e) => setReferenceNumber(e.target.value)}
                       required
                     />
+                    <p className="text-xs text-muted-foreground">Required for GCash transactions</p>
                   </div>
                 )}
 
-                {/* Change Display (for cash) */}
+                {/* Change Display */}
                 {paymentMethod === "cash" && amountReceived && calculateChange() > 0 && (
-                  <div className="bg-green-50 p-3 rounded-lg">
+                  <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">Change:</span>
-                      <span className="text-lg font-bold text-green-600">₱{calculateChange().toFixed(2)}</span>
+                      <span className="text-sm font-semibold text-emerald-800">Change to Give</span>
+                      <span className="text-2xl font-bold text-emerald-700">₱{calculateChange().toFixed(2)}</span>
                     </div>
                   </div>
                 )}
-
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAssignModalOpen(false)}>
+          <DialogFooter className="pt-6 border-t mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setAssignModalOpen(false)}
+              className="h-11 px-6"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleAssignCoach}
-              className="bg-blue-600 hover:bg-blue-700"
+              className="bg-slate-900 hover:bg-slate-800 text-white h-11 px-6 shadow-md"
               disabled={
                 actionLoading || 
                 !selectedCoachId || 
@@ -871,15 +1084,36 @@ const CoachAssignments = ({ userId }) => {
               }
             >
               {actionLoading ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
               ) : (
-                <UserCheck className="h-4 w-4 mr-2" />
+                <>
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Assign
+                </>
               )}
-              {calculatePaymentAmount() > 0 ? "Assign & Process Payment" : "Assign Coach"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #9ca3af;
+        }
+      `}</style>
     </div>
   )
 }

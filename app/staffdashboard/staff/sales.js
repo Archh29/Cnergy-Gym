@@ -439,7 +439,9 @@ const Sales = ({ userId }) => {
 
   const loadProducts = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`)
+      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`, {
+        timeout: 30000 // 30 second timeout
+      })
       console.log("Products loaded:", response.data.products)
       setProducts(response.data.products || [])
     } catch (error) {
@@ -825,7 +827,9 @@ const Sales = ({ userId }) => {
         params.append("custom_date", format(customDate, "yyyy-MM-dd"))
       }
 
-      const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`)
+      const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`, {
+        timeout: 30000 // 30 second timeout
+      })
       const salesData = response.data.sales || []
       // Log payment methods for debugging
       const subscriptionSales = salesData.filter(s => s.sale_type === 'Subscription')
@@ -893,7 +897,9 @@ const Sales = ({ userId }) => {
         params.append("year", yearFilter)
       }
 
-      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`)
+      const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`, {
+        timeout: 30000 // 30 second timeout
+      })
       setAnalytics(
         response.data.analytics || {
           todaysSales: 0,
@@ -1814,8 +1820,8 @@ const Sales = ({ userId }) => {
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
                   <TrendingUp className="h-5 w-5 text-gray-700" />
                 </div>
-              </CardHeader>
-              <CardContent>
+        </CardHeader>
+        <CardContent>
                 <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.todaysSales)}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">All sales combined</p>
                 <Button
@@ -1826,8 +1832,8 @@ const Sales = ({ userId }) => {
                 >
                   View Details
                 </Button>
-              </CardContent>
-            </Card>
+        </CardContent>
+      </Card>
 
             {/* Product Sales Card */}
             <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
@@ -1836,8 +1842,8 @@ const Sales = ({ userId }) => {
                 <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
                   <ShoppingCart className="h-5 w-5 text-gray-700" />
                 </div>
-              </CardHeader>
-              <CardContent>
+        </CardHeader>
+        <CardContent>
                 <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.productSales || 0)}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">
                   {analytics.productsSoldToday || 0} items sold
@@ -3137,8 +3143,8 @@ const Sales = ({ userId }) => {
               <div className="flex justify-between items-center py-3 border-t-2 border-gray-300 pt-4 mt-2">
                 <span className="text-base font-semibold text-gray-900">Total Amount</span>
                 <span className="text-xl font-bold text-gray-900">{formatCurrency(getTotalAmount())}</span>
-              </div>
             </div>
+          </div>
           </div>
 
           <DialogFooter className="gap-3 pt-4 border-t border-gray-200">
@@ -3192,25 +3198,25 @@ const Sales = ({ userId }) => {
                     <span className="text-sm font-semibold text-gray-900 capitalize px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full">
                       {lastTransaction.payment_method}
                     </span>
-                  </div>
+                </div>
 
-                  {lastTransaction.payment_method === "cash" && (
+                {lastTransaction.payment_method === "cash" && (
                     <div className="space-y-3 pt-3 border-t border-gray-200">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Amount Received</span>
                         <span className="text-sm font-semibold text-gray-900">
                           {formatCurrency(parseFloat(amountReceived) || lastTransaction.total_amount)}
                         </span>
-                      </div>
+                    </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-medium text-gray-600">Change</span>
                         <span className="text-base font-bold text-green-600">
                           {formatCurrency(changeGiven)}
                         </span>
-                      </div>
                     </div>
-                  )}
-                </div>
+                    </div>
+                )}
+              </div>
 
                 {/* Total Section */}
                 <div className="flex justify-between items-center py-4 px-2 border-t-2 border-gray-300">
@@ -3336,45 +3342,45 @@ const Sales = ({ userId }) => {
               </div>
             ) : (
               <div className="py-4">
-                <Table>
-                  <TableHeader>
+              <Table>
+                <TableHeader>
                     <TableRow className="bg-gray-100/80 hover:bg-gray-100/80 border-b border-gray-200">
-                      <TableHead className="font-medium text-gray-700">Product Name</TableHead>
-                      <TableHead className="font-medium text-gray-700">Category</TableHead>
-                      <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
-                      <TableHead className="font-medium text-gray-700">Price</TableHead>
-                      <TableHead className="font-medium text-gray-700">Status</TableHead>
+                    <TableHead className="font-medium text-gray-700">Product Name</TableHead>
+                    <TableHead className="font-medium text-gray-700">Category</TableHead>
+                    <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
+                    <TableHead className="font-medium text-gray-700">Price</TableHead>
+                    <TableHead className="font-medium text-gray-700">Status</TableHead>
                       <TableHead className="text-right font-medium text-gray-700">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {getLowStockProducts()
-                      .sort((a, b) => a.stock - b.stock)
-                      .map((product) => (
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {getLowStockProducts()
+                    .sort((a, b) => a.stock - b.stock)
+                    .map((product) => (
                         <TableRow key={product.id} className="hover:bg-gray-50/60 transition-colors border-b border-gray-100 bg-white/70">
-                          <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
-                          <TableCell>
+                        <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
+                        <TableCell>
                             <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300 font-normal shadow-sm">
-                              {product.category}
+                            {product.category}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm font-medium text-gray-700">
+                            {product.stock} {product.stock === 1 ? 'unit' : 'units'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
+                        <TableCell>
+                          {product.stock === 0 || product.stock <= 5 ? (
+                            <Badge className="bg-red-500 text-white font-medium border-0">
+                              {product.stock === 0 ? 'Out of Stock' : 'Critical'}
                             </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm font-medium text-gray-700">
-                              {product.stock} {product.stock === 1 ? 'unit' : 'units'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
-                          <TableCell>
-                            {product.stock === 0 || product.stock <= 5 ? (
-                              <Badge className="bg-red-500 text-white font-medium border-0">
-                                {product.stock === 0 ? 'Out of Stock' : 'Critical'}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium">
-                                Low Stock
-                              </Badge>
-                            )}
-                          </TableCell>
+                          ) : (
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium">
+                              Low Stock
+                            </Badge>
+                          )}
+                        </TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant="default"
@@ -3392,11 +3398,11 @@ const Sales = ({ userId }) => {
                               <Plus className="mr-1.5 h-4 w-4" />
                               Add Stock
                             </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </TableBody>
-                </Table>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
               </div>
             )}
           </div>
@@ -3482,7 +3488,7 @@ const Sales = ({ userId }) => {
           <div className="flex flex-col items-center text-center py-6 px-4">
             <div className="p-4 rounded-full bg-gradient-to-br from-green-100 to-emerald-100 mb-4 shadow-lg">
               <CheckCircle className="h-12 w-12 text-green-600" />
-            </div>
+    </div>
             <DialogTitle className="text-2xl font-bold text-gray-900 mb-2">
               Success!
             </DialogTitle>

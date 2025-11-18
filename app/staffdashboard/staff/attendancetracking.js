@@ -304,8 +304,12 @@ const AttendanceTracking = ({ userId }) => {
       const attendanceUrl = "https://api.cnergy.site/attendance.php?action=attendance"
 
       const [membersRes, attendanceRes] = await Promise.all([
-        axios.get("https://api.cnergy.site/attendance.php?action=members"),
-        axios.get(attendanceUrl),
+        axios.get("https://api.cnergy.site/attendance.php?action=members", {
+          timeout: 30000 // 30 second timeout
+        }),
+        axios.get(attendanceUrl, {
+          timeout: 30000 // 30 second timeout
+        }),
       ])
 
       console.log("🔍 Debug - Raw attendance data:", attendanceRes.data)
