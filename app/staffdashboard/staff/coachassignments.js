@@ -1012,11 +1012,11 @@ const CoachAssignments = ({ userId }) => {
                 {paymentMethod === "gcash" && (
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-foreground">
-                      GCash Reference Number <span className="text-red-500">*</span>
+                      Reference Number
                     </label>
                     <Input
                       type="text"
-                      placeholder="Enter GCash transaction reference..."
+                      placeholder="Enter transaction reference..."
                       className="h-11 text-base"
                       value={referenceNumber}
                       onChange={(e) => setReferenceNumber(e.target.value)}

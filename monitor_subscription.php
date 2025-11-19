@@ -956,9 +956,12 @@ function getUserSubscriptions($pdo, $user_id)
                 s.start_date,
                 s.end_date,
                 s.discounted_price,
+                p.id as plan_id,
                 p.plan_name,
                 p.price as original_price,
+                p.price,
                 p.duration_months,
+                p.duration_days,
                 ss.status_name,
                 CASE 
                     WHEN ss.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
@@ -980,6 +983,118 @@ function getUserSubscriptions($pdo, $user_id)
     $stmt->execute([$user_id]);
     $subscriptions = $stmt->fetchAll();
 
+    // Expand package plans (plan_id 5) into individual plans (1 and 2)
+    $expandedSubscriptions = [];
+    foreach ($subscriptions as $subscription) {
+        // If this is a package plan (plan_id 5), expand it into two rows
+        if ($subscription['plan_id'] == 5) {
+            try {
+                // Get plan details for individual plans
+                $plan1Stmt = $pdo->prepare("
+                    SELECT id, plan_name, price, duration_months, duration_days
+                    FROM member_subscription_plan
+                    WHERE id = 1
+                ");
+                $plan1Stmt->execute();
+                $plan1 = $plan1Stmt->fetch();
+
+                $plan2Stmt = $pdo->prepare("
+                    SELECT id, plan_name, price, duration_months, duration_days
+                    FROM member_subscription_plan
+                    WHERE id = 2
+                ");
+                $plan2Stmt->execute();
+                $plan2 = $plan2Stmt->fetch();
+
+                if ($plan1 && $plan2) {
+                    // Calculate individual end dates based on each plan's duration
+                    date_default_timezone_set('Asia/Manila');
+                    $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+
+                    // Plan 1 (Gym Membership) - typically 1 year duration
+                    $end_date_1 = clone $start_date_obj;
+                    if ($plan1['duration_months'] > 0) {
+                        $end_date_1->add(new DateInterval('P' . intval($plan1['duration_months']) . 'M'));
+                    } else {
+                        // Default to 1 year if no duration specified
+                        $end_date_1->add(new DateInterval('P1Y'));
+                    }
+                    $end_date_1_str = $end_date_1->format('Y-m-d');
+
+                    // Plan 2 (Monthly Access) - typically 1 month duration
+                    $end_date_2 = clone $start_date_obj;
+                    if ($plan2['duration_months'] > 0) {
+                        $end_date_2->add(new DateInterval('P' . intval($plan2['duration_months']) . 'M'));
+                    } else {
+                        // Default to 1 month if no duration specified
+                        $end_date_2->add(new DateInterval('P1M'));
+                    }
+                    $end_date_2_str = $end_date_2->format('Y-m-d');
+
+                    // Create subscription row for Plan 1 (Gym Membership)
+                    $subscription1 = $subscription;
+                    $subscription1['id'] = $subscription['id'] . '_plan1'; // Unique ID
+                    $subscription1['plan_id'] = 1;
+                    $subscription1['plan_name'] = $plan1['plan_name'];
+                    $subscription1['price'] = $plan1['price'];
+                    $subscription1['original_price'] = $plan1['price'];
+                    $subscription1['duration_months'] = $plan1['duration_months'];
+                    $subscription1['duration_days'] = $plan1['duration_days'];
+                    $subscription1['end_date'] = $end_date_1_str;
+                    $subscription1['is_package_component'] = true;
+                    $subscription1['package_subscription_id'] = $subscription['id'];
+                    $subscription1['package_component'] = 'gym_membership';
+
+                    // Update display_status for Plan 1
+                    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                    if ($subscription['status_name'] === 'approved' && $end_date_1 >= $now) {
+                        $subscription1['display_status'] = 'Active';
+                    } elseif ($subscription['status_name'] === 'approved' && $end_date_1 < $now) {
+                        $subscription1['display_status'] = 'Expired';
+                    }
+
+                    // Create subscription row for Plan 2 (Monthly Access)
+                    $subscription2 = $subscription;
+                    $subscription2['id'] = $subscription['id'] . '_plan2'; // Unique ID
+                    $subscription2['plan_id'] = 2;
+                    $subscription2['plan_name'] = $plan2['plan_name'];
+                    $subscription2['price'] = $plan2['price'];
+                    $subscription2['original_price'] = $plan2['price'];
+                    $subscription2['duration_months'] = $plan2['duration_months'];
+                    $subscription2['duration_days'] = $plan2['duration_days'];
+                    $subscription2['end_date'] = $end_date_2_str;
+                    $subscription2['is_package_component'] = true;
+                    $subscription2['package_subscription_id'] = $subscription['id'];
+                    $subscription2['package_component'] = 'monthly_access';
+
+                    // Update display_status for Plan 2
+                    if ($subscription['status_name'] === 'approved' && $end_date_2 >= $now) {
+                        $subscription2['display_status'] = 'Active';
+                    } elseif ($subscription['status_name'] === 'approved' && $end_date_2 < $now) {
+                        $subscription2['display_status'] = 'Expired';
+                    }
+
+                    // Add both expanded subscriptions
+                    $expandedSubscriptions[] = $subscription1;
+                    $expandedSubscriptions[] = $subscription2;
+                } else {
+                    // If plans not found, keep original package plan
+                    $expandedSubscriptions[] = $subscription;
+                }
+            } catch (Exception $e) {
+                error_log("Error expanding package plan {$subscription['id']}: " . $e->getMessage());
+                // If error, keep original package plan
+                $expandedSubscriptions[] = $subscription;
+            }
+        } else {
+            // Not a package plan, keep as is
+            $expandedSubscriptions[] = $subscription;
+        }
+    }
+
+    // Replace subscriptions with expanded list
+    $subscriptions = $expandedSubscriptions;
+
     echo json_encode([
         "success" => true,
         "subscriptions" => $subscriptions,
@@ -992,7 +1107,7 @@ function getAvailablePlansForUser($pdo, $user_id)
     // Get user's active subscriptions with plan details
     // CRITICAL: Only consider subscriptions with confirmed payments
     $activeSubscriptionsStmt = $pdo->prepare("
-            SELECT s.plan_id, s.end_date, p.plan_name, ss.status_name
+            SELECT s.id, s.plan_id, s.start_date, s.end_date, p.plan_name, p.price, p.duration_months, p.duration_days, ss.status_name
             FROM subscription s
             JOIN subscription_status ss ON s.status_id = ss.id
             JOIN member_subscription_plan p ON s.plan_id = p.id
@@ -1008,10 +1123,110 @@ function getAvailablePlansForUser($pdo, $user_id)
         ");
     $activeSubscriptionsStmt->execute([$user_id]);
     $activeSubscriptions = $activeSubscriptionsStmt->fetchAll();
+
+    // Check for Plan ID 5 (package) in original subscriptions before expansion
+    $originalActivePlanIds = array_column($activeSubscriptions, 'plan_id');
+    $hasActivePlan5 = in_array(5, $originalActivePlanIds);
+
+    // Expand package plans (plan_id 5) into individual plans (1 and 2)
+    $expandedActiveSubscriptions = [];
+    foreach ($activeSubscriptions as $subscription) {
+        // If this is a package plan (plan_id 5), expand it into two rows
+        if ($subscription['plan_id'] == 5) {
+            try {
+                // Get plan details for individual plans
+                $plan1Stmt = $pdo->prepare("
+                    SELECT id, plan_name, price, duration_months, duration_days
+                    FROM member_subscription_plan
+                    WHERE id = 1
+                ");
+                $plan1Stmt->execute();
+                $plan1 = $plan1Stmt->fetch();
+
+                $plan2Stmt = $pdo->prepare("
+                    SELECT id, plan_name, price, duration_months, duration_days
+                    FROM member_subscription_plan
+                    WHERE id = 2
+                ");
+                $plan2Stmt->execute();
+                $plan2 = $plan2Stmt->fetch();
+
+                if ($plan1 && $plan2) {
+                    // Calculate individual end dates based on each plan's duration
+                    date_default_timezone_set('Asia/Manila');
+                    $start_date_obj = new DateTime($subscription['start_date'], new DateTimeZone('Asia/Manila'));
+
+                    // Plan 1 (Gym Membership) - typically 1 year duration
+                    $end_date_1 = clone $start_date_obj;
+                    if ($plan1['duration_months'] > 0) {
+                        $end_date_1->add(new DateInterval('P' . intval($plan1['duration_months']) . 'M'));
+                    } else {
+                        // Default to 1 year if no duration specified
+                        $end_date_1->add(new DateInterval('P1Y'));
+                    }
+                    $end_date_1_str = $end_date_1->format('Y-m-d');
+
+                    // Plan 2 (Monthly Access) - typically 1 month duration
+                    $end_date_2 = clone $start_date_obj;
+                    if ($plan2['duration_months'] > 0) {
+                        $end_date_2->add(new DateInterval('P' . intval($plan2['duration_months']) . 'M'));
+                    } else {
+                        // Default to 1 month if no duration specified
+                        $end_date_2->add(new DateInterval('P1M'));
+                    }
+                    $end_date_2_str = $end_date_2->format('Y-m-d');
+
+                    // Create subscription row for Plan 1 (Gym Membership)
+                    $subscription1 = $subscription;
+                    $subscription1['id'] = $subscription['id'] . '_plan1'; // Unique ID
+                    $subscription1['plan_id'] = 1;
+                    $subscription1['plan_name'] = $plan1['plan_name'];
+                    $subscription1['price'] = $plan1['price'];
+                    $subscription1['duration_months'] = $plan1['duration_months'];
+                    $subscription1['duration_days'] = $plan1['duration_days'];
+                    $subscription1['end_date'] = $end_date_1_str;
+                    $subscription1['is_package_component'] = true;
+                    $subscription1['package_subscription_id'] = $subscription['id'];
+                    $subscription1['package_component'] = 'gym_membership';
+                    $subscription1['display_status'] = 'Active';
+
+                    // Create subscription row for Plan 2 (Monthly Access)
+                    $subscription2 = $subscription;
+                    $subscription2['id'] = $subscription['id'] . '_plan2'; // Unique ID
+                    $subscription2['plan_id'] = 2;
+                    $subscription2['plan_name'] = $plan2['plan_name'];
+                    $subscription2['price'] = $plan2['price'];
+                    $subscription2['duration_months'] = $plan2['duration_months'];
+                    $subscription2['duration_days'] = $plan2['duration_days'];
+                    $subscription2['end_date'] = $end_date_2_str;
+                    $subscription2['is_package_component'] = true;
+                    $subscription2['package_subscription_id'] = $subscription['id'];
+                    $subscription2['package_component'] = 'monthly_access';
+                    $subscription2['display_status'] = 'Active';
+
+                    // Add both expanded subscriptions
+                    $expandedActiveSubscriptions[] = $subscription1;
+                    $expandedActiveSubscriptions[] = $subscription2;
+                } else {
+                    // If plans not found, keep original package plan
+                    $expandedActiveSubscriptions[] = $subscription;
+                }
+            } catch (Exception $e) {
+                error_log("Error expanding package plan {$subscription['id']}: " . $e->getMessage());
+                // If error, keep original package plan
+                $expandedActiveSubscriptions[] = $subscription;
+            }
+        } else {
+            // Not a package plan, keep as is
+            $expandedActiveSubscriptions[] = $subscription;
+        }
+    }
+
+    // Replace active subscriptions with expanded list
+    $activeSubscriptions = $expandedActiveSubscriptions;
     $activePlanIds = array_column($activeSubscriptions, 'plan_id');
 
-    // Check if user has Plan ID 5 (package) - if so, they have Plan ID 1 and 2 components
-    $hasActivePlan5 = in_array(5, $activePlanIds);
+    // Note: $hasActivePlan5 was already determined from original subscriptions before expansion
 
     // Check if Plan ID 1 exists (either standalone or from Plan ID 5 package)
     $hasActiveMemberFee = in_array(1, $activePlanIds) || $hasActivePlan5;
@@ -1683,6 +1898,32 @@ function createManualSubscription($pdo, $data)
             'created_by' => $created_by,
             'duration_months' => $totalMonths
         ]);
+
+        // Create notification for the user about their subscription
+        try {
+            // Get success notification type ID (default to 3 if not found)
+            $notificationTypeStmt = $pdo->prepare("SELECT id FROM notification_type WHERE type_name = 'success' LIMIT 1");
+            $notificationTypeStmt->execute();
+            $notificationType = $notificationTypeStmt->fetch();
+            $successTypeId = $notificationType ? $notificationType['id'] : 3;
+
+            // Format dates for display
+            $startDateFormatted = date('M d, Y', strtotime($start_date));
+            $endDateFormatted = date('M d, Y', strtotime($end_date));
+
+            // Create clear and professional notification message
+            $notificationMessage = "Your {$plan['plan_name']} subscription has been successfully activated. Valid from {$startDateFormatted} to {$endDateFormatted}. Start enjoying your membership benefits today.";
+
+            // Insert notification
+            $notificationStmt = $pdo->prepare("
+                INSERT INTO notification (user_id, message, status_id, type_id, timestamp) 
+                VALUES (?, ?, 1, ?, NOW())
+            ");
+            $notificationStmt->execute([$user_id, $notificationMessage, $successTypeId]);
+        } catch (Exception $e) {
+            // Log error but don't fail the transaction
+            error_log("Failed to create notification for subscription: " . $e->getMessage());
+        }
 
         $pdo->commit();
 

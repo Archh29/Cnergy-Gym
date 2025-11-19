@@ -111,6 +111,7 @@ const Sales = ({ userId }) => {
   // POS state
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
+  const [gcashReference, setGcashReference] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
   const [receiptNumber, setReceiptNumber] = useState("")
   const [transactionNotes, setTransactionNotes] = useState("")
@@ -1024,6 +1025,12 @@ const Sales = ({ userId }) => {
       return
     }
 
+    // Validate GCash reference for GCash payments
+    if (paymentMethod === "gcash" && !gcashReference) {
+      alert("Please enter GCash reference number")
+      return
+    }
+
     setShowConfirmDialog(true)
   }
 
@@ -1088,6 +1095,7 @@ const Sales = ({ userId }) => {
         })),
         payment_method: paymentMethod,
         amount_received: receivedAmount,
+        gcash_reference: paymentMethod === "gcash" ? gcashReference : "",
         notes: ""
       }
 
@@ -1106,6 +1114,7 @@ const Sales = ({ userId }) => {
         // Reset form and cart
         setCart([])
         setAmountReceived("")
+        setGcashReference("")
         setTransactionNotes("")
         setPaymentMethod("cash")
 
@@ -2147,27 +2156,32 @@ const Sales = ({ userId }) => {
                     {cart.length > 0 && (
                       <div className="border-t pt-4 space-y-4">
                         <div className="space-y-2">
-                          <Label>Payment Method</Label>
-                          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                            <SelectTrigger>
+                          <Label className="text-sm font-semibold">Payment Method</Label>
+                          <Select value={paymentMethod} onValueChange={(value) => {
+                            setPaymentMethod(value)
+                            setAmountReceived("")
+                            setGcashReference("")
+                          }}>
+                            <SelectTrigger className="h-11">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="cash">Cash</SelectItem>
-                              <SelectItem value="gcash">Gcash</SelectItem>
+                              <SelectItem value="gcash">GCash</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         {paymentMethod === "cash" && (
                           <div className="space-y-2">
-                            <Label>Amount Received (₱)</Label>
+                            <Label className="text-sm font-semibold">Amount Received (₱)</Label>
                             <Input
                               type="number"
                               step="0.01"
                               value={amountReceived}
                               onChange={(e) => setAmountReceived(e.target.value)}
                               placeholder="Enter amount received"
+                              className="h-11"
                             />
                             {amountReceived && (
                               <div className="text-sm text-muted-foreground">
@@ -2177,13 +2191,30 @@ const Sales = ({ userId }) => {
                           </div>
                         )}
 
+                        {paymentMethod === "gcash" && (
+                          <div className="space-y-2">
+                            <Label className="text-sm font-semibold">
+                              Reference Number
+                            </Label>
+                            <Input
+                              type="text"
+                              value={gcashReference}
+                              onChange={(e) => setGcashReference(e.target.value)}
+                              placeholder="Enter transaction reference"
+                              className="h-11"
+                              required
+                            />
+                            <p className="text-xs text-gray-500">Required for GCash transactions</p>
+                          </div>
+                        )}
+
                       </div>
                     )}
 
                     <Button
                       onClick={handleProductSale}
                       className="w-full"
-                      disabled={cart.length === 0 || loading || (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < getTotalAmount()))}
+                      disabled={cart.length === 0 || loading || (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < getTotalAmount())) || (paymentMethod === "gcash" && !gcashReference)}
                     >
                       {loading ? "Processing..." : "Process Sale"}
                     </Button>

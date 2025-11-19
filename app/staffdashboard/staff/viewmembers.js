@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import axios from "axios"
 import { formatDateToISO, safeDate, formatDateOnlyPH } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -82,7 +84,7 @@ const generateStandardPassword = (fname, mname, lname) => {
 
 const memberSchema = z.object({
   fname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
-  mname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  mname: z.string().max(50, "Maximum 50 characters").optional(),
   lname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
   email: z.string().email("Invalid email format").max(255, "Maximum 255 characters"),
   password: z
@@ -100,7 +102,7 @@ const memberSchema = z.object({
 
 const editMemberSchema = z.object({
   fname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
-  mname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
+  mname: z.string().max(50, "Maximum 50 characters").optional(),
   lname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
   email: z.string().email("Invalid email format").max(255, "Maximum 255 characters"),
   password: z
@@ -110,7 +112,6 @@ const editMemberSchema = z.object({
       if (!val || val === "") return true
       return val.length >= 8 && /[A-Z]/.test(val) && /[a-z]/.test(val) && /[0-9]/.test(val) && /[!@#$%^&*(),.?":{}|<>]/.test(val)
     }, "Must be 8+ characters with uppercase, lowercase, number, and special character"),
-  gender_id: z.string().min(1, "Required"),
   bday: z.string().min(1, "Required").refine((val) => {
     if (!val || val === "" || val === "0000-00-00") return false
     const date = new Date(val)
@@ -157,6 +158,68 @@ const ViewMembers = ({ userId }) => {
   const [discountDialogMember, setDiscountDialogMember] = useState(null)
   const [discountLoading, setDiscountLoading] = useState(false)
 
+  // Subscription assignment states (for Add Client modal)
+  const [showSubscriptionAssignment, setShowSubscriptionAssignment] = useState(false)
+  const [pendingClientData, setPendingClientData] = useState(null) // Store client data before account creation
+  const [subscriptionPlans, setSubscriptionPlans] = useState([])
+  const [subscriptionForm, setSubscriptionForm] = useState({
+    plan_id: "",
+    start_date: new Date().toISOString().split("T")[0],
+    discount_type: "none",
+    amount_paid: "",
+    payment_method: "cash",
+    amount_received: "",
+    gcash_reference: "",
+    notes: ""
+  })
+  const [planQuantity, setPlanQuantity] = useState(1)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+
+  // Discount configuration - load from localStorage (same as monitorsubscription.js)
+  const [discountConfig] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('gym-discounts')
+      if (saved) {
+        try {
+          const discounts = JSON.parse(saved)
+          const config = {}
+          discounts.forEach((discount) => {
+            let key
+            if (discount.name.toLowerCase().includes('regular')) {
+              key = 'regular'
+            } else if (discount.name.toLowerCase().includes('student')) {
+              key = 'student'
+            } else if (discount.name.toLowerCase().includes('senior')) {
+              key = 'senior'
+            } else {
+              key = discount.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+            }
+
+            config[key] = {
+              name: discount.name,
+              discount: discount.amount,
+            }
+          })
+          return config
+        } catch (e) {
+          console.error('Error parsing saved discounts:', e)
+        }
+      }
+    }
+    // Fallback to default discounts
+    return {
+      regular: { name: "Regular Rate", discount: 0 },
+      student: { name: "Student Discount", discount: 150 },
+      senior: { name: "Senior Discount", discount: 200 }
+    }
+  })
+
+  // Calculate discounted price using fixed amounts (same as monitorsubscription.js)
+  const calculateDiscountedPrice = (originalPrice, discountType) => {
+    const discount = discountConfig[discountType]?.discount || 0
+    return Math.max(0, originalPrice - discount)
+  }
+
   const form = useForm({
     resolver: zodResolver(memberSchema),
     defaultValues: {
@@ -180,7 +243,6 @@ const ViewMembers = ({ userId }) => {
       lname: "",
       email: "",
       password: "",
-      gender_id: "",
       bday: "",
       user_type_id: 4,
       account_status: "pending",
@@ -532,7 +594,6 @@ const ViewMembers = ({ userId }) => {
       lname: member.lname || "",
       email: member.email || "",
       password: "",
-      gender_id: member.gender_id?.toString() || "",
       bday: safeBday,
       user_type_id: member.user_type_id || 4,
       account_status: member.account_status || "approved",
@@ -724,49 +785,130 @@ const ViewMembers = ({ userId }) => {
       }
     }
     
-    setIsLoading(true)
+    // Store client data and switch to subscription assignment mode (don't create account yet)
+    const password = generateStandardPassword(data.fname, data.mname, data.lname)
+    
+    setPendingClientData({
+      fname: data.fname.trim(),
+      mname: data.mname.trim(),
+      lname: data.lname.trim(),
+      email: data.email.trim().toLowerCase(),
+      password: password,
+      gender_id: Number.parseInt(data.gender_id),
+      bday: data.bday,
+      user_type_id: data.user_type_id,
+      account_status: data.account_status,
+      failed_attempt: 0,
+      staff_id: userId,
+    })
+    
+    // Switch to subscription assignment mode
+    setShowSubscriptionAssignment(true)
+    
+    // Fetch available subscription plans (for a new user, we'll use user_id=0 or fetch all plans)
+    await fetchSubscriptionPlansForUser(0) // Use 0 for new user to get all available plans
+  }
+
+  // Fetch subscription plans for a user
+  const fetchSubscriptionPlansForUser = async (userId) => {
     try {
-      // Remove client-side email validation - let backend handle it
-      console.log("Creating member with data:", data)
-      console.log("Password from form:", data.password)
-
-      // Generate standard password from user's name
-      const password = generateStandardPassword(data.fname, data.mname, data.lname)
-
-      const formattedData = {
-        fname: data.fname.trim(),
-        mname: data.mname.trim(),
-        lname: data.lname.trim(),
-        email: data.email.trim().toLowerCase(),
-        password: password, // Always use default password if not provided
-        gender_id: Number.parseInt(data.gender_id),
-        bday: data.bday,
-        user_type_id: data.user_type_id,
-        account_status: data.account_status,
-        failed_attempt: 0,
-        staff_id: userId,
+      // If userId is 0, it means new user - fetch all plans
+      const url = userId === 0 
+        ? `https://api.cnergy.site/monitor_subscription.php?action=available-plans&user_id=0`
+        : `https://api.cnergy.site/monitor_subscription.php?action=available-plans&user_id=${userId}`
+      
+      const response = await axios.get(url)
+      if (response.data && response.data.success) {
+        setSubscriptionPlans(response.data.plans || [])
       }
+    } catch (error) {
+      console.error("Error fetching subscription plans:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch subscription plans. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
 
-      console.log("Sending request to backend with data:", formattedData)
-      console.log("Password being sent:", formattedData.password)
+  // Handle plan change and calculate price
+  const handlePlanChange = (planId) => {
+    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === planId)
+    if (selectedPlan) {
+      const basePrice = parseFloat(selectedPlan.price || 0)
+      const quantity = planQuantity || 1
+      
+      // Calculate price per unit with discount, then multiply by quantity
+      let pricePerUnit = basePrice
+      if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
+        if (planId == 2 || planId == 3 || planId == 5) {
+          pricePerUnit = calculateDiscountedPrice(basePrice, subscriptionForm.discount_type)
+        }
+      }
+      
+      const finalPrice = pricePerUnit * quantity
+      
+      setSubscriptionForm(prev => ({
+        ...prev,
+        plan_id: planId,
+        amount_paid: finalPrice.toFixed(2)
+      }))
+    }
+  }
 
-      const response = await fetch("https://api.cnergy.site/member_management.php", {
+  // Handle quantity change
+  const handleQuantityChange = (value) => {
+    const quantity = parseInt(value) || 1
+    setPlanQuantity(quantity)
+    
+    if (subscriptionForm.plan_id) {
+      const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+      if (selectedPlan) {
+        const basePrice = parseFloat(selectedPlan.price || 0)
+        
+        // Calculate price per unit with discount, then multiply by quantity
+        let pricePerUnit = basePrice
+        if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
+          if (subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) {
+            pricePerUnit = calculateDiscountedPrice(basePrice, subscriptionForm.discount_type)
+          }
+        }
+        
+        const finalPrice = pricePerUnit * quantity
+        
+        setSubscriptionForm(prev => ({
+          ...prev,
+          amount_paid: finalPrice.toFixed(2)
+        }))
+      }
+    }
+  }
+
+  // Handle subscription creation - this will create account AND subscription together
+  const handleCreateSubscription = async () => {
+    if (!pendingClientData || !subscriptionForm.plan_id || !subscriptionForm.amount_paid) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSubscriptionLoading(true)
+    try {
+      // Step 1: Create the client account
+      const clientResponse = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formattedData),
+        body: JSON.stringify(pendingClientData),
       })
 
-      console.log("Response status:", response.status)
-      console.log("Response ok:", response.ok)
-
-      if (!response.ok) {
-        const result = await response.json()
-        console.log("Error response result:", result)
-
-        if (response.status === 409) {
-          // Handle duplicate user/name error with proper modal
+      if (!clientResponse.ok) {
+        const result = await clientResponse.json()
+        if (clientResponse.status === 409) {
           setErrorDialogData({
             title: result.error || "Duplicate Entry Detected",
             message: result.message || "This client already exists in the system.",
@@ -774,133 +916,109 @@ const ViewMembers = ({ userId }) => {
             existingUser: result.existing_user || null
           })
           setIsErrorDialogOpen(true)
-          setIsLoading(false)
+          setSubscriptionLoading(false)
           return
         }
-        
-        // Other errors
-        setErrorDialogData({
-          title: result.error || "Error",
-          message: result.message || "Failed to add client. Please try again.",
-          duplicateType: result.duplicate_type || "unknown",
-          existingUser: result.existing_user || null
-        })
-        setIsErrorDialogOpen(true)
-        setIsLoading(false)
-        return
+        throw new Error(result.message || result.error || "Failed to create client account")
       }
 
-      const result = await response.json()
-      console.log("Response result:", result)
+      const clientResult = await clientResponse.json()
+      const newMemberId = clientResult.member?.id || clientResult.data?.id || null
 
-      if (response.ok) {
-        // Format user's full name before closing dialog
-        const fullName = `${data.fname}${data.mname ? ` ${data.mname}` : ''} ${data.lname}`.trim()
+      if (!newMemberId) {
+        throw new Error("Failed to get client ID after account creation")
+      }
 
-        // Get the newly created member ID from the response
-        const newMemberId = result.member?.id || result.data?.id || null
-
-        // Add discount tag if one was selected - use the member ID from response
-        if (selectedDiscountType && newMemberId) {
-          try {
-            console.log("Adding discount tag for member ID:", newMemberId, "Type:", selectedDiscountType)
-            console.log("Verified by (userId):", userId, "Type:", typeof userId)
-            
-            // Ensure userId is a number
-            const verifiedById = userId ? Number(userId) : null
-            if (!verifiedById || isNaN(verifiedById)) {
-              throw new Error("Invalid admin/staff ID. Please refresh the page and try again.")
-            }
-            
+      // Step 2: Add discount tag if selected
+      if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
+        try {
+          const verifiedById = userId ? Number(userId) : null
+          if (verifiedById && !isNaN(verifiedById)) {
             const discountResponse = await fetch('https://api.cnergy.site/user_discount.php?action=add', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 user_id: newMemberId,
-                discount_type: selectedDiscountType,
+                discount_type: subscriptionForm.discount_type,
                 verified_by: verifiedById,
                 expires_at: null,
-                notes: 'Applied during account creation'
+                notes: 'Applied during account creation with subscription'
               })
             })
             
             if (!discountResponse.ok) {
-              const errorText = await discountResponse.text()
-              console.error("Discount API error response:", errorText)
-              throw new Error(`HTTP ${discountResponse.status}: ${errorText}`)
+              console.error("Failed to add discount tag, but continuing with subscription creation")
             }
-            
-            const discountResult = await discountResponse.json()
-            console.log("Discount API response:", discountResult)
-            
-            if (discountResult.success) {
-              // Show success toast with discount info
-              toast({
-                title: "Client Added Successfully",
-                description: `${fullName} has been added and tagged as ${selectedDiscountType === 'student' ? 'Student' : 'Senior (55+)'} discount eligible.`,
-                duration: 5000,
-              })
-            } else {
-              throw new Error(discountResult.error || 'Failed to add discount tag')
-            }
-          } catch (discountError) {
-            console.error("Error adding discount tag:", discountError)
-            // Show success for account creation but warning for discount
-            toast({
-              title: "Client Added Successfully",
-              description: `${fullName} has been added to the system. However, the discount tag could not be applied.`,
-              duration: 5000,
-            })
-            toast({
-              title: "Discount Tag Error",
-              description: discountError.message || "Please add the discount tag manually from the member's profile.",
-              variant: "destructive",
-              duration: 6000,
-            })
           }
-        } else {
-          // Show success toast without discount info
-          toast({
-            title: "Client Added Successfully",
-            description: `${fullName} has been added to the system and can now access the mobile application.`,
-            duration: 5000,
-          })
+        } catch (discountError) {
+          console.error("Error adding discount tag:", discountError)
+          // Continue even if discount fails
         }
+      }
 
-        // Then update members list and close dialog
+      // Step 3: Create the subscription
+      const subscriptionData = {
+        user_id: newMemberId,
+        plan_id: subscriptionForm.plan_id,
+        start_date: subscriptionForm.start_date,
+        discount_type: subscriptionForm.discount_type || 'none',
+        amount_paid: subscriptionForm.amount_paid,
+        payment_method: subscriptionForm.payment_method,
+        amount_received: subscriptionForm.amount_received || subscriptionForm.amount_paid,
+        gcash_reference: subscriptionForm.gcash_reference || '',
+        notes: subscriptionForm.notes || '',
+        quantity: planQuantity,
+        created_by: userId
+      }
+
+      const subscriptionResponse = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create', subscriptionData)
+      
+      if (subscriptionResponse.data && subscriptionResponse.data.success) {
+        const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()
+        
+        toast({
+          title: "Success",
+          description: `${fullName} has been created and subscription assigned successfully!`,
+          duration: 5000,
+        })
+        
+        // Close modal and reset everything
+        setIsAddDialogOpen(false)
+        setShowSubscriptionAssignment(false)
+        setPendingClientData(null)
+        setSelectedDiscountType(null)
+        setSubscriptionForm({
+          plan_id: "",
+          start_date: new Date().toISOString().split("T")[0],
+          discount_type: "none",
+          amount_paid: "",
+          payment_method: "cash",
+          amount_received: "",
+          gcash_reference: "",
+          notes: ""
+        })
+        setPlanQuantity(1)
+        form.reset()
+        
+        // Refresh members list
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         const membersArray = Array.isArray(updatedMembers) ? updatedMembers : []
         setMembers(membersArray)
         setFilteredMembers(membersArray)
-        
-        // Refresh discounts after member list is updated
-        if (selectedDiscountType && newMemberId) {
-          await fetchAllMemberDiscounts(membersArray)
-        }
-
-        setIsAddDialogOpen(false)
-        setSelectedDiscountType(null) // Reset discount selection
-        form.reset()
       } else {
-        // Prioritize the detailed message over the generic error
-        throw new Error(result.message || result.error || "Failed to add client")
+        throw new Error(subscriptionResponse.data.error || "Failed to create subscription")
       }
     } catch (error) {
-      console.error("Error adding member:", error)
-      console.error("Error message:", error.message)
-      console.error("Full error object:", error)
-
-      // Generic error fallback
-      setErrorDialogData({
+      console.error("Error creating account and subscription:", error)
+      toast({
         title: "Error",
-        message: error.message || "Failed to add client. Please try again.",
-        duplicateType: "unknown",
-        existingUser: null
+        description: error.response?.data?.error || error.message || "Failed to create account and subscription. Please try again.",
+        variant: "destructive",
       })
-      setIsErrorDialogOpen(true)
+    } finally {
+      setSubscriptionLoading(false)
     }
-    setIsLoading(false)
   }
 
   const handleUpdateMember = async (data) => {
@@ -950,14 +1068,14 @@ const ViewMembers = ({ userId }) => {
       const updateData = {
         id: selectedMember.id,
         fname: data.fname.trim(),
-        mname: data.mname.trim(),
+        mname: data.mname && data.mname.trim() !== '' ? data.mname.trim() : '',
         lname: data.lname.trim(),
         email: data.email.trim().toLowerCase(),
-        gender_id: Number.parseInt(data.gender_id),
         bday: data.bday,
         user_type_id: data.user_type_id,
         account_status: data.account_status,
         staff_id: userId,
+        // Not updating: gender_id (user settings only)
       }
 
       if (data.password && data.password.trim() !== "") {
@@ -1771,17 +1889,39 @@ const ViewMembers = ({ userId }) => {
       </Dialog>
 
       {/* Add Member Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+      <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+        setIsAddDialogOpen(open)
+        if (!open) {
+          // Reset all states when modal closes
+          setShowSubscriptionAssignment(false)
+          setPendingClientData(null)
+          setSelectedDiscountType(null)
+          setSubscriptionForm({
+            plan_id: "",
+            start_date: new Date().toISOString().split("T")[0],
+            discount_type: "none",
+            amount_paid: "",
+            payment_method: "cash",
+            amount_received: "",
+            notes: ""
+          })
+          setPlanQuantity(1)
+          form.reset()
+        }
+      }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-3 pb-4 border-b">
             <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
               <User className="h-6 w-6 text-primary" />
-              Add New Client
+              {showSubscriptionAssignment ? "Assign Subscription" : "Add New Client"}
             </DialogTitle>
             <DialogDescription className="text-base">
-              Enter the basic details for the new client account.
+              {showSubscriptionAssignment 
+                ? "Select discount eligibility and subscription plan to create the user account"
+                : "Enter the basic details for the new client account."}
             </DialogDescription>
           </DialogHeader>
+          {!showSubscriptionAssignment ? (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleAddMember)} className="space-y-6 py-4">
               <div className="grid grid-cols-2 gap-6">
@@ -1990,50 +2130,6 @@ const ViewMembers = ({ userId }) => {
                 }}
               />
               
-              {/* Discount Tag Selection */}
-              <div className="space-y-4 pt-4 border-t">
-                <div className="flex items-center gap-2 mb-2">
-                  <Tag className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-semibold text-gray-900 text-base">Discount Eligibility</h3>
-                </div>
-                <p className="text-sm text-gray-600 mb-4">
-                  Verify the client's ID and select a discount tag if they are eligible. This can be done during account creation.
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSelectedDiscountType(selectedDiscountType === 'student' ? null : 'student')}
-                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
-                      selectedDiscountType === 'student'
-                        ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
-                        : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
-                    }`}
-                  >
-                    <GraduationCap className={`h-6 w-6 ${selectedDiscountType === 'student' ? 'text-blue-700' : 'text-blue-600'}`} />
-                    <span className={`font-semibold ${selectedDiscountType === 'student' ? 'text-blue-800' : 'text-blue-700'}`}>Student</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setSelectedDiscountType(selectedDiscountType === 'senior' ? null : 'senior')}
-                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
-                      selectedDiscountType === 'senior'
-                        ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
-                        : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
-                    }`}
-                  >
-                    <UserCircle className={`h-6 w-6 ${selectedDiscountType === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
-                    <span className={`font-semibold ${selectedDiscountType === 'senior' ? 'text-purple-800' : 'text-purple-700'}`}>55+</span>
-                  </Button>
-                </div>
-                <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3">
-                  <p className="text-xs text-amber-900 leading-relaxed">
-                    <strong className="font-semibold">Important:</strong> Only tag members after verifying their ID and eligibility. ID verification must be done outside the system before applying discount tags.
-                  </p>
-                </div>
-              </div>
-
               <DialogFooter className="pt-4 border-t gap-3">
                 <Button
                   type="button"
@@ -2053,11 +2149,283 @@ const ViewMembers = ({ userId }) => {
                 >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   <User className="mr-2 h-4 w-4" />
-                  Add
+                  Proceed
                 </Button>
               </DialogFooter>
             </form>
           </Form>
+          ) : (
+            <div className="space-y-6 py-4">
+              {/* User Info Display */}
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <User className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {pendingClientData ? `${pendingClientData.fname} ${pendingClientData.lname}` : 'New User'}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Complete the form below to create the account
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Discount Selection - MOVED TO TOP */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-5 w-5 text-blue-600" />
+                  <Label className="text-sm font-semibold text-gray-900">Discount Eligibility</Label>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Verify the user's ID and select if eligible. Discounts automatically apply to Monthly Access plans.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const newDiscount = subscriptionForm.discount_type === 'student' ? 'none' : 'student'
+                      setSubscriptionForm(prev => {
+                        const updated = { ...prev, discount_type: newDiscount }
+                        // Recalculate price if plan is already selected
+                        if (prev.plan_id) {
+                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === prev.plan_id)
+                          if (selectedPlan) {
+                            const basePrice = parseFloat(selectedPlan.price || 0)
+                            const quantity = planQuantity || 1
+                            
+                            // Calculate price per unit with discount, then multiply by quantity
+                            let pricePerUnit = basePrice
+                            if (newDiscount !== 'none' && newDiscount !== 'regular') {
+                              if (prev.plan_id == 2 || prev.plan_id == 3 || prev.plan_id == 5) {
+                                pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount)
+                              }
+                            }
+                            
+                            updated.amount_paid = (pricePerUnit * quantity).toFixed(2)
+                          }
+                        }
+                        return updated
+                      })
+                    }}
+                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
+                      subscriptionForm.discount_type === 'student'
+                        ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
+                        : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
+                    }`}
+                  >
+                    <GraduationCap className={`h-6 w-6 ${subscriptionForm.discount_type === 'student' ? 'text-blue-700' : 'text-blue-600'}`} />
+                    <span className={`font-semibold text-sm ${subscriptionForm.discount_type === 'student' ? 'text-blue-800' : 'text-blue-700'}`}>Student</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const newDiscount = subscriptionForm.discount_type === 'senior' ? 'none' : 'senior'
+                      setSubscriptionForm(prev => {
+                        const updated = { ...prev, discount_type: newDiscount }
+                        // Recalculate price if plan is already selected
+                        if (prev.plan_id) {
+                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === prev.plan_id)
+                          if (selectedPlan) {
+                            const basePrice = parseFloat(selectedPlan.price || 0)
+                            const quantity = planQuantity || 1
+                            
+                            // Calculate price per unit with discount, then multiply by quantity
+                            let pricePerUnit = basePrice
+                            if (newDiscount !== 'none' && newDiscount !== 'regular') {
+                              if (prev.plan_id == 2 || prev.plan_id == 3 || prev.plan_id == 5) {
+                                pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount)
+                              }
+                            }
+                            
+                            updated.amount_paid = (pricePerUnit * quantity).toFixed(2)
+                          }
+                        }
+                        return updated
+                      })
+                    }}
+                    className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
+                      subscriptionForm.discount_type === 'senior'
+                        ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
+                        : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
+                    }`}
+                  >
+                    <UserCircle className={`h-6 w-6 ${subscriptionForm.discount_type === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
+                    <span className={`font-semibold text-sm ${subscriptionForm.discount_type === 'senior' ? 'text-purple-800' : 'text-purple-700'}`}>Senior 55+</span>
+                  </Button>
+                </div>
+                <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    <strong className="font-semibold">Important:</strong> Only tag users after verifying their ID and eligibility. ID verification must be done outside the system before applying discount tags.
+                  </p>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-gray-200"></div>
+
+              {/* Plan Selection */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-900">Select Plan</Label>
+                <Select 
+                  value={subscriptionForm.plan_id} 
+                  onValueChange={handlePlanChange}
+                >
+                  <SelectTrigger className="h-11 text-sm border border-gray-300">
+                    <SelectValue placeholder="Choose a subscription plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {subscriptionPlans.map((plan) => {
+                      const isAvailable = plan.is_available !== false
+                      return (
+                        <SelectItem 
+                          key={plan.id} 
+                          value={plan.id.toString()}
+                          disabled={!isAvailable}
+                          className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
+                        >
+                          {plan.plan_name}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Quantity Input for Plan ID 1, 2, 3 */}
+              {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-gray-900">Duration</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={planQuantity}
+                    onChange={(e) => handleQuantityChange(e.target.value)}
+                    placeholder="Enter quantity"
+                    className="h-11 text-sm border border-gray-300"
+                  />
+                  <p className="text-xs text-gray-500">
+                    {subscriptionForm.plan_id == 1 
+                      ? "Number of years" 
+                      : "Number of months"}
+                  </p>
+                </div>
+              )}
+
+              {/* Divider */}
+              <div className="border-t border-gray-200"></div>
+
+              {/* Payment Section */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Payment Details</h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Total Amount</Label>
+                    <Input
+                      value={subscriptionForm.amount_paid || '0.00'}
+                      disabled
+                      className="h-11 text-sm border border-gray-300 bg-gray-50 text-gray-900 font-semibold"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Payment Method</Label>
+                    <Select 
+                      value={subscriptionForm.payment_method} 
+                      onValueChange={(value) => setSubscriptionForm(prev => ({ 
+                      ...prev, 
+                      payment_method: value,
+                      gcash_reference: value === "cash" ? "" : prev.gcash_reference,
+                      amount_received: value === "gcash" ? "" : prev.amount_received
+                    }))}
+                    >
+                      <SelectTrigger className="h-11 text-sm border border-gray-300">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="gcash">GCash</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Cash Payment - Amount Received */}
+                {subscriptionForm.payment_method === "cash" && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">Amount Received</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={subscriptionForm.amount_received}
+                      onChange={(e) => setSubscriptionForm(prev => ({ ...prev, amount_received: e.target.value }))}
+                      placeholder="0.00"
+                      className="h-11 text-sm border border-gray-300"
+                    />
+                  </div>
+                )}
+
+                {/* GCash Payment - Reference Number */}
+                {subscriptionForm.payment_method === "gcash" && (
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">
+                      Reference Number
+                    </Label>
+                    <Input
+                      type="text"
+                      value={subscriptionForm.gcash_reference}
+                      onChange={(e) => setSubscriptionForm(prev => ({ ...prev, gcash_reference: e.target.value }))}
+                      placeholder="Enter transaction reference"
+                      className="h-11 text-sm border border-gray-300"
+                      required
+                    />
+                    <p className="text-xs text-gray-500">Required for GCash transactions</p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="pt-4 border-t gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsAddDialogOpen(false)
+                    setShowSubscriptionAssignment(false)
+                    setPendingClientData(null)
+                    setSelectedDiscountType(null)
+                    setSubscriptionForm({
+                      plan_id: "",
+                      start_date: new Date().toISOString().split("T")[0],
+                      discount_type: "none",
+                      amount_paid: "",
+                      payment_method: "cash",
+                      amount_received: "",
+                      notes: ""
+                    })
+                    setPlanQuantity(1)
+                    form.reset()
+                  }}
+                  className="h-11 px-6"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleCreateSubscription}
+                  disabled={subscriptionLoading || !pendingClientData || !subscriptionForm.plan_id || !subscriptionForm.amount_paid || (subscriptionForm.payment_method === "gcash" && !subscriptionForm.gcash_reference)}
+                  className="h-11 px-6 bg-primary hover:bg-primary/90"
+                >
+                  {subscriptionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Create
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -2170,32 +2538,7 @@ const ViewMembers = ({ userId }) => {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-6">
-                <FormField
-                  control={editForm.control}
-                  name="gender_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-sm font-medium">Gender</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="h-11">
-                            <SelectValue placeholder="Select gender" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {genderOptions.map((gender) => (
-                            <SelectItem key={gender.id} value={gender.id}>
-                              {gender.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
+              <FormField
                   control={editForm.control}
                   name="bday"
                   render={({ field }) => {
@@ -2248,7 +2591,6 @@ const ViewMembers = ({ userId }) => {
                     )
                   }}
                 />
-              </div>
               <DialogFooter className="pt-4 border-t gap-3">
                 <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)} className="h-11 px-6">
                   Cancel
