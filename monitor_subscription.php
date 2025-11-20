@@ -1438,6 +1438,12 @@ function createManualSubscription($pdo, $data)
         $paymentMethod = 'gcash';
     }
 
+    // Get reference number for GCash payments
+    $referenceNumber = null;
+    if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
+        $referenceNumber = $data['reference_number'] ?? null;
+    }
+
     // CRITICAL: Validate payment details before creating subscription
     $amountReceived = floatval($data['amount_received'] ?? $payment_amount);
     $transactionStatus = $data['transaction_status'] ?? 'confirmed';
@@ -1529,10 +1535,11 @@ function createManualSubscription($pdo, $data)
             // Use quantity if provided, otherwise calculate from payment amount
             $actualMonths = 1; // Default to 1 month
 
-            if ($quantity > 1) {
+            if ($quantity >= 1) {
                 // Use quantity directly (for Plan ID 1, 2, 3 advance payment/renewal)
                 if ($plan_id == 1) {
                     // Plan ID 1: quantity is in years, convert to months
+                    // Even if quantity is 1, it means 1 year = 12 months
                     $actualMonths = $quantity * 12;
                 } else {
                     // Plan ID 2, 3: quantity is in months
@@ -1546,13 +1553,27 @@ function createManualSubscription($pdo, $data)
                     $monthsPaid = floor($payment_amount / $planPrice);
                     if ($monthsPaid > 0) {
                         $actualMonths = $monthsPaid;
+                        // For Plan ID 1, if monthsPaid is 1, it should be 12 months (1 year)
+                        if ($plan_id == 1 && $actualMonths == 1) {
+                            $actualMonths = 12;
+                        }
                     } else {
                         // If payment is less than plan price, use plan's duration_months
-                        $actualMonths = $plan['duration_months'] ?? 1;
+                        // For Plan ID 1, default to 12 months (1 year)
+                        if ($plan_id == 1) {
+                            $actualMonths = 12;
+                        } else {
+                            $actualMonths = $plan['duration_months'] ?? 1;
+                        }
                     }
                 } else {
                     // If plan price is 0, use plan's duration_months
-                    $actualMonths = $plan['duration_months'] ?? 1;
+                    // For Plan ID 1, default to 12 months (1 year)
+                    if ($plan_id == 1) {
+                        $actualMonths = 12;
+                    } else {
+                        $actualMonths = $plan['duration_months'] ?? 1;
+                    }
                 }
             }
 
@@ -1761,11 +1782,24 @@ function createManualSubscription($pdo, $data)
             $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
             $phTimeString = $phTime->format('Y-m-d H:i:s');
 
-            $salesStmt = $pdo->prepare("
-                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
-                    VALUES (?, ?, ?, 'Subscription', ?, 'confirmed', ?, ?, ?)
-                ");
-            $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+            // Check if sales table has reference_number column
+            $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
+            $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
+            $hasReferenceNumber = in_array('reference_number', $salesColumns);
+
+            if ($hasReferenceNumber) {
+                $salesStmt = $pdo->prepare("
+                        INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, reference_number) 
+                        VALUES (?, ?, ?, 'Subscription', ?, 'confirmed', ?, ?, ?, ?)
+                    ");
+                $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $referenceNumber]);
+            } else {
+                $salesStmt = $pdo->prepare("
+                        INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
+                        VALUES (?, ?, ?, 'Subscription', ?, 'confirmed', ?, ?, ?)
+                    ");
+                $salesStmt->execute([$user_id, $payment_amount, $phTimeString, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+            }
             $sale_id = $pdo->lastInsertId();
 
             // Create sales details
@@ -2257,6 +2291,12 @@ function approveSubscriptionWithPayment($pdo, $data)
         $paymentMethod = 'gcash';
     }
 
+    // Get reference number for GCash payments
+    $referenceNumber = null;
+    if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
+        $referenceNumber = $data['reference_number'] ?? null;
+    }
+
     // For cash payments, validate amount received
     if ($paymentMethod === 'cash' && $amountReceived <= 0) {
         http_response_code(400);
@@ -2470,22 +2510,45 @@ function approveSubscriptionWithPayment($pdo, $data)
                         in_array('amount_received', $salesColumns) &&
                         in_array('change_given', $salesColumns) &&
                         in_array('receipt_number', $salesColumns);
+                    $hasReferenceNumber = in_array('reference_number', $salesColumns);
+
+                    // Get reference number for GCash payments
+                    $referenceNumber = null;
+                    if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
+                        $referenceNumber = $data['reference_number'] ?? null;
+                    }
 
                     if ($hasPosColumns) {
-                        $salesStmt = $pdo->prepare("
-                                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, amount_received, change_given, receipt_number, cashier_id, notes, transaction_status) 
-                                VALUES (?, ?, NOW(), 'Subscription', ?, ?, ?, ?, ?, ?, 'confirmed')
-                            ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
+                        if ($hasReferenceNumber) {
+                            $salesStmt = $pdo->prepare("
+                                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, amount_received, change_given, receipt_number, cashier_id, notes, transaction_status, reference_number) 
+                                    VALUES (?, ?, NOW(), 'Subscription', ?, ?, ?, ?, ?, ?, 'confirmed', ?)
+                                ");
+                            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes, $referenceNumber]);
+                        } else {
+                            $salesStmt = $pdo->prepare("
+                                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, amount_received, change_given, receipt_number, cashier_id, notes, transaction_status) 
+                                    VALUES (?, ?, NOW(), 'Subscription', ?, ?, ?, ?, ?, ?, 'confirmed')
+                                ");
+                            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $amountReceived, $changeGiven, $receiptNumber, $cashierId, $notes]);
+                        }
                         $sale_id = $pdo->lastInsertId();
                         error_log("Sales record created successfully. Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethod, Receipt: $receiptNumber");
                     } else {
                         // Fallback to basic sales record with receipt number
-                        $salesStmt = $pdo->prepare("
-                                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
-                                VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?)
-                            ");
-                        $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+                        if ($hasReferenceNumber) {
+                            $salesStmt = $pdo->prepare("
+                                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, reference_number) 
+                                    VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?, ?)
+                                ");
+                            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $referenceNumber]);
+                        } else {
+                            $salesStmt = $pdo->prepare("
+                                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
+                                    VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, ?)
+                                ");
+                            $salesStmt->execute([$subscription['user_id'], $paymentAmount, $paymentMethod, $receiptNumber, $cashierId, $changeGiven]);
+                        }
                         $sale_id = $pdo->lastInsertId();
                         error_log("Sales record created successfully (fallback). Sale ID: $sale_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $paymentMethod, Receipt: $receiptNumber");
                     }

@@ -138,6 +138,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
+  const [referenceNumber, setReferenceNumber] = useState("")
   const [receiptNumber, setReceiptNumber] = useState("")
   const [transactionNotes, setTransactionNotes] = useState("")
   const [showReceipt, setShowReceipt] = useState(false)
@@ -544,10 +545,12 @@ const SubscriptionMonitor = ({ userId }) => {
         plan_id: subscriptionForm.plan_id,
         start_date: subscriptionForm.start_date,
         amount_paid: totalAmount,
+        quantity: planQuantity || 1, // Quantity for advance payment/renewal
         payment_method: paymentMethod,
         amount_received: receivedAmount,
         change_given: change,
         receipt_number: autoReceiptNumber,
+        reference_number: paymentMethod === "gcash" ? referenceNumber : null, // Include reference number for GCash
         notes: "",
         created_by: "Admin",
         staff_id: currentUserId, // Use current user ID with fallback
@@ -567,7 +570,8 @@ const SubscriptionMonitor = ({ userId }) => {
           total_amount: totalAmount,
           payment_method: paymentMethod,
           amount_received: receivedAmount,
-          receipt_number: response.data.data.receipt_number
+          receipt_number: response.data.data.receipt_number,
+          reference_number: paymentMethod === "gcash" ? referenceNumber : null
         };
 
         setConfirmationData(confirmationData);
@@ -3088,7 +3092,17 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
               <div className="space-y-2">
                 <Label className="text-sm text-gray-700 font-semibold">Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <Select value={paymentMethod} onValueChange={(value) => {
+                  setPaymentMethod(value)
+                  // Clear reference number when switching away from GCash
+                  if (value !== "gcash") {
+                    setReferenceNumber("")
+                  }
+                  // Clear amount received when switching to GCash
+                  if (value === "gcash") {
+                    setAmountReceived("")
+                  }
+                }}>
                   <SelectTrigger className="h-10 text-sm border border-gray-300">
                     <SelectValue />
                   </SelectTrigger>
@@ -3099,6 +3113,22 @@ const SubscriptionMonitor = ({ userId }) => {
                 </Select>
               </div>
             </div>
+
+            {/* GCash Reference Number Input */}
+            {paymentMethod === "gcash" && (
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-700 font-semibold">GCash Reference Number <span className="text-red-500">*</span></Label>
+                <Input
+                  type="text"
+                  value={referenceNumber}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                  placeholder="Enter GCash reference number"
+                  className="h-10 text-sm border border-gray-300"
+                  maxLength={50}
+                />
+                <p className="text-xs text-gray-500">Enter the transaction reference number from GCash</p>
+              </div>
+            )}
 
             {/* Active Subscriptions Indicator */}
             {selectedUserInfo && userActiveSubscriptions.length > 0 && (
@@ -3264,7 +3294,8 @@ const SubscriptionMonitor = ({ userId }) => {
                 !subscriptionForm.amount_paid ||
                 !subscriptionForm.user_id ||
                 !subscriptionForm.plan_id ||
-                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid)))
+                (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid))) ||
+                (paymentMethod === "gcash" && !referenceNumber.trim())
               }
               className="bg-gray-800 hover:bg-gray-700 text-white"
             >
@@ -3336,6 +3367,15 @@ const SubscriptionMonitor = ({ userId }) => {
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-medium text-gray-600">Change</span>
                         <span className="text-base font-bold text-gray-900">₱{confirmationData.change_given?.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {confirmationData.payment_method === 'gcash' && confirmationData.reference_number && (
+                    <div className="space-y-3 pt-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">GCash Reference Number</span>
+                        <span className="text-sm font-semibold text-gray-900 font-mono">{confirmationData.reference_number}</span>
                       </div>
                     </div>
                   )}
