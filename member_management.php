@@ -245,9 +245,17 @@ try {
     // POST: add new member
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
-            $input = json_decode(file_get_contents('php://input'), true);
-            if (!$input) {
-                respond(['error' => 'Invalid JSON'], 400);
+            // Handle both JSON and FormData (for file uploads)
+            $input = [];
+            if (!empty($_FILES)) {
+                // FormData request - get data from $_POST
+                $input = $_POST;
+            } else {
+                // JSON request
+                $input = json_decode(file_get_contents('php://input'), true);
+                if (!$input) {
+                    respond(['error' => 'Invalid JSON'], 400);
+                }
             }
 
             // Log the input for debugging
@@ -311,18 +319,102 @@ try {
 
             error_log("POST Member Add - Processed values - fname: {$input['fname']}, mname: '{$mname}', lname: {$input['lname']}, email: {$input['email']}, gender_id: {$gender_id}");
 
-            $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
-                                   VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string instead of null
-                trim($input['lname']),
-                trim($input['email']),
-                password_hash($input['password'], PASSWORD_DEFAULT),
-                $gender_id,
-                $input['bday'],
-                $account_status
-            ]);
+            // Handle parent consent file upload for users under 18
+            $parentConsentFileUrl = null;
+            if (isset($_FILES['parent_consent_file']) && $_FILES['parent_consent_file']['error'] === UPLOAD_ERR_OK) {
+                // Calculate age to verify upload is needed
+                $birthDate = new DateTime($input['bday']);
+                $today = new DateTime();
+                $age = $today->diff($birthDate)->y;
+                
+                if ($age < 18) {
+                    $uploadDir = 'uploads/consents/';
+                    // Create directory if it doesn't exist
+                    if (!file_exists($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                    }
+                    
+                    $file = $_FILES['parent_consent_file'];
+                    $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
+                    
+                    if (!in_array($fileExtension, $allowedExtensions)) {
+                        respond([
+                            'error' => 'Invalid file type',
+                            'message' => 'Parent consent file must be an image (JPG, PNG, GIF) or PDF file.'
+                        ], 400);
+                    }
+                    
+                    // Validate file size (max 5MB)
+                    if ($file['size'] > 5 * 1024 * 1024) {
+                        respond([
+                            'error' => 'File too large',
+                            'message' => 'Parent consent file must be smaller than 5MB.'
+                        ], 400);
+                    }
+                    
+                    // Generate unique filename
+                    $uniqueFilename = 'consent_' . time() . '_' . uniqid() . '.' . $fileExtension;
+                    $uploadPath = $uploadDir . $uniqueFilename;
+                    
+                    // Move uploaded file
+                    if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                        $parentConsentFileUrl = $uploadPath;
+                        error_log("Parent consent file uploaded successfully: $uploadPath");
+                    } else {
+                        error_log("Failed to move uploaded file: " . $file['tmp_name']);
+                        respond([
+                            'error' => 'File upload failed',
+                            'message' => 'Failed to save parent consent file. Please try again.'
+                        ], 500);
+                    }
+                }
+            } else {
+                // Check if consent file is required (user under 18)
+                $birthDate = new DateTime($input['bday']);
+                $today = new DateTime();
+                $age = $today->diff($birthDate)->y;
+                
+                if ($age < 18 && $age >= 13) {
+                    respond([
+                        'error' => 'Parent consent required',
+                        'message' => 'Parent consent letter/waiver is required for users under 18 years old.'
+                    ], 400);
+                }
+            }
+
+            // Check if parent_consent_file_url column exists
+            $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
+            $columnExists = $checkColumnStmt->rowCount() > 0;
+            
+            if ($columnExists) {
+                $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status, parent_consent_file_url) 
+                                       VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname, // Empty string instead of null
+                    trim($input['lname']),
+                    trim($input['email']),
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $gender_id,
+                    $input['bday'],
+                    $account_status,
+                    $parentConsentFileUrl
+                ]);
+            } else {
+                $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
+                                       VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname, // Empty string instead of null
+                    trim($input['lname']),
+                    trim($input['email']),
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $gender_id,
+                    $input['bday'],
+                    $account_status
+                ]);
+            }
 
             $newId = $pdo->lastInsertId();
             $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status, created_at FROM `user` WHERE id = ?');

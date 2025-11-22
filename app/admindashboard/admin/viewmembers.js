@@ -148,6 +148,8 @@ const ViewMembers = ({ userId }) => {
   const [showPassword, setShowPassword] = useState(false)
   const [showAgeRestrictionModal, setShowAgeRestrictionModal] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
+  const [parentConsentFile, setParentConsentFile] = useState(null)
+  const [calculatedAge, setCalculatedAge] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
   const { toast } = useToast()
@@ -247,6 +249,37 @@ const ViewMembers = ({ userId }) => {
       user_type_id: 4,
     },
   })
+
+  // Watch birthday field and calculate age for parent consent requirement
+  const watchedBday = form.watch("bday")
+  useEffect(() => {
+    if (watchedBday) {
+      const today = new Date()
+      const birthDate = new Date(watchedBday)
+      if (!isNaN(birthDate.getTime())) {
+        const age = today.getFullYear() - birthDate.getFullYear()
+        const monthDiff = today.getMonth() - birthDate.getMonth()
+        const dayDiff = today.getDate() - birthDate.getDate()
+        
+        let exactAge = age
+        if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+          exactAge--
+        }
+        
+        setCalculatedAge(exactAge)
+        // Clear consent file if age >= 18
+        if (exactAge >= 18) {
+          setParentConsentFile(null)
+        }
+      } else {
+        setCalculatedAge(null)
+        setParentConsentFile(null)
+      }
+    } else {
+      setCalculatedAge(null)
+      setParentConsentFile(null)
+    }
+  }, [watchedBday])
 
   // Gender mapping
   const genderOptions = [
@@ -749,6 +782,7 @@ const ViewMembers = ({ userId }) => {
 
   const handleAddMember = async (data) => {
     // Validate age before submitting
+    let exactAge = null
     if (data.bday) {
       const today = new Date()
       const birthDate = new Date(data.bday)
@@ -757,13 +791,24 @@ const ViewMembers = ({ userId }) => {
       const dayDiff = today.getDate() - birthDate.getDate()
       
       // Calculate exact age
-      let exactAge = age
+      exactAge = age
       if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
         exactAge--
       }
       
       if (exactAge < 13) {
         setShowAgeRestrictionModal(true)
+        setIsLoading(false)
+        return
+      }
+      
+      // Validate consent file for users under 18
+      if (exactAge < 18 && !parentConsentFile) {
+        toast({
+          title: "Parent Consent Required",
+          description: "Please upload a parent consent letter/waiver for users under 18 years old.",
+          variant: "destructive",
+        })
         setIsLoading(false)
         return
       }
@@ -783,6 +828,7 @@ const ViewMembers = ({ userId }) => {
       account_status: "approved", // Admin-added clients are always approved
       failed_attempt: 0,
       staff_id: userId,
+      parent_consent_file: parentConsentFile, // Include consent file
     })
     
     // Switch to subscription assignment mode
@@ -881,12 +927,33 @@ const ViewMembers = ({ userId }) => {
     setSubscriptionLoading(true)
     try {
       // Step 1: Create the client account
+      // Use FormData if there's a consent file, otherwise use JSON
+      let requestBody
+      let headers
+      
+      if (pendingClientData.parent_consent_file) {
+        const formData = new FormData()
+        Object.keys(pendingClientData).forEach(key => {
+          if (key === 'parent_consent_file') {
+            formData.append('parent_consent_file', pendingClientData[key])
+          } else {
+            formData.append(key, pendingClientData[key])
+          }
+        })
+        requestBody = formData
+        // Don't set Content-Type header - browser will set it with boundary for FormData
+        headers = {}
+      } else {
+        requestBody = JSON.stringify(pendingClientData)
+        headers = {
+          "Content-Type": "application/json",
+        }
+      }
+      
       const clientResponse = await fetch("https://api.cnergy.site/member_management.php", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(pendingClientData),
+        headers: headers,
+        body: requestBody,
       })
 
       if (!clientResponse.ok) {
@@ -2175,8 +2242,20 @@ const ViewMembers = ({ userId }) => {
                         setShowAgeRestrictionModal(true)
                         // Reset the field to empty
                         field.onChange("")
+                        setCalculatedAge(null)
+                        setParentConsentFile(null)
                         return
                       }
+                      
+                      // Update calculated age
+                      setCalculatedAge(exactAge)
+                      // Clear consent file if age >= 18
+                      if (exactAge >= 18) {
+                        setParentConsentFile(null)
+                      }
+                    } else {
+                      setCalculatedAge(null)
+                      setParentConsentFile(null)
                     }
                     field.onChange(selectedDate)
                   }
@@ -2201,6 +2280,74 @@ const ViewMembers = ({ userId }) => {
                   )
                 }}
               />
+              
+              {/* Parent Consent Upload - Show only if age < 18 */}
+              {calculatedAge !== null && calculatedAge < 18 && (
+                <FormField
+                  control={form.control}
+                  name="parent_consent_file"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-orange-500" />
+                        Parent Consent Letter/Waiver <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <div className="space-y-2">
+                          <Input
+                            type="file"
+                            accept="image/*,.pdf"
+                            className="h-11 cursor-pointer"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                // Validate file size (max 5MB)
+                                if (file.size > 5 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Please upload a file smaller than 5MB",
+                                    variant: "destructive",
+                                  })
+                                  e.target.value = ""
+                                  return
+                                }
+                                // Validate file type
+                                const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf']
+                                if (!validTypes.includes(file.type)) {
+                                  toast({
+                                    title: "Invalid file type",
+                                    description: "Please upload an image (JPG, PNG, GIF) or PDF file",
+                                    variant: "destructive",
+                                  })
+                                  e.target.value = ""
+                                  return
+                                }
+                                setParentConsentFile(file)
+                                field.onChange(file)
+                              } else {
+                                setParentConsentFile(null)
+                                field.onChange(null)
+                              }
+                            }}
+                          />
+                          {parentConsentFile && (
+                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                              <p className="text-sm text-blue-800 flex items-center gap-2">
+                                <CheckCircle className="h-4 w-4" />
+                                File selected: {parentConsentFile.name} ({(parentConsentFile.size / 1024).toFixed(2)} KB)
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Required for users under 18 years old. Upload a photo or PDF of the parent/guardian consent letter or waiver.
+                      </p>
+                    </FormItem>
+                  )}
+                />
+              )}
               
               <DialogFooter className="pt-4 border-t gap-3">
                 <Button
