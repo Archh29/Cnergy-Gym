@@ -226,14 +226,14 @@ try {
         // This ensures pending accounts are rejected and old rejected accounts are deleted
         cleanupAccountVerifications($pdo);
 
-        $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+        $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);
     }
 
     // GET: single member by id
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
-        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at FROM `user` WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE id = ?');
         $stmt->execute([$_GET['id']]);
         $member = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$member) {

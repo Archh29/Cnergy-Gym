@@ -21,6 +21,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
@@ -121,6 +122,41 @@ const editMemberSchema = z.object({
 })
 
 const ViewMembers = ({ userId }) => {
+  // Helper function to normalize profile photo URLs
+  const normalizeProfilePhotoUrl = (url) => {
+    if (!url || typeof url !== 'string') return undefined
+
+    try {
+      // If it's already a full URL with serve_image.php, return as is
+      if (url.includes('serve_image.php')) {
+        return url
+      }
+
+      // If it's already a full HTTP/HTTPS URL, return as is
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url
+      }
+
+      // If it's a relative path (uploads/profile/... or uploads%2Fprofile%2F...)
+      if (url.startsWith('uploads/') || url.startsWith('uploads%2F')) {
+        // Normalize the path - replace / with %2F
+        const normalizedPath = url.replace(/\//g, '%2F')
+        return `https://api.cnergy.site/serve_image.php?path=${normalizedPath}`
+      }
+
+      // If it's just a filename, assume it's in uploads/profile/
+      if (url.match(/^[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|gif|webp)$/i)) {
+        const encodedPath = `uploads%2Fprofile%2F${encodeURIComponent(url)}`
+        return `https://api.cnergy.site/serve_image.php?path=${encodedPath}`
+      }
+
+      return url
+    } catch (error) {
+      console.error('Error normalizing profile photo URL:', error)
+      return undefined
+    }
+  }
+
   const [members, setMembers] = useState([])
   const [filteredMembers, setFilteredMembers] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -1869,9 +1905,12 @@ const ViewMembers = ({ userId }) => {
                       onClick={() => handleViewMember(member)}
                     >
                       <div className="flex items-center gap-4 w-full">
-                        <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border-2 border-primary/20">
-                          <span className="text-primary font-semibold text-sm">{initials}</span>
-                        </div>
+                        <Avatar className="flex-shrink-0 w-12 h-12 border-2 border-primary/20">
+                          <AvatarImage src={normalizeProfilePhotoUrl(member.profile_photo_url)} alt={`${member.fname} ${member.lname}`} />
+                          <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-semibold text-sm">
+                            {initials}
+                          </AvatarFallback>
+                        </Avatar>
                         <div className="text-left flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <div className="font-semibold text-gray-900 truncate">
@@ -2058,9 +2097,12 @@ const ViewMembers = ({ userId }) => {
               {/* Member Information Card */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
-                  </div>
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember.profile_photo_url)} alt={`${selectedMember.fname} ${selectedMember.lname}`} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
@@ -2143,9 +2185,12 @@ const ViewMembers = ({ userId }) => {
               {/* Client Information Card */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
-                  </div>
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
@@ -3165,9 +3210,12 @@ const ViewMembers = ({ userId }) => {
               {/* Client Information Card */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
-                  </div>
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
@@ -3266,9 +3314,12 @@ const ViewMembers = ({ userId }) => {
               {/* Client Information Card */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
-                  </div>
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
@@ -3502,9 +3553,12 @@ const ViewMembers = ({ userId }) => {
               {/* Member Information */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                    <User className="h-6 w-6 text-primary" />
-                  </div>
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={normalizeProfilePhotoUrl(discountDialogMember.profile_photo_url)} alt={`${discountDialogMember.fname} ${discountDialogMember.lname}`} />
+                    <AvatarFallback className="bg-primary/10">
+                      <User className="h-6 w-6 text-primary" />
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {discountDialogMember.fname} {discountDialogMember.mname || ''} {discountDialogMember.lname}

@@ -95,6 +95,8 @@ try {
                         "line" => $e->getLine()
                     ]);
                 }
+            } elseif ($action === 'get-user-sales' && isset($_GET['user_id'])) {
+                getUserSales($pdo, $_GET['user_id']);
             } elseif ($action === 'available-plans' && isset($_GET['user_id'])) {
                 getAvailablePlansForUser($pdo, $_GET['user_id']);
             } elseif (isset($_GET['user_id'])) {
@@ -172,7 +174,7 @@ function getAllSubscriptions($pdo)
 
     $stmt = $pdo->query("
             SELECT s.id, s.start_date, s.end_date, s.discounted_price, s.amount_paid,
-                   u.id as user_id, u.fname, u.mname, u.lname, u.email,
+                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
                    p.id as plan_id, p.plan_name, p.price, p.duration_months, p.duration_days,
                    st.id as status_id, st.status_name,
                    {$createdAtSelect} as created_at,
@@ -186,7 +188,7 @@ function getAllSubscriptions($pdo)
                        ELSE st.status_name
                    END as display_status
             FROM subscription s
-            JOIN user u ON s.user_id = u.id
+            LEFT JOIN user u ON s.user_id = u.id
             JOIN member_subscription_plan p ON s.plan_id = p.id
             JOIN subscription_status st ON s.status_id = st.id
             WHERE s.id IN (
@@ -357,6 +359,15 @@ function getAllSubscriptions($pdo)
 
     // Mark regular subscriptions and get payment info
     foreach ($subscriptions as &$subscription) {
+        // Handle case where user might be NULL (if user was deleted)
+        if (empty($subscription['user_id']) || empty($subscription['fname'])) {
+            // If user data is missing, use subscription ID as identifier
+            $subscription['user_id'] = $subscription['user_id'] ?? null;
+            $subscription['fname'] = $subscription['fname'] ?? 'Unknown';
+            $subscription['mname'] = $subscription['mname'] ?? '';
+            $subscription['lname'] = $subscription['lname'] ?? 'User';
+            $subscription['email'] = $subscription['email'] ?? null;
+        }
         $subscription['is_guest_session'] = false;
         $subscription['subscription_type'] = 'regular';
         // Explicitly set is_package_component to false if not already set to true
@@ -569,7 +580,7 @@ function getPendingSubscriptions($pdo)
 
     $stmt = $pdo->prepare("
             SELECT s.id as subscription_id, s.start_date, s.end_date,
-                   u.id as user_id, u.fname, u.mname, u.lname, u.email,
+                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
                    p.id as plan_id, p.plan_name, p.price, p.duration_months,
                    st.id as status_id, st.status_name,
                    {$createdAtSelect} as created_at
@@ -938,7 +949,7 @@ function getSubscriptionById($pdo, $id)
     // Regular subscription lookup
     $stmt = $pdo->prepare("
             SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, s.amount_paid, s.discounted_price,
-                   u.fname, u.mname, u.lname, u.email,
+                   u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
                    p.plan_name, p.price, p.duration_months,
                    st.status_name
             FROM subscription s
@@ -1507,7 +1518,7 @@ function createManualSubscription($pdo, $data)
 
     try {
         // Verify user exists and is a customer
-        $userStmt = $pdo->prepare("SELECT id, fname, lname, email, user_type_id, account_status FROM user WHERE id = ?");
+        $userStmt = $pdo->prepare("SELECT id, fname, lname, email, user_type_id, account_status, profile_photo_url FROM user WHERE id = ?");
         $userStmt->execute([$user_id]);
         $user = $userStmt->fetch();
 
@@ -2157,7 +2168,7 @@ function approveSubscription($pdo, $data)
     try {
         $checkStmt = $pdo->prepare("
                 SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, st.status_name,
-                       u.fname, u.lname, u.email,
+                       u.fname, u.lname, u.email, u.profile_photo_url,
                        p.plan_name, p.price, p.duration_months, p.duration_days
                 FROM subscription s
                 JOIN subscription_status st ON s.status_id = st.id
@@ -3037,6 +3048,140 @@ function getSubscriptionPayments($pdo, $subscription_id)
     }
 }
 
+function getUserSales($pdo, $user_id)
+{
+    header('Content-Type: application/json');
+    
+    try {
+        $user_id = intval($user_id);
+        
+        if ($user_id <= 0) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Invalid parameters",
+                "message" => "user_id must be a positive integer"
+            ]);
+            return;
+        }
+        
+        // Get all sales for this user, including subscription sales
+        $stmt = $pdo->prepare("
+            SELECT 
+                s.id,
+                s.user_id,
+                s.total_amount,
+                s.sale_date,
+                s.sale_type,
+                s.payment_method,
+                s.transaction_status,
+                s.receipt_number,
+                s.reference_number,
+                s.cashier_id,
+                s.change_given,
+                s.notes,
+                sd.id AS detail_id,
+                sd.subscription_id,
+                sd.product_id,
+                sd.quantity,
+                sd.price AS detail_price,
+                sub.plan_id,
+                sub.amount_paid AS subscription_amount_paid,
+                sub.payment_method AS subscription_payment_method,
+                msp.plan_name,
+                msp.price AS plan_price
+            FROM sales s
+            LEFT JOIN sales_details sd ON s.id = sd.sale_id
+            LEFT JOIN subscription sub ON sd.subscription_id = sub.id
+            LEFT JOIN member_subscription_plan msp ON sub.plan_id = msp.id
+            WHERE s.user_id = ?
+            AND s.sale_type = 'Subscription'
+            ORDER BY s.sale_date DESC
+        ");
+        
+        $stmt->execute([$user_id]);
+        $sales = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Check payment table columns
+        $checkPaymentColumns = $pdo->query("SHOW COLUMNS FROM payment");
+        $paymentColumns = $checkPaymentColumns->fetchAll(PDO::FETCH_COLUMN);
+        $hasStatusColumn = in_array('status', $paymentColumns);
+        $hasReceiptNumber = in_array('receipt_number', $paymentColumns);
+        $hasReferenceNumber = in_array('reference_number', $paymentColumns);
+        $hasAmountReceived = in_array('amount_received', $paymentColumns);
+        $hasChangeGiven = in_array('change_given', $paymentColumns);
+        $hasPaymentMethod = in_array('payment_method', $paymentColumns);
+        
+        // Also get payments for these subscriptions
+        foreach ($sales as &$sale) {
+            if ($sale['subscription_id']) {
+                // Build payment query based on available columns
+                $paymentFields = ['id', 'subscription_id', 'amount', 'payment_date'];
+                if ($hasPaymentMethod) {
+                    $paymentFields[] = 'payment_method';
+                }
+                if ($hasReceiptNumber) {
+                    $paymentFields[] = 'receipt_number';
+                }
+                if ($hasReferenceNumber) {
+                    $paymentFields[] = 'reference_number';
+                }
+                if ($hasAmountReceived) {
+                    $paymentFields[] = 'amount_received';
+                }
+                if ($hasChangeGiven) {
+                    $paymentFields[] = 'change_given';
+                }
+                if ($hasStatusColumn) {
+                    $paymentFields[] = 'status';
+                }
+                
+                $paymentFieldsStr = implode(', ', $paymentFields);
+                $whereClause = "WHERE subscription_id = ?";
+                if ($hasStatusColumn) {
+                    $whereClause .= " AND (status = 'paid' OR status = 'completed')";
+                }
+                
+                $paymentStmt = $pdo->prepare("
+                    SELECT $paymentFieldsStr
+                    FROM payment
+                    $whereClause
+                    ORDER BY payment_date DESC
+                ");
+                $paymentStmt->execute([$sale['subscription_id']]);
+                $sale['payments'] = $paymentStmt->fetchAll(PDO::FETCH_ASSOC);
+            } else {
+                $sale['payments'] = [];
+            }
+        }
+        unset($sale);
+        
+        echo json_encode([
+            "success" => true,
+            "sales" => $sales,
+            "count" => count($sales)
+        ]);
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Error in getUserSales (PDOException): " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        echo json_encode([
+            "success" => false,
+            "error" => "Database error",
+            "message" => $e->getMessage()
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in getUserSales (Exception): " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        echo json_encode([
+            "success" => false,
+            "error" => "Error fetching sales",
+            "message" => $e->getMessage()
+        ]);
+    }
+}
+
 function getSubscriptionHistory($pdo, $user_id, $plan_id)
 {
     // Ensure we're outputting JSON
@@ -3057,23 +3202,46 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
             return;
         }
         
-        // Get all subscriptions for this user and plan_id, ordered by start_date
-        // Include all subscriptions regardless of payment status to show complete history
-        $stmt = $pdo->prepare("
-            SELECT 
-                s.id,
-                s.start_date,
-                s.end_date,
-                s.amount_paid,
-                s.discounted_price,
-                s.receipt_number,
-                s.payment_method,
-                s.created_at,
-                s.quantity,
-                p.plan_name,
-                p.price as plan_price,
-                st.status_name,
-                CASE 
+        // Check which columns exist in subscription table
+        $checkSubColumns = $pdo->query("SHOW COLUMNS FROM subscription");
+        $subColumns = $checkSubColumns->fetchAll(PDO::FETCH_COLUMN);
+        $hasReceiptNumber = in_array('receipt_number', $subColumns);
+        $hasPaymentMethod = in_array('payment_method', $subColumns);
+        $hasCreatedAt = in_array('created_at', $subColumns);
+        $hasQuantity = in_array('quantity', $subColumns);
+        $hasDiscountedPrice = in_array('discounted_price', $subColumns);
+        
+        // Build subscription query based on available columns
+        $subFields = ['s.id', 's.start_date', 's.end_date', 's.amount_paid'];
+        if ($hasDiscountedPrice) {
+            $subFields[] = 's.discounted_price';
+        } else {
+            $subFields[] = 'NULL as discounted_price';
+        }
+        if ($hasReceiptNumber) {
+            $subFields[] = 's.receipt_number';
+        } else {
+            $subFields[] = 'NULL as receipt_number';
+        }
+        if ($hasPaymentMethod) {
+            $subFields[] = 's.payment_method';
+        } else {
+            $subFields[] = 'NULL as payment_method';
+        }
+        if ($hasCreatedAt) {
+            $subFields[] = 's.created_at';
+        } else {
+            $subFields[] = 'NULL as created_at';
+        }
+        if ($hasQuantity) {
+            $subFields[] = 's.quantity';
+        } else {
+            $subFields[] = '1 as quantity';
+        }
+        $subFields[] = 'p.plan_name';
+        $subFields[] = 'p.price as plan_price';
+        $subFields[] = 'st.status_name';
+        $subFields[] = "CASE 
                     WHEN st.status_name = 'pending_approval' THEN 'Pending Approval'
                     WHEN st.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
                     WHEN st.status_name = 'approved' AND s.end_date < CURDATE() THEN 'Expired'
@@ -3081,7 +3249,14 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                     WHEN st.status_name = 'cancelled' THEN 'Cancelled'
                     WHEN st.status_name = 'expired' THEN 'Expired'
                     ELSE st.status_name
-                END as display_status
+                END as display_status";
+        
+        $subFieldsStr = implode(', ', $subFields);
+        
+        // Get all subscriptions for this user and plan_id, ordered by start_date
+        // Include all subscriptions regardless of payment status to show complete history
+        $stmt = $pdo->prepare("
+            SELECT $subFieldsStr
             FROM subscription s
             JOIN member_subscription_plan p ON s.plan_id = p.id
             JOIN subscription_status st ON s.status_id = st.id
@@ -3134,43 +3309,52 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                 // Only try to fetch payments if payment table exists
                 if ($paymentTableExists && isset($subscription['id'])) {
                     try {
-                        if ($hasStatusColumn) {
-                            $paymentStmt = $pdo->prepare("
-                                SELECT 
-                                    id,
-                                    subscription_id,
-                                    amount,
-                                    payment_method,
-                                    payment_date,
-                                    receipt_number,
-                                    reference_number,
-                                    change_given,
-                                    amount_received,
-                                    created_at,
-                                    status
-                                FROM payment 
-                                WHERE subscription_id = ? 
-                                AND (status = 'paid' OR status = 'completed')
-                                ORDER BY payment_date ASC, id ASC
-                            ");
-                        } else {
-                            $paymentStmt = $pdo->prepare("
-                                SELECT 
-                                    id,
-                                    subscription_id,
-                                    amount,
-                                    payment_method,
-                                    payment_date,
-                                    receipt_number,
-                                    reference_number,
-                                    change_given,
-                                    amount_received,
-                                    created_at
-                                FROM payment 
-                                WHERE subscription_id = ?
-                                ORDER BY payment_date ASC, id ASC
-                            ");
+                        // Check which payment columns exist
+                        $checkPaymentColumns = $pdo->query("SHOW COLUMNS FROM payment");
+                        $paymentColumns = $checkPaymentColumns->fetchAll(PDO::FETCH_COLUMN);
+                        $hasReceiptNumber = in_array('receipt_number', $paymentColumns);
+                        $hasReferenceNumber = in_array('reference_number', $paymentColumns);
+                        $hasAmountReceived = in_array('amount_received', $paymentColumns);
+                        $hasChangeGiven = in_array('change_given', $paymentColumns);
+                        $hasPaymentMethod = in_array('payment_method', $paymentColumns);
+                        $hasCreatedAt = in_array('created_at', $paymentColumns);
+                        
+                        // Build payment query based on available columns
+                        $paymentFields = ['id', 'subscription_id', 'amount', 'payment_date'];
+                        if ($hasPaymentMethod) {
+                            $paymentFields[] = 'payment_method';
                         }
+                        if ($hasReceiptNumber) {
+                            $paymentFields[] = 'receipt_number';
+                        }
+                        if ($hasReferenceNumber) {
+                            $paymentFields[] = 'reference_number';
+                        }
+                        if ($hasAmountReceived) {
+                            $paymentFields[] = 'amount_received';
+                        }
+                        if ($hasChangeGiven) {
+                            $paymentFields[] = 'change_given';
+                        }
+                        if ($hasCreatedAt) {
+                            $paymentFields[] = 'created_at';
+                        }
+                        if ($hasStatusColumn) {
+                            $paymentFields[] = 'status';
+                        }
+                        
+                        $paymentFieldsStr = implode(', ', $paymentFields);
+                        $whereClause = "WHERE subscription_id = ?";
+                        if ($hasStatusColumn) {
+                            $whereClause .= " AND (status = 'paid' OR status = 'completed')";
+                        }
+                        
+                        $paymentStmt = $pdo->prepare("
+                            SELECT $paymentFieldsStr
+                            FROM payment 
+                            $whereClause
+                            ORDER BY payment_date ASC, id ASC
+                        ");
                         
                         $paymentStmt->execute([$subscription['id']]);
                         $subscription['payments'] = $paymentStmt->fetchAll(PDO::FETCH_ASSOC);

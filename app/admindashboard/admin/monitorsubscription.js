@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -38,6 +38,41 @@ import {
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionMonitor = ({ userId }) => {
+  // Helper function to normalize profile photo URLs
+  const normalizeProfilePhotoUrl = (url) => {
+    if (!url || typeof url !== 'string') return undefined
+
+    try {
+      // If it's already a full URL with serve_image.php, return as is
+      if (url.includes('serve_image.php')) {
+        return url
+      }
+
+      // If it's already a full HTTP/HTTPS URL, return as is
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url
+      }
+
+      // If it's a relative path (uploads/profile/... or uploads%2Fprofile%2F...)
+      if (url.startsWith('uploads/') || url.startsWith('uploads%2F')) {
+        // Normalize the path - replace / with %2F
+        const normalizedPath = url.replace(/\//g, '%2F')
+        return `https://api.cnergy.site/serve_image.php?path=${normalizedPath}`
+      }
+
+      // If it's just a filename, assume it's in uploads/profile/
+      if (url.match(/^[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|gif|webp)$/i)) {
+        const encodedPath = `uploads%2Fprofile%2F${encodeURIComponent(url)}`
+        return `https://api.cnergy.site/serve_image.php?path=${encodedPath}`
+      }
+
+      return url
+    } catch (error) {
+      console.error('Error normalizing profile photo URL:', error)
+      return undefined
+    }
+  }
+
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState("active")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -166,45 +201,61 @@ const SubscriptionMonitor = ({ userId }) => {
     user: null,
     subscriptions: []
   })
-  const [subscriptionHistory, setSubscriptionHistory] = useState({}) // Store subscription history: { "userId_planId": [subscriptions] }
-  const [expandedSubscriptions, setExpandedSubscriptions] = useState({}) // Track which subscriptions have history expanded
+  const [allUserSubscriptionHistory, setAllUserSubscriptionHistory] = useState([]) // Store all subscription history for the user in modal
+  const [allUserSales, setAllUserSales] = useState([]) // Store all sales for the user in modal
 
-  // Fetch subscription history for a user and plan
-  const fetchSubscriptionHistory = async (userId, planId) => {
+  // Fetch all sales for a user
+  const fetchAllUserSales = async (userId) => {
+    if (!userId) return []
+    
     try {
-      const key = `${userId}_${planId}`
-      
-      // Check if history is already loaded
-      if (subscriptionHistory[key]) {
-        return subscriptionHistory[key]
-      }
-
-      // Fetch subscription history from backend
-      const response = await axios.get(`${API_URL}?action=get-subscription-history&user_id=${userId}&plan_id=${planId}`)
+      const response = await axios.get(`${API_URL}?action=get-user-sales&user_id=${userId}`)
       if (response.data && response.data.success) {
-        const subscriptions = response.data.subscriptions || []
-        setSubscriptionHistory(prev => ({
-          ...prev,
-          [key]: subscriptions
-        }))
-        return subscriptions
+        const sales = response.data.sales || []
+        setAllUserSales(sales)
+        return sales
       }
       return []
     } catch (error) {
-      console.error(`Error fetching subscription history for user ${userId}, plan ${planId}:`, error)
-      if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        console.error('Response data:', error.response.data)
-        console.error('Response status:', error.response.status)
-        console.error('Response headers:', error.response.headers)
-      } else if (error.request) {
-        // The request was made but no response was received
-        console.error('No response received:', error.request)
-      } else {
-        // Something happened in setting up the request that triggered an Error
-        console.error('Error message:', error.message)
+      console.error(`Error fetching all sales for user ${userId}:`, error)
+      return []
+    }
+  }
+
+  // Fetch all subscription history for a user (all plans)
+  const fetchAllUserSubscriptionHistory = async (userId) => {
+    if (!userId) return []
+    
+    try {
+      // Get all unique plan IDs for this user from current subscriptions
+      const userSubscriptions = viewDetailsModal.subscriptions || []
+      const uniquePlanIds = [...new Set(userSubscriptions.map(sub => sub.plan_id).filter(Boolean))]
+      
+      // Fetch history for each plan
+      const allHistory = []
+      for (const planId of uniquePlanIds) {
+        try {
+          const response = await axios.get(`${API_URL}?action=get-subscription-history&user_id=${userId}&plan_id=${planId}`)
+          if (response.data && response.data.success) {
+            const subscriptions = response.data.subscriptions || []
+            allHistory.push(...subscriptions)
+          }
+        } catch (error) {
+          console.error(`Error fetching subscription history for user ${userId}, plan ${planId}:`, error)
+        }
       }
+      
+      // Sort by start_date descending (most recent first)
+      allHistory.sort((a, b) => {
+        const dateA = new Date(a.start_date || 0)
+        const dateB = new Date(b.start_date || 0)
+        return dateB - dateA
+      })
+      
+      setAllUserSubscriptionHistory(allHistory)
+      return allHistory
+    } catch (error) {
+      console.error(`Error fetching all subscription history for user ${userId}:`, error)
       return []
     }
   }
@@ -215,6 +266,20 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchAvailableUsers()
     fetchGymSessionPlan()
   }, [])
+
+  // Fetch history and sales when modal opens
+  useEffect(() => {
+    if (viewDetailsModal.open && viewDetailsModal.user && !viewDetailsModal.user.is_guest_session) {
+      const userId = viewDetailsModal.user.user_id || viewDetailsModal.user.id
+      if (userId) {
+        fetchAllUserSubscriptionHistory(userId)
+        fetchAllUserSales(userId)
+      }
+    } else if (!viewDetailsModal.open) {
+      setAllUserSubscriptionHistory([])
+      setAllUserSales([])
+    }
+  }, [viewDetailsModal.open, viewDetailsModal.user])
 
   // Fetch Gym Session plan details
   const fetchGymSessionPlan = async () => {
@@ -1488,7 +1553,18 @@ const SubscriptionMonitor = ({ userId }) => {
     // Year filter logic
     if (yearFilter !== "all") {
       if (yearFilter === "this_year") {
-        if (subscriptionDate.getFullYear() !== currentYear) {
+        // For "this_year", show subscriptions that:
+        // 1. Start in current year, OR
+        // 2. Are active (end_date is today or future), OR
+        // 3. Start in future year but are relevant to current year
+        const subscriptionYear = subscriptionDate.getFullYear()
+        const isCurrentYear = subscriptionYear === currentYear
+        const today = new Date()
+        // Include if subscription is active (end_date is today or future)
+        const isActive = subscription.end_date && new Date(subscription.end_date) >= today
+        // Include if subscription starts in current year or future (upcoming subscriptions)
+        const isRelevant = subscriptionYear >= currentYear
+        if (!isCurrentYear && !isActive && !isRelevant) {
           return false
         }
       } else if (yearFilter === "last_year") {
@@ -1755,7 +1831,18 @@ const SubscriptionMonitor = ({ userId }) => {
         const currentYear = today.getFullYear()
 
         if (yearFilter === "this_year") {
-          matchesYear = subscriptionDate.getFullYear() === currentYear
+          // For "this_year", show subscriptions that:
+          // 1. Start in current year, OR
+          // 2. Are active (end_date is in current year or future), OR
+          // 3. Start in future year but are relevant to current year
+          const subscriptionYear = subscriptionDate.getFullYear()
+          const isCurrentYear = subscriptionYear === currentYear
+          const today = new Date()
+          // Include if subscription is active (end_date is today or future)
+          const isActive = subscription.end_date && new Date(subscription.end_date) >= today
+          // Include if subscription starts in current year or future (upcoming subscriptions)
+          const isRelevant = subscriptionYear >= currentYear
+          matchesYear = isCurrentYear || isActive || isRelevant
         } else if (yearFilter === "last_year") {
           matchesYear = subscriptionDate.getFullYear() === currentYear - 1
         } else if (yearFilter === "last_last_year") {
@@ -2199,7 +2286,6 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2215,6 +2301,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                   <TableCell>
                                     <div className="flex items-center gap-3">
                                       <Avatar className="h-10 w-10">
+                                        <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
                                         <AvatarFallback>
                                           {primarySub ? getAvatarInitials(primarySub) : 'U'}
                                         </AvatarFallback>
@@ -2345,9 +2432,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                         </Badge>
                                       )
                                     })() : <span className="text-slate-500">N/A</span>}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
                                   </TableCell>
                                   <TableCell>
                                     <Button
@@ -2527,7 +2611,6 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -2672,9 +2755,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -2856,7 +2936,6 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -3001,9 +3080,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -3184,7 +3260,6 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -3235,9 +3310,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                   <div className="font-medium text-gray-500">
                                     {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
                                   </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -3418,7 +3490,6 @@ const SubscriptionMonitor = ({ userId }) => {
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -3563,9 +3634,6 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </Badge>
                                     )
                                   })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
                                 </TableCell>
                                 <TableCell>
                                   <Button
@@ -4454,7 +4522,12 @@ const SubscriptionMonitor = ({ userId }) => {
       </Dialog>
 
       {/* View Details Modal */}
-      <Dialog open={viewDetailsModal.open} onOpenChange={(open) => setViewDetailsModal({ ...viewDetailsModal, open })}>
+      <Dialog open={viewDetailsModal.open} onOpenChange={(open) => {
+        setViewDetailsModal({ ...viewDetailsModal, open })
+        if (!open) {
+          setAllUserSubscriptionHistory([])
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">Subscription Details</DialogTitle>
@@ -4486,7 +4559,6 @@ const SubscriptionMonitor = ({ userId }) => {
                       <TableHead className="font-bold">Start Date</TableHead>
                       <TableHead className="font-bold">End Date</TableHead>
                       <TableHead className="font-bold">Time Left</TableHead>
-                      <TableHead className="font-bold">Amount Paid</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -4496,10 +4568,6 @@ const SubscriptionMonitor = ({ userId }) => {
                       const planNameLower = subscription.plan_name?.toLowerCase() || ''
                       const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
                       const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                      const userId = subscription.user_id || viewDetailsModal.user?.user_id || viewDetailsModal.user?.id
-                      const historyKey = userId && subscription.plan_id ? `${userId}_${subscription.plan_id}` : null
-                      const history = historyKey ? (subscriptionHistory[historyKey] || []) : []
-                      const isExpanded = historyKey ? (expandedSubscriptions[historyKey] || false) : false
                       
                       return (
                         <React.Fragment key={subscription.id}>
@@ -4604,126 +4672,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 )
                               })() : <span className="text-slate-500">N/A</span>}
                             </TableCell>
-                            <TableCell>
-                              <div className="space-y-1">
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={async () => {
-                                    if (!historyKey) return
-                                    if (!isExpanded && history.length === 0 && userId && subscription.plan_id) {
-                                      await fetchSubscriptionHistory(userId, subscription.plan_id)
-                                    }
-                                    setExpandedSubscriptions(prev => ({
-                                      ...prev,
-                                      [historyKey]: !isExpanded
-                                    }))
-                                  }}
-                                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                >
-                                  {isExpanded ? 'Hide' : 'Show'} Subscription History ({history.length || '...'})
-                                </Button>
-                              </div>
-                            </TableCell>
                           </TableRow>
-                          {isExpanded && history.length > 0 && (
-                            <TableRow key={`${historyKey}-history`}>
-                              <TableCell colSpan={7} className="bg-gray-50 p-0">
-                                <div className="p-4 border-t border-gray-200">
-                                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                                    Subscription History for {subscription.plan_name}
-                                  </h4>
-                                  <div className="space-y-4">
-                                    {history.map((histSub, idx) => {
-                                      const histTimeRemaining = calculateTimeRemaining(histSub.end_date)
-                                      const histDaysLeft = calculateDaysLeft(histSub.end_date)
-                                      
-                                      return (
-                                        <div key={histSub.id || idx} className="rounded-lg border border-gray-200 bg-white p-4">
-                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
-                                            <div>
-                                              <p className="text-xs text-gray-500 mb-1">Start Date</p>
-                                              <p className="text-sm font-medium">{formatDate(histSub.start_date)}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-xs text-gray-500 mb-1">End Date</p>
-                                              <p className="text-sm font-medium">{formatDate(histSub.end_date)}</p>
-                                            </div>
-                                            <div>
-                                              <p className="text-xs text-gray-500 mb-1">Status</p>
-                                              <Badge
-                                                className={`${getStatusColor(histSub.display_status || histSub.status_name)} flex items-center gap-1 w-fit text-xs`}
-                                              >
-                                                {getStatusIcon(histSub.status_name)}
-                                                {histSub.display_status || histSub.status_name}
-                                              </Badge>
-                                            </div>
-                                            <div>
-                                              <p className="text-xs text-gray-500 mb-1">Amount Paid</p>
-                                              <p className="text-sm font-medium">{formatCurrency(histSub.total_paid || histSub.amount_paid || 0)}</p>
-                                            </div>
-                                          </div>
-                                          
-                                          {histSub.payments && histSub.payments.length > 0 && (
-                                            <div className="mt-3 pt-3 border-t border-gray-200">
-                                              <p className="text-xs font-semibold text-gray-600 mb-2">Payment Transactions:</p>
-                                              <div className="rounded border border-gray-200 overflow-hidden">
-                                                <Table>
-                                                  <TableHeader>
-                                                    <TableRow className="bg-gray-100">
-                                                      <TableHead className="text-xs font-semibold">Date</TableHead>
-                                                      <TableHead className="text-xs font-semibold">Amount</TableHead>
-                                                      <TableHead className="text-xs font-semibold">Payment Method</TableHead>
-                                                      <TableHead className="text-xs font-semibold">Receipt Number</TableHead>
-                                                      <TableHead className="text-xs font-semibold">Amount Received</TableHead>
-                                                      <TableHead className="text-xs font-semibold">Change</TableHead>
-                                                    </TableRow>
-                                                  </TableHeader>
-                                                  <TableBody>
-                                                    {histSub.payments.map((payment, pIdx) => (
-                                                      <TableRow key={payment.id || pIdx} className="hover:bg-gray-50">
-                                                        <TableCell className="text-xs">
-                                                          {payment.payment_date ? formatDate(payment.payment_date) : 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs font-medium">
-                                                          {formatCurrency(payment.amount || 0)}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs">
-                                                          <Badge variant="outline" className="text-xs">
-                                                            {payment.payment_method || 'N/A'}
-                                                          </Badge>
-                                                        </TableCell>
-                                                        <TableCell className="text-xs font-mono">
-                                                          {payment.receipt_number || 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs">
-                                                          {payment.amount_received ? formatCurrency(payment.amount_received) : 'N/A'}
-                                                        </TableCell>
-                                                        <TableCell className="text-xs">
-                                                          {payment.change_given ? formatCurrency(payment.change_given) : '₱0.00'}
-                                                        </TableCell>
-                                                      </TableRow>
-                                                    ))}
-                                                    <TableRow key={`total-${histSub.id || idx}`} className="bg-gray-100 font-semibold">
-                                                      <TableCell colSpan={2} className="text-xs">Total:</TableCell>
-                                                      <TableCell colSpan={4} className="text-xs font-medium">
-                                                        {formatCurrency(histSub.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0))}
-                                                      </TableCell>
-                                                    </TableRow>
-                                                  </TableBody>
-                                                </Table>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          )}
                         </React.Fragment>
                       )
                     })}
@@ -4733,6 +4682,55 @@ const SubscriptionMonitor = ({ userId }) => {
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <p>No subscriptions found</p>
+              </div>
+            )}
+            
+            {/* All Sales Section */}
+            {!viewDetailsModal.user?.is_guest_session && allUserSales.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">All Sales</h3>
+                
+                {/* Sales Records */}
+                <div className="space-y-4">
+                  {allUserSales.map((sale, idx) => (
+                    <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">Sale Date</p>
+                          <p className="text-sm font-medium break-words">{formatDate(sale.sale_date)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">Plan</p>
+                          <p className="text-sm font-medium break-words">{sale.plan_name || 'N/A'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">Amount</p>
+                          <p className="text-sm font-medium break-words">{formatCurrency(sale.total_amount || 0)}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">Payment Method</p>
+                          <Badge variant="outline" className="text-xs">
+                            {sale.payment_method || sale.subscription_payment_method || 'cash'}
+                          </Badge>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">
+                            {(sale.payment_method || sale.subscription_payment_method || 'cash').toLowerCase() === 'digital' 
+                              ? 'Reference' 
+                              : 'Receipt Number'}
+                          </p>
+                          <p className="text-sm font-mono break-words break-all overflow-wrap-anywhere">{sale.receipt_number || sale.reference_number || 'N/A'}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-gray-500 mb-1">Status</p>
+                          <Badge variant="outline" className="text-xs">
+                            {sale.transaction_status || 'confirmed'}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
