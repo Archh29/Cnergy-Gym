@@ -76,12 +76,17 @@ try {
             } elseif ($action === 'get-payments' && isset($_GET['subscription_id'])) {
                 getSubscriptionPayments($pdo, $_GET['subscription_id']);
             } elseif ($action === 'get-subscription-history' && isset($_GET['user_id']) && isset($_GET['plan_id'])) {
+                // Start output buffering to catch any unexpected output
+                ob_start();
                 try {
                     getSubscriptionHistory($pdo, $_GET['user_id'], $_GET['plan_id']);
+                    ob_end_flush();
                 } catch (Throwable $e) {
+                    ob_end_clean();
                     http_response_code(500);
                     error_log("Fatal error in get-subscription-history endpoint: " . $e->getMessage());
                     error_log("Stack trace: " . $e->getTraceAsString());
+                    header('Content-Type: application/json');
                     echo json_encode([
                         "success" => false,
                         "error" => "Fatal error",
@@ -1685,19 +1690,17 @@ function createManualSubscription($pdo, $data)
             // For other plans (not 1, 2, 3): Prevent duplicates
             throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
         } else {
-            $isRenewal = false;
-            
-            // If creating a new subscription of the same plan type, check if there's any previous subscription
-            // (active or expired) and use its end_date as the start_date for the new subscription
-            // This ensures new subscriptions start when the previous one ends, not overlapping
-            $previousStmt = $pdo->prepare("
-                SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
+            // Check if there's an expired subscription for the same user/plan
+            // If found, update it instead of creating a new one
+            $expiredStmt = $pdo->prepare("
+                SELECT s.id, s.plan_id, s.start_date, s.end_date, s.amount_paid, ss.status_name, p.plan_name
                 FROM subscription s 
                 JOIN subscription_status ss ON s.status_id = ss.id 
                 JOIN member_subscription_plan p ON s.plan_id = p.id
                 WHERE s.user_id = ? 
                 AND s.plan_id = ?
                 AND ss.status_name = 'approved' 
+                AND s.end_date < CURDATE()
                 AND s.amount_paid > 0
                 AND EXISTS (
                     SELECT 1 FROM payment p 
@@ -1706,15 +1709,18 @@ function createManualSubscription($pdo, $data)
                 ORDER BY s.end_date DESC
                 LIMIT 1
             ");
-            $previousStmt->execute([$user_id, $plan_id]);
-            $previousSubscription = $previousStmt->fetch();
+            $expiredStmt->execute([$user_id, $plan_id]);
+            $expiredSubscription = $expiredStmt->fetch();
             
-            // If there's a previous subscription of the same plan type, use its end_date as start_date
-            if ($previousSubscription) {
-                $previousEndDate = new DateTime($previousSubscription['end_date'], new DateTimeZone('Asia/Manila'));
-                // Use the end_date of the previous subscription as the start_date for the new one
-                $start_date = $previousEndDate->format('Y-m-d');
-                $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
+            if ($expiredSubscription) {
+                // Update expired subscription instead of creating new one
+                $isRenewal = true;
+                $subscription_id = $expiredSubscription['id'];
+                
+                // Use the expired subscription's end_date as the new start_date
+                $expiredEndDate = new DateTime($expiredSubscription['end_date'], new DateTimeZone('Asia/Manila'));
+                $start_date_obj = clone $expiredEndDate;
+                $start_date = $start_date_obj->format('Y-m-d');
                 
                 // Recalculate end_date based on the new start_date
                 if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
@@ -1728,6 +1734,53 @@ function createManualSubscription($pdo, $data)
                     $end_date_obj = clone $start_date_obj;
                     $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
                     $end_date = $end_date_obj->format('Y-m-d');
+                }
+            } else {
+                // No expired subscription found, create new one
+                $isRenewal = false;
+                
+                // If creating a new subscription of the same plan type, check if there's any previous subscription
+                // (active or expired) and use its end_date as the start_date for the new subscription
+                // This ensures new subscriptions start when the previous one ends, not overlapping
+                $previousStmt = $pdo->prepare("
+                    SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
+                    FROM subscription s 
+                    JOIN subscription_status ss ON s.status_id = ss.id 
+                    JOIN member_subscription_plan p ON s.plan_id = p.id
+                    WHERE s.user_id = ? 
+                    AND s.plan_id = ?
+                    AND ss.status_name = 'approved' 
+                    AND s.amount_paid > 0
+                    AND EXISTS (
+                        SELECT 1 FROM payment p 
+                        WHERE p.subscription_id = s.id
+                    )
+                    ORDER BY s.end_date DESC
+                    LIMIT 1
+                ");
+                $previousStmt->execute([$user_id, $plan_id]);
+                $previousSubscription = $previousStmt->fetch();
+                
+                // If there's a previous subscription of the same plan type, use its end_date as start_date
+                if ($previousSubscription) {
+                    $previousEndDate = new DateTime($previousSubscription['end_date'], new DateTimeZone('Asia/Manila'));
+                    // Use the end_date of the previous subscription as the start_date for the new one
+                    $start_date = $previousEndDate->format('Y-m-d');
+                    $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
+                    
+                    // Recalculate end_date based on the new start_date
+                    if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
+                        // Already handled above - these use current date/time
+                    } elseif (!empty($plan['duration_days']) && $plan['duration_days'] > 0) {
+                        $end_date_obj = clone $start_date_obj;
+                        $end_date_obj->add(new DateInterval('P' . intval($plan['duration_days']) . 'D'));
+                        $end_date = $end_date_obj->format('Y-m-d');
+                    } else {
+                        // Recalculate end_date for regular plans based on actualMonths
+                        $end_date_obj = clone $start_date_obj;
+                        $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
+                        $end_date = $end_date_obj->format('Y-m-d');
+                    }
                 }
             }
         }
@@ -1756,8 +1809,34 @@ function createManualSubscription($pdo, $data)
         $receiptNumber = $data['receipt_number'] ?? generateSubscriptionReceiptNumber($pdo);
         $cashierId = $data['cashier_id'] ?? null;
 
+        // If renewing an expired subscription, update it here
+        // Check if this is a renewal of an expired subscription (not an active subscription extension)
+        if (isset($isRenewal) && $isRenewal && isset($subscription_id) && !isset($existingSubscription)) {
+            // Update the expired subscription with new dates and amounts
+            $updateStmt = $pdo->prepare("
+                UPDATE subscription 
+                SET start_date = ?,
+                    end_date = ?,
+                    amount_paid = amount_paid + ?,
+                    discounted_price = discounted_price + ?,
+                    payment_method = ?,
+                    receipt_number = ?,
+                    discount_type = ?
+                WHERE id = ?
+            ");
+            $updateStmt->execute([
+                $start_date,
+                $end_date,
+                $payment_amount,
+                $payment_amount,
+                $paymentMethod,
+                $receiptNumber,
+                $discount_type,
+                $subscription_id
+            ]);
+        }
         // Only create new subscription if not a renewal
-        if (!isset($isRenewal) || !$isRenewal) {
+        elseif (!isset($isRenewal) || !$isRenewal) {
             // Create subscription - use Philippines timezone for created_at if column exists
             $checkCreatedAt = $pdo->query("SHOW COLUMNS FROM subscription LIKE 'created_at'");
             $hasCreatedAt = $checkCreatedAt->rowCount() > 0;
@@ -2960,6 +3039,9 @@ function getSubscriptionPayments($pdo, $subscription_id)
 
 function getSubscriptionHistory($pdo, $user_id, $plan_id)
 {
+    // Ensure we're outputting JSON
+    header('Content-Type: application/json');
+    
     try {
         // Validate input parameters
         $user_id = intval($user_id);
@@ -3176,24 +3258,36 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
         http_response_code(500);
         error_log("PDO Error in getSubscriptionHistory: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
-        echo json_encode([
+        header('Content-Type: application/json');
+        $errorResponse = json_encode([
             "success" => false,
             "error" => "Database error",
             "message" => $e->getMessage(),
-            "file" => $e->getFile(),
+            "file" => basename($e->getFile()),
             "line" => $e->getLine()
         ]);
+        if ($errorResponse === false) {
+            echo '{"success":false,"error":"Database error","message":"Failed to encode error response"}';
+        } else {
+            echo $errorResponse;
+        }
     } catch (Exception $e) {
         http_response_code(500);
         error_log("Error in getSubscriptionHistory: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
-        echo json_encode([
+        header('Content-Type: application/json');
+        $errorResponse = json_encode([
             "success" => false,
             "error" => "Error fetching subscription history",
             "message" => $e->getMessage(),
-            "file" => $e->getFile(),
+            "file" => basename($e->getFile()),
             "line" => $e->getLine()
         ]);
+        if ($errorResponse === false) {
+            echo '{"success":false,"error":"Error fetching subscription history","message":"Failed to encode error response"}';
+        } else {
+            echo $errorResponse;
+        }
     }
 }
 
