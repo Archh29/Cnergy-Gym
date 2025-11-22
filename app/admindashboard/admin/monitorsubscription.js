@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useContext } from "react"
+import React, { useState, useEffect, useContext } from "react"
 import axios from "axios"
 // No UserContext available - will get userId from props
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -60,10 +60,10 @@ const SubscriptionMonitor = ({ userId }) => {
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [userActiveDiscount, setUserActiveDiscount] = useState(null) // Track user's active discount
   const [userActiveSubscriptions, setUserActiveSubscriptions] = useState([]) // Track user's active subscriptions
-  const [planQuantity, setPlanQuantity] = useState(1) // Quantity for advance payment/renewal (months for Plan 2/3, years for Plan 1)
+  const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
-    plan_id: "",
+    selected_plan_ids: [], // Changed from plan_id to array
     start_date: new Date().toISOString().split("T")[0],
     discount_type: "none",
     amount_paid: "",
@@ -159,6 +159,42 @@ const SubscriptionMonitor = ({ userId }) => {
   const [guestSessionLoading, setGuestSessionLoading] = useState(false)
   const [showGuestReceipt, setShowGuestReceipt] = useState(false)
   const [lastGuestTransaction, setLastGuestTransaction] = useState(null)
+
+  // View Details Modal State
+  const [viewDetailsModal, setViewDetailsModal] = useState({
+    open: false,
+    user: null,
+    subscriptions: []
+  })
+  const [subscriptionHistory, setSubscriptionHistory] = useState({}) // Store subscription history: { "userId_planId": [subscriptions] }
+  const [expandedSubscriptions, setExpandedSubscriptions] = useState({}) // Track which subscriptions have history expanded
+
+  // Fetch subscription history for a user and plan
+  const fetchSubscriptionHistory = async (userId, planId) => {
+    try {
+      const key = `${userId}_${planId}`
+      
+      // Check if history is already loaded
+      if (subscriptionHistory[key]) {
+        return subscriptionHistory[key]
+      }
+
+      // Fetch subscription history from backend
+      const response = await axios.get(`${API_URL}?action=get-subscription-history&user_id=${userId}&plan_id=${planId}`)
+      if (response.data && response.data.success) {
+        const subscriptions = response.data.subscriptions || []
+        setSubscriptionHistory(prev => ({
+          ...prev,
+          [key]: subscriptions
+        }))
+        return subscriptions
+      }
+      return []
+    } catch (error) {
+      console.error(`Error fetching subscription history for user ${userId}, plan ${planId}:`, error)
+      return []
+    }
+  }
 
   useEffect(() => {
     fetchAllData()
@@ -515,6 +551,16 @@ const SubscriptionMonitor = ({ userId }) => {
     setActionLoading("create")
     setMessage(null)
 
+    // Validate that at least one plan is selected
+    if (!subscriptionForm.selected_plan_ids || subscriptionForm.selected_plan_ids.length === 0) {
+      setMessage({
+        type: "error",
+        text: "Please select at least one plan."
+      })
+      setActionLoading(null)
+      return
+    }
+
     // Ensure userId is available
     let currentUserId = userId
     if (!currentUserId) {
@@ -555,47 +601,238 @@ const SubscriptionMonitor = ({ userId }) => {
         return
       }
 
-      // Auto-generate receipt number
+      // Auto-generate base receipt number (will be made unique for each subscription)
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const hour = String(now.getHours()).padStart(2, '0');
       const minute = String(now.getMinutes()).padStart(2, '0');
-      const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
+      const baseReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
 
-      const requestData = {
-        user_id: subscriptionForm.user_id,
-        plan_id: subscriptionForm.plan_id,
-        start_date: subscriptionForm.start_date,
-        amount_paid: totalAmount,
-        quantity: planQuantity || 1, // Quantity for advance payment/renewal
-        payment_method: paymentMethod,
-        amount_received: receivedAmount,
-        change_given: change,
-        receipt_number: autoReceiptNumber,
-        reference_number: paymentMethod === "gcash" ? referenceNumber : null, // Include reference number for GCash
-        notes: "",
-        created_by: "Admin",
-        staff_id: currentUserId, // Use current user ID with fallback
-        transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
-        discount_type: subscriptionForm.discount_type // Include discount type
-      };
+      // Create subscriptions for each selected plan
+      // First, calculate total expected amount and payment distribution
+      let totalExpectedAmount = 0
+      const planDataArray = subscriptionForm.selected_plan_ids.map((planIdStr) => {
+        const planId = parseInt(planIdStr)
+        if (isNaN(planId) || planId <= 0) {
+          throw new Error(`Invalid plan ID: ${planIdStr}`)
+        }
+        
+        const quantity = planQuantities[planIdStr] || 1
+        if (quantity <= 0) {
+          throw new Error(`Invalid quantity for plan ${planIdStr}: ${quantity}`)
+        }
+        
+        // Calculate price for this specific plan
+        const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+        if (!plan) {
+          throw new Error(`Plan not found: ${planIdStr}`)
+        }
+        let planPrice = parseFloat(plan?.price || 0)
+        if (isNaN(planPrice) || planPrice <= 0) {
+          throw new Error(`Invalid price for plan ${planIdStr}: ${planPrice}`)
+        }
+        
+        // Apply discount if applicable
+        let discountType = subscriptionForm.discount_type || "none"
+        if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
+          discountType = userActiveDiscount
+          planPrice = calculateDiscountedPrice(planPrice, discountType)
+        }
+        
+        const planTotalPrice = planPrice * quantity
+        totalExpectedAmount += planTotalPrice
+        
+        return {
+          planId,
+          planIdStr,
+          quantity,
+          planTotalPrice,
+          discountType
+        }
+      })
+      
+      // Distribute payment proportionally across subscriptions
+      const subscriptionPromises = planDataArray.map(async (planData, index) => {
+        const { planId, planIdStr, quantity, planTotalPrice, discountType } = planData
+        
+        // Generate unique receipt number for each subscription
+        // Add seconds, milliseconds, and index to ensure uniqueness
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+        const uniqueReceiptNumber = `${baseReceiptNumber}${seconds}${milliseconds}${String(index + 1).padStart(2, '0')}`;
+        
+        // Calculate proportional amount received for this plan
+        let amountReceivedForPlan = planTotalPrice
+        let changeForPlan = 0
+        
+        if (paymentMethod === 'cash') {
+          // Distribute amount_received proportionally
+          const proportion = planTotalPrice / totalExpectedAmount
+          amountReceivedForPlan = receivedAmount * proportion
+          
+          // Apply all change to the first subscription
+          if (index === 0) {
+            changeForPlan = change
+            // Adjust amount_received to account for change
+            amountReceivedForPlan = planTotalPrice + change
+          }
+        } else {
+          // For GCash, amount received equals amount paid (no change)
+          amountReceivedForPlan = planTotalPrice
+        }
+        
+        // Validate required fields before creating request
+        if (!subscriptionForm.user_id || !subscriptionForm.start_date) {
+          throw new Error(`Missing required fields: user_id=${subscriptionForm.user_id}, start_date=${subscriptionForm.start_date}`)
+        }
+        
+        // Ensure all values are properly set (not null/undefined)
+        const requestData = {
+          user_id: String(subscriptionForm.user_id || '').trim(),
+          plan_id: parseInt(planId),
+          start_date: String(subscriptionForm.start_date || '').trim(),
+          amount_paid: String(planTotalPrice.toFixed(2)), // Keep as string
+          quantity: parseInt(quantity) || 1,
+          payment_method: String(paymentMethod || 'cash'),
+          amount_received: String(amountReceivedForPlan.toFixed(2)),
+          change_given: String(changeForPlan.toFixed(2)),
+          receipt_number: uniqueReceiptNumber,
+          reference_number: paymentMethod === "gcash" ? (String(referenceNumber || '').trim() || null) : null,
+          notes: String(subscriptionForm.notes || ''),
+          created_by: "Admin",
+          staff_id: parseInt(currentUserId) || null,
+          transaction_status: "confirmed",
+          discount_type: String(discountType || "none")
+        };
+        
+        // Double-check required fields are not empty
+        if (!requestData.user_id || requestData.user_id === '') {
+          throw new Error(`user_id is required but got: "${subscriptionForm.user_id}"`)
+        }
+        if (!requestData.plan_id || isNaN(requestData.plan_id)) {
+          throw new Error(`plan_id is required but got: "${planId}"`)
+        }
+        if (!requestData.start_date || requestData.start_date === '') {
+          throw new Error(`start_date is required but got: "${subscriptionForm.start_date}"`)
+        }
+        if (!requestData.amount_paid || requestData.amount_paid === '' || parseFloat(requestData.amount_paid) <= 0) {
+          throw new Error(`amount_paid is required and must be > 0 but got: "${planTotalPrice}"`)
+        }
 
-      console.log("Sending request data:", requestData);
-      console.log("staff_id being sent:", requestData.staff_id);
-      console.log("Payment method in request data:", requestData.payment_method);
-      console.log("Payment method variable:", paymentMethod);
-      console.log("Full request data JSON:", JSON.stringify(requestData, null, 2));
+        console.log(`Creating subscription ${index + 1}/${planDataArray.length}:`, JSON.stringify(requestData, null, 2));
+        
+        // Validate all required fields are present and not empty
+        const requiredFields = ['user_id', 'plan_id', 'start_date', 'amount_paid'];
+        const missingFields = requiredFields.filter(field => !requestData[field] || requestData[field] === '');
+        if (missingFields.length > 0) {
+          console.error(`Missing required fields for subscription ${index + 1}:`, missingFields);
+          throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+        }
+        
+        return axios.post(`${API_URL}?action=create_manual`, requestData).catch(error => {
+          console.error(`=== Error creating subscription ${index + 1} ===`);
+          console.error("Status:", error?.response?.status);
+          console.error("Status Text:", error?.response?.statusText);
+          console.error("Response Data:", JSON.stringify(error?.response?.data, null, 2));
+          console.error("Request Data:", JSON.stringify(requestData, null, 2));
+          if (error?.response?.data?.error) {
+            console.error("Backend Error:", error.response.data.error);
+          }
+          if (error?.response?.data?.message) {
+            console.error("Backend Message:", error.response.data.message);
+          }
+          console.error("=====================================");
+          throw error;
+        });
+      });
 
-      const response = await axios.post(`${API_URL}?action=create_manual`, requestData);
+      console.log("Creating multiple subscriptions:", planDataArray.length);
+      
+      const responses = await Promise.allSettled(subscriptionPromises);
+      
+      // Check for any failures
+      const failures = responses.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && (!r.value?.data || !r.value.data.success)));
+      
+      if (failures.length > 0) {
+        console.error("Subscription creation failures:", failures);
+        const errorMessages = failures.map((f, idx) => {
+          let errorMsg = "Unknown error";
+          let errorDetails = null;
+          
+          if (f.status === 'rejected') {
+            const error = f.reason;
+            errorDetails = {
+              error: error,
+              response: error?.response,
+              responseData: error?.response?.data,
+              status: error?.response?.status,
+              statusText: error?.response?.statusText
+            };
+            
+            errorMsg = error?.response?.data?.error || 
+                      error?.response?.data?.message || 
+                      error?.message || 
+                      (error?.response?.status ? `HTTP ${error.response.status}: ${error.response.statusText || 'Bad Request'}` : '') ||
+                      "Unknown error";
+            
+            // Log detailed error information
+            console.error(`=== Subscription ${idx + 1} Failed ===`);
+            console.error("Error Message:", errorMsg);
+            console.error("Request Data:", JSON.stringify(planDataArray[idx], null, 2));
+            console.error("Response Status:", error?.response?.status);
+            console.error("Response Data:", JSON.stringify(error?.response?.data, null, 2));
+            console.error("Response Headers:", error?.response?.headers);
+            if (error?.response?.data?.error) {
+              console.error("Backend Error:", error.response.data.error);
+            }
+            if (error?.response?.data?.message) {
+              console.error("Backend Message:", error.response.data.message);
+            }
+            console.error("Full Error Object:", error);
+            console.error("================================");
+          } else {
+            // Fulfilled but API returned error
+            errorDetails = {
+              response: f.value?.data,
+              success: f.value?.data?.success
+            };
+            
+            errorMsg = f.value?.data?.error || f.value?.data?.message || "API returned error";
+            
+            console.error(`Subscription ${idx + 1} failed (API error):`, {
+              error: errorMsg,
+              errorDetails: errorDetails,
+              request: planDataArray[idx],
+              fullResponse: f.value
+            });
+          }
+          return errorMsg;
+        });
+        throw new Error(`Failed to create ${failures.length} subscription(s): ${errorMessages.join(", ")}`);
+      }
+      
+      // All succeeded
+      const allSuccess = true;
+      
+      // Extract successful responses
+      const successfulResponses = responses.filter(r => r.status === 'fulfilled' && r.value?.data?.success);
+      
+      if (successfulResponses.length === 0) {
+        throw new Error("All subscription creation requests failed");
+      }
+
+      // Use the first successful response for confirmation data
+      const response = successfulResponses[0].value;
 
       console.log("Response received:", response.data);
       if (response.data.data) {
         console.log("Response payment_method:", response.data.data.payment_method);
       }
 
-      if (response.data.success) {
+      if (allSuccess) {
+        // Use the first response for confirmation data, but include count of subscriptions
         const confirmationData = {
           ...response.data.data,
           change_given: change,
@@ -603,13 +840,14 @@ const SubscriptionMonitor = ({ userId }) => {
           payment_method: paymentMethod,
           amount_received: receivedAmount,
           receipt_number: response.data.data.receipt_number,
-          reference_number: paymentMethod === "gcash" ? referenceNumber : null
+          reference_number: paymentMethod === "gcash" ? referenceNumber : null,
+          subscription_count: planDataArray.length
         };
 
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
       } else {
-        throw new Error(response.data.message || "Failed to create manual subscription");
+        throw new Error("Failed to create one or more subscriptions");
       }
 
       setIsCreateSubscriptionDialogOpen(false)
@@ -791,7 +1029,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const resetSubscriptionForm = () => {
     setSubscriptionForm({
       user_id: "",
-      plan_id: "",
+      selected_plan_ids: [],
       start_date: new Date().toISOString().split("T")[0],
       discount_type: "none",
       amount_paid: "",
@@ -803,65 +1041,102 @@ const SubscriptionMonitor = ({ userId }) => {
     setUserSearchQuery("")
     setShowUserDropdown(false)
     setUserActiveDiscount(null)
-    setPlanQuantity(1)
+    setPlanQuantities({})
     // Reset to all plans
     fetchSubscriptionPlans()
   }
 
-  const handlePlanChange = (planId) => {
-    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
-    if (selectedPlan) {
-      // Reset quantity when plan changes
-      setPlanQuantity(1)
+  // Handle plan selection (toggle) for multiple plans
+  const handlePlanToggle = (planId) => {
+    const planIdStr = planId.toString()
+    setSubscriptionForm(prev => {
+      const currentPlans = prev.selected_plan_ids || []
+      const isSelected = currentPlans.includes(planIdStr)
       
-      // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
-      // Plan ID 5 includes Monthly Access Premium, so discount should apply
-      let discountType = "none"
-      if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
-        discountType = userActiveDiscount
-      }
-      
-      // Calculate price: base price * quantity, then apply discount
-      const basePrice = parseFloat(selectedPlan.price || 0)
-      const totalPrice = basePrice * planQuantity
-      const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
-      
-      setSubscriptionForm((prev) => ({
-        ...prev,
-        plan_id: planId,
-        discount_type: discountType,
-        amount_paid: discountedPrice.toString(),
-      }))
-    }
-  }
-  
-  // Handle quantity change for advance payment/renewal
-  const handleQuantityChange = (quantity) => {
-    const qty = Math.max(1, parseInt(quantity) || 1)
-    setPlanQuantity(qty)
-    
-    if (subscriptionForm.plan_id) {
-      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-      if (selectedPlan) {
-        // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
-        // Plan ID 5 includes Monthly Access Premium, so discount should apply
-        let discountType = subscriptionForm.discount_type || "none"
-        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) && userActiveDiscount) {
-          discountType = userActiveDiscount
-        }
-        
-        // Calculate price: base price * quantity, then apply discount
-        const basePrice = parseFloat(selectedPlan.price || 0)
-        const totalPrice = basePrice * qty
-        const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
-        
-        setSubscriptionForm((prev) => ({
-          ...prev,
-          discount_type: discountType,
-          amount_paid: discountedPrice.toString(),
+      let newPlans
+      if (isSelected) {
+        // Remove plan
+        newPlans = currentPlans.filter(id => id !== planIdStr)
+        // Remove quantity for this plan
+        setPlanQuantities(prevQty => {
+          const newQty = { ...prevQty }
+          delete newQty[planIdStr]
+          return newQty
+        })
+      } else {
+        // Add plan
+        newPlans = [...currentPlans, planIdStr]
+        // Set default quantity to 1 for this plan
+        setPlanQuantities(prevQty => ({
+          ...prevQty,
+          [planIdStr]: 1
         }))
       }
-    }
+      
+      // Calculate total price for all selected plans
+      let totalPrice = 0
+      newPlans.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const quantity = planQuantities[selectedPlanId] || (selectedPlanId === planIdStr ? 1 : (planQuantities[selectedPlanId] || 1))
+          
+          let pricePerUnit = basePrice
+          // Apply discount if applicable
+          let discountType = prev.discount_type || "none"
+          if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
+            discountType = userActiveDiscount
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+          }
+          
+          totalPrice += pricePerUnit * quantity
+        }
+      })
+      
+      return {
+        ...prev,
+        selected_plan_ids: newPlans,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
+  }
+  
+  // Handle quantity change for a specific plan
+  const handleQuantityChange = (planId, value) => {
+    const quantity = Math.max(1, parseInt(value) || 1)
+    const planIdStr = planId.toString()
+    
+    setPlanQuantities(prev => ({
+      ...prev,
+      [planIdStr]: quantity
+    }))
+    
+    // Recalculate total price
+    setSubscriptionForm(prev => {
+      let totalPrice = 0
+      prev.selected_plan_ids.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const qty = selectedPlanId === planIdStr ? quantity : (planQuantities[selectedPlanId] || 1)
+          
+          let pricePerUnit = basePrice
+          // Apply discount if applicable
+          let discountType = prev.discount_type || "none"
+          if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
+            discountType = userActiveDiscount
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+          }
+          
+          totalPrice += pricePerUnit * qty
+        }
+      })
+      
+      return {
+        ...prev,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
   }
 
 
@@ -890,13 +1165,13 @@ const SubscriptionMonitor = ({ userId }) => {
       setSubscriptionForm((prev) => ({
         ...prev,
         user_id: userId,
-        plan_id: "", // Reset plan selection
+        selected_plan_ids: [], // Reset plan selection
         discount_type: "none", // Reset discount
         amount_paid: "", // Reset amount
       }))
       setUserActiveDiscount(null) // Reset discount
       setUserActiveSubscriptions([]) // Reset active subscriptions
-      setPlanQuantity(1) // Reset quantity
+      setPlanQuantities({}) // Reset quantities
 
       if (userId) {
         // Find the user from availableUsers array
@@ -1220,6 +1495,57 @@ const SubscriptionMonitor = ({ userId }) => {
     }
 
     return true
+  }
+
+  // Group subscriptions by user_id
+  const groupSubscriptionsByUser = (subscriptionList) => {
+    const grouped = {}
+    
+    subscriptionList.forEach((subscription) => {
+      // For guest sessions, use guest_name as the key (they don't have user_id)
+      const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
+        ? `guest_${subscription.guest_name || subscription.id}`
+        : subscription.user_id || `unknown_${subscription.id}`
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          user_id: subscription.user_id,
+          fname: subscription.fname,
+          mname: subscription.mname,
+          lname: subscription.lname,
+          email: subscription.email,
+          guest_name: subscription.guest_name,
+          is_guest_session: subscription.is_guest_session,
+          subscription_type: subscription.subscription_type,
+          subscriptions: []
+        }
+      }
+      
+      grouped[key].subscriptions.push(subscription)
+    })
+    
+    // Convert to array and calculate totals
+    return Object.values(grouped).map((user) => {
+      // Calculate total paid across all subscriptions
+      const totalPaid = user.subscriptions.reduce((sum, sub) => {
+        return sum + (parseFloat(sub.total_paid) || 0)
+      }, 0)
+      
+      // Get the earliest start date and latest end date
+      const startDates = user.subscriptions.map(s => new Date(s.start_date)).filter(d => !isNaN(d))
+      const endDates = user.subscriptions.map(s => new Date(s.end_date)).filter(d => !isNaN(d))
+      
+      const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null
+      const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null
+      
+      return {
+        ...user,
+        total_paid: totalPaid,
+        earliest_start_date: earliestStart,
+        latest_end_date: latestEnd,
+        subscription_count: user.subscriptions.length
+      }
+    })
   }
 
   // Get analytics - filter by plan if planFilter is set
@@ -1841,9 +2167,10 @@ const SubscriptionMonitor = ({ userId }) => {
               {/* Active Subscriptions Table */}
               {(() => {
                 const filteredActive = filterSubscriptions(activeSubscriptions)
-                const activePagination = getPaginatedData(filteredActive, 'active')
+                const groupedActive = groupSubscriptionsByUser(filteredActive)
+                const activePagination = getPaginatedData(groupedActive, 'active')
 
-                return filteredActive.length === 0 ? (
+                return groupedActive.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No active subscriptions found</p>
@@ -1855,166 +2182,185 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-green-50 to-green-100/50 hover:bg-green-100 border-b-2 border-green-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {activePagination.paginated.map((subscription) => (
-                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarFallback>
-                                      {getAvatarInitials(subscription)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {getDisplayName(subscription)}
-                                      {subscription.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
+                          {activePagination.paginated.map((user) => {
+                              // Get the primary subscription (most recent or active)
+                              const primarySub = user.subscriptions[0]
+                              const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                              const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+                              
+                              return (
+                                <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                  <TableCell>
+                                    <div className="flex items-center gap-3">
+                                      <Avatar className="h-10 w-10">
+                                        <AvatarFallback>
+                                          {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div>
+                                        <div className="font-medium flex items-center gap-2">
+                                          {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                          {user.is_guest_session && (
+                                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                              Guest
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">
+                                          {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium">{subscription.plan_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                                >
-                                  {getStatusIcon(subscription.status_name)}
-                                  {subscription.display_status || subscription.status_name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.end_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                                  const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
-                                  if (timeRemaining.type === 'expired_minutes') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                  </TableCell>
+                                  <TableCell>
+                                    {primarySub && (
+                                      <Badge
+                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 w-fit`}
+                                      >
+                                        {getStatusIcon(primarySub.status_name)}
+                                        {primarySub.display_status || primarySub.status_name}
                                       </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired_hours') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
-                                  if (isWalkIn || isDay1Session) {
-                                    if (timeRemaining.type === 'minutes') {
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-medium">
+                                      {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-medium">
+                                      {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {primarySub && timeRemaining ? (() => {
+                                      const planNameLower = primarySub.plan_name?.toLowerCase() || ''
+                                      const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                      const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
+                                      if (timeRemaining.type === 'expired_minutes') {
+                                        return (
+                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'expired_hours') {
+                                        return (
+                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'expired') {
+                                        return (
+                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                            {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                          </Badge>
+                                        )
+                                      }
+                                      if (isWalkIn || isDay1Session) {
+                                        if (timeRemaining.type === 'minutes') {
+                                          return (
+                                            <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                              {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                            </Badge>
+                                          )
+                                        }
+                                        if (timeRemaining.type === 'hours') {
+                                          return (
+                                            <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                              {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                            </Badge>
+                                          )
+                                        }
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'minutes') {
+                                        return (
+                                          <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'hours') {
+                                        return (
+                                          <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'years_months') {
+                                        const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                        const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                        return (
+                                          <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                            'bg-green-100 text-green-700 border-green-300'
+                                            }`}>
+                                            {yearText}{monthText} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'months_days') {
+                                        const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                        const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                        return (
+                                          <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                            'bg-green-100 text-green-700 border-green-300'
+                                            }`}>
+                                            {monthText}{daysText} left
+                                          </Badge>
+                                        )
+                                      }
                                       return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
                                         </Badge>
                                       )
-                                    }
-                                    if (timeRemaining.type === 'hours') {
-                                      return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    return (
-                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  // For other plans, show orange if 7 days or less
-                                  if (timeRemaining.type === 'minutes') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'hours') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'years_months') {
-                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                        {yearText}{monthText} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'months_days') {
-                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                    return (
-                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                        'bg-green-100 text-green-700 border-green-300'
-                                        }`}>
-                                        {monthText}{daysText} left
-                                      </Badge>
-                                    )
-                                  }
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                    })() : <span className="text-slate-500">N/A</span>}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })}
+                                      className="h-8 px-3 text-xs"
+                                    >
+                                      View Details ({user.subscription_count})
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
                         </TableBody>
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredActive.length > 0 && (
+                    {groupedActive.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredActive.length} {filteredActive.length === 1 ? 'entry' : 'entries'} total
+                          {groupedActive.length} {groupedActive.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -2149,9 +2495,10 @@ const SubscriptionMonitor = ({ userId }) => {
               {/* Upcoming Expiration Subscriptions Table */}
               {(() => {
                 const filteredExpiring = filterSubscriptions(expiringSoonSubscriptions)
-                const expiringPagination = getPaginatedData(filteredExpiring, 'upcoming')
+                const groupedExpiring = groupSubscriptionsByUser(filteredExpiring)
+                const expiringPagination = getPaginatedData(groupedExpiring, 'upcoming')
 
-                return filteredExpiring.length === 0 ? (
+                return groupedExpiring.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No subscriptions expiring within 7 days</p>
@@ -2163,166 +2510,186 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-orange-50 to-orange-100/50 hover:bg-orange-100 border-b-2 border-orange-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {expiringPagination.paginated.map((subscription) => (
-                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarFallback>
-                                      {getAvatarInitials(subscription)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {getDisplayName(subscription)}
-                                      {subscription.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
+                          {expiringPagination.paginated.map((user) => {
+                            const primarySub = user.subscriptions[0]
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+                            
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium">{subscription.plan_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
-                                >
-                                  <AlertTriangle className="h-3 w-3" />
-                                  {subscription.display_status || subscription.status_name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium text-orange-600">{formatDate(subscription.end_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                                  const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
-                                  if (timeRemaining.type === 'expired_minutes') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired_hours') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
-                                  if (isWalkIn || isDay1Session) {
-                                    if (timeRemaining.type === 'minutes') {
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && (
+                                    <Badge
+                                      className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
+                                    >
+                                      <AlertTriangle className="h-3 w-3" />
+                                      {primarySub.display_status || primarySub.status_name}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium text-orange-600">
+                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && timeRemaining ? (() => {
+                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
+                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
+                                    if (timeRemaining.type === 'expired_minutes') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired_hours') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (isWalkIn || isDay1Session) {
+                                      if (timeRemaining.type === 'minutes') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'hours') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
                                     if (timeRemaining.type === 'hours') {
                                       return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
-                                    return (
-                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  // For other plans, show orange if 7 days or less
-                                  if (timeRemaining.type === 'minutes') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'hours') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'years_months') {
-                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                        {yearText}{monthText} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'months_days') {
-                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    if (timeRemaining.type === 'years_months') {
+                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {yearText}{monthText} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'months_days') {
+                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {monthText}{daysText} left
+                                        </Badge>
+                                      )
+                                    }
                                     return (
                                       <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                         'bg-green-100 text-green-700 border-green-300'
                                         }`}>
-                                        {monthText}{daysText} left
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
                                       </Badge>
                                     )
-                                  }
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                  })() : <span className="text-slate-500">N/A</span>}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })
+                                    }}
+                                    className="h-8 px-3 text-xs"
+                                  >
+                                    View Details ({user.subscription_count})
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredExpiring.length > 0 && (
+                    {groupedExpiring.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredExpiring.length} {filteredExpiring.length === 1 ? 'entry' : 'entries'} total
+                          {groupedExpiring.length} {groupedExpiring.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -2457,9 +2824,10 @@ const SubscriptionMonitor = ({ userId }) => {
               {/* Expired Subscriptions Table */}
               {(() => {
                 const filteredExpired = filterSubscriptions(expiredSubscriptions)
-                const expiredPagination = getPaginatedData(filteredExpired, 'expired')
+                const groupedExpired = groupSubscriptionsByUser(filteredExpired)
+                const expiredPagination = getPaginatedData(groupedExpired, 'expired')
 
-                return filteredExpired.length === 0 ? (
+                return groupedExpired.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No expired subscriptions found</p>
@@ -2471,166 +2839,186 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-red-50 to-red-100/50 hover:bg-red-100 border-b-2 border-red-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {expiredPagination.paginated.map((subscription) => (
-                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarFallback>
-                                      {getAvatarInitials(subscription)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {getDisplayName(subscription)}
-                                      {subscription.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
+                          {expiredPagination.paginated.map((user) => {
+                            const primarySub = user.subscriptions[0]
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+                            
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium">{subscription.plan_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
-                                >
-                                  {getStatusIcon(subscription.status_name)}
-                                  {subscription.display_status || subscription.status_name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                                  const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
-                                  if (timeRemaining.type === 'expired_minutes') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired_hours') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
-                                  if (isWalkIn || isDay1Session) {
-                                    if (timeRemaining.type === 'minutes') {
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && (
+                                    <Badge
+                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                                    >
+                                      {getStatusIcon(primarySub.status_name)}
+                                      {primarySub.display_status || primarySub.status_name}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium text-gray-500">
+                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && timeRemaining ? (() => {
+                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
+                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
+                                    if (timeRemaining.type === 'expired_minutes') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired_hours') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (isWalkIn || isDay1Session) {
+                                      if (timeRemaining.type === 'minutes') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'hours') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
                                     if (timeRemaining.type === 'hours') {
                                       return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
-                                    return (
-                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  // For other plans, show orange if 7 days or less
-                                  if (timeRemaining.type === 'minutes') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'hours') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'years_months') {
-                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                        {yearText}{monthText} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'months_days') {
-                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    if (timeRemaining.type === 'years_months') {
+                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {yearText}{monthText} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'months_days') {
+                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {monthText}{daysText} left
+                                        </Badge>
+                                      )
+                                    }
                                     return (
                                       <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                         'bg-green-100 text-green-700 border-green-300'
                                         }`}>
-                                        {monthText}{daysText} left
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
                                       </Badge>
                                     )
-                                  }
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                  })() : <span className="text-slate-500">N/A</span>}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })
+                                    }}
+                                    className="h-8 px-3 text-xs"
+                                  >
+                                    View Details ({user.subscription_count})
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredExpired.length > 0 && (
+                    {groupedExpired.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredExpired.length} {filteredExpired.length === 1 ? 'entry' : 'entries'} total
+                          {groupedExpired.length} {groupedExpired.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -2765,9 +3153,10 @@ const SubscriptionMonitor = ({ userId }) => {
               {/* Cancelled Subscriptions Table */}
               {(() => {
                 const filteredCancelled = filterSubscriptions(cancelledSubscriptions)
-                const cancelledPagination = getPaginatedData(filteredCancelled, 'cancelled')
+                const groupedCancelled = groupSubscriptionsByUser(filteredCancelled)
+                const cancelledPagination = getPaginatedData(groupedCancelled, 'cancelled')
 
-                return filteredCancelled.length === 0 ? (
+                return groupedCancelled.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No cancelled subscriptions found</p>
@@ -2779,68 +3168,91 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-gray-50 to-gray-100/50 hover:bg-gray-100 border-b-2 border-gray-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {cancelledPagination.paginated.map((subscription) => (
-                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarFallback>
-                                      {getAvatarInitials(subscription)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {getDisplayName(subscription)}
-                                      {subscription.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
+                          {cancelledPagination.paginated.map((user) => {
+                            const primarySub = user.subscriptions[0]
+                            
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium">{subscription.plan_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
-                                >
-                                  {getStatusIcon(subscription.status_name)}
-                                  {subscription.display_status || subscription.status_name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium text-gray-500">{formatDate(subscription.end_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && (
+                                    <Badge
+                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                                    >
+                                      {getStatusIcon(primarySub.status_name)}
+                                      {primarySub.display_status || primarySub.status_name}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium text-gray-500">
+                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })
+                                    }}
+                                    className="h-8 px-3 text-xs"
+                                  >
+                                    View Details ({user.subscription_count})
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredCancelled.length > 0 && (
+                    {groupedCancelled.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredCancelled.length} {filteredCancelled.length === 1 ? 'entry' : 'entries'} total
+                          {groupedCancelled.length} {groupedCancelled.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -2974,9 +3386,10 @@ const SubscriptionMonitor = ({ userId }) => {
 
               {/* All Subscriptions Table */}
               {(() => {
-                const allPagination = getPaginatedData(filteredSubscriptions, 'all')
+                const groupedAll = groupSubscriptionsByUser(filteredSubscriptions)
+                const allPagination = getPaginatedData(groupedAll, 'all')
 
-                return filteredSubscriptions.length === 0 ? (
+                return groupedAll.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>{!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}</p>
@@ -2988,182 +3401,186 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Plan</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Total Paid</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {allPagination.paginated.map((subscription) => (
-                            <TableRow key={subscription.id} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarFallback>
-                                      {getAvatarInitials(subscription)}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {getDisplayName(subscription)}
-                                      {subscription.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
+                          {allPagination.paginated.map((user) => {
+                            const primarySub = user.subscriptions[0]
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+                            
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                      </div>
                                     </div>
-                                    <div className="text-sm text-muted-foreground">{getDisplayEmail(subscription)}</div>
                                   </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <div className="font-medium">{subscription.plan_name}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                                >
-                                  {getStatusIcon(subscription.status_name)}
-                                  {subscription.display_status || subscription.status_name}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.start_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatDate(subscription.end_date)}</div>
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                                  const daysLeft = calculateDaysLeft(subscription.end_date)
-                                  const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                                  const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                  const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                                  if (timeRemaining === null) return <span className="text-slate-500">N/A</span>
-                                  if (timeRemaining.type === 'expired_minutes') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired_hours') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'expired') {
-                                    return (
-                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                      </Badge>
-                                    )
-                                  }
-                                  // For Walk In and day 1 session, show hours when 1 day or less, minutes when less than 1 hour
-                                  if (isWalkIn || isDay1Session) {
-                                    if (timeRemaining.type === 'minutes') {
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && (
+                                    <Badge
+                                      className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 w-fit`}
+                                    >
+                                      {getStatusIcon(primarySub.status_name)}
+                                      {primarySub.display_status || primarySub.status_name}
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {primarySub && timeRemaining ? (() => {
+                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
+                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
+                                    if (timeRemaining.type === 'expired_minutes') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired_hours') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'expired') {
+                                      return (
+                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                        </Badge>
+                                      )
+                                    }
+                                    if (isWalkIn || isDay1Session) {
+                                      if (timeRemaining.type === 'minutes') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
+                                      if (timeRemaining.type === 'hours') {
+                                        return (
+                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                          </Badge>
+                                        )
+                                      }
                                       return (
                                         <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
                                     if (timeRemaining.type === 'hours') {
                                       return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                           {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
                                         </Badge>
                                       )
                                     }
-                                    return (
-                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  // For other plans, show orange if 7 days or less
-                                  if (timeRemaining.type === 'minutes') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'hours') {
-                                    return (
-                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'years_months') {
-                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                        {yearText}{monthText} left
-                                      </Badge>
-                                    )
-                                  }
-                                  if (timeRemaining.type === 'months_days') {
-                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    if (timeRemaining.type === 'years_months') {
+                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {yearText}{monthText} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'months_days') {
+                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                      return (
+                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                          'bg-green-100 text-green-700 border-green-300'
+                                          }`}>
+                                          {monthText}{daysText} left
+                                        </Badge>
+                                      )
+                                    }
                                     return (
                                       <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                         'bg-green-100 text-green-700 border-green-300'
                                         }`}>
-                                        {monthText}{daysText} left
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
                                       </Badge>
                                     )
-                                  }
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                      'bg-green-100 text-green-700 border-green-300'
-                                      }`}>
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {subscription.discount_type && subscription.discount_type !== "none" && (
-                                    <span className="text-orange-600">
-                                      {subscription.discount_type} discount
-                                    </span>
-                                  )}
-                                  {subscription.total_paid === 0 && 
-                                   subscription.status_name?.toLowerCase() !== "cancelled" && 
-                                   subscription.status_name?.toLowerCase() !== "canceled" &&
-                                   subscription.display_status?.toLowerCase() !== "cancelled" &&
-                                   subscription.display_status?.toLowerCase() !== "canceled" && (
-                                    <span className="text-red-600">
-                                      No payments received
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                  })() : <span className="text-slate-500">N/A</span>}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{formatCurrency(user.total_paid || 0)}</div>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })
+                                    }}
+                                    className="h-8 px-3 text-xs"
+                                  >
+                                    View Details ({user.subscription_count})
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredSubscriptions.length > 0 && (
+                    {groupedAll.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredSubscriptions.length} {filteredSubscriptions.length === 1 ? 'entry' : 'entries'} total
+                          {groupedAll.length} {groupedAll.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
@@ -3311,7 +3728,10 @@ const SubscriptionMonitor = ({ userId }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <Label className="text-sm text-gray-700 font-semibold">Plan Name</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Select Plan(s)</Label>
+                <p className="text-xs text-gray-600">
+                  {currentSubscriptionId ? "Plan details for this subscription" : "You can select multiple plans to assign to this user"}
+                </p>
                 {currentSubscriptionId ? (
                   <Input
                     value={subscriptionForm.plan_name || 'Loading...'}
@@ -3320,71 +3740,100 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select 
-                    value={subscriptionForm.plan_id} 
-                    onValueChange={handlePlanChange}
-                  >
-                    <SelectTrigger className="h-10 text-sm border border-gray-300">
-                      <SelectValue placeholder="Select a plan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subscriptionPlans.map((plan) => {
-                        const isAvailable = plan.is_available !== false
-                        const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
-                        return (
-                          <SelectItem 
-                            key={plan.id} 
-                            value={plan.id.toString()}
-                            disabled={!isAvailable}
-                            className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
-                          >
-                            <div className="flex flex-col w-full">
-                              <div className="flex items-center justify-between w-full">
-                                <span>{plan.plan_name}</span>
-                                {isActivePlan && (
-                                  <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs ml-2">
-                                    Active
-                                  </Badge>
-                                )}
+                  <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                    {subscriptionPlans.map((plan) => {
+                      const isAvailable = plan.is_available !== false
+                      const planIdStr = plan.id.toString()
+                      const isSelected = subscriptionForm.selected_plan_ids?.includes(planIdStr) || false
+                      const quantity = planQuantities[planIdStr] || 1
+                      const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
+                      
+                      return (
+                        <div 
+                          key={plan.id}
+                          className={`p-3 rounded-lg border-2 transition-all ${
+                            isSelected 
+                              ? 'border-blue-400 bg-blue-50' 
+                              : 'border-gray-200 hover:border-gray-300'
+                          } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={(e) => {
+                            // Don't trigger if clicking on input field (quantity)
+                            if (e.target.type === 'number' || (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox')) {
+                              return
+                            }
+                            // If clicking on checkbox, let it handle its own change
+                            if (e.target.type === 'checkbox') {
+                              e.stopPropagation()
+                              if (isAvailable) {
+                                handlePlanToggle(plan.id)
+                              }
+                              return
+                            }
+                            // For other clicks on the div, toggle the plan
+                            if (isAvailable) {
+                              handlePlanToggle(plan.id)
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                if (isAvailable) {
+                                  handlePlanToggle(plan.id)
+                                }
+                              }}
+                              disabled={!isAvailable}
+                              className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium text-gray-900 cursor-pointer">
+                                  {plan.plan_name}
+                                  {isActivePlan && (
+                                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs ml-2">
+                                      Active
+                                    </Badge>
+                                  )}
+                                </Label>
+                                <span className="text-sm font-semibold text-gray-700">
+                                  ₱{parseFloat(plan.price || 0).toFixed(2)}
+                                </span>
                               </div>
                               {isActivePlan && isAvailable && (
-                                <span className="text-xs text-gray-600 mt-0.5">
+                                <p className="text-xs text-gray-600 mt-0.5">
                                   Renewal/Advance Payment - Will extend existing subscription
-                                </span>
+                                </p>
+                              )}
+                              {isSelected && (plan.id == 1 || plan.id == 2 || plan.id == 3) && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Label className="text-xs text-gray-600">
+                                    {plan.id == 1 ? "Years:" : "Months:"}
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={quantity}
+                                    onChange={(e) => {
+                                      e.stopPropagation()
+                                      handleQuantityChange(plan.id, e.target.value)
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="h-8 w-20 text-xs border border-gray-300"
+                                  />
+                                </div>
                               )}
                             </div>
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             </div>
-
-            {/* Quantity Input for Plan ID 1, 2, 3 (Advance Payment/Renewal) */}
-            {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-700 font-semibold">
-                  {userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(subscriptionForm.plan_id))
-                    ? "Renewal/Advance Payment - How much to extend?"
-                    : "How much of the plan do you want to renew or advance payment?"}
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={planQuantity}
-                  onChange={(e) => handleQuantityChange(e.target.value)}
-                  placeholder="Enter quantity"
-                  className="h-10 text-sm border border-gray-300"
-                />
-                <p className="text-xs text-gray-500">
-                  {subscriptionForm.plan_id == 1 
-                    ? "Enter number of years for Gym Membership" 
-                    : "Enter number of months for Monthly Plan"}
-                </p>
-              </div>
-            )}
 
             {/* Second Row: Amount to Pay and Payment Method */}
             <div className="grid grid-cols-2 gap-4">
@@ -3456,7 +3905,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       {userActiveSubscriptions.map((sub, index) => {
                         const endDate = new Date(sub.end_date)
                         const isExpiringSoon = endDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-                        const isSelectedPlan = subscriptionForm.plan_id && parseInt(subscriptionForm.plan_id) === parseInt(sub.plan_id)
+                        const isSelectedPlan = subscriptionForm.selected_plan_ids?.some(pid => parseInt(pid) === parseInt(sub.plan_id))
                         
                         return (
                           <div 
@@ -3511,8 +3960,8 @@ const SubscriptionMonitor = ({ userId }) => {
                     {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
                   </div>
                   <span className="text-sm text-gray-600">
-                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5
-                      ? 'Discount will be automatically applied to this plan'
+                    {subscriptionForm.selected_plan_ids?.some(pid => pid == 2 || pid == 3 || pid == 5)
+                      ? 'Discount will be automatically applied to eligible plans'
                       : 'Discount is available for Monthly Access plans'}
                   </span>
                 </div>
@@ -3520,29 +3969,41 @@ const SubscriptionMonitor = ({ userId }) => {
             )}
 
             {/* Price Breakdown */}
-            {subscriptionForm.plan_id && (
+            {subscriptionForm.selected_plan_ids && subscriptionForm.selected_plan_ids.length > 0 && (
               <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <h4 className="text-gray-700 mb-2 text-sm font-semibold">Price Breakdown</h4>
                 <div className="text-sm text-gray-600 space-y-2">
-                  {(() => {
-                    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+                  {subscriptionForm.selected_plan_ids.map((planIdStr, index) => {
+                    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+                    if (!selectedPlan) return null
                     const planPrice = parseFloat(selectedPlan?.price || 0)
-                    const amountPaid = parseFloat(subscriptionForm.amount_paid || 0)
-                    const discount = discountConfig[subscriptionForm.discount_type]?.discount || 0
-                    const hasDiscount = subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && discount > 0
+                    const quantity = planQuantities[planIdStr] || 1
+                    const planId = parseInt(planIdStr)
                     
-                    // Calculate original total: base price * quantity
-                    const quantity = planQuantity || 1
+                    // Apply discount if applicable
+                    let pricePerUnit = planPrice
+                    let discount = 0
+                    let hasDiscount = false
+                    if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
+                      discount = discountConfig[userActiveDiscount]?.discount || 0
+                      if (discount > 0) {
+                        hasDiscount = true
+                        pricePerUnit = calculateDiscountedPrice(planPrice, userActiveDiscount)
+                      }
+                    }
+                    
                     const originalTotal = planPrice * quantity
+                    const discountedTotal = pricePerUnit * quantity
 
                     return (
-                      <>
+                      <div key={planIdStr} className={index > 0 ? "border-t border-gray-300 pt-2 mt-2" : ""}>
+                        <div className="font-medium text-gray-900 mb-1">{selectedPlan.plan_name}</div>
                         <div className="flex justify-between">
                           <span>Original Price:</span>
                           <span className="font-medium text-gray-900">
                             {quantity > 1 ? (
                               <span>
-                                ₱{planPrice.toFixed(2)} × {quantity} {subscriptionForm.plan_id == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
+                                ₱{planPrice.toFixed(2)} × {quantity} {planId == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
                               </span>
                             ) : (
                               `₱${planPrice.toFixed(2)}`
@@ -3551,17 +4012,21 @@ const SubscriptionMonitor = ({ userId }) => {
                         </div>
                         {hasDiscount && (
                           <div className="flex justify-between text-blue-700">
-                            <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                            <span className="font-medium">-₱{discount.toFixed(2)}</span>
+                            <span>Discount ({discountConfig[userActiveDiscount]?.name}):</span>
+                            <span className="font-medium">-₱{(discount * quantity).toFixed(2)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
-                          <span className="text-gray-900">Final Price:</span>
-                          <span className="text-gray-900">₱{amountPaid.toFixed(2)}</span>
+                        <div className="flex justify-between font-medium text-gray-900">
+                          <span>Plan Total:</span>
+                          <span>₱{discountedTotal.toFixed(2)}</span>
                         </div>
-                      </>
+                      </div>
                     )
-                  })()}
+                  })}
+                  <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
+                    <span className="text-gray-900">Total Amount:</span>
+                    <span className="text-gray-900">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -3600,7 +4065,8 @@ const SubscriptionMonitor = ({ userId }) => {
                 actionLoading === "create" ||
                 !subscriptionForm.amount_paid ||
                 !subscriptionForm.user_id ||
-                !subscriptionForm.plan_id ||
+                !subscriptionForm.selected_plan_ids ||
+                subscriptionForm.selected_plan_ids.length === 0 ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid))) ||
                 (paymentMethod === "gcash" && !referenceNumber.trim())
               }
@@ -3968,6 +4434,298 @@ const SubscriptionMonitor = ({ userId }) => {
               }}
               className="w-full bg-gray-800 hover:bg-gray-700 text-white"
             >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Details Modal */}
+      <Dialog open={viewDetailsModal.open} onOpenChange={(open) => setViewDetailsModal({ ...viewDetailsModal, open })}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">Subscription Details</DialogTitle>
+            <DialogDescription>
+              View all subscription details and history for this user
+            </DialogDescription>
+            {viewDetailsModal.user && (
+              <div className="mt-2">
+                <p className="font-semibold text-lg">
+                  {viewDetailsModal.user.is_guest_session 
+                    ? viewDetailsModal.user.guest_name 
+                    : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
+                </p>
+                {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
+                  <p className="text-sm text-muted-foreground">{viewDetailsModal.user.email}</p>
+                )}
+              </div>
+            )}
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            {viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 ? (
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="font-bold">Plan</TableHead>
+                      <TableHead className="font-bold">Status</TableHead>
+                      <TableHead className="font-bold">Start Date</TableHead>
+                      <TableHead className="font-bold">End Date</TableHead>
+                      <TableHead className="font-bold">Time Left</TableHead>
+                      <TableHead className="font-bold">Amount Paid</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {viewDetailsModal.subscriptions.map((subscription) => {
+                      const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                      const daysLeft = calculateDaysLeft(subscription.end_date)
+                      const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                      const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                      const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
+                      const userId = subscription.user_id || viewDetailsModal.user?.user_id || viewDetailsModal.user?.id
+                      const historyKey = userId && subscription.plan_id ? `${userId}_${subscription.plan_id}` : null
+                      const history = historyKey ? (subscriptionHistory[historyKey] || []) : []
+                      const isExpanded = historyKey ? (expandedSubscriptions[historyKey] || false) : false
+                      
+                      return (
+                        <React.Fragment key={subscription.id}>
+                          <TableRow>
+                            <TableCell className="font-medium">{subscription.plan_name}</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                              >
+                                {getStatusIcon(subscription.status_name)}
+                                {subscription.display_status || subscription.status_name}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{formatDate(subscription.start_date)}</TableCell>
+                            <TableCell>{formatDate(subscription.end_date)}</TableCell>
+                            <TableCell>
+                              {timeRemaining ? (() => {
+                                if (timeRemaining.type === 'expired_minutes') {
+                                  return (
+                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                      {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'expired_hours') {
+                                  return (
+                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                      {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'expired') {
+                                  return (
+                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                    </Badge>
+                                  )
+                                }
+                                if (isWalkIn || isDay1Session) {
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'minutes') {
+                                  return (
+                                    <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                      {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'hours') {
+                                  return (
+                                    <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                      {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'years_months') {
+                                  const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                  const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                    'bg-green-100 text-green-700 border-green-300'
+                                    }`}>
+                                      {yearText}{monthText} left
+                                    </Badge>
+                                  )
+                                }
+                                if (timeRemaining.type === 'months_days') {
+                                  const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                  const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {monthText}{daysText} left
+                                    </Badge>
+                                  )
+                                }
+                                return (
+                                  <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                    'bg-green-100 text-green-700 border-green-300'
+                                    }`}>
+                                    {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                  </Badge>
+                                )
+                              })() : <span className="text-slate-500">N/A</span>}
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <div className="font-medium">{formatCurrency(subscription.total_paid || 0)}</div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!historyKey) return
+                                    if (!isExpanded && history.length === 0 && userId && subscription.plan_id) {
+                                      await fetchSubscriptionHistory(userId, subscription.plan_id)
+                                    }
+                                    setExpandedSubscriptions(prev => ({
+                                      ...prev,
+                                      [historyKey]: !isExpanded
+                                    }))
+                                  }}
+                                  className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                >
+                                  {isExpanded ? 'Hide' : 'Show'} Subscription History ({history.length || '...'})
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {isExpanded && history.length > 0 && (
+                            <TableRow key={`${historyKey}-history`}>
+                              <TableCell colSpan={7} className="bg-gray-50 p-0">
+                                <div className="p-4 border-t border-gray-200">
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                                    Subscription History for {subscription.plan_name}
+                                  </h4>
+                                  <div className="space-y-4">
+                                    {history.map((histSub, idx) => {
+                                      const histTimeRemaining = calculateTimeRemaining(histSub.end_date)
+                                      const histDaysLeft = calculateDaysLeft(histSub.end_date)
+                                      
+                                      return (
+                                        <div key={histSub.id || idx} className="rounded-lg border border-gray-200 bg-white p-4">
+                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                                            <div>
+                                              <p className="text-xs text-gray-500 mb-1">Start Date</p>
+                                              <p className="text-sm font-medium">{formatDate(histSub.start_date)}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-xs text-gray-500 mb-1">End Date</p>
+                                              <p className="text-sm font-medium">{formatDate(histSub.end_date)}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-xs text-gray-500 mb-1">Status</p>
+                                              <Badge
+                                                className={`${getStatusColor(histSub.display_status || histSub.status_name)} flex items-center gap-1 w-fit text-xs`}
+                                              >
+                                                {getStatusIcon(histSub.status_name)}
+                                                {histSub.display_status || histSub.status_name}
+                                              </Badge>
+                                            </div>
+                                            <div>
+                                              <p className="text-xs text-gray-500 mb-1">Amount Paid</p>
+                                              <p className="text-sm font-medium">{formatCurrency(histSub.total_paid || histSub.amount_paid || 0)}</p>
+                                            </div>
+                                          </div>
+                                          
+                                          {histSub.payments && histSub.payments.length > 0 && (
+                                            <div className="mt-3 pt-3 border-t border-gray-200">
+                                              <p className="text-xs font-semibold text-gray-600 mb-2">Payment Transactions:</p>
+                                              <div className="rounded border border-gray-200 overflow-hidden">
+                                                <Table>
+                                                  <TableHeader>
+                                                    <TableRow className="bg-gray-100">
+                                                      <TableHead className="text-xs font-semibold">Date</TableHead>
+                                                      <TableHead className="text-xs font-semibold">Amount</TableHead>
+                                                      <TableHead className="text-xs font-semibold">Payment Method</TableHead>
+                                                      <TableHead className="text-xs font-semibold">Receipt Number</TableHead>
+                                                      <TableHead className="text-xs font-semibold">Amount Received</TableHead>
+                                                      <TableHead className="text-xs font-semibold">Change</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {histSub.payments.map((payment, pIdx) => (
+                                                      <TableRow key={payment.id || pIdx} className="hover:bg-gray-50">
+                                                        <TableCell className="text-xs">
+                                                          {payment.payment_date ? formatDate(payment.payment_date) : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs font-medium">
+                                                          {formatCurrency(payment.amount || 0)}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs">
+                                                          <Badge variant="outline" className="text-xs">
+                                                            {payment.payment_method || 'N/A'}
+                                                          </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="text-xs font-mono">
+                                                          {payment.receipt_number || 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs">
+                                                          {payment.amount_received ? formatCurrency(payment.amount_received) : 'N/A'}
+                                                        </TableCell>
+                                                        <TableCell className="text-xs">
+                                                          {payment.change_given ? formatCurrency(payment.change_given) : '₱0.00'}
+                                                        </TableCell>
+                                                      </TableRow>
+                                                    ))}
+                                                    <TableRow key={`total-${histSub.id || idx}`} className="bg-gray-100 font-semibold">
+                                                      <TableCell colSpan={2} className="text-xs">Total:</TableCell>
+                                                      <TableCell colSpan={4} className="text-xs font-medium">
+                                                        {formatCurrency(histSub.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0))}
+                                                      </TableCell>
+                                                    </TableRow>
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No subscriptions found</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewDetailsModal({ open: false, user: null, subscriptions: [] })}>
               Close
             </Button>
           </DialogFooter>

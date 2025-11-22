@@ -165,7 +165,7 @@ const ViewMembers = ({ userId }) => {
   const [pendingClientData, setPendingClientData] = useState(null) // Store client data before account creation
   const [subscriptionPlans, setSubscriptionPlans] = useState([])
   const [subscriptionForm, setSubscriptionForm] = useState({
-    plan_id: "",
+    selected_plan_ids: [], // Changed to array for multiple selection
     start_date: new Date().toISOString().split("T")[0],
     discount_type: "none",
     amount_paid: "",
@@ -174,7 +174,7 @@ const ViewMembers = ({ userId }) => {
     gcash_reference: "",
     notes: ""
   })
-  const [planQuantity, setPlanQuantity] = useState(1)
+  const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
 
   // Discount configuration - load from localStorage (same as monitorsubscription.js)
@@ -841,14 +841,27 @@ const ViewMembers = ({ userId }) => {
   // Fetch subscription plans for a user
   const fetchSubscriptionPlansForUser = async (userId) => {
     try {
-      // If userId is 0, it means new user - fetch all plans
-      const url = userId === 0 
-        ? `https://api.cnergy.site/monitor_subscription.php?action=available-plans&user_id=0`
-        : `https://api.cnergy.site/monitor_subscription.php?action=available-plans&user_id=${userId}`
+      // For new users (userId = 0), fetch all plans directly without filtering
+      // For existing users, use available-plans endpoint
+      let url
+      if (userId === 0) {
+        // Fetch all plans for new user - use plans endpoint which returns all plans
+        url = `https://api.cnergy.site/monitor_subscription.php?action=plans`
+      } else {
+        url = `https://api.cnergy.site/monitor_subscription.php?action=available-plans&user_id=${userId}`
+      }
       
       const response = await axios.get(url)
       if (response.data && response.data.success) {
-        setSubscriptionPlans(response.data.plans || [])
+        const plans = response.data.plans || []
+        // For new users, mark ALL plans as available (no filtering)
+        // For existing users, use the availability from the API
+        const plansWithAvailability = plans.map(plan => ({
+          ...plan,
+          is_available: userId === 0 ? true : (plan.is_available !== false),
+          duration_days: plan.duration_days || null // Ensure duration_days is included
+        }))
+        setSubscriptionPlans(plansWithAvailability)
       }
     } catch (error) {
       console.error("Error fetching subscription plans:", error)
@@ -860,65 +873,175 @@ const ViewMembers = ({ userId }) => {
     }
   }
 
-  // Handle plan change and calculate price
-  const handlePlanChange = (planId) => {
-    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === planId)
-    if (selectedPlan) {
-      const basePrice = parseFloat(selectedPlan.price || 0)
-      const quantity = planQuantity || 1
-      
-      // Calculate price per unit with discount, then multiply by quantity
-      let pricePerUnit = basePrice
-      if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
-        if (planId == 2 || planId == 3 || planId == 5) {
-          pricePerUnit = calculateDiscountedPrice(basePrice, subscriptionForm.discount_type)
-        }
-      }
-      
-      const finalPrice = pricePerUnit * quantity
-      
-      setSubscriptionForm(prev => ({
-        ...prev,
-        plan_id: planId,
-        amount_paid: finalPrice.toFixed(2)
-      }))
-    }
-  }
-
-  // Handle quantity change
-  const handleQuantityChange = (value) => {
-    const quantity = parseInt(value) || 1
-    setPlanQuantity(quantity)
+  // Handle plan selection (toggle) for multiple plans
+  const handlePlanToggle = (planId) => {
+    const planIdStr = planId.toString()
+    const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
     
-    if (subscriptionForm.plan_id) {
-      const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
-      if (selectedPlan) {
-        const basePrice = parseFloat(selectedPlan.price || 0)
-        
-        // Calculate price per unit with discount, then multiply by quantity
-        let pricePerUnit = basePrice
-        if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
-          if (subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) {
-            pricePerUnit = calculateDiscountedPrice(basePrice, subscriptionForm.discount_type)
-          }
-        }
-        
-        const finalPrice = pricePerUnit * quantity
-        
-        setSubscriptionForm(prev => ({
-          ...prev,
-          amount_paid: finalPrice.toFixed(2)
+    if (!plan) {
+      console.error("Plan not found:", planId)
+      return
+    }
+    
+    setSubscriptionForm(prev => {
+      const currentPlans = prev.selected_plan_ids || []
+      const isSelected = currentPlans.includes(planIdStr)
+      
+      let newPlans
+      if (isSelected) {
+        // Remove plan
+        newPlans = currentPlans.filter(id => id !== planIdStr)
+        // Remove quantity for this plan
+        setPlanQuantities(prevQty => {
+          const newQty = { ...prevQty }
+          delete newQty[planIdStr]
+          return newQty
+        })
+      } else {
+        // Add plan
+        newPlans = [...currentPlans, planIdStr]
+        // Set default quantity to 1 for this plan
+        setPlanQuantities(prevQty => ({
+          ...prevQty,
+          [planIdStr]: 1
         }))
       }
-    }
+      
+      // Calculate total price for all selected plans
+      let totalPrice = 0
+      newPlans.forEach(selectedPlanId => {
+        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (selectedPlan) {
+          const basePrice = parseFloat(selectedPlan.price || 0)
+          // Use current planQuantities state, or default to 1
+          const quantity = planQuantities[selectedPlanId] || (selectedPlanId === planIdStr && !isSelected ? 1 : (planQuantities[selectedPlanId] || 1))
+          
+          let pricePerUnit = basePrice
+          if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
+            const selectedPlanIdNum = parseInt(selectedPlanId)
+            if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
+              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type)
+            }
+          }
+          
+          totalPrice += pricePerUnit * quantity
+        }
+      })
+      
+      return {
+        ...prev,
+        selected_plan_ids: newPlans,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
+  }
+
+  // Handle quantity change for a specific plan
+  const handleQuantityChange = (planId, value) => {
+    const quantity = parseInt(value) || 1
+    const planIdStr = planId.toString()
+    
+    setPlanQuantities(prev => ({
+      ...prev,
+      [planIdStr]: quantity
+    }))
+    
+    // Recalculate total price
+    setSubscriptionForm(prev => {
+      let totalPrice = 0
+      prev.selected_plan_ids.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const qty = selectedPlanId === planIdStr ? quantity : (planQuantities[selectedPlanId] || 1)
+          
+          let pricePerUnit = basePrice
+          if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
+            if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
+              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type)
+            }
+          }
+          
+          totalPrice += pricePerUnit * qty
+        }
+      })
+      
+      return {
+        ...prev,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
+  }
+  
+  // Recalculate total price when discount changes
+  const recalculateTotalPrice = () => {
+    setSubscriptionForm(prev => {
+      let totalPrice = 0
+      const currentPlans = prev.selected_plan_ids || []
+      currentPlans.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const quantity = planQuantities[selectedPlanId] || 1
+          
+          let pricePerUnit = basePrice
+          if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
+            if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
+              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type)
+            }
+          }
+          
+          totalPrice += pricePerUnit * quantity
+        }
+      })
+      
+      return {
+        ...prev,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
   }
 
   // Handle subscription creation - this will create account AND subscription together
   const handleCreateSubscription = async () => {
-    if (!pendingClientData || !subscriptionForm.plan_id || !subscriptionForm.amount_paid) {
+    if (!pendingClientData || !subscriptionForm.selected_plan_ids || subscriptionForm.selected_plan_ids.length === 0 || !subscriptionForm.amount_paid) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields.",
+        description: "Please select at least one plan and fill in all required fields.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validate payment for cash transactions
+    if (subscriptionForm.payment_method === 'cash') {
+      const totalAmount = parseFloat(subscriptionForm.amount_paid || 0)
+      const amountReceived = parseFloat(subscriptionForm.amount_received || 0)
+      
+      if (!subscriptionForm.amount_received || amountReceived === 0) {
+        toast({
+          title: "Error",
+          description: "Please enter the amount received.",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      if (amountReceived < totalAmount) {
+        toast({
+          title: "Error",
+          description: `Amount received (₱${amountReceived.toFixed(2)}) is less than total amount (₱${totalAmount.toFixed(2)}).`,
+          variant: "destructive",
+        })
+        return
+      }
+    }
+    
+    // Validate GCash reference if payment method is GCash
+    if (subscriptionForm.payment_method === 'gcash' && !subscriptionForm.gcash_reference) {
+      toast({
+        title: "Error",
+        description: "Please enter the GCash reference number.",
         variant: "destructive",
       })
       return
@@ -1032,32 +1155,97 @@ const ViewMembers = ({ userId }) => {
         }
       }
 
-      // Step 3: Create the subscription
-      const subscriptionData = {
-        user_id: newMemberId,
-        plan_id: subscriptionForm.plan_id,
-        start_date: subscriptionForm.start_date,
-        discount_type: subscriptionForm.discount_type || 'none',
-        amount_paid: subscriptionForm.amount_paid,
-        payment_method: subscriptionForm.payment_method || 'cash',
-        amount_received: subscriptionForm.amount_received || subscriptionForm.amount_paid,
-        change_given: Math.max(0, (parseFloat(subscriptionForm.amount_received || subscriptionForm.amount_paid) - parseFloat(subscriptionForm.amount_paid))),
-        reference_number: subscriptionForm.payment_method === 'gcash' ? (subscriptionForm.gcash_reference || '') : null,
-        notes: subscriptionForm.notes || '',
-        quantity: planQuantity || 1,
-        created_by: 'Admin',
-        staff_id: userId,
-        transaction_status: 'confirmed'
-      }
-
-      const subscriptionResponse = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', subscriptionData)
+      // Step 3: Create subscriptions for each selected plan
+      // First, calculate total expected amount and payment distribution
+      let totalExpectedAmount = 0
+      const planDataArray = subscriptionForm.selected_plan_ids.map((planIdStr) => {
+        const planId = parseInt(planIdStr)
+        const quantity = planQuantities[planIdStr] || 1
+        
+        // Calculate price for this specific plan
+        const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+        let planPrice = parseFloat(plan?.price || 0)
+        
+        // Apply discount if applicable
+        if (subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular') {
+          if (planId == 2 || planId == 3 || planId == 5) {
+            planPrice = calculateDiscountedPrice(planPrice, subscriptionForm.discount_type)
+          }
+        }
+        
+        const planTotalPrice = planPrice * quantity
+        totalExpectedAmount += planTotalPrice
+        
+        return {
+          planId,
+          planIdStr,
+          quantity,
+          planTotalPrice
+        }
+      })
       
-      if (subscriptionResponse.data && subscriptionResponse.data.success) {
+      // Calculate total amount received and change
+      const totalAmountReceived = parseFloat(subscriptionForm.amount_received || subscriptionForm.amount_paid || 0)
+      const totalChange = Math.max(0, totalAmountReceived - totalExpectedAmount)
+      
+      // Distribute payment proportionally across subscriptions
+      // For cash: distribute amount_received proportionally, apply change to first subscription
+      // For GCash: each subscription gets its full amount (no change)
+      const subscriptionPromises = planDataArray.map(async (planData, index) => {
+        const { planId, planIdStr, quantity, planTotalPrice } = planData
+        
+        // Calculate proportional amount received for this plan
+        let amountReceivedForPlan = planTotalPrice
+        let changeForPlan = 0
+        
+        if (subscriptionForm.payment_method === 'cash') {
+          // Distribute amount_received proportionally
+          const proportion = planTotalPrice / totalExpectedAmount
+          amountReceivedForPlan = totalAmountReceived * proportion
+          
+          // Apply all change to the first subscription
+          if (index === 0) {
+            changeForPlan = totalChange
+            // Adjust amount_received to account for change
+            amountReceivedForPlan = planTotalPrice + totalChange
+          }
+        } else {
+          // For GCash, amount received equals amount paid (no change)
+          amountReceivedForPlan = planTotalPrice
+        }
+        
+        const subscriptionData = {
+          user_id: newMemberId,
+          plan_id: planId,
+          start_date: subscriptionForm.start_date,
+          discount_type: subscriptionForm.discount_type || 'none',
+          amount_paid: planTotalPrice.toFixed(2),
+          payment_method: subscriptionForm.payment_method || 'cash',
+          amount_received: amountReceivedForPlan.toFixed(2),
+          change_given: changeForPlan.toFixed(2),
+          reference_number: subscriptionForm.payment_method === 'gcash' ? (subscriptionForm.gcash_reference || '') : null,
+          notes: subscriptionForm.notes || '',
+          quantity: quantity,
+          created_by: 'Admin',
+          staff_id: userId,
+          transaction_status: 'confirmed'
+        }
+
+        return axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', subscriptionData)
+      })
+      
+      const subscriptionResponses = await Promise.all(subscriptionPromises)
+      
+      // Check if all subscriptions were created successfully
+      const allSuccess = subscriptionResponses.every(response => response.data && response.data.success)
+      
+      if (allSuccess) {
         const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()
         
+        const planCount = subscriptionForm.selected_plan_ids.length
         toast({
           title: "Success",
-          description: `${fullName} has been created and subscription assigned successfully!`,
+          description: `${fullName} has been created and ${planCount} ${planCount === 1 ? 'subscription' : 'subscriptions'} assigned successfully!`,
           duration: 5000,
         })
         
@@ -1066,7 +1254,7 @@ const ViewMembers = ({ userId }) => {
         setShowSubscriptionAssignment(false)
         setPendingClientData(null)
         setSubscriptionForm({
-          plan_id: "",
+          selected_plan_ids: [],
           start_date: new Date().toISOString().split("T")[0],
           discount_type: "none",
           amount_paid: "",
@@ -1075,7 +1263,7 @@ const ViewMembers = ({ userId }) => {
           gcash_reference: "",
           notes: ""
         })
-        setPlanQuantity(1)
+        setPlanQuantities({})
         form.reset()
         
         // Refresh members list
@@ -2065,7 +2253,7 @@ const ViewMembers = ({ userId }) => {
           setShowSubscriptionAssignment(false)
           setPendingClientData(null)
           setSubscriptionForm({
-            plan_id: "",
+            selected_plan_ids: [],
             start_date: new Date().toISOString().split("T")[0],
             discount_type: "none",
             amount_paid: "",
@@ -2073,7 +2261,7 @@ const ViewMembers = ({ userId }) => {
             amount_received: "",
             notes: ""
           })
-          setPlanQuantity(1)
+          setPlanQuantities({})
           form.reset()
         }
       }}>
@@ -2436,26 +2624,31 @@ const ViewMembers = ({ userId }) => {
                     onClick={() => {
                       const newDiscount = subscriptionForm.discount_type === 'student' ? 'none' : 'student'
                       setSubscriptionForm(prev => {
-                        const updated = { ...prev, discount_type: newDiscount }
-                        // Recalculate price if plan is already selected
-                        if (prev.plan_id) {
-                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === prev.plan_id)
-                          if (selectedPlan) {
-                            const basePrice = parseFloat(selectedPlan.price || 0)
-                            const quantity = planQuantity || 1
+                        // Recalculate total price with new discount
+                        let totalPrice = 0
+                        const currentPlans = prev.selected_plan_ids || []
+                        currentPlans.forEach(selectedPlanId => {
+                          const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                          if (plan) {
+                            const basePrice = parseFloat(plan.price || 0)
+                            const quantity = planQuantities[selectedPlanId] || 1
                             
-                            // Calculate price per unit with discount, then multiply by quantity
                             let pricePerUnit = basePrice
                             if (newDiscount !== 'none' && newDiscount !== 'regular') {
-                              if (prev.plan_id == 2 || prev.plan_id == 3 || prev.plan_id == 5) {
+                              if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
                                 pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount)
                               }
                             }
                             
-                            updated.amount_paid = (pricePerUnit * quantity).toFixed(2)
+                            totalPrice += pricePerUnit * quantity
                           }
+                        })
+                        
+                        return {
+                          ...prev,
+                          discount_type: newDiscount,
+                          amount_paid: totalPrice.toFixed(2)
                         }
-                        return updated
                       })
                     }}
                     className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
@@ -2473,26 +2666,31 @@ const ViewMembers = ({ userId }) => {
                     onClick={() => {
                       const newDiscount = subscriptionForm.discount_type === 'senior' ? 'none' : 'senior'
                       setSubscriptionForm(prev => {
-                        const updated = { ...prev, discount_type: newDiscount }
-                        // Recalculate price if plan is already selected
-                        if (prev.plan_id) {
-                          const selectedPlan = subscriptionPlans.find(p => p.id.toString() === prev.plan_id)
-                          if (selectedPlan) {
-                            const basePrice = parseFloat(selectedPlan.price || 0)
-                            const quantity = planQuantity || 1
+                        // Recalculate total price with new discount
+                        let totalPrice = 0
+                        const currentPlans = prev.selected_plan_ids || []
+                        currentPlans.forEach(selectedPlanId => {
+                          const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+                          if (plan) {
+                            const basePrice = parseFloat(plan.price || 0)
+                            const quantity = planQuantities[selectedPlanId] || 1
                             
-                            // Calculate price per unit with discount, then multiply by quantity
                             let pricePerUnit = basePrice
                             if (newDiscount !== 'none' && newDiscount !== 'regular') {
-                              if (prev.plan_id == 2 || prev.plan_id == 3 || prev.plan_id == 5) {
+                              if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
                                 pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount)
                               }
                             }
                             
-                            updated.amount_paid = (pricePerUnit * quantity).toFixed(2)
+                            totalPrice += pricePerUnit * quantity
                           }
+                        })
+                        
+                        return {
+                          ...prev,
+                          discount_type: newDiscount,
+                          amount_paid: totalPrice.toFixed(2)
                         }
-                        return updated
                       })
                     }}
                     className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${
@@ -2515,53 +2713,93 @@ const ViewMembers = ({ userId }) => {
               {/* Divider */}
               <div className="border-t border-gray-200"></div>
 
-              {/* Plan Selection */}
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-900">Select Plan</Label>
-                <Select 
-                  value={subscriptionForm.plan_id} 
-                  onValueChange={handlePlanChange}
-                >
-                  <SelectTrigger className="h-11 text-sm border border-gray-300">
-                    <SelectValue placeholder="Choose a subscription plan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subscriptionPlans.map((plan) => {
-                      const isAvailable = plan.is_available !== false
-                      return (
-                        <SelectItem 
-                          key={plan.id} 
-                          value={plan.id.toString()}
-                          disabled={!isAvailable}
-                          className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
-                        >
-                          {plan.plan_name}
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Quantity Input for Plan ID 1, 2, 3 */}
-              {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-gray-900">Duration</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={planQuantity}
-                    onChange={(e) => handleQuantityChange(e.target.value)}
-                    placeholder="Enter quantity"
-                    className="h-11 text-sm border border-gray-300"
-                  />
-                  <p className="text-xs text-gray-500">
-                    {subscriptionForm.plan_id == 1 
-                      ? "Number of years" 
-                      : "Number of months"}
-                  </p>
+              {/* Plan Selection - Multiple Selection */}
+              <div className="space-y-3">
+                <Label className="text-sm font-semibold text-gray-900">Select Plan(s)</Label>
+                <p className="text-xs text-gray-600">
+                  You can select multiple plans to assign to this user
+                </p>
+                <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                  {subscriptionPlans.map((plan) => {
+                    const isAvailable = plan.is_available !== false
+                    const planIdStr = plan.id.toString()
+                    const isSelected = subscriptionForm.selected_plan_ids?.includes(planIdStr) || false
+                    const quantity = planQuantities[planIdStr] || 1
+                    
+                    return (
+                      <div 
+                        key={plan.id}
+                        className={`p-3 rounded-lg border-2 transition-all ${
+                          isSelected 
+                            ? 'border-blue-400 bg-blue-50' 
+                            : 'border-gray-200 hover:border-gray-300'
+                        } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        onClick={(e) => {
+                          // Don't trigger if clicking on input field (quantity)
+                          if (e.target.type === 'number' || (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox')) {
+                            return
+                          }
+                          // If clicking on checkbox, let it handle its own change
+                          if (e.target.type === 'checkbox') {
+                            e.stopPropagation()
+                            if (isAvailable) {
+                              handlePlanToggle(plan.id)
+                            }
+                            return
+                          }
+                          // For other clicks on the div, toggle the plan
+                          if (isAvailable) {
+                            handlePlanToggle(plan.id)
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              e.stopPropagation()
+                              if (isAvailable) {
+                                handlePlanToggle(plan.id)
+                              }
+                            }}
+                            disabled={!isAvailable}
+                            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium text-gray-900 cursor-pointer">
+                                {plan.plan_name}
+                              </Label>
+                              <span className="text-sm font-semibold text-gray-700">
+                                ₱{parseFloat(plan.price || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            {isSelected && (plan.id == 1 || plan.id == 2 || plan.id == 3) && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <Label className="text-xs text-gray-600">
+                                  {plan.id == 1 ? "Years:" : "Months:"}
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={quantity}
+                                  onChange={(e) => {
+                                    e.stopPropagation()
+                                    handleQuantityChange(plan.id, e.target.value)
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-8 w-20 text-xs border border-gray-300"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
+              </div>
 
               {/* Divider */}
               <div className="border-t border-gray-200"></div>
@@ -2662,7 +2900,15 @@ const ViewMembers = ({ userId }) => {
                 <Button
                   type="button"
                   onClick={handleCreateSubscription}
-                  disabled={subscriptionLoading || !pendingClientData || !subscriptionForm.plan_id || !subscriptionForm.amount_paid || (subscriptionForm.payment_method === "gcash" && !subscriptionForm.gcash_reference)}
+                  disabled={
+                    subscriptionLoading || 
+                    !pendingClientData || 
+                    !subscriptionForm.selected_plan_ids || 
+                    subscriptionForm.selected_plan_ids.length === 0 || 
+                    !subscriptionForm.amount_paid || 
+                    (subscriptionForm.payment_method === "cash" && (!subscriptionForm.amount_received || parseFloat(subscriptionForm.amount_received || 0) < parseFloat(subscriptionForm.amount_paid || 0))) ||
+                    (subscriptionForm.payment_method === "gcash" && !subscriptionForm.gcash_reference)
+                  }
                   className="h-11 px-6 bg-primary hover:bg-primary/90"
                 >
                   {subscriptionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

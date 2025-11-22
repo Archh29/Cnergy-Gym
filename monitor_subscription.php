@@ -73,6 +73,23 @@ try {
                 getAvailableUsers($pdo);
             } elseif ($action === 'get-subscription' && isset($_GET['id'])) {
                 getSubscriptionById($pdo, $_GET['id']);
+            } elseif ($action === 'get-payments' && isset($_GET['subscription_id'])) {
+                getSubscriptionPayments($pdo, $_GET['subscription_id']);
+            } elseif ($action === 'get-subscription-history' && isset($_GET['user_id']) && isset($_GET['plan_id'])) {
+                try {
+                    getSubscriptionHistory($pdo, $_GET['user_id'], $_GET['plan_id']);
+                } catch (Throwable $e) {
+                    http_response_code(500);
+                    error_log("Fatal error in get-subscription-history endpoint: " . $e->getMessage());
+                    error_log("Stack trace: " . $e->getTraceAsString());
+                    echo json_encode([
+                        "success" => false,
+                        "error" => "Fatal error",
+                        "message" => $e->getMessage(),
+                        "file" => $e->getFile(),
+                        "line" => $e->getLine()
+                    ]);
+                }
             } elseif ($action === 'available-plans' && isset($_GET['user_id'])) {
                 getAvailablePlansForUser($pdo, $_GET['user_id']);
             } elseif (isset($_GET['user_id'])) {
@@ -1618,17 +1635,25 @@ function createManualSubscription($pdo, $data)
         if ($existingSubscription && ($plan_id == 1 || $plan_id == 2 || $plan_id == 3)) {
             // Calculate extension months
             $extensionMonths = 0;
-            if ($quantity > 1) {
+            if ($quantity >= 1) {
+                // Use quantity directly (for Plan ID 1, 2, 3 advance payment/renewal)
                 if ($plan_id == 1) {
-                    $extensionMonths = $quantity * 12; // Years to months
+                    // Plan ID 1: quantity is in years, convert to months
+                    // Even if quantity is 1, it means 1 year = 12 months
+                    $extensionMonths = $quantity * 12;
                 } else {
-                    $extensionMonths = $quantity; // Months
+                    // Plan ID 2, 3: quantity is in months
+                    $extensionMonths = $quantity;
                 }
             } else {
-                // Fallback: Calculate from payment amount
+                // Fallback: Calculate from payment amount (only if quantity is not provided or is 0)
                 $planPrice = floatval($plan['price']);
                 if ($planPrice > 0) {
                     $extensionMonths = floor($payment_amount / $planPrice);
+                    // For Plan ID 1, if calculated months is 1, it should be 12 months (1 year)
+                    if ($plan_id == 1 && $extensionMonths == 1) {
+                        $extensionMonths = 12;
+                    }
                 }
             }
 
@@ -1661,6 +1686,50 @@ function createManualSubscription($pdo, $data)
             throw new Exception("User already has an active subscription to this plan: {$existingSubscription['plan_name']} (expires: {$existingSubscription['end_date']})");
         } else {
             $isRenewal = false;
+            
+            // If creating a new subscription of the same plan type, check if there's any previous subscription
+            // (active or expired) and use its end_date as the start_date for the new subscription
+            // This ensures new subscriptions start when the previous one ends, not overlapping
+            $previousStmt = $pdo->prepare("
+                SELECT s.id, s.plan_id, s.end_date, ss.status_name, p.plan_name
+                FROM subscription s 
+                JOIN subscription_status ss ON s.status_id = ss.id 
+                JOIN member_subscription_plan p ON s.plan_id = p.id
+                WHERE s.user_id = ? 
+                AND s.plan_id = ?
+                AND ss.status_name = 'approved' 
+                AND s.amount_paid > 0
+                AND EXISTS (
+                    SELECT 1 FROM payment p 
+                    WHERE p.subscription_id = s.id
+                )
+                ORDER BY s.end_date DESC
+                LIMIT 1
+            ");
+            $previousStmt->execute([$user_id, $plan_id]);
+            $previousSubscription = $previousStmt->fetch();
+            
+            // If there's a previous subscription of the same plan type, use its end_date as start_date
+            if ($previousSubscription) {
+                $previousEndDate = new DateTime($previousSubscription['end_date'], new DateTimeZone('Asia/Manila'));
+                // Use the end_date of the previous subscription as the start_date for the new one
+                $start_date = $previousEndDate->format('Y-m-d');
+                $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
+                
+                // Recalculate end_date based on the new start_date
+                if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
+                    // Already handled above - these use current date/time
+                } elseif (!empty($plan['duration_days']) && $plan['duration_days'] > 0) {
+                    $end_date_obj = clone $start_date_obj;
+                    $end_date_obj->add(new DateInterval('P' . intval($plan['duration_days']) . 'D'));
+                    $end_date = $end_date_obj->format('Y-m-d');
+                } else {
+                    // Recalculate end_date for regular plans based on actualMonths
+                    $end_date_obj = clone $start_date_obj;
+                    $end_date_obj->add(new DateInterval('P' . $actualMonths . 'M'));
+                    $end_date = $end_date_obj->format('Y-m-d');
+                }
+            }
         }
 
         // Check for existing pending requests to prevent duplicates
@@ -2817,4 +2886,315 @@ function generateSubscriptionReceiptNumber($pdo)
 
     return $receiptNumber;
 }
+function getSubscriptionPayments($pdo, $subscription_id)
+{
+    try {
+        // Check if payment table has status column
+        $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
+        $hasStatusColumn = $checkColumnStmt->rowCount() > 0;
+
+        if ($hasStatusColumn) {
+            // Query with status filter
+            $stmt = $pdo->prepare("
+                SELECT 
+                    id,
+                    subscription_id,
+                    amount,
+                    payment_method,
+                    payment_date,
+                    receipt_number,
+                    reference_number,
+                    change_given,
+                    amount_received,
+                    created_at,
+                    status
+                FROM payment 
+                WHERE subscription_id = ? 
+                AND (status = 'paid' OR status = 'completed')
+                ORDER BY payment_date ASC, id ASC
+            ");
+        } else {
+            // Query without status filter
+            $stmt = $pdo->prepare("
+                SELECT 
+                    id,
+                    subscription_id,
+                    amount,
+                    payment_method,
+                    payment_date,
+                    receipt_number,
+                    reference_number,
+                    change_given,
+                    amount_received,
+                    created_at
+                FROM payment 
+                WHERE subscription_id = ?
+                ORDER BY payment_date ASC, id ASC
+            ");
+        }
+
+        $stmt->execute([$subscription_id]);
+        $payments = $stmt->fetchAll();
+
+        echo json_encode([
+            "success" => true,
+            "payments" => $payments,
+            "count" => count($payments)
+        ]);
+    } catch (PDOException $e) {
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "error" => "Database error",
+            "message" => $e->getMessage()
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "error" => "Error fetching payments",
+            "message" => $e->getMessage()
+        ]);
+    }
+}
+
+function getSubscriptionHistory($pdo, $user_id, $plan_id)
+{
+    try {
+        // Validate input parameters
+        $user_id = intval($user_id);
+        $plan_id = intval($plan_id);
+        
+        if ($user_id <= 0 || $plan_id <= 0) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Invalid parameters",
+                "message" => "user_id and plan_id must be positive integers"
+            ]);
+            return;
+        }
+        
+        // Get all subscriptions for this user and plan_id, ordered by start_date
+        // Include all subscriptions regardless of payment status to show complete history
+        $stmt = $pdo->prepare("
+            SELECT 
+                s.id,
+                s.start_date,
+                s.end_date,
+                s.amount_paid,
+                s.discounted_price,
+                s.receipt_number,
+                s.payment_method,
+                s.created_at,
+                s.quantity,
+                p.plan_name,
+                p.price as plan_price,
+                st.status_name,
+                CASE 
+                    WHEN st.status_name = 'pending_approval' THEN 'Pending Approval'
+                    WHEN st.status_name = 'approved' AND s.end_date >= CURDATE() THEN 'Active'
+                    WHEN st.status_name = 'approved' AND s.end_date < CURDATE() THEN 'Expired'
+                    WHEN st.status_name = 'rejected' THEN 'Declined'
+                    WHEN st.status_name = 'cancelled' THEN 'Cancelled'
+                    WHEN st.status_name = 'expired' THEN 'Expired'
+                    ELSE st.status_name
+                END as display_status
+            FROM subscription s
+            JOIN member_subscription_plan p ON s.plan_id = p.id
+            JOIN subscription_status st ON s.status_id = st.id
+            WHERE s.user_id = ? 
+            AND s.plan_id = ?
+            ORDER BY s.start_date ASC, s.id ASC
+        ");
+
+        $stmt->execute([$user_id, $plan_id]);
+        $subscriptions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // If no subscriptions found, return empty array
+        if (empty($subscriptions)) {
+            echo json_encode([
+                "success" => true,
+                "subscriptions" => [],
+                "count" => 0
+            ]);
+            return;
+        }
+
+        // Check if payment table exists and has status column
+        $paymentTableExists = false;
+        $hasStatusColumn = false;
+        
+        try {
+            $checkTableStmt = $pdo->query("SHOW TABLES LIKE 'payment'");
+            $paymentTableExists = $checkTableStmt->rowCount() > 0;
+            
+            if ($paymentTableExists) {
+                try {
+                    $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
+                    $hasStatusColumn = $checkColumnStmt->rowCount() > 0;
+                } catch (Exception $e) {
+                    error_log("Error checking payment table status column: " . $e->getMessage());
+                    $hasStatusColumn = false;
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Error checking payment table existence: " . $e->getMessage());
+            $paymentTableExists = false;
+        }
+
+        // For each subscription, get its payment transactions
+        foreach ($subscriptions as &$subscription) {
+            try {
+                $subscription['payments'] = [];
+                $subscription['payment_count'] = 0;
+                
+                // Only try to fetch payments if payment table exists
+                if ($paymentTableExists && isset($subscription['id'])) {
+                    try {
+                        if ($hasStatusColumn) {
+                            $paymentStmt = $pdo->prepare("
+                                SELECT 
+                                    id,
+                                    subscription_id,
+                                    amount,
+                                    payment_method,
+                                    payment_date,
+                                    receipt_number,
+                                    reference_number,
+                                    change_given,
+                                    amount_received,
+                                    created_at,
+                                    status
+                                FROM payment 
+                                WHERE subscription_id = ? 
+                                AND (status = 'paid' OR status = 'completed')
+                                ORDER BY payment_date ASC, id ASC
+                            ");
+                        } else {
+                            $paymentStmt = $pdo->prepare("
+                                SELECT 
+                                    id,
+                                    subscription_id,
+                                    amount,
+                                    payment_method,
+                                    payment_date,
+                                    receipt_number,
+                                    reference_number,
+                                    change_given,
+                                    amount_received,
+                                    created_at
+                                FROM payment 
+                                WHERE subscription_id = ?
+                                ORDER BY payment_date ASC, id ASC
+                            ");
+                        }
+                        
+                        $paymentStmt->execute([$subscription['id']]);
+                        $subscription['payments'] = $paymentStmt->fetchAll(PDO::FETCH_ASSOC);
+                        $subscription['payment_count'] = count($subscription['payments']);
+                    } catch (PDOException $e) {
+                        error_log("PDO Error fetching payments for subscription {$subscription['id']}: " . $e->getMessage());
+                        $subscription['payments'] = [];
+                        $subscription['payment_count'] = 0;
+                    }
+                }
+                
+                // Calculate total_paid from payments, or fall back to subscription's amount_paid
+                $paymentsTotal = 0;
+                if (!empty($subscription['payments']) && is_array($subscription['payments'])) {
+                    try {
+                        $amounts = array_column($subscription['payments'], 'amount');
+                        if (!empty($amounts) && is_array($amounts)) {
+                            $paymentsTotal = array_sum(array_map('floatval', $amounts));
+                        }
+                    } catch (Exception $e) {
+                        error_log("Error calculating payments total: " . $e->getMessage());
+                        $paymentsTotal = 0;
+                    }
+                }
+                
+                $subscriptionAmountPaid = floatval($subscription['amount_paid'] ?? 0);
+                
+                // Use the higher value between payments total and subscription amount_paid
+                // This handles cases where payments might not be recorded but amount_paid is set
+                $subscription['total_paid'] = max($paymentsTotal, $subscriptionAmountPaid);
+                
+                // If both are 0, keep it as 0
+                if ($subscription['total_paid'] == 0 && $paymentsTotal == 0 && $subscriptionAmountPaid == 0) {
+                    $subscription['total_paid'] = 0;
+                }
+            } catch (Exception $e) {
+                // If payment fetching fails for a subscription, set defaults
+                $subId = isset($subscription['id']) ? $subscription['id'] : 'unknown';
+                error_log("Error processing subscription {$subId}: " . $e->getMessage());
+                $subscription['payments'] = [];
+                $subscription['payment_count'] = 0;
+                $subscription['total_paid'] = floatval($subscription['amount_paid'] ?? 0);
+            }
+        }
+        unset($subscription);
+
+        // Ensure all subscriptions have required fields
+        foreach ($subscriptions as &$sub) {
+            if (!isset($sub['payments'])) {
+                $sub['payments'] = [];
+            }
+            if (!isset($sub['payment_count'])) {
+                $sub['payment_count'] = 0;
+            }
+            if (!isset($sub['total_paid'])) {
+                $sub['total_paid'] = floatval($sub['amount_paid'] ?? 0);
+            }
+            // Ensure all fields are properly set
+            $sub['id'] = isset($sub['id']) ? intval($sub['id']) : 0;
+            $sub['start_date'] = isset($sub['start_date']) ? $sub['start_date'] : null;
+            $sub['end_date'] = isset($sub['end_date']) ? $sub['end_date'] : null;
+            $sub['amount_paid'] = isset($sub['amount_paid']) ? floatval($sub['amount_paid']) : 0;
+            $sub['plan_name'] = isset($sub['plan_name']) ? $sub['plan_name'] : 'Unknown Plan';
+            $sub['status_name'] = isset($sub['status_name']) ? $sub['status_name'] : 'unknown';
+            $sub['display_status'] = isset($sub['display_status']) ? $sub['display_status'] : $sub['status_name'];
+        }
+        unset($sub);
+
+        // Convert to JSON with proper error handling
+        $jsonResponse = json_encode([
+            "success" => true,
+            "subscriptions" => $subscriptions,
+            "count" => count($subscriptions)
+        ], JSON_UNESCAPED_UNICODE);
+        
+        if ($jsonResponse === false) {
+            $errorMsg = json_last_error_msg();
+            error_log("JSON encoding failed: " . $errorMsg);
+            error_log("Data that failed to encode: " . print_r($subscriptions, true));
+            throw new Exception("JSON encoding failed: " . $errorMsg);
+        }
+        
+        echo $jsonResponse;
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("PDO Error in getSubscriptionHistory: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        echo json_encode([
+            "success" => false,
+            "error" => "Database error",
+            "message" => $e->getMessage(),
+            "file" => $e->getFile(),
+            "line" => $e->getLine()
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in getSubscriptionHistory: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        echo json_encode([
+            "success" => false,
+            "error" => "Error fetching subscription history",
+            "message" => $e->getMessage(),
+            "file" => $e->getFile(),
+            "line" => $e->getLine()
+        ]);
+    }
+}
+
 ?>
