@@ -957,7 +957,22 @@ const ViewMembers = ({ userId }) => {
       })
 
       if (!clientResponse.ok) {
-        const result = await clientResponse.json()
+        let result
+        try {
+          const contentType = clientResponse.headers.get("content-type")
+          if (contentType && contentType.includes("application/json")) {
+            result = await clientResponse.json()
+          } else {
+            const text = await clientResponse.text()
+            result = { error: "Server error", message: text || "Failed to create client account" }
+          }
+        } catch (parseError) {
+          result = { 
+            error: "Response parse error", 
+            message: `Failed to parse server response. Status: ${clientResponse.status}` 
+          }
+        }
+        
         if (clientResponse.status === 409) {
           setErrorDialogData({
             title: result.error || "Duplicate Entry Detected",
@@ -972,7 +987,18 @@ const ViewMembers = ({ userId }) => {
         throw new Error(result.message || result.error || "Failed to create client account")
       }
 
-      const clientResult = await clientResponse.json()
+      let clientResult
+      try {
+        const contentType = clientResponse.headers.get("content-type")
+        if (contentType && contentType.includes("application/json")) {
+          clientResult = await clientResponse.json()
+        } else {
+          const text = await clientResponse.text()
+          throw new Error(`Unexpected response format: ${text}`)
+        }
+      } catch (parseError) {
+        throw new Error(`Failed to parse server response: ${parseError.message}`)
+      }
       const newMemberId = clientResult.member?.id || clientResult.data?.id || null
 
       if (!newMemberId) {
@@ -1013,15 +1039,18 @@ const ViewMembers = ({ userId }) => {
         start_date: subscriptionForm.start_date,
         discount_type: subscriptionForm.discount_type || 'none',
         amount_paid: subscriptionForm.amount_paid,
-        payment_method: subscriptionForm.payment_method,
+        payment_method: subscriptionForm.payment_method || 'cash',
         amount_received: subscriptionForm.amount_received || subscriptionForm.amount_paid,
-        gcash_reference: subscriptionForm.gcash_reference || '',
+        change_given: Math.max(0, (parseFloat(subscriptionForm.amount_received || subscriptionForm.amount_paid) - parseFloat(subscriptionForm.amount_paid))),
+        reference_number: subscriptionForm.payment_method === 'gcash' ? (subscriptionForm.gcash_reference || '') : null,
         notes: subscriptionForm.notes || '',
-        quantity: planQuantity,
-        created_by: userId
+        quantity: planQuantity || 1,
+        created_by: 'Admin',
+        staff_id: userId,
+        transaction_status: 'confirmed'
       }
 
-      const subscriptionResponse = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create', subscriptionData)
+      const subscriptionResponse = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', subscriptionData)
       
       if (subscriptionResponse.data && subscriptionResponse.data.success) {
         const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()

@@ -1,0 +1,10 @@
+# Enable CORS for forgot_password_staff.php
+<IfModule mod_headers.c>
+    <FilesMatch "forgot_password_staff\.php">
+        Header set Access-Control-Allow-Origin "*"
+        Header set Access-Control-Allow-Methods "POST, OPTIONS, GET"
+        Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+        Header set Access-Control-Max-Age "86400"
+    </FilesMatch>
+</IfModule>
+

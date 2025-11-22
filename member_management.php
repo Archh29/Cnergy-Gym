@@ -247,15 +247,22 @@ try {
         try {
             // Handle both JSON and FormData (for file uploads)
             $input = [];
-            if (!empty($_FILES)) {
+            $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+            
+            // Check if this is a multipart/form-data request (FormData with file upload)
+            if (strpos($contentType, 'multipart/form-data') !== false || !empty($_FILES)) {
                 // FormData request - get data from $_POST
                 $input = $_POST;
+                error_log("POST Member Add - Detected FormData request");
             } else {
                 // JSON request
-                $input = json_decode(file_get_contents('php://input'), true);
-                if (!$input) {
+                $rawInput = file_get_contents('php://input');
+                $input = json_decode($rawInput, true);
+                if (!$input && $rawInput !== '') {
+                    error_log("POST Member Add - Failed to parse JSON: " . substr($rawInput, 0, 200));
                     respond(['error' => 'Invalid JSON'], 400);
                 }
+                error_log("POST Member Add - Detected JSON request");
             }
 
             // Log the input for debugging
@@ -321,66 +328,107 @@ try {
 
             // Handle parent consent file upload for users under 18
             $parentConsentFileUrl = null;
-            if (isset($_FILES['parent_consent_file']) && $_FILES['parent_consent_file']['error'] === UPLOAD_ERR_OK) {
-                // Calculate age to verify upload is needed
-                $birthDate = new DateTime($input['bday']);
-                $today = new DateTime();
-                $age = $today->diff($birthDate)->y;
-                
-                if ($age < 18) {
-                    $uploadDir = 'uploads/consents/';
-                    // Create directory if it doesn't exist
-                    if (!file_exists($uploadDir)) {
-                        mkdir($uploadDir, 0755, true);
-                    }
+            try {
+                if (isset($_FILES['parent_consent_file'])) {
+                    $fileError = $_FILES['parent_consent_file']['error'];
+                    error_log("Parent consent file upload - Error code: $fileError");
                     
-                    $file = $_FILES['parent_consent_file'];
-                    $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                    $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
-                    
-                    if (!in_array($fileExtension, $allowedExtensions)) {
-                        respond([
-                            'error' => 'Invalid file type',
-                            'message' => 'Parent consent file must be an image (JPG, PNG, GIF) or PDF file.'
-                        ], 400);
-                    }
-                    
-                    // Validate file size (max 5MB)
-                    if ($file['size'] > 5 * 1024 * 1024) {
-                        respond([
-                            'error' => 'File too large',
-                            'message' => 'Parent consent file must be smaller than 5MB.'
-                        ], 400);
-                    }
-                    
-                    // Generate unique filename
-                    $uniqueFilename = 'consent_' . time() . '_' . uniqid() . '.' . $fileExtension;
-                    $uploadPath = $uploadDir . $uniqueFilename;
-                    
-                    // Move uploaded file
-                    if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
-                        $parentConsentFileUrl = $uploadPath;
-                        error_log("Parent consent file uploaded successfully: $uploadPath");
+                    if ($fileError === UPLOAD_ERR_OK) {
+                        // Calculate age to verify upload is needed
+                        $birthDate = new DateTime($input['bday']);
+                        $today = new DateTime();
+                        $age = $today->diff($birthDate)->y;
+                        
+                        if ($age < 18) {
+                            $uploadDir = 'uploads/consents/';
+                            // Create directory if it doesn't exist
+                            if (!file_exists($uploadDir)) {
+                                if (!mkdir($uploadDir, 0755, true)) {
+                                    error_log("Failed to create upload directory: $uploadDir");
+                                    respond([
+                                        'error' => 'Server configuration error',
+                                        'message' => 'Failed to create upload directory. Please contact administrator.'
+                                    ], 500);
+                                }
+                            }
+                            
+                            $file = $_FILES['parent_consent_file'];
+                            $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                            $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
+                            
+                            if (!in_array($fileExtension, $allowedExtensions)) {
+                                respond([
+                                    'error' => 'Invalid file type',
+                                    'message' => 'Parent consent file must be an image (JPG, PNG, GIF) or PDF file.'
+                                ], 400);
+                            }
+                            
+                            // Validate file size (max 5MB)
+                            if ($file['size'] > 5 * 1024 * 1024) {
+                                respond([
+                                    'error' => 'File too large',
+                                    'message' => 'Parent consent file must be smaller than 5MB.'
+                                ], 400);
+                            }
+                            
+                            // Generate unique filename
+                            $uniqueFilename = 'consent_' . time() . '_' . uniqid() . '.' . $fileExtension;
+                            $uploadPath = $uploadDir . $uniqueFilename;
+                            
+                            // Move uploaded file
+                            if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                                $parentConsentFileUrl = $uploadPath;
+                                error_log("Parent consent file uploaded successfully: $uploadPath");
+                            } else {
+                                error_log("Failed to move uploaded file: " . $file['tmp_name'] . " to " . $uploadPath);
+                                error_log("Upload directory exists: " . (file_exists($uploadDir) ? 'yes' : 'no'));
+                                error_log("Upload directory writable: " . (is_writable($uploadDir) ? 'yes' : 'no'));
+                                respond([
+                                    'error' => 'File upload failed',
+                                    'message' => 'Failed to save parent consent file. Please try again.'
+                                ], 500);
+                            }
+                        }
                     } else {
-                        error_log("Failed to move uploaded file: " . $file['tmp_name']);
+                        // Handle upload errors
+                        $errorMessages = [
+                            UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive',
+                            UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive',
+                            UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                            UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                            UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                            UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+                        ];
+                        $errorMsg = $errorMessages[$fileError] ?? 'Unknown upload error';
+                        error_log("File upload error: $errorMsg (code: $fileError)");
                         respond([
-                            'error' => 'File upload failed',
-                            'message' => 'Failed to save parent consent file. Please try again.'
-                        ], 500);
+                            'error' => 'File upload error',
+                            'message' => $errorMsg
+                        ], 400);
+                    }
+                } else {
+                    // Check if consent file is required (user under 18)
+                    if (isset($input['bday'])) {
+                        $birthDate = new DateTime($input['bday']);
+                        $today = new DateTime();
+                        $age = $today->diff($birthDate)->y;
+                        
+                        if ($age < 18 && $age >= 13) {
+                            respond([
+                                'error' => 'Parent consent required',
+                                'message' => 'Parent consent letter/waiver is required for users under 18 years old.'
+                            ], 400);
+                        }
                     }
                 }
-            } else {
-                // Check if consent file is required (user under 18)
-                $birthDate = new DateTime($input['bday']);
-                $today = new DateTime();
-                $age = $today->diff($birthDate)->y;
-                
-                if ($age < 18 && $age >= 13) {
-                    respond([
-                        'error' => 'Parent consent required',
-                        'message' => 'Parent consent letter/waiver is required for users under 18 years old.'
-                    ], 400);
-                }
+            } catch (Exception $e) {
+                error_log("Error handling parent consent file: " . $e->getMessage());
+                error_log("Stack trace: " . $e->getTraceAsString());
+                respond([
+                    'error' => 'File processing error',
+                    'message' => 'An error occurred while processing the parent consent file: ' . $e->getMessage()
+                ], 500);
             }
 
             // Check if parent_consent_file_url column exists
