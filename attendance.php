@@ -325,6 +325,9 @@ function getAttendance(PDO $pdo): void
             error_log("DEBUG - Attendance $idx: User: " . ($att['name'] ?? 'N/A') . ", Plan ID: " . ($att['plan_id'] ?? 'NULL') . ", Plan Name: " . ($att['plan_name'] ?? 'NULL'));
         }
 
+        // Auto-checkout expired guest sessions (valid_until < NOW() and checkout_time IS NULL)
+        autoCheckoutExpiredGuests($pdo);
+
         // Get guest session attendance (approved and paid guests)
         // Check if checkout_time column exists in guest_session table
         $checkCheckoutTimeColumn = $pdo->query("SHOW COLUMNS FROM guest_session LIKE 'checkout_time'");
@@ -1037,6 +1040,114 @@ function checkoutGuestSession(PDO $pdo, array $input): void
         'duration' => $formattedDuration,
         'duration_minutes' => $totalMinutes
     ]);
+}
+
+// Auto-checkout expired guest sessions at 9 PM PH time
+function autoCheckoutExpiredGuests(PDO $pdo): void
+{
+    try {
+        // Check if checkout_time column exists, if not, add it
+        $checkCheckoutTimeColumn = $pdo->query("SHOW COLUMNS FROM guest_session LIKE 'checkout_time'");
+        $hasCheckoutTimeColumn = $checkCheckoutTimeColumn->rowCount() > 0;
+
+        if (!$hasCheckoutTimeColumn) {
+            try {
+                $pdo->exec("ALTER TABLE `guest_session` ADD COLUMN `checkout_time` DATETIME NULL AFTER `valid_until`");
+                error_log("Added checkout_time column to guest_session table");
+            } catch (Exception $e) {
+                error_log("Failed to add checkout_time column: " . $e->getMessage());
+                return; // Can't proceed without the column
+            }
+        }
+
+        // Find all expired guest sessions that haven't been checked out yet
+        // Check if it's past 9 PM on the day of creation (regardless of valid_until)
+        // This handles old sessions that were created with +24 hours instead of 9 PM same day
+        // A guest session expires at 9 PM on the day it was created
+        $stmt = $pdo->prepare("
+            SELECT id, guest_name, valid_until, created_at, checkout_time
+            FROM `guest_session`
+            WHERE status = 'approved' 
+            AND paid = 1
+            AND checkout_time IS NULL
+            AND (
+                -- If created today and it's past 9 PM
+                (DATE(created_at) = CURDATE() AND TIME(NOW()) >= '21:00:00')
+                OR
+                -- If created on a previous day, it's definitely expired
+                (DATE(created_at) < CURDATE())
+                OR
+                -- Also check valid_until as fallback
+                (valid_until < NOW())
+            )
+        ");
+        $stmt->execute();
+        $expiredSessions = $stmt->fetchAll();
+
+        if (empty($expiredSessions)) {
+            error_log("autoCheckoutExpiredGuests: No expired sessions found");
+            return; // No expired sessions to check out
+        }
+
+        error_log("autoCheckoutExpiredGuests: Found " . count($expiredSessions) . " expired session(s) to check out");
+
+        $checkedOutCount = 0;
+
+        foreach ($expiredSessions as $session) {
+            // Calculate the correct checkout time (9 PM on the day of creation)
+            $createdAt = new DateTime($session['created_at'], new DateTimeZone('Asia/Manila'));
+            $checkoutTimeObj = clone $createdAt;
+            $checkoutTimeObj->setTime(21, 0, 0); // Set to 9 PM (21:00)
+            
+            // If created after 9 PM, it should expire at 9 PM next day
+            if ($createdAt->format('H:i') >= '21:00') {
+                $checkoutTimeObj->modify('+1 day');
+            }
+            
+            $checkoutTime = $checkoutTimeObj->format('Y-m-d H:i:s');
+            
+            error_log("autoCheckoutExpiredGuests: Checking out guest {$session['guest_name']} (ID: {$session['id']}) - Created: {$session['created_at']}, Checkout: {$checkoutTime}");
+
+            // Update guest_session checkout_time
+            $updateStmt = $pdo->prepare("
+                UPDATE `guest_session` 
+                SET checkout_time = ? 
+                WHERE id = ?
+            ");
+            $updateStmt->execute([$checkoutTime, $session['id']]);
+
+            // Also update attendance table if there's an active attendance record
+            // Find attendance records for this guest session (using guest_session id as user_id)
+            $attendanceStmt = $pdo->prepare("
+                UPDATE `attendance`
+                SET check_out = ?
+                WHERE user_id = ?
+                AND check_out IS NULL
+                AND DATE(check_in) = DATE(?)
+            ");
+            $attendanceStmt->execute([$checkoutTime, $session['id'], $session['created_at']]);
+
+            $checkedOutCount++;
+
+            // Log activity
+            $checkInTime = new DateTime($session['created_at'], new DateTimeZone('Asia/Manila'));
+            $checkOutTimeObj = new DateTime($checkoutTime, new DateTimeZone('Asia/Manila'));
+            $duration = $checkInTime->diff($checkOutTimeObj);
+            $totalMinutes = ($duration->days * 24 * 60) + ($duration->h * 60) + $duration->i;
+            $hours = floor($totalMinutes / 60);
+            $mins = $totalMinutes % 60;
+            $formattedDuration = $hours > 0 ? "{$hours}h {$mins}m" : "{$mins}m";
+
+            logStaffActivity($pdo, null, "Auto Checkout", "Guest session auto checked out: {$session['guest_name']} (ID: {$session['id']}) - Expired at 9 PM - Duration: {$formattedDuration}", "Attendance");
+        }
+
+        if ($checkedOutCount > 0) {
+            error_log("Auto-checked out {$checkedOutCount} expired guest session(s)");
+        }
+
+    } catch (Exception $e) {
+        error_log("Error in autoCheckoutExpiredGuests: " . $e->getMessage());
+    }
 }
 
 // Guest session QR scanning function removed - guests will be handled through admin approval workflow

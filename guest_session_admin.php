@@ -636,8 +636,18 @@ function createGuestSession($pdo, $data)
         // Generate unique QR token
         $qrToken = generateUniqueQRToken($pdo);
 
-        // Calculate valid until (24 hours from now)
-        $validUntil = date('Y-m-d H:i:s', strtotime('+24 hours'));
+        // Calculate valid until (9 PM PH time on the same day, or next day if already past 9 PM)
+        date_default_timezone_set('Asia/Manila');
+        $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+        $validUntil = clone $now;
+        $validUntil->setTime(21, 0, 0); // Set to 9 PM (21:00)
+        
+        // If current time is already past 9 PM, set to 9 PM next day
+        if ($now >= $validUntil) {
+            $validUntil->modify('+1 day');
+        }
+        
+        $validUntilStr = $validUntil->format('Y-m-d H:i:s');
 
         // Insert guest session with POS fields and PayMongo payment link ID
         $stmt = $pdo->prepare("
@@ -645,7 +655,7 @@ function createGuestSession($pdo, $data)
             VALUES (?, ?, ?, ?, ?, 1, 'approved', NOW(), ?, ?, ?, ?, ?)
         ");
 
-        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $validUntil, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven]);
+        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $validUntilStr, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven]);
 
         $sessionId = $pdo->lastInsertId();
 
