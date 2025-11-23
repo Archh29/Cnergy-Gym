@@ -188,6 +188,7 @@ const SubscriptionMonitor = ({ userId }) => {
     guest_name: "",
     payment_method: "cash",
     amount_received: "",
+    gcash_reference: "",
     notes: ""
   })
   const [gymSessionPlan, setGymSessionPlan] = useState(null)
@@ -862,6 +863,8 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_paid: totalAmount,
         payment_method: apiPaymentMethod,
         amount_received: receivedAmount,
+        gcash_reference: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : "",
+        reference_number: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : null,
         notes: guestSessionForm.notes || ""
       }, {
         headers: {
@@ -3638,7 +3641,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "" }))}
+                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
                   className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "digital"
                     ? "border-gray-900 bg-gray-900 text-white shadow-md"
                     : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
@@ -3648,6 +3651,22 @@ const SubscriptionMonitor = ({ userId }) => {
                 </button>
               </div>
             </div>
+
+            {/* GCash Reference Number (for GCash only) */}
+            {guestSessionForm.payment_method === "digital" && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Reference Number <span className="text-red-500">*</span></Label>
+                <Input
+                  type="text"
+                  value={guestSessionForm.gcash_reference}
+                  onChange={(e) => setGuestSessionForm(prev => ({ ...prev, gcash_reference: e.target.value }))}
+                  placeholder="Enter GCash reference number"
+                  className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200"
+                  required
+                />
+                <p className="text-xs text-gray-500">Required for GCash transactions</p>
+              </div>
+            )}
 
             {/* Amount Received (for cash only) */}
             {guestSessionForm.payment_method === "cash" && (
@@ -3687,7 +3706,8 @@ const SubscriptionMonitor = ({ userId }) => {
                 guestSessionLoading ||
                 !guestSessionForm.guest_name ||
                 !gymSessionPlan ||
-                (guestSessionForm.payment_method === "cash" && (!guestSessionForm.amount_received || parseFloat(guestSessionForm.amount_received) < parseFloat(gymSessionPlan.price || 0)))
+                (guestSessionForm.payment_method === "cash" && (!guestSessionForm.amount_received || parseFloat(guestSessionForm.amount_received) < parseFloat(gymSessionPlan.price || 0))) ||
+                (guestSessionForm.payment_method === "digital" && !guestSessionForm.gcash_reference)
               }
               className="bg-gray-900 hover:bg-gray-800 text-white font-semibold"
             >

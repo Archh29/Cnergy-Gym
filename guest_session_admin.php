@@ -647,6 +647,11 @@ function createGuestSession($pdo, $data)
         $referenceNumber = null;
         if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
             $referenceNumber = $data['gcash_reference'] ?? $data['reference_number'] ?? null;
+            
+            // Validate that reference number is provided for GCash/digital payments
+            if (empty($referenceNumber) || trim($referenceNumber) === '') {
+                throw new Exception('Reference number is required for GCash/digital payments');
+            }
         }
 
         // Validate guest name
@@ -667,6 +672,9 @@ function createGuestSession($pdo, $data)
 
         // Generate unique QR token
         $qrToken = generateUniqueQRToken($pdo);
+        
+        // Generate unique session code (e.g., ABC123)
+        $sessionCode = generateSessionCode($pdo);
 
         // Calculate valid until (9 PM PH time on the same day, or next day if already past 9 PM)
         date_default_timezone_set('Asia/Manila');
@@ -683,11 +691,11 @@ function createGuestSession($pdo, $data)
 
         // Insert guest session with POS fields and PayMongo payment link ID
         $stmt = $pdo->prepare("
-            INSERT INTO guest_session (guest_name, guest_type, amount_paid, qr_token, valid_until, paid, status, created_at, payment_method, payment_link_id, receipt_number, cashier_id, change_given, reference_number)
-            VALUES (?, ?, ?, ?, ?, 1, 'approved', NOW(), ?, ?, ?, ?, ?, ?)
+            INSERT INTO guest_session (guest_name, guest_type, amount_paid, qr_token, session_code, valid_until, paid, status, created_at, payment_method, payment_link_id, receipt_number, cashier_id, change_given, reference_number)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'approved', NOW(), ?, ?, ?, ?, ?, ?)
         ");
 
-        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $validUntilStr, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven, $referenceNumber]);
+        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $sessionCode, $validUntilStr, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven, $referenceNumber]);
 
         $sessionId = $pdo->lastInsertId();
 
@@ -922,6 +930,24 @@ function generateGuestReceiptNumber($pdo)
     } while ($count > 0);
 
     return $receiptNumber;
+}
+
+function generateSessionCode($pdo)
+{
+    // Generate a 6-character alphanumeric code (e.g., ABC123)
+    $characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    do {
+        $code = '';
+        for ($i = 0; $i < 6; $i++) {
+            $code .= $characters[rand(0, strlen($characters) - 1)];
+        }
+
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM guest_session WHERE session_code = ?");
+        $stmt->execute([$code]);
+        $count = $stmt->fetchColumn();
+    } while ($count > 0);
+
+    return $code;
 }
 
 function logActivity($pdo, $userId, $activity)

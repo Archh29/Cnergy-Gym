@@ -835,7 +835,7 @@ const Sales = ({ userId }) => {
       // Log payment methods for debugging
       const subscriptionSales = salesData.filter(s => s.sale_type === 'Subscription')
       if (subscriptionSales.length > 0) {
-        console.log("ðŸ” DEBUG - Subscription sales payment methods:", subscriptionSales.map(s => ({
+        console.log("🔍 DEBUG - Subscription sales payment methods:", subscriptionSales.map(s => ({
           id: s.id,
           receipt: s.receipt_number,
           payment_method: s.payment_method,
@@ -848,14 +848,14 @@ const Sales = ({ userId }) => {
           const pm = (s.payment_method || '').toLowerCase().trim()
           return pm === 'gcash' || pm === 'digital'
         })
-        console.log("ðŸ” DEBUG - Recent GCash subscriptions:", recentGCash.slice(-5).map(s => ({
+        console.log("🔍 DEBUG - Recent GCash subscriptions:", recentGCash.slice(-5).map(s => ({
           id: s.id,
           receipt: s.receipt_number,
           payment_method: s.payment_method,
           formatted: formatPaymentMethod(s.payment_method)
         })))
         // Log the most recent 10 subscriptions to see their payment methods
-        console.log("ðŸ” DEBUG - Most recent 10 subscriptions:", subscriptionSales.slice(-10).map(s => ({
+        console.log("🔍 DEBUG - Most recent 10 subscriptions:", subscriptionSales.slice(-10).map(s => ({
           id: s.id,
           receipt: s.receipt_number,
           payment_method: s.payment_method,
@@ -1719,16 +1719,262 @@ const Sales = ({ userId }) => {
       <Card className="border-0 shadow-lg bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100">
         <CardHeader className="pb-4">
           <div>
-            <CardTitle className="text-3xl font-bold text-gray-900 mb-1">Product Checkout & Inventory</CardTitle>
-            <p className="text-sm text-gray-600">Process product sales and manage inventory for CNERGY Gym</p>
+            <CardTitle className="text-3xl font-bold text-gray-900 mb-1">Sales Management</CardTitle>
+            <p className="text-sm text-gray-600">Manage product sales and inventory for CNERGY Gym</p>
           </div>
         </CardHeader>
       </Card>
 
+      {/* Quick Stats with Filter */}
+      <Card className="border-0 shadow-lg">
+        <CardHeader className="bg-gradient-to-r from-gray-50 to-gray-100 border-b">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-700 to-gray-800 shadow-sm">
+                <Store className="h-5 w-5 text-white" />
+              </div>
+              <CardTitle className="text-xl font-bold text-gray-900">Sales Overview</CardTitle>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <Label htmlFor="analytics-filter" className="text-sm font-medium text-gray-700">Period:</Label>
+              <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
+                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Month Filter */}
+              <Label htmlFor="month-filter" className="text-sm font-medium text-gray-700">Month:</Label>
+              <Select value={monthFilter} onValueChange={setMonthFilter}>
+                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  <SelectItem value="1">January</SelectItem>
+                  <SelectItem value="2">February</SelectItem>
+                  <SelectItem value="3">March</SelectItem>
+                  <SelectItem value="4">April</SelectItem>
+                  <SelectItem value="5">May</SelectItem>
+                  <SelectItem value="6">June</SelectItem>
+                  <SelectItem value="7">July</SelectItem>
+                  <SelectItem value="8">August</SelectItem>
+                  <SelectItem value="9">September</SelectItem>
+                  <SelectItem value="10">October</SelectItem>
+                  <SelectItem value="11">November</SelectItem>
+                  <SelectItem value="12">December</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Year Filter */}
+              <Label htmlFor="year-filter" className="text-sm font-medium text-gray-700">Year:</Label>
+              <Select value={yearFilter} onValueChange={setYearFilter}>
+                <SelectTrigger className="w-28 bg-white border-gray-300 shadow-sm">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  <SelectItem value="2024">2024</SelectItem>
+                  <SelectItem value="2023">2023</SelectItem>
+                  <SelectItem value="2022">2022</SelectItem>
+                  <SelectItem value="2021">2021</SelectItem>
+                  <SelectItem value="2020">2020</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Custom Date Picker */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={useCustomDate ? "default" : "outline"}
+                    className={cn(
+                      "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
+                      useCustomDate
+                        ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
+                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customDate}
+                    onSelect={(date) => {
+                      setCustomDate(date)
+                      setUseCustomDate(true)
+                      setAnalyticsFilter("custom")
+                    }}
+                    className="rounded-md border"
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {/* Total Sales Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Total Sales</CardTitle>
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <TrendingUp className="h-5 w-5 text-gray-700" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
+                  // Calculate today's sales only
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const todayStr = format(today, "yyyy-MM-dd")
+                  
+                  return sales
+                    .filter(sale => {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      return saleDateStr === todayStr
+                    })
+                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                })())}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">All sales combined</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setTotalSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Product Sales Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Product Sales</CardTitle>
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <ShoppingCart className="h-5 w-5 text-gray-700" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.productSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">
+                  {analytics.productsSoldToday || 0} items sold
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setProductSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Subscription Sales Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Subscription Sales</CardTitle>
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <CreditCard className="h-5 w-5 text-gray-700" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
+                  // Calculate subscription sales from sales data (includes both Subscription and Guest sales)
+                  // This matches the calculation in the subscription sales details dialog - filtered to today
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const todayStr = format(today, "yyyy-MM-dd")
+                  
+                  const subscriptionSalesTotal = sales
+                    .filter(sale => {
+                      // Include both Subscription and Guest sales
+                      const isSubscriptionOrGuest = sale.sale_type === 'Subscription' || sale.sale_type === 'Guest'
+                      if (!isSubscriptionOrGuest) return false
+                      
+                      // Filter to today's sales only
+                      const saleDate = new Date(sale.sale_date)
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      return saleDateStr === todayStr
+                    })
+                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                  return subscriptionSalesTotal
+                })())}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Subscription revenue</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setSubscriptionSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Coaching Sales Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Coaching Sales</CardTitle>
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <UserCheck className="h-5 w-5 text-gray-700" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.coachAssignmentSales || 0)}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Coach revenue</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setCoachingSalesDialogOpen(true)}
+                >
+                  View Details
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Low Stock Items Card */}
+            <Card className="border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 bg-white group">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700">Low Stock Items</CardTitle>
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 group-hover:scale-110 transition-transform">
+                  <AlertTriangle className="h-5 w-5 text-gray-700" />
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{analytics.lowStockItems}</div>
+                <p className="text-xs text-gray-600 font-medium mb-4">Need restocking</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400 font-medium"
+                  onClick={() => setLowStockDialogOpen(true)}
+                >
+                  View Details
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="sales" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="sales">Checkout</TabsTrigger>
-          <TabsTrigger value="products">Inventory</TabsTrigger>
+          <TabsTrigger value="sales">New Sale</TabsTrigger>
+          <TabsTrigger value="history">All Sales</TabsTrigger>
+          <TabsTrigger value="products">Product Inventory</TabsTrigger>
         </TabsList>
 
         <TabsContent value="sales">
@@ -1780,7 +2026,7 @@ const Sales = ({ userId }) => {
                           <div className="flex items-center justify-between w-full">
                             <div className="flex flex-col flex-1 min-w-0">
                               <span className="font-semibold text-gray-900 truncate">{product.name}</span>
-                              <span className="text-xs text-gray-500">{product.category} â€¢ {formatCurrency(product.price)}</span>
+                              <span className="text-xs text-gray-500">{product.category} • {formatCurrency(product.price)}</span>
                             </div>
                             <span className={`ml-3 text-xs font-medium px-2 py-1 rounded ${product.stock === 0
                               ? 'bg-red-100 text-red-700'
@@ -1867,7 +2113,7 @@ const Sales = ({ userId }) => {
                             <h4 className="font-semibold text-gray-900 mb-1 truncate">{item.product?.name || 'Unknown Product'}</h4>
                             <div className="flex items-center gap-2">
                               <p className="text-sm text-gray-600">{formatCurrency(item.product?.price || 0)} each</p>
-                              <span className="text-gray-400">â€¢</span>
+                              <span className="text-gray-400">•</span>
                               <Badge variant="outline" className="text-xs bg-gray-50 text-gray-900 border-gray-300">
                                 {item.product?.category || 'N/A'}
                               </Badge>
@@ -1992,17 +2238,17 @@ const Sales = ({ userId }) => {
           </div>
         </TabsContent>
 
-        <TabsContent value="products">
+        <TabsContent value="history">
           <Card className="border-2 border-gray-200 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-gray-200">
+            <CardHeader className="bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-gray-200">
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="p-2 rounded-lg bg-orange-100">
-                      <Package className="h-5 w-5 text-orange-600" />
+                    <div className="p-2 rounded-lg bg-purple-100">
+                      <TrendingUp className="h-5 w-5 text-purple-600" />
                     </div>
                     <div>
-                      <CardTitle className="text-2xl font-bold text-gray-900">Product Inventory</CardTitle>
+                      <CardTitle className="text-2xl font-bold text-gray-900">All Sales</CardTitle>
                       <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
                         <span>Showing {filteredSales.length} of {sales.length} sales (Page {allSalesCurrentPage} of {allSalesTotalPages})</span>
                         {saleTypeFilter !== "all" && (
@@ -2137,7 +2383,7 @@ const Sales = ({ userId }) => {
                       }}
                       className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
                     >
-                      âœ• Clear Date
+                      ✕ Clear Date
                     </Button>
                   )}
                 </div>
@@ -2240,7 +2486,13 @@ const Sales = ({ userId }) => {
                           </TableCell>
                           <TableCell className="py-4">
                             <div className="text-xs font-mono font-medium text-gray-700">
-                              {sale.receipt_number || "N/A"}
+                              {(() => {
+                                const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                  return sale.reference_number || sale.receipt_number || "N/A"
+                                }
+                                return sale.receipt_number || "N/A"
+                              })()}
                             </div>
                           </TableCell>
                           <TableCell className="py-4 font-medium text-gray-700">{formatDate(sale.sale_date)}</TableCell>
@@ -2349,7 +2601,7 @@ const Sales = ({ userId }) => {
                         <div className="space-y-2">
                           <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                             <Hash className="h-4 w-4 text-gray-500" />
-                            Price (â‚±)
+                            Price (₱)
                           </Label>
                           <Input
                             type="number"
@@ -2499,9 +2751,9 @@ const Sales = ({ userId }) => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="all">All Prices</SelectItem>
-                          <SelectItem value="low">Low (&lt;â‚±100)</SelectItem>
-                          <SelectItem value="medium">Medium (â‚±100-â‚±500)</SelectItem>
-                          <SelectItem value="high">High (&gt;â‚±500)</SelectItem>
+                          <SelectItem value="low">Low (&lt;₱100)</SelectItem>
+                          <SelectItem value="medium">Medium (₱100-₱500)</SelectItem>
+                          <SelectItem value="high">High (&gt;₱500)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2751,7 +3003,7 @@ const Sales = ({ userId }) => {
                         <p className="text-xs text-gray-500 mb-1">Current</p>
                         <span className="text-2xl font-bold text-gray-700">{stockUpdateProduct.stock}</span>
                       </div>
-                      <span className="text-2xl text-gray-400">â†’</span>
+                      <span className="text-2xl text-gray-400">→</span>
                       <div className="text-center">
                         <p className="text-xs text-gray-500 mb-1">New</p>
                         <span className={`text-3xl font-bold ${stockUpdateType === "add" || isAddOnlyMode ? "text-green-700" : "text-red-700"
@@ -2833,7 +3085,7 @@ const Sales = ({ userId }) => {
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <Hash className="h-4 w-4 text-gray-500" />
-                Price (â‚±)
+                Price (₱)
               </Label>
               <Input
                 type="number"
@@ -2903,7 +3155,7 @@ const Sales = ({ userId }) => {
                   <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0">
                     <div className="flex-1">
                       <span className="text-sm font-medium text-gray-900">{item.product?.name}</span>
-                      <span className="text-xs text-gray-500 ml-2">Ã— {item.quantity}</span>
+                      <span className="text-xs text-gray-500 ml-2">× {item.quantity}</span>
                     </div>
                     <span className="text-sm font-semibold text-gray-900">{formatCurrency(item.price)}</span>
                   </div>
@@ -2941,8 +3193,8 @@ const Sales = ({ userId }) => {
               <div className="flex justify-between items-center py-3 border-t-2 border-gray-300 pt-4 mt-2">
                 <span className="text-base font-semibold text-gray-900">Total Amount</span>
                 <span className="text-xl font-bold text-gray-900">{formatCurrency(getTotalAmount())}</span>
+              </div>
             </div>
-          </div>
           </div>
 
           <DialogFooter className="gap-3 pt-4 border-t border-gray-200">
@@ -2983,7 +3235,7 @@ const Sales = ({ userId }) => {
                     <span className="text-sm font-bold text-gray-900">{receiptNumber}</span>
                   </div>
                   <p className="text-xs text-gray-500">
-                    {formatDateTime().date} â€¢ {formatDateTime().time}
+                    {formatDateTime().date} • {formatDateTime().time}
                   </p>
                 </div>
               </div>
@@ -2996,25 +3248,25 @@ const Sales = ({ userId }) => {
                     <span className="text-sm font-semibold text-gray-900 capitalize px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full">
                       {lastTransaction.payment_method}
                     </span>
-                </div>
+                  </div>
 
-                {lastTransaction.payment_method === "cash" && (
+                  {lastTransaction.payment_method === "cash" && (
                     <div className="space-y-3 pt-3 border-t border-gray-200">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-gray-600">Amount Received</span>
                         <span className="text-sm font-semibold text-gray-900">
                           {formatCurrency(parseFloat(amountReceived) || lastTransaction.total_amount)}
                         </span>
-                    </div>
+                      </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm font-medium text-gray-600">Change</span>
                         <span className="text-base font-bold text-green-600">
                           {formatCurrency(changeGiven)}
                         </span>
+                      </div>
                     </div>
-                    </div>
-                )}
-              </div>
+                  )}
+                </div>
 
                 {/* Total Section */}
                 <div className="flex justify-between items-center py-4 px-2 border-t-2 border-gray-300">
@@ -3140,45 +3392,45 @@ const Sales = ({ userId }) => {
               </div>
             ) : (
               <div className="py-4">
-              <Table>
-                <TableHeader>
+                <Table>
+                  <TableHeader>
                     <TableRow className="bg-gray-100/80 hover:bg-gray-100/80 border-b border-gray-200">
-                    <TableHead className="font-medium text-gray-700">Product Name</TableHead>
-                    <TableHead className="font-medium text-gray-700">Category</TableHead>
-                    <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
-                    <TableHead className="font-medium text-gray-700">Price</TableHead>
-                    <TableHead className="font-medium text-gray-700">Status</TableHead>
+                      <TableHead className="font-medium text-gray-700">Product Name</TableHead>
+                      <TableHead className="font-medium text-gray-700">Category</TableHead>
+                      <TableHead className="font-medium text-gray-700">Current Stock</TableHead>
+                      <TableHead className="font-medium text-gray-700">Price</TableHead>
+                      <TableHead className="font-medium text-gray-700">Status</TableHead>
                       <TableHead className="text-right font-medium text-gray-700">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {getLowStockProducts()
-                    .sort((a, b) => a.stock - b.stock)
-                    .map((product) => (
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {getLowStockProducts()
+                      .sort((a, b) => a.stock - b.stock)
+                      .map((product) => (
                         <TableRow key={product.id} className="hover:bg-gray-50/60 transition-colors border-b border-gray-100 bg-white/70">
-                        <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
-                        <TableCell>
+                          <TableCell className="font-medium text-gray-900">{product.name}</TableCell>
+                          <TableCell>
                             <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300 font-normal shadow-sm">
-                            {product.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm font-medium text-gray-700">
-                            {product.stock} {product.stock === 1 ? 'unit' : 'units'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
-                        <TableCell>
-                          {product.stock === 0 || product.stock <= 5 ? (
-                            <Badge className="bg-red-500 text-white font-medium border-0">
-                              {product.stock === 0 ? 'Out of Stock' : 'Critical'}
+                              {product.category}
                             </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium">
-                              Low Stock
-                            </Badge>
-                          )}
-                        </TableCell>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-sm font-medium text-gray-700">
+                              {product.stock} {product.stock === 1 ? 'unit' : 'units'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="font-medium text-gray-900">{formatCurrency(product.price)}</TableCell>
+                          <TableCell>
+                            {product.stock === 0 || product.stock <= 5 ? (
+                              <Badge className="bg-red-500 text-white font-medium border-0">
+                                {product.stock === 0 ? 'Out of Stock' : 'Critical'}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 font-medium">
+                                Low Stock
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant="default"
@@ -3196,11 +3448,11 @@ const Sales = ({ userId }) => {
                               <Plus className="mr-1.5 h-4 w-4" />
                               Add Stock
                             </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
           </div>
@@ -3286,7 +3538,7 @@ const Sales = ({ userId }) => {
           <div className="flex flex-col items-center text-center py-6 px-4">
             <div className="p-4 rounded-full bg-gradient-to-br from-green-100 to-emerald-100 mb-4 shadow-lg">
               <CheckCircle className="h-12 w-12 text-green-600" />
-    </div>
+            </div>
             <DialogTitle className="text-2xl font-bold text-gray-900 mb-2">
               Success!
             </DialogTitle>
@@ -3744,7 +3996,18 @@ const Sales = ({ userId }) => {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
-                                  {sale.receipt_number || 'N/A'}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    // If reference_number exists, it's a GCash payment (even if payment_method is empty/wrong)
+                                    if (sale.reference_number) {
+                                      return sale.reference_number
+                                    }
+                                    // Otherwise check payment method
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                    }
+                                    return sale.receipt_number || 'N/A'
+                                  })()}
                                 </TableCell>
                               </TableRow>
                             )
@@ -4110,7 +4373,7 @@ const Sales = ({ userId }) => {
                       }}
                       className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
-                      âœ•
+                      ✕
                     </Button>
                   )}
                 </div>
@@ -4936,7 +5199,13 @@ const Sales = ({ userId }) => {
                               </TableCell>
                               <TableCell className="py-3 align-top">
                                 <div className="text-[10px] font-mono text-gray-600">
-                                  {sale.receipt_number || "N/A"}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || "N/A"
+                                    }
+                                    return sale.receipt_number || "N/A"
+                                  })()}
                                 </div>
                               </TableCell>
                               <TableCell className="py-3 align-top text-xs text-gray-700">{formatDate(sale.sale_date)}</TableCell>
@@ -6368,7 +6637,18 @@ const Sales = ({ userId }) => {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
-                                  {sale.receipt_number || 'N/A'}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    // If reference_number exists, it's a GCash payment (even if payment_method is empty/wrong)
+                                    if (sale.reference_number) {
+                                      return sale.reference_number
+                                    }
+                                    // Otherwise check payment method
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                    }
+                                    return sale.receipt_number || 'N/A'
+                                  })()}
                                 </TableCell>
                               </TableRow>
                             )
@@ -6876,7 +7156,13 @@ const Sales = ({ userId }) => {
                                   </TableCell>
                                   <TableCell className="py-3.5 px-5">
                                     <div className="text-xs font-mono font-medium text-gray-700 bg-gray-50 px-2 py-1 rounded inline-block">
-                                      {sale.receipt_number || "N/A"}
+                                      {(() => {
+                                        const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                        if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                          return sale.reference_number || sale.receipt_number || "N/A"
+                                        }
+                                        return sale.receipt_number || "N/A"
+                                      })()}
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-right py-3.5 px-5">

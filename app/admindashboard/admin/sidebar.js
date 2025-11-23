@@ -21,6 +21,7 @@ import {
   FaTimes,
   FaGift,
   FaBox,
+  FaCog,
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
@@ -78,6 +79,7 @@ const Sidebar = ({
     { name: "Promotions", icon: <FaGift className="mr-2 h-4 w-4" /> },
     { name: "Merchandise", icon: <FaBox className="mr-2 h-4 w-4" /> },
     { name: "Announcement", icon: <FaBullhorn className="mr-2 h-4 w-4" /> },
+    { name: "Settings", icon: <FaCog className="mr-2 h-4 w-4" /> },
   ]
 
   return (

@@ -1651,6 +1651,11 @@ function assignCoach($pdo) {
             $remainingSessions = 18; // Default sessions
             
             // Insert new coach assignment (payment_received = 0, will be set to 1 when payment is processed)
+            // IMPORTANT: This record must be compatible with mobile app's getUserCoachRequest() API
+            // which queries: coach_member_list WHERE member_id = ? ORDER BY requested_at DESC LIMIT 1
+            // All fields must be properly set: coach_approval='approved', staff_approval='approved', status='active'
+            // and all timestamp fields must be set for proper ordering
+            $currentTimestamp = date('Y-m-d H:i:s');
             $insertStmt = $pdo->prepare("
                 INSERT INTO coach_member_list (
                     coach_id, 
@@ -1667,12 +1672,15 @@ function assignCoach($pdo) {
                     expires_at,
                     remaining_sessions,
                     rate_type
-                ) VALUES (?, ?, 'active', 'approved', 'approved', 0, NOW(), NOW(), NOW(), ?, ?, ?, 18, ?)
+                ) VALUES (?, ?, 'active', 'approved', 'approved', 0, ?, ?, ?, ?, ?, ?, 18, ?)
             ");
             
             $insertStmt->execute([
                 $coachId,
                 $memberId,
+                $currentTimestamp,  // requested_at - used by mobile app for ORDER BY
+                $currentTimestamp,  // coach_approved_at
+                $currentTimestamp,  // staff_approved_at
                 $coachId,  // handled_by_coach
                 $adminId,  // handled_by_staff
                 $expiresAt,

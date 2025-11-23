@@ -475,6 +475,7 @@ function getAllSubscriptions($pdo)
                 gs.receipt_number,
                 gs.payment_method,
                 gs.qr_token,
+                gs.session_code,
                 gs.cashier_id,
                 gs.change_given
             FROM guest_session gs
@@ -535,6 +536,7 @@ function getAllSubscriptions($pdo)
                     'receipt_number' => $guest['receipt_number'],
                     'payment_method' => $guest['payment_method'] ?? 'cash',
                     'qr_token' => $guest['qr_token'],
+                    'session_code' => $guest['session_code'] ?? null,
                     'cashier_id' => $guest['cashier_id'],
                     'change_given' => floatval($guest['change_given'] ?? 0),
                     'paid' => $guest['paid'],
@@ -3277,6 +3279,7 @@ function getGuestSessionSales($pdo, $guest_session_id)
                 sd.price AS detail_price,
                 gs.guest_name,
                 gs.reference_number AS guest_reference_number,
+                gs.session_code,
                 msp.plan_name,
                 msp.price AS plan_price
             FROM sales s

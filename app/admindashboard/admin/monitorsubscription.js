@@ -1673,7 +1673,18 @@ const SubscriptionMonitor = ({ userId }) => {
           guest_name: subscription.guest_name,
           is_guest_session: subscription.is_guest_session,
           subscription_type: subscription.subscription_type,
+          session_code: subscription.session_code || null,
+          guest_session_id: subscription.guest_session_id || null,
           subscriptions: []
+        }
+      } else {
+        // Update session_code if it's not set but available in this subscription
+        if (!grouped[key].session_code && subscription.session_code) {
+          grouped[key].session_code = subscription.session_code
+        }
+        // Update guest_session_id if it's not set but available in this subscription
+        if (!grouped[key].guest_session_id && subscription.guest_session_id) {
+          grouped[key].guest_session_id = subscription.guest_session_id
         }
       }
       
@@ -2061,16 +2072,23 @@ const SubscriptionMonitor = ({ userId }) => {
   const filteredByPlan = getFilteredSubscriptionsByPlan()
   const filteredPendingByPlan = getFilteredPendingByPlan()
 
-  // Get analytics
+  // Get analytics - use grouped subscriptions to count users (matching staff dashboard)
+  // For total, group ALL subscriptions (not filtered) to get the total user count
+  const groupedAllSubscriptions = groupSubscriptionsByUser(subscriptions || [])
+  const groupedActive = groupSubscriptionsByUser(activeSubscriptions)
+  const groupedExpiring = groupSubscriptionsByUser(expiringSoonSubscriptions)
+  const groupedExpired = groupSubscriptionsByUser(expiredSubscriptions)
+  const groupedCancelled = groupSubscriptionsByUser(cancelledSubscriptions)
+  
   const analytics = {
-    total: filteredByPlan?.length || 0,
+    total: groupedAllSubscriptions.length,
     pending: filteredPendingByPlan?.length || 0,
     approved: filteredByPlan?.filter((s) => s.status_name === "approved" || s.status_name === "active")?.length || 0,
     declined: filteredByPlan?.filter((s) => s.status_name === "declined")?.length || 0,
-    active: activeSubscriptions.length,
-    expiringSoon: expiringSoonSubscriptions.length,
-    expired: expiredSubscriptions.length,
-    cancelled: cancelledSubscriptions.length,
+    active: groupedActive.length,
+    expiringSoon: groupedExpiring.length,
+    expired: groupedExpired.length,
+    cancelled: groupedCancelled.length,
   }
 
   if (loading) {
@@ -4278,6 +4296,17 @@ const SubscriptionMonitor = ({ userId }) => {
                   {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
                     <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
                   )}
+                  {viewDetailsModal.user.is_guest_session && (
+                    (viewDetailsModal.user.session_code || 
+                     (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
+                      <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
+                        Session Code: <span className="text-gray-900">
+                          {viewDetailsModal.user.session_code || 
+                           (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
+                        </span>
+                      </p>
+                    )
+                  )}
                 </div>
               )}
             </div>
@@ -4299,6 +4328,9 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHead className="font-semibold text-gray-700">Start Date</TableHead>
                         <TableHead className="font-semibold text-gray-700">End Date</TableHead>
                         <TableHead className="font-semibold text-gray-700">Remaining</TableHead>
+                        {viewDetailsModal.user?.is_guest_session && (
+                          <TableHead className="font-semibold text-gray-700">Session Code</TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -4412,6 +4444,13 @@ const SubscriptionMonitor = ({ userId }) => {
                                 )
                               })() : <span className="text-slate-500">N/A</span>}
                             </TableCell>
+                            {viewDetailsModal.user?.is_guest_session && (
+                              <TableCell>
+                                <span className="text-sm font-mono font-semibold text-gray-900">
+                                  {subscription.session_code || 'N/A'}
+                                </span>
+                              </TableCell>
+                            )}
                           </TableRow>
                         </React.Fragment>
                       )
@@ -4546,6 +4585,14 @@ const SubscriptionMonitor = ({ userId }) => {
                                   : (sale.receipt_number || 'N/A')}
                               </p>
                             </div>
+                            {sale.session_code && (
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Session Code</p>
+                                <p className="text-xs font-mono font-semibold text-gray-900">
+                                  {sale.session_code}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

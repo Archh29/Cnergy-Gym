@@ -21,6 +21,7 @@ import Sales from "./sales"
 import Promotions from "./promotions"
 import Merchandise from "./merchandise"
 import AdminChat from "./admin-chat"
+import Settings from "./settings"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function AdminDashboardClient() {
@@ -215,6 +216,8 @@ export default function AdminDashboardClient() {
         return <Promotions />
       case "Merchandise":
         return <Merchandise />
+      case "Settings":
+        return <Settings userId={userId} />
       default:
         return <Home />
     }
