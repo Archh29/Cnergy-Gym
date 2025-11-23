@@ -1831,7 +1831,20 @@ const Sales = ({ userId }) => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.todaysSales)}</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
+                  // Calculate today's sales only
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const todayStr = format(today, "yyyy-MM-dd")
+                  
+                  return sales
+                    .filter(sale => {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                      return saleDateStr === todayStr
+                    })
+                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                })())}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">All sales combined</p>
                 <Button
                   variant="outline"
@@ -2473,7 +2486,13 @@ const Sales = ({ userId }) => {
                           </TableCell>
                           <TableCell className="py-4">
                             <div className="text-xs font-mono font-medium text-gray-700">
-                              {sale.receipt_number || "N/A"}
+                              {(() => {
+                                const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                  return sale.reference_number || sale.receipt_number || "N/A"
+                                }
+                                return sale.receipt_number || "N/A"
+                              })()}
                             </div>
                           </TableCell>
                           <TableCell className="py-4 font-medium text-gray-700">{formatDate(sale.sale_date)}</TableCell>
@@ -3977,7 +3996,18 @@ const Sales = ({ userId }) => {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
-                                  {sale.receipt_number || 'N/A'}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    // If reference_number exists, it's a GCash payment (even if payment_method is empty/wrong)
+                                    if (sale.reference_number) {
+                                      return sale.reference_number
+                                    }
+                                    // Otherwise check payment method
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                    }
+                                    return sale.receipt_number || 'N/A'
+                                  })()}
                                 </TableCell>
                               </TableRow>
                             )
@@ -5169,7 +5199,13 @@ const Sales = ({ userId }) => {
                               </TableCell>
                               <TableCell className="py-3 align-top">
                                 <div className="text-[10px] font-mono text-gray-600">
-                                  {sale.receipt_number || "N/A"}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || "N/A"
+                                    }
+                                    return sale.receipt_number || "N/A"
+                                  })()}
                                 </div>
                               </TableCell>
                               <TableCell className="py-3 align-top text-xs text-gray-700">{formatDate(sale.sale_date)}</TableCell>
@@ -6601,7 +6637,18 @@ const Sales = ({ userId }) => {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-xs text-gray-600 font-mono py-3">
-                                  {sale.receipt_number || 'N/A'}
+                                  {(() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    // If reference_number exists, it's a GCash payment (even if payment_method is empty/wrong)
+                                    if (sale.reference_number) {
+                                      return sale.reference_number
+                                    }
+                                    // Otherwise check payment method
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                    }
+                                    return sale.receipt_number || 'N/A'
+                                  })()}
                                 </TableCell>
                               </TableRow>
                             )
@@ -7109,7 +7156,13 @@ const Sales = ({ userId }) => {
                                   </TableCell>
                                   <TableCell className="py-3.5 px-5">
                                     <div className="text-xs font-mono font-medium text-gray-700 bg-gray-50 px-2 py-1 rounded inline-block">
-                                      {sale.receipt_number || "N/A"}
+                                      {(() => {
+                                        const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                        if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                          return sale.reference_number || sale.receipt_number || "N/A"
+                                        }
+                                        return sale.receipt_number || "N/A"
+                                      })()}
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-right py-3.5 px-5">

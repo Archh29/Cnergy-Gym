@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -35,6 +34,7 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
 
 const API_URL = "https://api.cnergy.site/membership.php"
+const MONITOR_API_URL = "https://api.cnergy.site/monitor_subscription.php"
 
 const SubscriptionPlans = () => {
   const [plans, setPlans] = useState([])
@@ -79,7 +79,6 @@ const SubscriptionPlans = () => {
   const [statusFilter, setStatusFilter] = useState("all")
   const [expiringFilter, setExpiringFilter] = useState("all")
   const [planFilter, setPlanFilter] = useState("all")
-  const [showArchived, setShowArchived] = useState(false)
   const [message, setMessage] = useState(null)
   const [availablePlans, setAvailablePlans] = useState([])
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false)
@@ -130,11 +129,37 @@ const SubscriptionPlans = () => {
   const loadInitialData = async () => {
     setIsLoading(true)
     try {
-      await Promise.all([fetchPlans(), fetchSubscriptions()])
+      await Promise.all([fetchPlans(), fetchSubscriptions(), fetchActiveSubscriptionsCount()])
     } catch (error) {
       console.error("Error loading initial data:", error)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const fetchActiveSubscriptionsCount = async () => {
+    try {
+      const response = await axios.get(MONITOR_API_URL)
+      if (response.data && Array.isArray(response.data.subscriptions)) {
+        const now = new Date()
+        const activeCount = response.data.subscriptions.filter((s) => {
+          // Check if subscription is expired (end_date is in the past)
+          if (s.end_date) {
+            const endDate = new Date(s.end_date)
+            if (endDate < now) return false
+          }
+          
+          // Only count if status is Active or approved and not expired
+          return s.display_status === "Active" || s.status_name === "approved"
+        }).length
+        
+        setAnalytics(prev => ({
+          ...prev,
+          activeSubscriptions: activeCount
+        }))
+      }
+    } catch (error) {
+      console.error("Error fetching active subscriptions count:", error)
     }
   }
 
@@ -460,7 +485,8 @@ const SubscriptionPlans = () => {
       (plan.is_archived !== undefined && plan.is_archived !== null && plan.is_archived !== 0 && plan.is_archived !== "0" && plan.is_archived !== false)
     // Use local state as fallback if API doesn't return is_archived
     const isArchived = isArchivedFromAPI || archivedPlanIds.includes(plan.id)
-    return matchesSearch && (showArchived ? isArchived : !isArchived)
+    // Always exclude archived plans
+    return matchesSearch && !isArchived
   })
 
   // Filter subscriptions client-side
@@ -547,245 +573,124 @@ const SubscriptionPlans = () => {
         </Alert>
       )}
 
-      <Tabs defaultValue="plans" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="plans" onClick={() => setShowArchived(false)}>Active Plans</TabsTrigger>
-          <TabsTrigger value="archived" onClick={() => setShowArchived(true)}>Archived Plans</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="plans">
-          <Card className="border shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <CardTitle className="text-xl">Active Plans</CardTitle>
-                  <p className="text-sm text-muted-foreground mt-1">Manage your membership plans</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="relative w-full sm:w-64">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="search"
-                      placeholder="Search plans..."
-                      className="pl-8 h-9"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={() => setDiscountDialogOpen(true)} variant="outline" size="sm" className="h-9">
-                      <Percent className="mr-2 h-4 w-4" />
-                      Discount
+      <Card className="border shadow-sm">
+        <CardHeader className="pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl">Plan</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">Manage your membership plans</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search plans..."
+                  className="pl-8 h-9"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={handleAdd} disabled={isLoading} size="sm" className="h-9">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Add Plan
                     </Button>
-                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button onClick={handleAdd} disabled={isLoading} size="sm" className="h-9">
-                          <Plus className="mr-2 h-4 w-4" />
-                          Add Plan
-                        </Button>
-                      </DialogTrigger>
-                    </Dialog>
-                  </div>
-                </div>
+                  </DialogTrigger>
+                </Dialog>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="rounded-md border-t">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">Plan Name</TableHead>
-                      <TableHead className="font-semibold">Price</TableHead>
-                      <TableHead className="font-semibold">Duration</TableHead>
-                      <TableHead className="font-semibold">Access Type</TableHead>
-                      <TableHead className="font-semibold">Features</TableHead>
-                      <TableHead className="font-semibold text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredPlans.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          {searchQuery ? "No plans found matching your search" : "No membership plans found"}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredPlans.map((plan) => (
-                        <TableRow key={plan.id} className="hover:bg-muted/30 transition-colors">
-                          <TableCell className="font-semibold py-4">{plan.name}</TableCell>
-                          <TableCell className="font-semibold text-lg py-4">{formatCurrency(plan.price)}</TableCell>
-                          <TableCell className="py-4">
-                            {plan.duration_days > 0 ? (
-                              <Badge variant="outline" className="border-gray-300">
-                                {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
-                              </Badge>
-                            ) : plan.duration_months > 0 ? (
-                              <Badge variant="outline" className="border-gray-300">
-                                {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="border-gray-300">1 Month</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-4">
-                            {plan.is_member_only ? (
-                              <Badge variant="outline" className="border-gray-300">Members Only</Badge>
-                            ) : (
-                              <Badge variant="outline" className="border-gray-300">Public</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-4 max-w-xs">
-                            <div className="space-y-1">
-                              {plan.features?.slice(0, 2).map((feature, index) => (
-                                <div key={index} className="text-sm text-muted-foreground truncate">
-                                  • {feature.feature_name}
-                                </div>
-                              ))}
-                              {plan.features?.length > 2 && (
-                                <div className="text-xs text-muted-foreground font-medium">+{plan.features.length - 2} more</div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right py-4">
-                            <div className="flex items-center justify-end gap-2">
-                              {!(plan.is_archived === 1 || plan.is_archived === true) && (
-                                <>
-                                  <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} disabled={isLoading} className="h-8">
-                                    <Edit className="h-3.5 w-3.5 mr-1.5" />
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleArchiveConfirm(plan)}
-                                    disabled={isLoading}
-                                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200 h-8"
-                                  >
-                                    <Archive className="h-3.5 w-3.5 mr-1.5" />
-                                    Archive
-                                  </Button>
-                                </>
-                              )}
-                              {(plan.is_archived === 1 || plan.is_archived === true) && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRestore(plan.id)}
-                                  disabled={isLoading}
-                                  className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 h-8"
-                                >
-                                  <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
-                                  Restore
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="archived">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Archived Plans</CardTitle>
-                <div className="flex items-center gap-4">
-                  <div className="relative w-full max-w-md">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="search"
-                      placeholder="Search archived plans..."
-                      className="pl-8"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="rounded-md border-t">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="font-semibold">Plan Name</TableHead>
+                  <TableHead className="font-semibold">Price</TableHead>
+                  <TableHead className="font-semibold">Duration</TableHead>
+                  <TableHead className="font-semibold">Access Type</TableHead>
+                  <TableHead className="font-semibold">Features</TableHead>
+                  <TableHead className="font-semibold text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPlans.length === 0 ? (
                   <TableRow>
-                    <TableHead>Plan Name</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Access Type</TableHead>
-                    <TableHead>Features</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      {searchQuery ? "No plans found matching your search" : "No membership plans found"}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPlans.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        {searchQuery ? "No archived plans found matching your search" : "No archived plans found"}
+                ) : (
+                  filteredPlans.map((plan) => (
+                    <TableRow key={plan.id} className="hover:bg-muted/30 transition-colors">
+                      <TableCell className="font-semibold py-4">{plan.name}</TableCell>
+                      <TableCell className="font-semibold text-lg py-4">{formatCurrency(plan.price)}</TableCell>
+                      <TableCell className="py-4">
+                        {plan.duration_days > 0 ? (
+                          <Badge variant="outline" className="border-gray-300">
+                            {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
+                          </Badge>
+                        ) : plan.duration_months > 0 ? (
+                          <Badge variant="outline" className="border-gray-300">
+                            {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-gray-300">1 Month</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-4">
+                        {plan.is_member_only ? (
+                          <Badge variant="outline" className="border-gray-300">Members Only</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-gray-300">Public</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-4 max-w-xs">
+                        <div className="space-y-1">
+                          {plan.features?.slice(0, 2).map((feature, index) => (
+                            <div key={index} className="text-sm text-muted-foreground truncate">
+                              • {feature.feature_name}
+                            </div>
+                          ))}
+                          {plan.features?.length > 2 && (
+                            <div className="text-xs text-muted-foreground font-medium">+{plan.features.length - 2} more</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          {!(plan.is_archived === 1 || plan.is_archived === true) && (
+                            <Button variant="outline" size="sm" onClick={() => handleEdit(plan)} disabled={isLoading} className="h-8">
+                              <Edit className="h-3.5 w-3.5 mr-1.5" />
+                              Edit
+                            </Button>
+                          )}
+                          {(plan.is_archived === 1 || plan.is_archived === true) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestore(plan.id)}
+                              disabled={isLoading}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50 border-green-200 h-8"
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" />
+                              Restore
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
-                  ) : (
-                    filteredPlans.map((plan) => (
-                      <TableRow key={plan.id} className="opacity-75">
-                        <TableCell className="font-medium">{plan.name}</TableCell>
-                        <TableCell className="font-medium">{formatCurrency(plan.price)}</TableCell>
-                        <TableCell>
-                          {plan.duration_days > 0 ? (
-                            <Badge variant="outline" className="border-gray-300">
-                              {plan.duration_days} Day{plan.duration_days > 1 ? 's' : ''}
-                            </Badge>
-                          ) : plan.duration_months > 0 ? (
-                            <Badge variant="outline" className="border-gray-300">
-                              {plan.duration_months} Month{plan.duration_months > 1 ? 's' : ''}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="border-gray-300">1 Month</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {plan.is_member_only ? (
-                            <Badge variant="outline" className="border-gray-300">Members Only</Badge>
-                          ) : (
-                            <Badge variant="outline" className="border-gray-300">Public</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {plan.features?.slice(0, 2).map((feature, index) => (
-                              <div key={index} className="text-sm text-muted-foreground">
-                                • {feature.feature_name}
-                              </div>
-                            ))}
-                            {plan.features?.length > 2 && (
-                              <div className="text-sm text-muted-foreground">+{plan.features.length - 2} more</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestore(plan.id)}
-                            disabled={isLoading}
-                            className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          >
-                            <ArchiveRestore className="mr-2 h-4 w-4" />
-                            Restore
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Add/Edit Plan Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

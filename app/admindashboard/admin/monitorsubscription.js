@@ -33,6 +33,7 @@ import {
   ChevronRight,
   GraduationCap,
   UserCircle,
+  Eye,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -187,6 +188,7 @@ const SubscriptionMonitor = ({ userId }) => {
     guest_name: "",
     payment_method: "cash",
     amount_received: "",
+    gcash_reference: "",
     notes: ""
   })
   const [gymSessionPlan, setGymSessionPlan] = useState(null)
@@ -195,7 +197,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const [showGuestReceipt, setShowGuestReceipt] = useState(false)
   const [lastGuestTransaction, setLastGuestTransaction] = useState(null)
 
-  // View Details Modal State
+  // Details Modal State
   const [viewDetailsModal, setViewDetailsModal] = useState({
     open: false,
     user: null,
@@ -203,6 +205,9 @@ const SubscriptionMonitor = ({ userId }) => {
   })
   const [allUserSubscriptionHistory, setAllUserSubscriptionHistory] = useState([]) // Store all subscription history for the user in modal
   const [allUserSales, setAllUserSales] = useState([]) // Store all sales for the user in modal
+  const [transactionHistoryPage, setTransactionHistoryPage] = useState(1) // Pagination for transaction history
+  const [transactionHistoryPlanFilter, setTransactionHistoryPlanFilter] = useState("all") // Filter by plan
+  const transactionsPerPage = 5 // Show 5 transactions per page
 
   // Fetch all sales for a user
   const fetchAllUserSales = async (userId) => {
@@ -267,13 +272,40 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchGymSessionPlan()
   }, [])
 
+  // Fetch guest session sales
+  const fetchGuestSessionSales = async (guestSessionId) => {
+    if (!guestSessionId) return []
+    
+    try {
+      const response = await axios.get(`${API_URL}?action=get-guest-sales&guest_session_id=${guestSessionId}`)
+      if (response.data && response.data.success) {
+        const sales = response.data.sales || []
+        setAllUserSales(sales)
+        return sales
+      }
+      return []
+    } catch (error) {
+      console.error(`Error fetching guest session sales for ${guestSessionId}:`, error)
+      return []
+    }
+  }
+
   // Fetch history and sales when modal opens
   useEffect(() => {
-    if (viewDetailsModal.open && viewDetailsModal.user && !viewDetailsModal.user.is_guest_session) {
-      const userId = viewDetailsModal.user.user_id || viewDetailsModal.user.id
-      if (userId) {
-        fetchAllUserSubscriptionHistory(userId)
-        fetchAllUserSales(userId)
+    if (viewDetailsModal.open && viewDetailsModal.user) {
+      if (viewDetailsModal.user.is_guest_session) {
+        // For guest sessions, fetch sales by guest_session_id
+        const guestSessionId = viewDetailsModal.user.id || viewDetailsModal.user.guest_session_id
+        if (guestSessionId) {
+          fetchGuestSessionSales(guestSessionId)
+        }
+      } else {
+        // For regular users, fetch by user_id
+        const userId = viewDetailsModal.user.user_id || viewDetailsModal.user.id
+        if (userId) {
+          fetchAllUserSubscriptionHistory(userId)
+          fetchAllUserSales(userId)
+        }
       }
     } else if (!viewDetailsModal.open) {
       setAllUserSubscriptionHistory([])
@@ -358,7 +390,39 @@ const SubscriptionMonitor = ({ userId }) => {
           console.log("  - status_name:", firstSub.status_name)
           console.log("  - Full object:", firstSub)
         }
-        setSubscriptions(response.data.subscriptions)
+        // Sort by subscription ID descending (newest first) - IDs are auto-incrementing so higher ID = newer
+        // Use created_at as secondary sort for consistency
+        const sortedSubscriptions = [...response.data.subscriptions].sort((a, b) => {
+          // Primary sort: by created_at descending (newest first)
+          // This ensures guest sessions and subscriptions are sorted by actual creation time
+          const dateA = new Date(a.created_at || a.start_date || '1970-01-01').getTime()
+          const dateB = new Date(b.created_at || b.start_date || '1970-01-01').getTime()
+          
+          if (dateB !== dateA) {
+            return dateB - dateA
+          }
+          
+          // Secondary sort: by ID descending (higher ID = newer)
+          // Extract numeric ID (handle guest_ prefix and guest_session_id)
+          let idA = 0
+          let idB = 0
+          
+          // For guest sessions, use guest_session_id (the actual database ID)
+          if (a.is_guest_session || a.subscription_type === 'guest') {
+            idA = a.guest_session_id ? parseInt(a.guest_session_id) : (a.id && typeof a.id === 'string' && a.id.startsWith('guest_') ? parseInt(a.id.replace('guest_', '')) : 0)
+          } else {
+            idA = isNaN(parseInt(a.id)) ? parseInt(a.id?.toString().replace('guest_', '') || '0') : parseInt(a.id)
+          }
+          
+          if (b.is_guest_session || b.subscription_type === 'guest') {
+            idB = b.guest_session_id ? parseInt(b.guest_session_id) : (b.id && typeof b.id === 'string' && b.id.startsWith('guest_') ? parseInt(b.id.replace('guest_', '')) : 0)
+          } else {
+            idB = isNaN(parseInt(b.id)) ? parseInt(b.id?.toString().replace('guest_', '') || '0') : parseInt(b.id)
+          }
+          
+          return idB - idA
+        })
+        setSubscriptions(sortedSubscriptions)
       }
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
@@ -988,6 +1052,8 @@ const SubscriptionMonitor = ({ userId }) => {
         amount_paid: totalAmount,
         payment_method: apiPaymentMethod,
         amount_received: receivedAmount,
+        gcash_reference: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : "",
+        reference_number: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : null,
         notes: guestSessionForm.notes || ""
       }, {
         headers: {
@@ -1014,6 +1080,7 @@ const SubscriptionMonitor = ({ userId }) => {
           guest_name: "",
           payment_method: "cash",
           amount_received: "",
+          gcash_reference: "",
           notes: ""
         })
         setIsCreateGuestSessionDialogOpen(false)
@@ -1614,7 +1681,7 @@ const SubscriptionMonitor = ({ userId }) => {
     })
     
     // Convert to array and calculate totals
-    return Object.values(grouped).map((user) => {
+    const userArray = Object.values(grouped).map((user) => {
       // Calculate total paid across all subscriptions
       const totalPaid = user.subscriptions.reduce((sum, sub) => {
         return sum + (parseFloat(sub.total_paid) || 0)
@@ -1627,14 +1694,71 @@ const SubscriptionMonitor = ({ userId }) => {
       const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null
       const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null
       
+      // Get the newest created_at and subscription ID for sorting
+      // Use created_at as primary sort since guest sessions and subscriptions have different ID ranges
+      let newestCreatedAt = null
+      let newestSubscriptionId = 0
+      
+      user.subscriptions.forEach(sub => {
+        // Track newest created_at (primary sort)
+        const createdAt = sub.created_at || sub.start_date
+        if (createdAt) {
+          const date = new Date(createdAt).getTime()
+          if (!newestCreatedAt || date > newestCreatedAt) {
+            newestCreatedAt = date
+          }
+        }
+        
+        // Extract numeric ID (handle guest_ prefix and guest_session_id) for secondary sort
+        let id = 0
+        if (sub.is_guest_session || sub.subscription_type === 'guest') {
+          // For guest sessions, prioritize guest_session_id (the actual database ID)
+          if (sub.guest_session_id) {
+            id = parseInt(sub.guest_session_id) || 0
+          } else if (sub.id && typeof sub.id === 'string' && sub.id.startsWith('guest_')) {
+            // Fallback: extract from 'guest_123' format
+            id = parseInt(sub.id.replace('guest_', '')) || 0
+          } else {
+            id = parseInt(sub.id) || 0
+          }
+        } else {
+          // For regular subscriptions, use the subscription ID
+          id = isNaN(parseInt(sub.id)) ? parseInt(sub.id?.toString().replace('guest_', '') || '0') : parseInt(sub.id)
+        }
+        
+        if (id > newestSubscriptionId) {
+          newestSubscriptionId = id
+        }
+      })
+      
       return {
         ...user,
         total_paid: totalPaid,
         earliest_start_date: earliestStart,
         latest_end_date: latestEnd,
-        subscription_count: user.subscriptions.length
+        subscription_count: user.subscriptions.length,
+        newest_created_at: newestCreatedAt, // Primary sort
+        newest_subscription_id: newestSubscriptionId // Secondary sort
       }
     })
+    
+    // Sort by newest created_at descending (newest accounts first)
+    // This ensures guest sessions and subscriptions are sorted by actual creation time
+    userArray.sort((a, b) => {
+      // Primary sort: by created_at (newest first)
+      const dateA = a.newest_created_at || 0
+      const dateB = b.newest_created_at || 0
+      
+      if (dateB !== dateA) {
+        return dateB - dateA
+      }
+      
+      // Secondary sort: by subscription ID (higher ID = newer)
+      // Guest sessions use guest_session_id, regular subscriptions use subscription id
+      return b.newest_subscription_id - a.newest_subscription_id
+    })
+    
+    return userArray
   }
 
   // Get analytics - filter by plan if planFilter is set
@@ -2282,11 +2406,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-green-50 to-green-100/50 hover:bg-green-100 border-b-2 border-green-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2321,131 +2442,34 @@ const SubscriptionMonitor = ({ userId }) => {
                                       </div>
                                     </div>
                                   </TableCell>
-                                  <TableCell>
+                                  <TableCell className="text-right pr-0">
                                     {primarySub && (
+                                      <div className="flex justify-end">
                                       <Badge
-                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 w-fit`}
+                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
                                       >
                                         {getStatusIcon(primarySub.status_name)}
                                         {primarySub.display_status || primarySub.status_name}
                                       </Badge>
+                                      </div>
                                     )}
                                   </TableCell>
-                                  <TableCell>
-                                    <div className="font-medium">
-                                      {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-medium">
-                                      {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    {primarySub && timeRemaining ? (() => {
-                                      const planNameLower = primarySub.plan_name?.toLowerCase() || ''
-                                      const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                      const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
-                                      if (timeRemaining.type === 'expired_minutes') {
-                                        return (
-                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'expired_hours') {
-                                        return (
-                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'expired') {
-                                        return (
-                                          <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                            {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                          </Badge>
-                                        )
-                                      }
-                                      if (isWalkIn || isDay1Session) {
-                                        if (timeRemaining.type === 'minutes') {
-                                          return (
-                                            <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                              {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                            </Badge>
-                                          )
-                                        }
-                                        if (timeRemaining.type === 'hours') {
-                                          return (
-                                            <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                              {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                            </Badge>
-                                          )
-                                        }
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'minutes') {
-                                        return (
-                                          <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'hours') {
-                                        return (
-                                          <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'years_months') {
-                                        const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                        const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                        return (
-                                          <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                            'bg-green-100 text-green-700 border-green-300'
-                                            }`}>
-                                            {yearText}{monthText} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'months_days') {
-                                        const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                        const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                        return (
-                                          <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                            'bg-green-100 text-green-700 border-green-300'
-                                            }`}>
-                                            {monthText}{daysText} left
-                                          </Badge>
-                                        )
-                                      }
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    })() : <span className="text-slate-500">N/A</span>}
-                                  </TableCell>
-                                  <TableCell>
+                                  <TableCell className="text-right pl-1">
+                                    <div className="flex justify-end">
                                     <Button
-                                      variant="outline"
+                                        variant="default"
                                       size="sm"
                                       onClick={() => setViewDetailsModal({
                                         open: true,
                                         user: user,
                                         subscriptions: user.subscriptions
                                       })}
-                                      className="h-8 px-3 text-xs"
+                                        className="h-9 px-4 text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                     >
-                                      View Details ({user.subscription_count})
+                                        <Eye className="h-4 w-4" />
+                                        View Details
                                     </Button>
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               )
@@ -2607,11 +2631,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-orange-50 to-orange-100/50 hover:bg-orange-100 border-b-2 border-orange-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2644,121 +2665,22 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pr-0">
                                   {primarySub && (
+                                    <div className="flex justify-end">
                                     <Badge
-                                      className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 w-fit"
+                                        className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
                                     >
                                       <AlertTriangle className="h-3 w-3" />
                                       {primarySub.display_status || primarySub.status_name}
                                     </Badge>
+                                    </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">
-                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-orange-600">
-                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {primarySub && timeRemaining ? (() => {
-                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
-                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
-                                    if (timeRemaining.type === 'expired_minutes') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired_hours') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (isWalkIn || isDay1Session) {
-                                      if (timeRemaining.type === 'minutes') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'hours') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'minutes') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'hours') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'years_months') {
-                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {yearText}{monthText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'months_days') {
-                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {monthText}{daysText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    return (
-                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                        'bg-green-100 text-green-700 border-green-300'
-                                        }`}>
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
                                   <Button
-                                    variant="outline"
+                                      variant="default"
                                     size="sm"
                                     onClick={() => {
                                       setViewDetailsModal({
@@ -2767,10 +2689,12 @@ const SubscriptionMonitor = ({ userId }) => {
                                         subscriptions: user.subscriptions
                                       })
                                     }}
-                                    className="h-8 px-3 text-xs"
+                                    className="h-9 px-4 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                   >
-                                    View Details ({user.subscription_count})
+                                    <Eye className="h-4 w-4" />
+                                    View Details
                                   </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
@@ -2932,11 +2856,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-red-50 to-red-100/50 hover:bg-red-100 border-b-2 border-red-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2969,121 +2890,22 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                  <TableCell className="text-right pr-0">
                                   {primarySub && (
+                                      <div className="flex justify-end">
                                     <Badge
-                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
                                     >
                                       {getStatusIcon(primarySub.status_name)}
                                       {primarySub.display_status || primarySub.status_name}
                                     </Badge>
+                                    </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">
-                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-gray-500">
-                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {primarySub && timeRemaining ? (() => {
-                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
-                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
-                                    if (timeRemaining.type === 'expired_minutes') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired_hours') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (isWalkIn || isDay1Session) {
-                                      if (timeRemaining.type === 'minutes') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'hours') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'minutes') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'hours') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'years_months') {
-                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {yearText}{monthText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'months_days') {
-                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {monthText}{daysText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    return (
-                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                        'bg-green-100 text-green-700 border-green-300'
-                                        }`}>
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
                                   <Button
-                                    variant="outline"
+                                    variant="default"
                                     size="sm"
                                     onClick={() => {
                                       setViewDetailsModal({
@@ -3092,10 +2914,12 @@ const SubscriptionMonitor = ({ userId }) => {
                                         subscriptions: user.subscriptions
                                       })
                                     }}
-                                    className="h-8 px-3 text-xs"
+                                    className="h-9 px-4 text-sm font-medium bg-red-600 hover:bg-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                   >
-                                    View Details ({user.subscription_count})
+                                    <Eye className="h-4 w-4" />
+                                    View Details
                                   </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
@@ -3257,10 +3081,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-gray-50 to-gray-100/50 hover:bg-gray-100 border-b-2 border-gray-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3291,29 +3113,22 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                  <TableCell className="text-right pr-0">
                                   {primarySub && (
+                                      <div className="flex justify-end">
                                     <Badge
-                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
+                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
                                     >
                                       {getStatusIcon(primarySub.status_name)}
                                       {primarySub.display_status || primarySub.status_name}
                                     </Badge>
+                                    </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">
-                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-gray-500">
-                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
                                   <Button
-                                    variant="outline"
+                                    variant="default"
                                     size="sm"
                                     onClick={() => {
                                       setViewDetailsModal({
@@ -3322,10 +3137,12 @@ const SubscriptionMonitor = ({ userId }) => {
                                         subscriptions: user.subscriptions
                                       })
                                     }}
-                                    className="h-8 px-3 text-xs"
+                                    className="h-9 px-4 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                   >
-                                    View Details ({user.subscription_count})
+                                    <Eye className="h-4 w-4" />
+                                    View Details
                                   </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
@@ -3486,11 +3303,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHeader>
                           <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Start Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">End Date</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Time Left</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">View Details</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3523,121 +3337,22 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pr-0">
                                   {primarySub && (
+                                    <div className="flex justify-end">
                                     <Badge
-                                      className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 w-fit`}
+                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
                                     >
                                       {getStatusIcon(primarySub.status_name)}
                                       {primarySub.display_status || primarySub.status_name}
                                     </Badge>
+                                    </div>
                                   )}
                                 </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">
-                                    {user.earliest_start_date ? formatDate(user.earliest_start_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-medium">
-                                    {user.latest_end_date ? formatDate(user.latest_end_date.toISOString()) : 'N/A'}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  {primarySub && timeRemaining ? (() => {
-                                    const planNameLower = primarySub.plan_name?.toLowerCase() || ''
-                                    const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                                    const isWalkIn = planNameLower === 'walk in' || primarySub.plan_id === 6
-                                    if (timeRemaining.type === 'expired_minutes') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired_hours') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'expired') {
-                                      return (
-                                        <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                        </Badge>
-                                      )
-                                    }
-                                    if (isWalkIn || isDay1Session) {
-                                      if (timeRemaining.type === 'minutes') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      if (timeRemaining.type === 'hours') {
-                                        return (
-                                          <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                            {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                          </Badge>
-                                        )
-                                      }
-                                      return (
-                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                          {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'minutes') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'hours') {
-                                      return (
-                                        <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'years_months') {
-                                      const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                      const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {yearText}{monthText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    if (timeRemaining.type === 'months_days') {
-                                      const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                      const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                      return (
-                                        <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                          'bg-green-100 text-green-700 border-green-300'
-                                          }`}>
-                                          {monthText}{daysText} left
-                                        </Badge>
-                                      )
-                                    }
-                                    return (
-                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                        'bg-green-100 text-green-700 border-green-300'
-                                        }`}>
-                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                      </Badge>
-                                    )
-                                  })() : <span className="text-slate-500">N/A</span>}
-                                </TableCell>
-                                <TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
                                   <Button
-                                    variant="outline"
+                                      variant="default"
                                     size="sm"
                                     onClick={() => {
                                       setViewDetailsModal({
@@ -3646,10 +3361,12 @@ const SubscriptionMonitor = ({ userId }) => {
                                         subscriptions: user.subscriptions
                                       })
                                     }}
-                                    className="h-8 px-3 text-xs"
+                                      className="h-9 px-4 text-sm font-medium bg-slate-600 hover:bg-slate-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                   >
-                                    View Details ({user.subscription_count})
+                                      <Eye className="h-4 w-4" />
+                                      Details
                                   </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
@@ -4370,7 +4087,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "" }))}
+                  onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
                   className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${
                     guestSessionForm.payment_method === "digital"
                       ? "border-gray-900 bg-gray-900 text-white shadow-md"
@@ -4381,6 +4098,22 @@ const SubscriptionMonitor = ({ userId }) => {
                 </button>
               </div>
             </div>
+
+            {/* GCash Reference Number (for GCash only) */}
+            {guestSessionForm.payment_method === "digital" && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold text-gray-700">Reference Number <span className="text-red-500">*</span></Label>
+                <Input
+                  type="text"
+                  value={guestSessionForm.gcash_reference}
+                  onChange={(e) => setGuestSessionForm(prev => ({ ...prev, gcash_reference: e.target.value }))}
+                  placeholder="Enter GCash reference number"
+                  className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200"
+                  required
+                />
+                <p className="text-xs text-gray-500">Required for GCash transactions</p>
+              </div>
+            )}
 
             {/* Amount Received (for cash only) */}
             {guestSessionForm.payment_method === "cash" && (
@@ -4420,7 +4153,8 @@ const SubscriptionMonitor = ({ userId }) => {
                 guestSessionLoading ||
                 !guestSessionForm.guest_name ||
                 !gymSessionPlan ||
-                (guestSessionForm.payment_method === "cash" && (!guestSessionForm.amount_received || parseFloat(guestSessionForm.amount_received) < parseFloat(gymSessionPlan.price || 0)))
+                (guestSessionForm.payment_method === "cash" && (!guestSessionForm.amount_received || parseFloat(guestSessionForm.amount_received) < parseFloat(gymSessionPlan.price || 0))) ||
+                (guestSessionForm.payment_method === "digital" && !guestSessionForm.gcash_reference)
               }
               className="bg-gray-900 hover:bg-gray-800 text-white font-semibold"
             >
@@ -4521,47 +4255,53 @@ const SubscriptionMonitor = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
-      {/* View Details Modal */}
+      {/* Details Modal */}
       <Dialog open={viewDetailsModal.open} onOpenChange={(open) => {
         setViewDetailsModal({ ...viewDetailsModal, open })
         if (!open) {
           setAllUserSubscriptionHistory([])
+          setTransactionHistoryPage(1) // Reset pagination when modal closes
+          setTransactionHistoryPlanFilter("all") // Reset filter when modal closes
         }
       }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Subscription Details</DialogTitle>
-            <DialogDescription>
-              View all subscription details and history for this user
-            </DialogDescription>
-            {viewDetailsModal.user && (
-              <div className="mt-2">
-                <p className="font-semibold text-lg">
-                  {viewDetailsModal.user.is_guest_session 
-                    ? viewDetailsModal.user.guest_name 
-                    : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
-                </p>
-                {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
-                  <p className="text-sm text-muted-foreground">{viewDetailsModal.user.email}</p>
-                )}
-              </div>
-            )}
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" hideClose>
+          <DialogHeader className="bg-gray-50/80 backdrop-blur-sm rounded-t-lg -m-6 mb-0 px-6 py-4 border-b border-gray-200">
+            <div className="space-y-3">
+              <DialogTitle className="text-xl font-semibold text-gray-900">Subscription Details</DialogTitle>
+              {viewDetailsModal.user && (
+                <div className="space-y-0.5">
+                  <p className="text-base font-medium text-gray-900">
+                    {viewDetailsModal.user.is_guest_session 
+                      ? viewDetailsModal.user.guest_name 
+                      : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
+                  </p>
+                  {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
+                    <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
+                  )}
+                </div>
+              )}
+            </div>
           </DialogHeader>
           
-          <div className="space-y-4 mt-4">
+          <div className="space-y-6 mt-6 px-0">
             {viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 ? (
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50">
-                      <TableHead className="font-bold">Plan</TableHead>
-                      <TableHead className="font-bold">Status</TableHead>
-                      <TableHead className="font-bold">Start Date</TableHead>
-                      <TableHead className="font-bold">End Date</TableHead>
-                      <TableHead className="font-bold">Time Left</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                  Active Subscriptions
+                </h3>
+                <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-gray-50 hover:bg-gray-50">
+                        <TableHead className="font-semibold text-gray-700">Plan</TableHead>
+                        <TableHead className="font-semibold text-gray-700">Status</TableHead>
+                        <TableHead className="font-semibold text-gray-700">Start Date</TableHead>
+                        <TableHead className="font-semibold text-gray-700">End Date</TableHead>
+                        <TableHead className="font-semibold text-gray-700">Remaining</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                     {viewDetailsModal.subscriptions.map((subscription) => {
                       const timeRemaining = calculateTimeRemaining(subscription.end_date)
                       const daysLeft = calculateDaysLeft(subscription.end_date)
@@ -4677,62 +4417,204 @@ const SubscriptionMonitor = ({ userId }) => {
                       )
                     })}
                   </TableBody>
-                </Table>
+                  </Table>
+                </div>
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No subscriptions found</p>
+              <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-gray-500">No active subscriptions</p>
               </div>
             )}
             
-            {/* All Sales Section */}
-            {!viewDetailsModal.user?.is_guest_session && allUserSales.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">All Sales</h3>
+            {/* Transaction History Section */}
+            {allUserSales.length > 0 && (() => {
+              // Get unique plan names for filter
+              const uniquePlans = [...new Set(allUserSales.map(sale => sale.plan_name).filter(Boolean))]
+              
+              // Sort sales by plan_id (Membership first), then by sale_date (latest first)
+              const sortedSales = [...allUserSales].sort((a, b) => {
+                const planIdA = a.plan_id || 999 // Put items without plan_id at the end
+                const planIdB = b.plan_id || 999
                 
-                {/* Sales Records */}
-                <div className="space-y-4">
-                  {allUserSales.map((sale, idx) => (
-                    <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white p-4">
-                      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">Sale Date</p>
-                          <p className="text-sm font-medium break-words">{formatDate(sale.sale_date)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">Plan</p>
-                          <p className="text-sm font-medium break-words">{sale.plan_name || 'N/A'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">Amount</p>
-                          <p className="text-sm font-medium break-words">{formatCurrency(sale.total_amount || 0)}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">Payment Method</p>
-                          <Badge variant="outline" className="text-xs">
-                            {sale.payment_method || sale.subscription_payment_method || 'cash'}
-                          </Badge>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">
-                            {(sale.payment_method || sale.subscription_payment_method || 'cash').toLowerCase() === 'digital' 
-                              ? 'Reference' 
-                              : 'Receipt Number'}
-                          </p>
-                          <p className="text-sm font-mono break-words break-all overflow-wrap-anywhere">{sale.receipt_number || sale.reference_number || 'N/A'}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-500 mb-1">Status</p>
-                          <Badge variant="outline" className="text-xs">
-                            {sale.transaction_status || 'confirmed'}
-                          </Badge>
+                // First sort by plan_id (ascending - so plan 1 comes before plan 2)
+                if (planIdA !== planIdB) {
+                  return planIdA - planIdB
+                }
+                
+                // If same plan_id, sort by date (descending - latest first)
+                const dateA = new Date(a.sale_date || 0).getTime()
+                const dateB = new Date(b.sale_date || 0).getTime()
+                return dateB - dateA
+              })
+              
+              // Filter transactions by selected plan
+              const filteredSales = transactionHistoryPlanFilter === "all" 
+                ? sortedSales 
+                : sortedSales.filter(sale => sale.plan_name === transactionHistoryPlanFilter)
+              
+              const totalFiltered = filteredSales.length
+              const totalPages = Math.ceil(totalFiltered / transactionsPerPage)
+              
+              return (
+              <div className="pt-6 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Transaction History</h3>
+                  <div className="flex items-center gap-3">
+                    <Select 
+                      value={transactionHistoryPlanFilter} 
+                      onValueChange={(value) => {
+                        setTransactionHistoryPlanFilter(value)
+                        setTransactionHistoryPage(1) // Reset to first page when filter changes
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-40 text-xs border-gray-300">
+                        <SelectValue placeholder="Filter by plan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {uniquePlans.map((planName) => (
+                          <SelectItem key={planName} value={planName}>
+                            {planName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {totalFiltered > transactionsPerPage && (
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        Showing {((transactionHistoryPage - 1) * transactionsPerPage) + 1}-{Math.min(transactionHistoryPage * transactionsPerPage, totalFiltered)} of {totalFiltered}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  {filteredSales.length > 0 ? (
+                    filteredSales
+                      .slice((transactionHistoryPage - 1) * transactionsPerPage, transactionHistoryPage * transactionsPerPage)
+                      .map((sale, idx) => {
+                    // Get payment method from multiple possible sources
+                    // Check payments array first, then sales table, then subscription table
+                    let paymentMethodRaw = 'cash'
+                    if (sale.payments && sale.payments.length > 0 && sale.payments[0].payment_method) {
+                        paymentMethodRaw = sale.payments[0].payment_method
+                    } else if (sale.payment_method) {
+                        paymentMethodRaw = sale.payment_method
+                    } else if (sale.payment_table_payment_method) {
+                        paymentMethodRaw = sale.payment_table_payment_method
+                    } else if (sale.subscription_payment_method) {
+                        paymentMethodRaw = sale.subscription_payment_method
+                    }
+                    const paymentMethod = paymentMethodRaw.toLowerCase()
+                    const quantity = sale.quantity || sale.detail_quantity || 1
+                    
+                    return (
+                      <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors">
+                        <div className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="text-sm font-semibold text-gray-900">{sale.plan_name || 'N/A'}</span>
+                                <span className="text-xs text-gray-600 font-medium">
+                                  {quantity}x
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {sale.transaction_status || 'confirmed'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">{formatDate(sale.sale_date)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm text-gray-700">{formatCurrency(sale.total_amount || 0)}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">Payment</p>
+                              <span className="text-xs text-gray-700 font-medium">
+                                {paymentMethod === 'digital' || paymentMethod === 'gcash' ? 'GCASH' : paymentMethod.toUpperCase()}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">
+                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
+                                  ? 'Reference' 
+                                  : 'Receipt'}
+                              </p>
+                              <p className="text-xs font-mono text-gray-700 break-all">
+                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
+                                  ? (sale.reference_number || sale.payment_reference_number || (sale.payments && sale.payments.length > 0 ? sale.payments[0].reference_number : null) || sale.receipt_number || 'N/A')
+                                  : (sale.receipt_number || 'N/A')}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
+                    )
+                  })) : (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No transactions found for selected plan
                     </div>
-                  ))}
+                  )}
                 </div>
+                
+                {/* Pagination Controls */}
+                {totalFiltered > transactionsPerPage && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-gray-200">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTransactionHistoryPage(prev => Math.max(1, prev - 1))}
+                      disabled={transactionHistoryPage === 1}
+                      className="h-8 px-3"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                        // Show first page, last page, current page, and pages around current
+                        if (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= transactionHistoryPage - 1 && page <= transactionHistoryPage + 1)
+                        ) {
+                          return (
+                            <Button
+                              key={page}
+                              variant={transactionHistoryPage === page ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setTransactionHistoryPage(page)}
+                              className={`h-8 w-8 p-0 ${transactionHistoryPage === page ? 'bg-gray-900 text-white hover:bg-gray-800' : ''}`}
+                            >
+                              {page}
+                            </Button>
+                          )
+                        } else if (
+                          page === transactionHistoryPage - 2 ||
+                          page === transactionHistoryPage + 2
+                        ) {
+                          return (
+                            <span key={page} className="px-2 text-gray-400">
+                              ...
+                            </span>
+                          )
+                        }
+                        return null
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTransactionHistoryPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={transactionHistoryPage >= totalPages}
+                      className="h-8 px-3"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
+              )
+            })()}
           </div>
 
           <DialogFooter>

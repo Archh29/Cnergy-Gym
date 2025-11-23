@@ -332,11 +332,13 @@ function getSalesData($pdo)
 					gs.change_given,
 					gs.status,
 					gs.paid,
+					gs.reference_number,
 					s.id as sale_id,
 					s.sale_date,
 					s.total_amount as sale_total_amount,
 					s.transaction_status,
-					s.notes
+					s.notes,
+					s.reference_number as sales_reference_number
 				FROM guest_session gs
 				LEFT JOIN sales s ON (
 					s.receipt_number = gs.receipt_number 
@@ -396,6 +398,9 @@ function getSalesData($pdo)
 					$paymentMethod = 'gcash';
 				}
 
+				// Get reference_number from sales table first, then fallback to guest_session
+				$referenceNumber = $guest['sales_reference_number'] ?? $guest['reference_number'] ?? null;
+
 				$guestSalesData[] = [
 					'id' => $saleId,
 					'user_id' => null,
@@ -405,6 +410,7 @@ function getSalesData($pdo)
 					'payment_method' => $paymentMethod,
 					'transaction_status' => $guest['transaction_status'] ?? 'confirmed',
 					'receipt_number' => $guest['receipt_number'],
+					'reference_number' => $referenceNumber, // Include reference_number for GCash payments
 					'cashier_id' => $guest['cashier_id'],
 					'change_given' => (float) ($guest['change_given'] ?? 0),
 					'notes' => $guest['notes'] ?? '',
@@ -491,7 +497,7 @@ function getSalesData($pdo)
 		           WHEN s.payment_method IS NOT NULL AND s.payment_method != '' 
 		               THEN s.payment_method
 		           ELSE 'cash'
-		       END AS payment_method, s.transaction_status, s.receipt_number, s.cashier_id, s.change_given, s.notes,
+		       END AS payment_method, s.transaction_status, s.receipt_number, s.reference_number, s.cashier_id, s.change_given, s.notes,
 		       sd.id AS detail_id, sd.product_id, sd.subscription_id, sd.guest_session_id, sd.quantity, sd.price AS detail_price,
 		       p.name AS product_name, p.price AS product_price, p.category AS product_category,
 		       sub.plan_id, sub.user_id AS subscription_user_id, sub.amount_paid AS subscription_amount_paid, sub.discounted_price AS subscription_discounted_price, sub.payment_method AS subscription_payment_method,
@@ -663,6 +669,7 @@ function getSalesData($pdo)
 				'payment_method' => $paymentMethod, // Use normalized value
 				'transaction_status' => $row['transaction_status'],
 				'receipt_number' => $row['receipt_number'],
+				'reference_number' => $row['reference_number'] ?? null, // Include reference_number for GCash payments
 				'cashier_id' => $row['cashier_id'],
 				'change_given' => (float) $row['change_given'],
 				'notes' => $row['notes'],

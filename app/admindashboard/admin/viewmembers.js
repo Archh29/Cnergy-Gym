@@ -58,8 +58,8 @@ import {
 } from "lucide-react"
 
 // Helper function to generate standard password from user's name
-// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(FirstCap, optional) + #2023 + First2LettersOfLastName(lowercase)
-// Examples: "Rj Lo Ta" -> "RjLo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
+// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(all lowercase, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "Rj Lo Ta" -> "Rjlo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
 const generateStandardPassword = (fname, mname, lname) => {
   // Get first 2 letters of first name: first letter uppercase, second lowercase
   const first = (fname || "").trim()
@@ -67,10 +67,10 @@ const generateStandardPassword = (fname, mname, lname) => {
     ? (first.substring(0, 1).toUpperCase() + (first.length > 1 ? first.substring(1, 2).toLowerCase() : ""))
     : ""
   
-  // Get first 2 letters of middle name ONLY if it exists: first letter uppercase, second lowercase (optional)
-  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  // Get first 2 letters of middle name ONLY if it exists: all lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim().toLowerCase() : ""
   const middleNamePart = middle.length > 0
-    ? (middle.substring(0, 1).toUpperCase() + (middle.length > 1 ? middle.substring(1, 2).toLowerCase() : ""))
+    ? middle.substring(0, 2)
     : ""
   
   // Get first 2 letters of last name: all lowercase
@@ -79,7 +79,7 @@ const generateStandardPassword = (fname, mname, lname) => {
     ? last.substring(0, 2).toLowerCase()
     : ""
   
-  // Combine: FirstName2(FirstCap) + MiddleName2(FirstCap, if exists) + #2023 + LastName2(lowercase)
+  // Combine: FirstName2(FirstCap) + MiddleName2(all lowercase, if exists) + #2023 + LastName2(lowercase)
   // If no middle name, middleNamePart will be empty string, so result will be: FirstName2#2023LastName2
   return `${firstNamePart}${middleNamePart}#2023${lastNamePart}`
 }
@@ -185,6 +185,7 @@ const ViewMembers = ({ userId }) => {
   const [showAgeRestrictionModal, setShowAgeRestrictionModal] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [parentConsentFile, setParentConsentFile] = useState(null)
+  const [parentConsentPreview, setParentConsentPreview] = useState(null)
   const [calculatedAge, setCalculatedAge] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
@@ -923,16 +924,56 @@ const ViewMembers = ({ userId }) => {
       const currentPlans = prev.selected_plan_ids || []
       const isSelected = currentPlans.includes(planIdStr)
       
+      // Check for mutual exclusivity: Plan 1 (Gym Membership) and Plan 3 (Monthly Access Standard)
+      const planIdNum = parseInt(planIdStr)
+      if (!isSelected) {
+        // If trying to add a plan, check for conflicts
+        if (planIdNum === 1) {
+          // Trying to add Gym Membership - check if Plan 3 is selected
+          if (currentPlans.includes('3')) {
+            toast({
+              title: "Cannot select both plans",
+              description: "Gym Membership and Monthly Access (Standard) cannot be selected together. Please deselect Monthly Access (Standard) first.",
+              variant: "destructive",
+            })
+            return prev
+          }
+        } else if (planIdNum === 3) {
+          // Trying to add Monthly Access Standard - check if Plan 1 is selected
+          if (currentPlans.includes('1')) {
+            toast({
+              title: "Cannot select both plans",
+              description: "Monthly Access (Standard) and Gym Membership cannot be selected together. Please deselect Gym Membership first.",
+              variant: "destructive",
+            })
+            return prev
+          }
+        }
+      }
+      
       let newPlans
       if (isSelected) {
         // Remove plan
         newPlans = currentPlans.filter(id => id !== planIdStr)
-        // Remove quantity for this plan
-        setPlanQuantities(prevQty => {
-          const newQty = { ...prevQty }
-          delete newQty[planIdStr]
-          return newQty
-        })
+        
+        // If removing Plan 1 (Gym Membership), also remove Plan 2 (Premium) since Premium requires Membership
+        if (planIdNum === 1 && newPlans.includes('2')) {
+          newPlans = newPlans.filter(id => id !== '2')
+          // Also remove quantity for Plan 2
+          setPlanQuantities(prevQty => {
+            const newQty = { ...prevQty }
+            delete newQty[planIdStr]
+            delete newQty['2']
+            return newQty
+          })
+        } else {
+          // Remove quantity for this plan only
+          setPlanQuantities(prevQty => {
+            const newQty = { ...prevQty }
+            delete newQty[planIdStr]
+            return newQty
+          })
+        }
       } else {
         // Add plan
         newPlans = [...currentPlans, planIdStr]
@@ -1181,13 +1222,30 @@ const ViewMembers = ({ userId }) => {
               })
             })
             
-            if (!discountResponse.ok) {
-              console.error("Failed to add discount tag, but continuing with subscription creation")
+            // Parse response to check if it was actually successful
+            if (discountResponse.ok) {
+              const discountData = await discountResponse.json()
+              if (!discountData.success) {
+                // Only log if there's an actual error in the response
+                console.warn("Discount tag may not have been added:", discountData.message || "Unknown error")
+              }
+            } else {
+              // Only log if HTTP status indicates an error
+              const errorText = await discountResponse.text()
+              console.warn("Discount tag API returned error status:", discountResponse.status, errorText)
             }
+          } else {
+            // If verifiedById is missing, silently skip (this is expected for new accounts)
+            // The discount can be added manually later if needed
           }
         } catch (discountError) {
-          console.error("Error adding discount tag:", discountError)
-          // Continue even if discount fails
+          // Only log actual network/parsing errors, not expected failures
+          if (discountError instanceof TypeError && discountError.message.includes('fetch')) {
+            console.warn("Network error adding discount tag:", discountError.message)
+          } else {
+            console.warn("Error adding discount tag:", discountError.message)
+          }
+          // Continue even if discount fails - subscription creation is more important
         }
       }
 
@@ -2552,13 +2610,13 @@ const ViewMembers = ({ userId }) => {
                     <FormItem>
                       <FormLabel className="text-sm font-medium flex items-center gap-2">
                         <Shield className="h-4 w-4 text-orange-500" />
-                        Parent Consent Letter/Waiver <span className="text-red-500">*</span>
+                        Parent Consent Letter/Waiver
                       </FormLabel>
                       <FormControl>
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           <Input
                             type="file"
-                            accept="image/*,.pdf"
+                            accept="image/*"
                             className="h-11 cursor-pointer"
                             onChange={(e) => {
                               const file = e.target.files?.[0]
@@ -2567,44 +2625,94 @@ const ViewMembers = ({ userId }) => {
                                 if (file.size > 5 * 1024 * 1024) {
                                   toast({
                                     title: "File too large",
-                                    description: "Please upload a file smaller than 5MB",
+                                    description: "Please upload an image smaller than 5MB",
                                     variant: "destructive",
                                   })
                                   e.target.value = ""
+                                  setParentConsentFile(null)
+                                  setParentConsentPreview(null)
                                   return
                                 }
-                                // Validate file type
-                                const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf']
+                                // Validate file type - only images
+                                const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif']
                                 if (!validTypes.includes(file.type)) {
                                   toast({
                                     title: "Invalid file type",
-                                    description: "Please upload an image (JPG, PNG, GIF) or PDF file",
+                                    description: "Please upload an image file (JPG, PNG, or GIF)",
                                     variant: "destructive",
                                   })
                                   e.target.value = ""
+                                  setParentConsentFile(null)
+                                  setParentConsentPreview(null)
                                   return
                                 }
                                 setParentConsentFile(file)
                                 field.onChange(file)
+                                
+                                // Create preview for images
+                                const reader = new FileReader()
+                                reader.onloadend = () => {
+                                  setParentConsentPreview(reader.result)
+                                }
+                                reader.readAsDataURL(file)
                               } else {
                                 setParentConsentFile(null)
+                                setParentConsentPreview(null)
                                 field.onChange(null)
                               }
                             }}
                           />
                           {parentConsentFile && (
-                            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                              <p className="text-sm text-blue-800 flex items-center gap-2">
-                                <CheckCircle className="h-4 w-4" />
-                                File selected: {parentConsentFile.name} ({(parentConsentFile.size / 1024).toFixed(2)} KB)
-                              </p>
+                            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div className="flex items-start gap-4">
+                                {parentConsentPreview ? (
+                                  <div className="flex-shrink-0">
+                                    <img 
+                                      src={parentConsentPreview} 
+                                      alt="Preview" 
+                                      className="w-24 h-24 object-cover rounded-md border border-blue-300"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="flex-shrink-0 w-24 h-24 bg-gray-100 rounded-md border border-gray-300 flex items-center justify-center">
+                                    <Shield className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <CheckCircle className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                                    <p className="text-sm font-medium text-blue-900 truncate">
+                                      {parentConsentFile.name}
+                                    </p>
+                                  </div>
+                                  <p className="text-xs text-blue-700">
+                                    File size: {(parentConsentFile.size / 1024).toFixed(2)} KB
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="mt-2 h-7 text-xs text-blue-700 hover:text-blue-900"
+                                    onClick={() => {
+                                      setParentConsentFile(null)
+                                      setParentConsentPreview(null)
+                                      field.onChange(null)
+                                      const fileInput = document.querySelector('input[type="file"][accept="image/*,.pdf"]')
+                                      if (fileInput) fileInput.value = ""
+                                    }}
+                                  >
+                                    <X className="h-3 w-3 mr-1" />
+                                    Remove file
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           )}
                         </div>
                       </FormControl>
                       <FormMessage />
                       <p className="text-xs text-gray-500 mt-1">
-                        Required for users under 18 years old. Upload a photo or PDF of the parent/guardian consent letter or waiver.
+                        Required for clients under 18 years of age. Please upload a clear photo of the signed parent/guardian consent form or waiver.
                       </p>
                     </FormItem>
                   )}
@@ -2771,6 +2879,17 @@ const ViewMembers = ({ userId }) => {
                     const isSelected = subscriptionForm.selected_plan_ids?.includes(planIdStr) || false
                     const quantity = planQuantities[planIdStr] || 1
                     
+                    // Check mutual exclusivity: Plan 1 (Gym Membership) and Plan 3 (Monthly Access Standard)
+                    const planIdNum = parseInt(planIdStr)
+                    const isMutuallyExclusive = 
+                      (planIdNum === 1 && subscriptionForm.selected_plan_ids?.includes('3')) ||
+                      (planIdNum === 3 && subscriptionForm.selected_plan_ids?.includes('1'))
+                    
+                    // Premium (Plan ID 2) requires Gym Membership (Plan ID 1)
+                    const requiresMembership = planIdNum === 2 && !subscriptionForm.selected_plan_ids?.includes('1')
+                    
+                    const isDisabled = !isAvailable || (isMutuallyExclusive && !isSelected) || requiresMembership
+                    
                     return (
                       <div 
                         key={plan.id}
@@ -2778,45 +2897,40 @@ const ViewMembers = ({ userId }) => {
                           isSelected 
                             ? 'border-blue-400 bg-blue-50' 
                             : 'border-gray-200 hover:border-gray-300'
-                        } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         onClick={(e) => {
                           // Don't trigger if clicking on input field (quantity)
-                          if (e.target.type === 'number' || (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox')) {
+                          if (e.target.type === 'number' || e.target.tagName === 'INPUT') {
                             return
                           }
-                          // If clicking on checkbox, let it handle its own change
-                          if (e.target.type === 'checkbox') {
-                            e.stopPropagation()
-                            if (isAvailable) {
-                              handlePlanToggle(plan.id)
-                            }
-                            return
-                          }
-                          // For other clicks on the div, toggle the plan
-                          if (isAvailable) {
+                          // Toggle the plan when clicking on the card
+                          if (!isDisabled) {
                             handlePlanToggle(plan.id)
+                          } else if (requiresMembership) {
+                            // Show toast when trying to select Premium without Membership
+                            toast({
+                              title: "Membership Required",
+                              description: "Monthly Access (Premium) requires Gym Membership. Please select Gym Membership first.",
+                              variant: "destructive",
+                            })
+                          } else if (isMutuallyExclusive && !isSelected) {
+                            // Show toast when trying to click disabled plan
+                            const conflictingPlan = planIdNum === 1 ? 'Monthly Access (Standard)' : 'Gym Membership'
+                            toast({
+                              title: "Cannot select both plans",
+                              description: `${plan.plan_name} cannot be selected with ${conflictingPlan}. Please deselect ${conflictingPlan} first.`,
+                              variant: "destructive",
+                            })
                           }
                         }}
                       >
                         <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              e.stopPropagation()
-                              if (isAvailable) {
-                                handlePlanToggle(plan.id)
-                              }
-                            }}
-                            disabled={!isAvailable}
-                            className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                          />
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
-                              <Label className="text-sm font-medium text-gray-900 cursor-pointer">
+                              <Label className={`text-sm font-medium ${isDisabled ? 'text-gray-400' : 'text-gray-900'} cursor-pointer`}>
                                 {plan.plan_name}
                               </Label>
-                              <span className="text-sm font-semibold text-gray-700">
+                              <span className={`text-sm font-semibold ${isDisabled ? 'text-gray-400' : 'text-gray-700'}`}>
                                 ₱{parseFloat(plan.price || 0).toFixed(2)}
                               </span>
                             </div>
@@ -2852,6 +2966,108 @@ const ViewMembers = ({ userId }) => {
               {/* Payment Section */}
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-900">Payment Details</h3>
+                
+                {/* Detailed Breakdown */}
+                {subscriptionForm.selected_plan_ids && subscriptionForm.selected_plan_ids.length > 0 && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                    <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Breakdown</h4>
+                    <div className="space-y-2.5">
+                      {subscriptionForm.selected_plan_ids.map((planIdStr) => {
+                        const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+                        if (!plan) return null
+                        
+                        const quantity = planQuantities[planIdStr] || 1
+                        const basePrice = parseFloat(plan.price || 0)
+                        const planId = parseInt(planIdStr)
+                        
+                        // Check if discount applies to this plan
+                        const discountApplies = (planId === 2 || planId === 3 || planId === 5) && 
+                                               subscriptionForm.discount_type && 
+                                               subscriptionForm.discount_type !== 'none' && 
+                                               subscriptionForm.discount_type !== 'regular'
+                        
+                        const discountAmount = discountApplies ? (discountConfig[subscriptionForm.discount_type]?.discount || 0) : 0
+                        const pricePerUnit = discountApplies ? calculateDiscountedPrice(basePrice, subscriptionForm.discount_type) : basePrice
+                        const subtotal = basePrice * quantity
+                        const discountTotal = discountAmount * quantity
+                        const finalPrice = pricePerUnit * quantity
+                        
+                        return (
+                          <div key={planIdStr} className="bg-white border border-gray-200 rounded-md p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-gray-900">{plan.plan_name}</span>
+                              {quantity > 1 && (
+                                <span className="text-xs text-gray-500">× {quantity}</span>
+                              )}
+                            </div>
+                            <div className="space-y-1.5">
+                              {quantity > 1 ? (
+                                <>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-600">Price per unit</span>
+                                    <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-600">Subtotal</span>
+                                    <span className="font-medium text-gray-900">₱{subtotal.toFixed(2)}</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-600">Price</span>
+                                  <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {discountApplies && (
+                                <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
+                                  <span className="text-green-600">
+                                    {subscriptionForm.discount_type === 'student' ? '🎓 Student' : '👤 Senior'} Discount
+                                  </span>
+                                  <span className="text-green-600 font-medium">-₱{discountTotal.toFixed(2)}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                                <span className="text-xs font-semibold text-gray-700">Total</span>
+                                <span className="text-sm font-bold text-gray-900">₱{finalPrice.toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    
+                    {/* Total Summary */}
+                    <div className="pt-3 border-t-2 border-gray-300 space-y-1.5">
+                      {subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && (
+                        (() => {
+                          const totalDiscount = subscriptionForm.selected_plan_ids.reduce((sum, planIdStr) => {
+                            const planId = parseInt(planIdStr)
+                            const quantity = planQuantities[planIdStr] || 1
+                            if (planId === 2 || planId === 3 || planId === 5) {
+                              const discountAmount = discountConfig[subscriptionForm.discount_type]?.discount || 0
+                              return sum + (discountAmount * quantity)
+                            }
+                            return sum
+                          }, 0)
+                          
+                          if (totalDiscount > 0) {
+                            return (
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">Discount</span>
+                                <span className="text-green-600 font-semibold">-₱{totalDiscount.toFixed(2)}</span>
+                              </div>
+                            )
+                          }
+                          return null
+                        })()
+                      )}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-base font-semibold text-gray-900">Total</span>
+                        <span className="text-lg font-bold text-gray-900">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
