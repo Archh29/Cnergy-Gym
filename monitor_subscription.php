@@ -97,6 +97,8 @@ try {
                 }
             } elseif ($action === 'get-user-sales' && isset($_GET['user_id'])) {
                 getUserSales($pdo, $_GET['user_id']);
+            } elseif ($action === 'get-guest-sales' && isset($_GET['guest_session_id'])) {
+                getGuestSessionSales($pdo, $_GET['guest_session_id']);
             } elseif ($action === 'available-plans' && isset($_GET['user_id'])) {
                 getAvailablePlansForUser($pdo, $_GET['user_id']);
             } elseif (isset($_GET['user_id'])) {
@@ -550,11 +552,45 @@ function getAllSubscriptions($pdo)
         error_log("Error fetching guest sessions: " . $e->getMessage());
     }
 
-    // Sort all subscriptions by created_at descending
+    // Sort all subscriptions by created_at descending (newest first)
+    // Use ID as secondary sort since guest sessions and subscriptions have different ID ranges
     usort($subscriptions, function ($a, $b) {
+        // Primary sort: by created_at descending (newest first)
         $dateA = strtotime($a['created_at'] ?? '1970-01-01');
         $dateB = strtotime($b['created_at'] ?? '1970-01-01');
-        return $dateB - $dateA;
+
+        if ($dateB !== $dateA) {
+            return $dateB - $dateA;
+        }
+
+        // Secondary sort: by ID descending (higher ID = newer)
+        // Extract numeric ID (handle guest_ prefix and guest_session_id)
+        $idA = 0;
+        $idB = 0;
+
+        if (isset($a['is_guest_session']) && $a['is_guest_session']) {
+            // For guest sessions, use guest_session_id if available
+            $idA = isset($a['guest_session_id']) ? intval($a['guest_session_id']) :
+                (is_numeric($a['id']) ? intval($a['id']) :
+                    (strpos($a['id'] ?? '', 'guest_') === 0 ? intval(str_replace('guest_', '', $a['id'])) : 0));
+        } else {
+            // For regular subscriptions, use the subscription ID
+            $idA = is_numeric($a['id']) ? intval($a['id']) :
+                (strpos($a['id'] ?? '', 'guest_') === 0 ? intval(str_replace('guest_', '', $a['id'])) : 0);
+        }
+
+        if (isset($b['is_guest_session']) && $b['is_guest_session']) {
+            // For guest sessions, use guest_session_id if available
+            $idB = isset($b['guest_session_id']) ? intval($b['guest_session_id']) :
+                (is_numeric($b['id']) ? intval($b['id']) :
+                    (strpos($b['id'] ?? '', 'guest_') === 0 ? intval(str_replace('guest_', '', $b['id'])) : 0));
+        } else {
+            // For regular subscriptions, use the subscription ID
+            $idB = is_numeric($b['id']) ? intval($b['id']) :
+                (strpos($b['id'] ?? '', 'guest_') === 0 ? intval(str_replace('guest_', '', $b['id'])) : 0);
+        }
+
+        return $idB - $idA;
     });
 
     echo json_encode([
@@ -1722,17 +1758,17 @@ function createManualSubscription($pdo, $data)
             ");
             $expiredStmt->execute([$user_id, $plan_id]);
             $expiredSubscription = $expiredStmt->fetch();
-            
+
             if ($expiredSubscription) {
                 // Update expired subscription instead of creating new one
                 $isRenewal = true;
                 $subscription_id = $expiredSubscription['id'];
-                
+
                 // Use the expired subscription's end_date as the new start_date
                 $expiredEndDate = new DateTime($expiredSubscription['end_date'], new DateTimeZone('Asia/Manila'));
                 $start_date_obj = clone $expiredEndDate;
                 $start_date = $start_date_obj->format('Y-m-d');
-                
+
                 // Recalculate end_date based on the new start_date
                 if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
                     // Already handled above - these use current date/time
@@ -1749,7 +1785,7 @@ function createManualSubscription($pdo, $data)
             } else {
                 // No expired subscription found, create new one
                 $isRenewal = false;
-                
+
                 // If creating a new subscription of the same plan type, check if there's any previous subscription
                 // (active or expired) and use its end_date as the start_date for the new subscription
                 // This ensures new subscriptions start when the previous one ends, not overlapping
@@ -1771,14 +1807,14 @@ function createManualSubscription($pdo, $data)
                 ");
                 $previousStmt->execute([$user_id, $plan_id]);
                 $previousSubscription = $previousStmt->fetch();
-                
+
                 // If there's a previous subscription of the same plan type, use its end_date as start_date
                 if ($previousSubscription) {
                     $previousEndDate = new DateTime($previousSubscription['end_date'], new DateTimeZone('Asia/Manila'));
                     // Use the end_date of the previous subscription as the start_date for the new one
                     $start_date = $previousEndDate->format('Y-m-d');
                     $start_date_obj = new DateTime($start_date, new DateTimeZone('Asia/Manila'));
-                    
+
                     // Recalculate end_date based on the new start_date
                     if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
                         // Already handled above - these use current date/time
@@ -1962,11 +1998,17 @@ function createManualSubscription($pdo, $data)
             $sale_id = $pdo->lastInsertId();
 
             // Create sales details
+            // Get quantity from request data, default to 1 if not provided
+            $quantity = isset($data['quantity']) ? intval($data['quantity']) : 1;
+            if ($quantity <= 0) {
+                $quantity = 1; // Ensure quantity is at least 1
+            }
+
             $salesDetailStmt = $pdo->prepare("
                     INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
-                    VALUES (?, ?, 1, ?)
+                    VALUES (?, ?, ?, ?)
                 ");
-            $salesDetailStmt->execute([$sale_id, $subscription_id, $payment_amount]);
+            $salesDetailStmt->execute([$sale_id, $subscription_id, $quantity, $payment_amount]);
         } else {
             $sale_id = null;
         }
@@ -3051,10 +3093,10 @@ function getSubscriptionPayments($pdo, $subscription_id)
 function getUserSales($pdo, $user_id)
 {
     header('Content-Type: application/json');
-    
+
     try {
         $user_id = intval($user_id);
-        
+
         if ($user_id <= 0) {
             http_response_code(400);
             echo json_encode([
@@ -3064,7 +3106,7 @@ function getUserSales($pdo, $user_id)
             ]);
             return;
         }
-        
+
         // Get all sales for this user, including subscription sales
         $stmt = $pdo->prepare("
             SELECT 
@@ -3096,12 +3138,12 @@ function getUserSales($pdo, $user_id)
             LEFT JOIN member_subscription_plan msp ON sub.plan_id = msp.id
             WHERE s.user_id = ?
             AND s.sale_type = 'Subscription'
-            ORDER BY s.sale_date DESC
+            ORDER BY sub.plan_id ASC, s.sale_date DESC
         ");
-        
+
         $stmt->execute([$user_id]);
         $sales = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         // Check payment table columns
         $checkPaymentColumns = $pdo->query("SHOW COLUMNS FROM payment");
         $paymentColumns = $checkPaymentColumns->fetchAll(PDO::FETCH_COLUMN);
@@ -3111,7 +3153,7 @@ function getUserSales($pdo, $user_id)
         $hasAmountReceived = in_array('amount_received', $paymentColumns);
         $hasChangeGiven = in_array('change_given', $paymentColumns);
         $hasPaymentMethod = in_array('payment_method', $paymentColumns);
-        
+
         // Also get payments for these subscriptions
         foreach ($sales as &$sale) {
             if ($sale['subscription_id']) {
@@ -3135,13 +3177,13 @@ function getUserSales($pdo, $user_id)
                 if ($hasStatusColumn) {
                     $paymentFields[] = 'status';
                 }
-                
+
                 $paymentFieldsStr = implode(', ', $paymentFields);
                 $whereClause = "WHERE subscription_id = ?";
                 if ($hasStatusColumn) {
                     $whereClause .= " AND (status = 'paid' OR status = 'completed')";
                 }
-                
+
                 $paymentStmt = $pdo->prepare("
                     SELECT $paymentFieldsStr
                     FROM payment
@@ -3150,12 +3192,27 @@ function getUserSales($pdo, $user_id)
                 ");
                 $paymentStmt->execute([$sale['subscription_id']]);
                 $sale['payments'] = $paymentStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                // Get payment method and reference number from payment table if not in sales table
+                if (!empty($sale['payments'])) {
+                    $firstPayment = $sale['payments'][0];
+
+                    // If payment_method is not set in sales, get it from payment table
+                    if (empty($sale['payment_method']) && !empty($firstPayment['payment_method'])) {
+                        $sale['payment_table_payment_method'] = $firstPayment['payment_method'];
+                    }
+
+                    // If reference_number is not in sales table but exists in payment table, use it
+                    if (empty($sale['reference_number']) && !empty($firstPayment['reference_number'])) {
+                        $sale['payment_reference_number'] = $firstPayment['reference_number'];
+                    }
+                }
             } else {
                 $sale['payments'] = [];
             }
         }
         unset($sale);
-        
+
         echo json_encode([
             "success" => true,
             "sales" => $sales,
@@ -3182,16 +3239,104 @@ function getUserSales($pdo, $user_id)
     }
 }
 
+function getGuestSessionSales($pdo, $guest_session_id)
+{
+    header('Content-Type: application/json');
+
+    try {
+        $guest_session_id = intval($guest_session_id);
+
+        if ($guest_session_id <= 0) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Invalid parameters",
+                "message" => "guest_session_id must be a positive integer"
+            ]);
+            return;
+        }
+
+        // Get sales for this guest session
+        $stmt = $pdo->prepare("
+            SELECT 
+                s.id,
+                s.user_id,
+                s.total_amount,
+                s.sale_date,
+                s.sale_type,
+                s.payment_method,
+                s.transaction_status,
+                s.receipt_number,
+                s.reference_number,
+                s.cashier_id,
+                s.change_given,
+                s.notes,
+                sd.id AS detail_id,
+                sd.guest_session_id,
+                sd.quantity,
+                sd.price AS detail_price,
+                gs.guest_name,
+                gs.reference_number AS guest_reference_number,
+                msp.plan_name,
+                msp.price AS plan_price
+            FROM sales s
+            LEFT JOIN sales_details sd ON s.id = sd.sale_id
+            LEFT JOIN guest_session gs ON sd.guest_session_id = gs.id
+            LEFT JOIN member_subscription_plan msp ON msp.id = 6
+            WHERE sd.guest_session_id = ?
+            AND s.sale_type = 'Guest'
+            ORDER BY s.sale_date DESC
+        ");
+
+        $stmt->execute([$guest_session_id]);
+        $sales = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Add reference_number from guest_session if not in sales
+        foreach ($sales as &$sale) {
+            if (empty($sale['reference_number']) && !empty($sale['guest_reference_number'])) {
+                $sale['reference_number'] = $sale['guest_reference_number'];
+            }
+            // Set plan_name for guest sessions
+            if (empty($sale['plan_name'])) {
+                $sale['plan_name'] = 'Gym Session';
+            }
+        }
+        unset($sale);
+
+        echo json_encode([
+            "success" => true,
+            "sales" => $sales,
+            "count" => count($sales)
+        ]);
+    } catch (PDOException $e) {
+        http_response_code(500);
+        error_log("Error in getGuestSessionSales (PDOException): " . $e->getMessage());
+        echo json_encode([
+            "success" => false,
+            "error" => "Database error",
+            "message" => $e->getMessage()
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("Error in getGuestSessionSales (Exception): " . $e->getMessage());
+        echo json_encode([
+            "success" => false,
+            "error" => "Error fetching sales",
+            "message" => $e->getMessage()
+        ]);
+    }
+}
+
 function getSubscriptionHistory($pdo, $user_id, $plan_id)
 {
     // Ensure we're outputting JSON
     header('Content-Type: application/json');
-    
+
     try {
         // Validate input parameters
         $user_id = intval($user_id);
         $plan_id = intval($plan_id);
-        
+
         if ($user_id <= 0 || $plan_id <= 0) {
             http_response_code(400);
             echo json_encode([
@@ -3201,7 +3346,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
             ]);
             return;
         }
-        
+
         // Check which columns exist in subscription table
         $checkSubColumns = $pdo->query("SHOW COLUMNS FROM subscription");
         $subColumns = $checkSubColumns->fetchAll(PDO::FETCH_COLUMN);
@@ -3210,7 +3355,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
         $hasCreatedAt = in_array('created_at', $subColumns);
         $hasQuantity = in_array('quantity', $subColumns);
         $hasDiscountedPrice = in_array('discounted_price', $subColumns);
-        
+
         // Build subscription query based on available columns
         $subFields = ['s.id', 's.start_date', 's.end_date', 's.amount_paid'];
         if ($hasDiscountedPrice) {
@@ -3250,9 +3395,9 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                     WHEN st.status_name = 'expired' THEN 'Expired'
                     ELSE st.status_name
                 END as display_status";
-        
+
         $subFieldsStr = implode(', ', $subFields);
-        
+
         // Get all subscriptions for this user and plan_id, ordered by start_date
         // Include all subscriptions regardless of payment status to show complete history
         $stmt = $pdo->prepare("
@@ -3267,7 +3412,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
 
         $stmt->execute([$user_id, $plan_id]);
         $subscriptions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
+
         // If no subscriptions found, return empty array
         if (empty($subscriptions)) {
             echo json_encode([
@@ -3281,11 +3426,11 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
         // Check if payment table exists and has status column
         $paymentTableExists = false;
         $hasStatusColumn = false;
-        
+
         try {
             $checkTableStmt = $pdo->query("SHOW TABLES LIKE 'payment'");
             $paymentTableExists = $checkTableStmt->rowCount() > 0;
-            
+
             if ($paymentTableExists) {
                 try {
                     $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM payment LIKE 'status'");
@@ -3305,7 +3450,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
             try {
                 $subscription['payments'] = [];
                 $subscription['payment_count'] = 0;
-                
+
                 // Only try to fetch payments if payment table exists
                 if ($paymentTableExists && isset($subscription['id'])) {
                     try {
@@ -3318,7 +3463,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                         $hasChangeGiven = in_array('change_given', $paymentColumns);
                         $hasPaymentMethod = in_array('payment_method', $paymentColumns);
                         $hasCreatedAt = in_array('created_at', $paymentColumns);
-                        
+
                         // Build payment query based on available columns
                         $paymentFields = ['id', 'subscription_id', 'amount', 'payment_date'];
                         if ($hasPaymentMethod) {
@@ -3342,20 +3487,20 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                         if ($hasStatusColumn) {
                             $paymentFields[] = 'status';
                         }
-                        
+
                         $paymentFieldsStr = implode(', ', $paymentFields);
                         $whereClause = "WHERE subscription_id = ?";
                         if ($hasStatusColumn) {
                             $whereClause .= " AND (status = 'paid' OR status = 'completed')";
                         }
-                        
+
                         $paymentStmt = $pdo->prepare("
                             SELECT $paymentFieldsStr
                             FROM payment 
                             $whereClause
                             ORDER BY payment_date ASC, id ASC
                         ");
-                        
+
                         $paymentStmt->execute([$subscription['id']]);
                         $subscription['payments'] = $paymentStmt->fetchAll(PDO::FETCH_ASSOC);
                         $subscription['payment_count'] = count($subscription['payments']);
@@ -3365,7 +3510,7 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                         $subscription['payment_count'] = 0;
                     }
                 }
-                
+
                 // Calculate total_paid from payments, or fall back to subscription's amount_paid
                 $paymentsTotal = 0;
                 if (!empty($subscription['payments']) && is_array($subscription['payments'])) {
@@ -3379,13 +3524,13 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
                         $paymentsTotal = 0;
                     }
                 }
-                
+
                 $subscriptionAmountPaid = floatval($subscription['amount_paid'] ?? 0);
-                
+
                 // Use the higher value between payments total and subscription amount_paid
                 // This handles cases where payments might not be recorded but amount_paid is set
                 $subscription['total_paid'] = max($paymentsTotal, $subscriptionAmountPaid);
-                
+
                 // If both are 0, keep it as 0
                 if ($subscription['total_paid'] == 0 && $paymentsTotal == 0 && $subscriptionAmountPaid == 0) {
                     $subscription['total_paid'] = 0;
@@ -3429,14 +3574,14 @@ function getSubscriptionHistory($pdo, $user_id, $plan_id)
             "subscriptions" => $subscriptions,
             "count" => count($subscriptions)
         ], JSON_UNESCAPED_UNICODE);
-        
+
         if ($jsonResponse === false) {
             $errorMsg = json_last_error_msg();
             error_log("JSON encoding failed: " . $errorMsg);
             error_log("Data that failed to encode: " . print_r($subscriptions, true));
             throw new Exception("JSON encoding failed: " . $errorMsg);
         }
-        
+
         echo $jsonResponse;
     } catch (PDOException $e) {
         http_response_code(500);

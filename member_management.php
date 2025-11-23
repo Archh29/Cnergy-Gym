@@ -354,12 +354,12 @@ try {
                             
                             $file = $_FILES['parent_consent_file'];
                             $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                            $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
+                            $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
                             
                             if (!in_array($fileExtension, $allowedExtensions)) {
                                 respond([
                                     'error' => 'Invalid file type',
-                                    'message' => 'Parent consent file must be an image (JPG, PNG, GIF) or PDF file.'
+                                    'message' => 'Parent consent file must be an image file (JPG, PNG, or GIF).'
                                 ], 400);
                             }
                             

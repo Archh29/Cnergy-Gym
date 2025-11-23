@@ -419,8 +419,14 @@ function approveGuestSessionWithPayment($pdo, $data)
         $changeGiven = max(0, $amountReceived - $amountPaid);
         $receiptNumber = $data['receipt_number'] ?? generateGuestReceiptNumber($pdo);
         $cashierId = $data['cashier_id'] ?? null;
+        
+        // Get reference number for GCash payments
+        $referenceNumber = null;
+        if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
+            $referenceNumber = $data['gcash_reference'] ?? $data['reference_number'] ?? $session['reference_number'] ?? null;
+        }
 
-        // Update session with payment details and approve (including PayMongo payment link ID)
+        // Update session with payment details and approve (including PayMongo payment link ID and reference number)
         $stmt = $pdo->prepare("
             UPDATE guest_session 
             SET status = 'approved', 
@@ -429,21 +435,41 @@ function approveGuestSessionWithPayment($pdo, $data)
                 payment_link_id = ?,
                 change_given = ?, 
                 receipt_number = ?, 
-                cashier_id = ?
+                cashier_id = ?,
+                reference_number = ?
             WHERE id = ?
         ");
-        $stmt->execute([$paymentMethod, $paymentLinkId, $changeGiven, $receiptNumber, $cashierId, $sessionId]);
+        $stmt->execute([$paymentMethod, $paymentLinkId, $changeGiven, $receiptNumber, $cashierId, $referenceNumber, $sessionId]);
 
         // Create sales record for guest transaction
         try {
             // Use transaction to ensure both sales and sales_details are created together
             $pdo->beginTransaction();
-
-            $salesStmt = $pdo->prepare("
-                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
-                VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?)
-            ");
-            $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes]);
+            
+            // Get reference_number from guest_session if it exists
+            $getRefStmt = $pdo->prepare("SELECT reference_number FROM guest_session WHERE id = ?");
+            $getRefStmt->execute([$sessionId]);
+            $refRow = $getRefStmt->fetch();
+            $referenceNumber = $refRow['reference_number'] ?? null;
+            
+            // Check if sales table has reference_number column
+            $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
+            $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
+            $hasReferenceNumber = in_array('reference_number', $salesColumns);
+            
+            if ($hasReferenceNumber) {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes, reference_number) 
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes, $referenceNumber]);
+            } else {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes]);
+            }
             $saleId = $pdo->lastInsertId();
 
             // Create sales_details entry to link guest_session to sale
@@ -616,6 +642,12 @@ function createGuestSession($pdo, $data)
         $receiptNumber = $data['receipt_number'] ?? generateGuestReceiptNumber($pdo);
         $cashierId = $data['cashier_id'] ?? null;
         $notes = $data['notes'] ?? ''; // Transaction notes
+        
+        // Get reference number for GCash payments
+        $referenceNumber = null;
+        if (strtolower($paymentMethod) === 'gcash' || strtolower($paymentMethod) === 'digital') {
+            $referenceNumber = $data['gcash_reference'] ?? $data['reference_number'] ?? null;
+        }
 
         // Validate guest name
         if (empty($guestName)) {
@@ -651,11 +683,11 @@ function createGuestSession($pdo, $data)
 
         // Insert guest session with POS fields and PayMongo payment link ID
         $stmt = $pdo->prepare("
-            INSERT INTO guest_session (guest_name, guest_type, amount_paid, qr_token, valid_until, paid, status, created_at, payment_method, payment_link_id, receipt_number, cashier_id, change_given)
-            VALUES (?, ?, ?, ?, ?, 1, 'approved', NOW(), ?, ?, ?, ?, ?)
+            INSERT INTO guest_session (guest_name, guest_type, amount_paid, qr_token, valid_until, paid, status, created_at, payment_method, payment_link_id, receipt_number, cashier_id, change_given, reference_number)
+            VALUES (?, ?, ?, ?, ?, 1, 'approved', NOW(), ?, ?, ?, ?, ?, ?)
         ");
 
-        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $validUntilStr, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven]);
+        $stmt->execute([$guestName, $guestType, $amountPaid, $qrToken, $validUntilStr, $paymentMethod, $paymentLinkId, $receiptNumber, $cashierId, $changeGiven, $referenceNumber]);
 
         $sessionId = $pdo->lastInsertId();
 
@@ -663,11 +695,24 @@ function createGuestSession($pdo, $data)
         // IMPORTANT: Do NOT use a transaction here because guest_session is already committed
         // If we use a transaction and it fails, we'll have a guest_session without a sales record
         try {
-            $salesStmt = $pdo->prepare("
-                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
-                VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?)
-            ");
-            $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes]);
+            // Check if sales table has reference_number column
+            $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
+            $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
+            $hasReferenceNumber = in_array('reference_number', $salesColumns);
+            
+            if ($hasReferenceNumber) {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes, reference_number) 
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes, $referenceNumber]);
+            } else {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $cashierId, $changeGiven, $notes]);
+            }
             $saleId = $pdo->lastInsertId();
 
             error_log("✅ Created sales record: Sale ID: $saleId, Receipt: $receiptNumber, Amount: $amountPaid");

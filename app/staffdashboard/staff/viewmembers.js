@@ -56,8 +56,8 @@ import {
 } from "lucide-react"
 
 // Helper function to generate standard password from user's name
-// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(FirstCap, optional) + #2023 + First2LettersOfLastName(lowercase)
-// Examples: "Rj Lo Ta" -> "RjLo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
+// Format: First2LettersOfFirstName(FirstCap) + First2LettersOfMiddleName(all lowercase, optional) + #2023 + First2LettersOfLastName(lowercase)
+// Examples: "Rj Lo Ta" -> "Rjlo#2023ta", "John Doe" (no middle name) -> "Jo#2023do"
 const generateStandardPassword = (fname, mname, lname) => {
   // Get first 2 letters of first name: first letter uppercase, second lowercase
   const first = (fname || "").trim()
@@ -65,10 +65,10 @@ const generateStandardPassword = (fname, mname, lname) => {
     ? (first.substring(0, 1).toUpperCase() + (first.length > 1 ? first.substring(1, 2).toLowerCase() : ""))
     : ""
   
-  // Get first 2 letters of middle name ONLY if it exists: first letter uppercase, second lowercase (optional)
-  const middle = (mname && mname.trim() !== "") ? mname.trim() : ""
+  // Get first 2 letters of middle name ONLY if it exists: all lowercase (optional)
+  const middle = (mname && mname.trim() !== "") ? mname.trim().toLowerCase() : ""
   const middleNamePart = middle.length > 0
-    ? (middle.substring(0, 1).toUpperCase() + (middle.length > 1 ? middle.substring(1, 2).toLowerCase() : ""))
+    ? middle.substring(0, 2)
     : ""
   
   // Get first 2 letters of last name: all lowercase
@@ -77,7 +77,7 @@ const generateStandardPassword = (fname, mname, lname) => {
     ? last.substring(0, 2).toLowerCase()
     : ""
   
-  // Combine: FirstName2(FirstCap) + MiddleName2(FirstCap, if exists) + #2023 + LastName2(lowercase)
+  // Combine: FirstName2(FirstCap) + MiddleName2(all lowercase, if exists) + #2023 + LastName2(lowercase)
   // If no middle name, middleNamePart will be empty string, so result will be: FirstName2#2023LastName2
   return `${firstNamePart}${middleNamePart}#2023${lastNamePart}`
 }
@@ -946,13 +946,30 @@ const ViewMembers = ({ userId }) => {
               })
             })
             
-            if (!discountResponse.ok) {
-              console.error("Failed to add discount tag, but continuing with subscription creation")
+            // Parse response to check if it was actually successful
+            if (discountResponse.ok) {
+              const discountData = await discountResponse.json()
+              if (!discountData.success) {
+                // Only log if there's an actual error in the response
+                console.warn("Discount tag may not have been added:", discountData.message || "Unknown error")
+              }
+            } else {
+              // Only log if HTTP status indicates an error
+              const errorText = await discountResponse.text()
+              console.warn("Discount tag API returned error status:", discountResponse.status, errorText)
             }
+          } else {
+            // If verifiedById is missing, silently skip (this is expected for new accounts)
+            // The discount can be added manually later if needed
           }
         } catch (discountError) {
-          console.error("Error adding discount tag:", discountError)
-          // Continue even if discount fails
+          // Only log actual network/parsing errors, not expected failures
+          if (discountError instanceof TypeError && discountError.message.includes('fetch')) {
+            console.warn("Network error adding discount tag:", discountError.message)
+          } else {
+            console.warn("Error adding discount tag:", discountError.message)
+          }
+          // Continue even if discount fails - subscription creation is more important
         }
       }
 
