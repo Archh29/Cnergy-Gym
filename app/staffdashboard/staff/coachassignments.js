@@ -63,7 +63,8 @@ const CoachAssignments = ({ userId }) => {
   const [amountReceived, setAmountReceived] = useState("")
   const [referenceNumber, setReferenceNumber] = useState("")
 
-  const [currentUserId, setCurrentUserId] = useState(6)
+  // Use userId prop directly instead of fetching from API
+  const currentUserId = userId || null
 
   // Data states
   const [assignedMembers, setAssignedMembers] = useState([])
@@ -134,13 +135,11 @@ const CoachAssignments = ({ userId }) => {
     setActionLoading(true)
     setError(null)
     try {
-      const effectiveUserId = currentUserId || userId
-      
       const assignResponse = await axios.post(`${API_BASE_URL}?action=assign-coach`, {
         member_id: memberId,
         coach_id: selectedCoachId,
-        admin_id: effectiveUserId,
-        staff_id: effectiveUserId,
+        admin_id: currentUserId,
+        staff_id: currentUserId,
         rate_type: rateType,
       })
 
@@ -151,11 +150,11 @@ const CoachAssignments = ({ userId }) => {
       if (paymentAmount > 0) {
         const paymentData = {
           request_id: assignResponse.data.data?.assignment_id,
-          admin_id: effectiveUserId,
-          staff_id: effectiveUserId,
+          admin_id: currentUserId,
+          staff_id: currentUserId,
           payment_method: paymentMethod,
           amount_received: paymentMethod === "cash" ? parseFloat(amountReceived) : paymentAmount,
-          cashier_id: effectiveUserId,
+          cashier_id: currentUserId,
           receipt_number: paymentMethod === "gcash" && referenceNumber ? referenceNumber : undefined,
         }
 
@@ -240,30 +239,6 @@ const CoachAssignments = ({ userId }) => {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      try {
-        const response = await axios.get('https://api.cnergy.site/session.php')
-        if (response.data.authenticated && response.data.user_id) {
-          setCurrentUserId(response.data.user_id)
-          return
-        }
-      } catch (err) {
-        console.error("Error getting current user from session:", err)
-      }
-
-      try {
-        const response = await axios.get(`${API_BASE_URL}?action=get-current-user`)
-        if (response.data.success && response.data.user_id) {
-          setCurrentUserId(response.data.user_id)
-        }
-      } catch (err) {
-        console.error("Error getting current user from API:", err)
-      }
-    }
-    getCurrentUser()
-  }, [])
 
   useEffect(() => {
     loadAllData()

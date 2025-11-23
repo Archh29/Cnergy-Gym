@@ -270,6 +270,22 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchSubscriptionPlans()
     fetchAvailableUsers()
     fetchGymSessionPlan()
+    
+    // Check for navigation parameters from home page
+    const navParams = localStorage.getItem('adminNavParams')
+    if (navParams) {
+      try {
+        const params = JSON.parse(navParams)
+        if (params.tab) {
+          setActiveTab(params.tab)
+        }
+        // Clear the navigation params after using them
+        localStorage.removeItem('adminNavParams')
+        localStorage.removeItem('adminNavTarget')
+      } catch (e) {
+        console.error('Error parsing nav params:', e)
+      }
+    }
   }, [])
 
   // Fetch guest session sales
@@ -1069,7 +1085,8 @@ const SubscriptionMonitor = ({ userId }) => {
           total_amount: totalAmount,
           payment_method: guestSessionForm.payment_method,
           amount_received: receivedAmount,
-          guest_name: guestSessionForm.guest_name
+          guest_name: guestSessionForm.guest_name,
+          reference_number: response.data.reference_number || guestSessionForm.gcash_reference || null
         }
 
         setLastGuestTransaction(transactionData)
@@ -4095,7 +4112,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "cash", amount_received: prev.payment_method === "cash" ? prev.amount_received : "" }))}
-                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${
                     guestSessionForm.payment_method === "cash"
                       ? "border-gray-900 bg-gray-900 text-white shadow-md"
                       : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
@@ -4106,7 +4123,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
-                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${
                     guestSessionForm.payment_method === "digital"
                       ? "border-gray-900 bg-gray-900 text-white shadow-md"
                       : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
@@ -4205,10 +4222,17 @@ const SubscriptionMonitor = ({ userId }) => {
                     <CheckCircle className="h-4 w-4 text-green-600" />
                     <p className="text-sm font-medium text-green-700">Transaction Completed Successfully</p>
                   </div>
+                  {lastGuestTransaction.payment_method === "digital" && lastGuestTransaction.reference_number ? (
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <span className="text-xs font-medium text-gray-500">Reference:</span>
+                      <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.reference_number}</span>
+                    </div>
+                  ) : (
                   <div className="flex items-center justify-center gap-2 mt-2">
                     <span className="text-xs font-medium text-gray-500">Receipt #</span>
                     <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
                   </div>
+                  )}
                   <p className="text-xs text-gray-500">
                     {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -4228,7 +4252,7 @@ const SubscriptionMonitor = ({ userId }) => {
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-200">
                     <span className="text-sm font-medium text-gray-600">Payment Method</span>
-                    <span className="text-sm font-semibold text-gray-900 capitalize">{lastGuestTransaction.payment_method}</span>
+                    <span className="text-sm font-semibold text-gray-900">{lastGuestTransaction.payment_method === "digital" ? "GCash" : lastGuestTransaction.payment_method.charAt(0).toUpperCase() + lastGuestTransaction.payment_method.slice(1)}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-200">
                     <span className="text-sm font-medium text-gray-600">Amount Paid</span>

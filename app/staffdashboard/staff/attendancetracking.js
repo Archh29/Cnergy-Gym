@@ -341,9 +341,18 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   const loadFailedScans = async () => {
+    try {
     const stored = localStorage.getItem('failedQrScans')
+      console.log("🔍 Staff - Loading failed scans from localStorage:", stored ? JSON.parse(stored).length : 0, "items")
+      
     if (stored) {
       let scans = JSON.parse(stored)
+        
+        // Ensure scans is an array
+        if (!Array.isArray(scans)) {
+          console.warn("⚠️ Staff - failedQrScans is not an array, resetting")
+          scans = []
+        }
 
       // Resolve member names for entries that only have "Member ID: X"
       const needsResolution = scans.filter(scan =>
@@ -381,8 +390,14 @@ const AttendanceTracking = ({ userId }) => {
         }
       }
 
+        console.log("✅ Staff - Setting failed scans:", scans.length, "items")
       setFailedScans(scans)
     } else {
+        console.log("⚠️ Staff - No failed scans found in localStorage")
+        setFailedScans([])
+      }
+    } catch (error) {
+      console.error("❌ Staff - Error loading failed scans:", error)
       setFailedScans([])
     }
   }
@@ -426,12 +441,20 @@ const AttendanceTracking = ({ userId }) => {
   // Initial data load
   useEffect(() => {
     fetchData()
+    loadFailedScans() // Load denied logs on component mount
   }, [])
 
   // Refetch data when month, year, or date filter changes
   useEffect(() => {
     fetchData()
   }, [selectedMonth, selectedYear, selectedDate])
+  
+  // Reload failed scans when dialog opens to ensure fresh data
+  useEffect(() => {
+    if (failedScansOpen) {
+      loadFailedScans()
+    }
+  }, [failedScansOpen])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {

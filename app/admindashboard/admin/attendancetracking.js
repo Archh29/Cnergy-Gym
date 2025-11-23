@@ -35,6 +35,23 @@ const AttendanceTracking = ({ userId }) => {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(20) // Number of items per page
 
+  // Check for navigation params on mount
+  useEffect(() => {
+    const navParams = localStorage.getItem('adminNavParams')
+    if (navParams) {
+      try {
+        const params = JSON.parse(navParams)
+        if (params.filterType) {
+          setFilterType(params.filterType)
+        }
+        // Clear the params after reading
+        localStorage.removeItem('adminNavParams')
+      } catch (e) {
+        console.error("Error parsing nav params:", e)
+      }
+    }
+  }, [])
+
   // Helper function to format datetime to PH timezone
   const formatToPHTime = (dateTimeStr) => {
     if (!dateTimeStr || dateTimeStr.includes("Still in gym")) {
@@ -341,9 +358,18 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   const loadFailedScans = async () => {
+    try {
     const stored = localStorage.getItem('failedQrScans')
+      console.log("🔍 Admin - Loading failed scans from localStorage:", stored ? JSON.parse(stored).length : 0, "items")
+      
     if (stored) {
       let scans = JSON.parse(stored)
+        
+        // Ensure scans is an array
+        if (!Array.isArray(scans)) {
+          console.warn("⚠️ Admin - failedQrScans is not an array, resetting")
+          scans = []
+        }
 
       // Resolve member names for entries that only have "Member ID: X"
       const needsResolution = scans.filter(scan =>
@@ -381,8 +407,14 @@ const AttendanceTracking = ({ userId }) => {
         }
       }
 
+      console.log("✅ Admin - Setting failed scans:", scans.length, "items")
       setFailedScans(scans)
     } else {
+      console.log("⚠️ Admin - No failed scans found in localStorage")
+      setFailedScans([])
+    }
+    } catch (error) {
+      console.error("❌ Admin - Error loading failed scans:", error)
       setFailedScans([])
     }
   }
@@ -426,12 +458,20 @@ const AttendanceTracking = ({ userId }) => {
   // Initial data load
   useEffect(() => {
     fetchData()
+    loadFailedScans() // Load denied logs on component mount
   }, [])
 
   // Refetch data when month, year, or date filter changes
   useEffect(() => {
     fetchData()
   }, [selectedMonth, selectedYear, selectedDate])
+  
+  // Reload failed scans when dialog opens to ensure fresh data
+  useEffect(() => {
+    if (failedScansOpen) {
+      loadFailedScans()
+    }
+  }, [failedScansOpen])
 
   // Listen for global QR scan events and auto-refresh
   useEffect(() => {

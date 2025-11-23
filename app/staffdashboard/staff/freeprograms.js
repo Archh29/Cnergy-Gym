@@ -25,6 +25,7 @@ axios.defaults.headers.common["Content-Type"] = "application/json"
 const FreePrograms = ({ userId }) => {
   const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedDifficulty, setSelectedDifficulty] = useState("all")
   const [programs, setPrograms] = useState([])
   const [exercises, setExercises] = useState([])
   const [exerciseSearchQuery, setExerciseSearchQuery] = useState("")
@@ -452,9 +453,32 @@ const FreePrograms = ({ userId }) => {
     setDragOverIndex(null)
   }
 
-  const filteredPrograms = (programs || []).filter((program) =>
-    program?.name?.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const getDifficultyBadge = (difficulty) => {
+    const colors = {
+      Beginner: "bg-green-50 text-green-700 border border-green-200",
+      Intermediate: "bg-yellow-50 text-yellow-700 border border-yellow-200",
+      Advanced: "bg-red-50 text-red-700 border border-red-200",
+    }
+    const dots = {
+      Beginner: "bg-green-500",
+      Intermediate: "bg-yellow-500",
+      Advanced: "bg-red-500",
+    }
+    return (
+      <Badge className={`text-xs px-2 py-0.5 font-medium ${colors[difficulty] || colors.Beginner}`}>
+        <div className="flex items-center gap-1.5">
+          <div className={`w-2 h-2 rounded-full ${dots[difficulty] || dots.Beginner}`}></div>
+          {difficulty || "Beginner"}
+        </div>
+      </Badge>
+    )
+  }
+
+  const filteredPrograms = (programs || []).filter((program) => {
+    const matchesSearch = program?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesDifficulty = selectedDifficulty === "all" || program?.difficulty === selectedDifficulty
+    return matchesSearch && matchesDifficulty
+  })
 
   return (
     <div className="space-y-6">
@@ -501,12 +525,40 @@ const FreePrograms = ({ userId }) => {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <div className="flex items-center gap-3">
+              <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                <SelectTrigger className="h-11 w-[180px]">
+                  <SelectValue placeholder="Filter by difficulty" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Difficulties</SelectItem>
+                  <SelectItem value="Beginner">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                      Beginner
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Intermediate">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                      Intermediate
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="Advanced">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                      Advanced
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             <Tabs value={showArchived ? "archived" : "active"} onValueChange={(value) => setShowArchived(value === "archived")}>
               <TabsList>
                 <TabsTrigger value="active">Active</TabsTrigger>
                 <TabsTrigger value="archived">Archived</TabsTrigger>
               </TabsList>
             </Tabs>
+            </div>
           </div>
 
           {filteredPrograms.length === 0 ? (
@@ -554,6 +606,7 @@ const FreePrograms = ({ userId }) => {
                       </div>
 
                       <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                        <div className="flex items-center gap-2">
                         <Badge
                           variant="outline"
                           className="bg-gray-50 border-gray-200 text-gray-700 font-medium px-3 py-1"
@@ -561,6 +614,8 @@ const FreePrograms = ({ userId }) => {
                           <Dumbbell className="h-3 w-3 mr-1.5" />
                           {exerciseCount} {exerciseCount === 1 ? "exercise" : "exercises"}
                         </Badge>
+                          {getDifficultyBadge(program.difficulty)}
+                        </div>
 
                         <div className="flex gap-1.5">
                           <Button

@@ -25,6 +25,7 @@ import {
     CheckCheck,
     Ticket,
     AlertCircle,
+    Headphones,
 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns"
@@ -658,48 +659,52 @@ const AdminChat = ({ userId: propUserId }) => {
                 <div
                     className={cn(
                         "fixed z-[100] transition-all duration-300 ease-in-out",
-                        "w-[calc(100vw-2rem)] sm:w-96 h-[600px] md:h-[700px] max-h-[calc(100vh-8rem)]",
-                        "bg-white dark:bg-gray-800 rounded-xl shadow-2xl",
-                        "border-2 border-gray-200 dark:border-gray-700",
+                        "w-[calc(100vw-1rem)] sm:w-[420px] h-[calc(100vh-4rem)] max-h-[90vh]",
+                        "!bg-white dark:bg-gray-800 rounded-xl shadow-2xl",
+                        "border-2 border-gray-300 dark:border-gray-700",
                         "flex flex-col overflow-hidden",
-                        "max-w-full",
-                        "backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95"
+                        "max-w-full"
                     )}
                     style={{
-                        bottom: '100px',
-                        right: '24px',
+                        bottom: '1rem',
+                        right: '1rem',
+                        top: 'auto',
                         zIndex: 100,
                         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
                     }}
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-3 bg-orange-500 text-white border-b border-orange-600">
-                        <div className="flex items-center gap-2">
-                            <MessageCircle className="w-4 h-4" />
-                            <h3 className="font-semibold text-sm">
-                                Support Tickets
-                            </h3>
-                            {totalBadgeCount > 0 && (
-                                <Badge className="bg-white text-orange-600 text-xs px-1.5 py-0.5">
-                                    {totalBadgeCount} active
-                                </Badge>
-                            )}
+                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-500 to-orange-600 border-b border-orange-700">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-white/20 backdrop-blur-sm shadow-lg">
+                                <MessageCircle className="w-6 h-6 text-white" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-lg text-white">
+                                    Support Tickets
+                                </h3>
+                                {totalBadgeCount > 0 && (
+                                    <Badge className="bg-white text-orange-600 hover:bg-orange-50 text-xs font-semibold px-2.5 py-1 shadow-sm">
+                                        {totalBadgeCount} active
+                                    </Badge>
+                                )}
+                            </div>
                         </div>
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-white hover:bg-white/20"
+                            className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
                             onClick={() => setIsOpen(false)}
                         >
-                            <X className="w-4 h-4" />
+                            <X className="w-5 h-5" />
                         </Button>
                     </div>
 
                     {viewMode === "conversation" && selectedTicket ? (
                         // Conversation View
-                        <div className="flex flex-col h-full">
+                        <div className="flex flex-col h-full overflow-hidden min-h-0">
                             {/* Conversation Header */}
-                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex-shrink-0">
                                 <div className="flex items-center justify-between mb-2">
                                     <button
                                         onClick={handleBack}
@@ -742,14 +747,14 @@ const AdminChat = ({ userId: propUserId }) => {
                             </div>
 
                             {/* Messages */}
-                            <ScrollArea className="flex-1 p-4">
+                            <ScrollArea className="flex-1 p-4 bg-gray-50 min-h-0">
                                 {isLoadingMessages ? (
                                     <div className="flex items-center justify-center h-32">
                                         <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
                                     </div>
                                 ) : messages.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400">
-                                        <MessageCircle className="w-8 h-8 mb-2 opacity-50" />
+                                    <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+                                        <MessageCircle className="w-8 h-8 mb-2 text-gray-400" />
                                         <p className="text-sm">No messages yet</p>
                                         <p className="text-xs mt-1">Start the conversation</p>
                                     </div>
@@ -774,21 +779,32 @@ const AdminChat = ({ userId: propUserId }) => {
                                                     )}
                                                     <div
                                                         className={cn(
-                                                            "max-w-[75%] rounded-lg px-3 py-2",
+                                                            "max-w-[75%] rounded-2xl px-4 py-3 shadow-sm",
                                                             isAdmin
-                                                                ? "bg-orange-500 text-white"
-                                                                : "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                                                                ? "bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-tr-sm"
+                                                                : "bg-white text-gray-900 border border-gray-200 rounded-tl-sm"
                                                         )}
                                                     >
-                                                        <p className="text-sm whitespace-pre-wrap break-words">
+                                                        <div className={cn(
+                                                            "flex items-center gap-2 mb-1.5",
+                                                            isAdmin ? "text-orange-50" : "text-gray-700"
+                                                        )}>
+                                                            <span className="text-xs font-semibold">
+                                                                {isAdmin ? 'Support Team' : (message.sender_name || 'User')}
+                                                            </span>
+                                                        </div>
+                                                        <p className={cn(
+                                                            "text-sm whitespace-pre-wrap break-words leading-relaxed",
+                                                            isAdmin ? "text-white" : "text-gray-800"
+                                                        )}>
                                                             {message.message}
                                                         </p>
                                                         <div
                                                             className={cn(
-                                                                "flex items-center gap-1 mt-1 text-xs",
+                                                                "flex items-center gap-1 mt-2 text-xs",
                                                                 isAdmin
                                                                     ? "text-orange-100"
-                                                                    : "text-gray-500 dark:text-gray-400"
+                                                                    : "text-gray-500"
                                                             )}
                                                         >
                                                             <span>{formatMessageTime(message.created_at || message.timestamp)}</span>
@@ -819,27 +835,35 @@ const AdminChat = ({ userId: propUserId }) => {
                             </ScrollArea>
 
                             {/* Message Input */}
-                            <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                                <div className="flex gap-2">
-                                    <Input
-                                        ref={messageInputRef}
-                                        value={messageInput}
-                                        onChange={(e) => setMessageInput(e.target.value)}
-                                        onKeyPress={handleKeyPress}
-                                        placeholder="Type a message..."
-                                        className="flex-1 text-sm"
-                                        disabled={isSending}
-                                    />
+                            <div className="p-4 border-t border-gray-200 bg-gradient-to-br from-gray-50 to-white flex-shrink-0">
+                                <div className="flex gap-3 items-end">
+                                    <div className="flex-1">
+                                        <Input
+                                            ref={messageInputRef}
+                                            value={messageInput}
+                                            onChange={(e) => setMessageInput(e.target.value)}
+                                            onKeyPress={handleKeyPress}
+                                            placeholder="Type your message..."
+                                            className="w-full text-sm border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200 rounded-lg px-4 py-2.5 bg-white"
+                                            disabled={isSending}
+                                        />
+                                    </div>
                                     <Button
                                         onClick={sendMessage}
                                         disabled={!messageInput.trim() || isSending || !selectedTicket}
-                                        size="icon"
-                                        className="bg-orange-500 hover:bg-orange-600 text-white"
+                                        size="default"
+                                        className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-xl px-5 py-2.5 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {isSending ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                                Sending...
+                                            </>
                                         ) : (
-                                            <Send className="w-4 h-4" />
+                                            <>
+                                                <Send className="w-4 h-4 mr-2" />
+                                                Send
+                                            </>
                                         )}
                                     </Button>
                                 </div>
@@ -847,9 +871,9 @@ const AdminChat = ({ userId: propUserId }) => {
                         </div>
                     ) : viewMode === "users" ? (
                         // Users List View
-                        <div className="flex flex-col h-full">
+                        <div className="flex flex-col h-full overflow-hidden min-h-0">
                             {/* Filters */}
-                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-2">
+                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-2 flex-shrink-0">
                                 <div className="relative">
                                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                                     <Input
@@ -860,7 +884,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                     />
                                 </div>
                                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                                    <SelectTrigger className="h-8 text-xs" style={{ zIndex: 10 }}>
+                                    <SelectTrigger className="h-9 text-sm" style={{ zIndex: 10 }}>
                                         <SelectValue placeholder="All Status" />
                                     </SelectTrigger>
                                     <SelectContent style={{ zIndex: 9999 }}>
@@ -873,7 +897,7 @@ const AdminChat = ({ userId: propUserId }) => {
                             </div>
 
                             {/* Users List */}
-                            <ScrollArea className="flex-1">
+                            <ScrollArea className="flex-1 min-h-0">
                                 {!userId && !userIdLoadingTimeout ? (
                                     <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
                                         <Loader2 className="w-6 h-6 animate-spin text-orange-500 mb-2" />
@@ -895,43 +919,40 @@ const AdminChat = ({ userId: propUserId }) => {
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    <div className="p-2 space-y-2 pb-3">
                                         {filteredUsers().map((user) => (
                                             <button
                                                 key={`user-${user.user_id}`}
                                                 onClick={() => handleUserSelect(user)}
                                                 className={cn(
-                                                    "w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50",
-                                                    "transition-colors text-left flex items-start gap-3",
-                                                    user.activeTicketsCount > 0 &&
-                                                    "bg-orange-50 dark:bg-orange-900/10"
+                                                    "w-full p-3 border-2 border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md",
+                                                    "transition-all text-left flex items-start gap-3 bg-white group",
+                                                    user.activeTicketsCount > 0 && "bg-orange-50/50"
                                                 )}
                                             >
-                                                <Avatar className="w-10 h-10 flex-shrink-0">
-                                                    <AvatarFallback className="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400">
-                                                        {getUserInitials(user.user_name)}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between mb-1 gap-2">
-                                                        <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                                                <div className="p-2 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 group-hover:from-orange-200 group-hover:to-orange-300 transition-colors flex-shrink-0">
+                                                    <User className="w-4 h-4 text-orange-600" />
+                                                </div>
+                                                <div className="flex-1 min-w-0 overflow-hidden">
+                                                    <div className="flex items-center justify-between mb-1.5 gap-2">
+                                                        <p className="font-semibold text-sm text-gray-900 truncate">
                                                             {user.user_name}
                                                         </p>
                                                         {user.activeTicketsCount > 0 && (
-                                                            <Badge className="bg-orange-500 text-white text-xs px-1.5 py-0.5">
+                                                            <Badge className="bg-orange-500 text-white hover:bg-orange-600 text-xs px-1.5 py-0.5 flex-shrink-0">
                                                                 {user.activeTicketsCount} active
                                                             </Badge>
                                                         )}
                                                     </div>
-                                                    <p className="text-xs text-gray-600 dark:text-gray-400 truncate mb-1">
+                                                    <p className="text-xs text-gray-600 truncate mb-1.5">
                                                         {user.user_email}
                                                     </p>
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                        <span className="text-xs font-medium text-gray-700 truncate">
                                                             {user.totalTicketsCount} {user.totalTicketsCount === 1 ? 'ticket' : 'tickets'}
                                                         </span>
                                                         {user.latestTicketTime && (
-                                                            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                                                            <span className="text-xs text-gray-500 flex-shrink-0 whitespace-nowrap">
                                                                 Latest: {formatDistanceToNow(user.latestTicketTime, { addSuffix: true })}
                                                             </span>
                                                         )}

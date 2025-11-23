@@ -38,6 +38,21 @@ export default function AdminDashboardClient() {
     setIsClient(true)
   }, [])
 
+  // Listen for navigation events from home page cards
+  useEffect(() => {
+    const handleNavigate = (event) => {
+      const section = event.detail?.section
+      if (section) {
+        setCurrentSection(section)
+      }
+    }
+
+    window.addEventListener('adminNavigate', handleNavigate)
+    return () => {
+      window.removeEventListener('adminNavigate', handleNavigate)
+    }
+  }, [])
+
   const fetchUserInfo = async () => {
     try {
       const response = await fetch("https://api.cnergy.site/session.php", {

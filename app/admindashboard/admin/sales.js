@@ -63,6 +63,7 @@ import {
   BarChart3,
   Archive,
   RotateCcw,
+  RefreshCw,
   X,
   XCircle,
   Receipt,
@@ -147,6 +148,7 @@ const Sales = ({ userId }) => {
   // Success notification state
   const [showSuccessNotification, setShowSuccessNotification] = useState(false)
   const [successMessage, setSuccessMessage] = useState("")
+  const [addProductDialogOpen, setAddProductDialogOpen] = useState(false)
 
   // Coaching Sales dialog state
   const [coachingSalesDialogOpen, setCoachingSalesDialogOpen] = useState(false)
@@ -159,6 +161,8 @@ const Sales = ({ userId }) => {
   const [coachingCustomDate, setCoachingCustomDate] = useState(null)
   const [coachingUseCustomDate, setCoachingUseCustomDate] = useState(false)
   const [coachingServiceTypeFilter, setCoachingServiceTypeFilter] = useState("all") // all, session, monthly
+  const [coachingSalesQuickFilter, setCoachingSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
+  const [coachingSalesSearchQuery, setCoachingSalesSearchQuery] = useState("")
   const [coachingCurrentPage, setCoachingCurrentPage] = useState(1)
   const [coachingItemsPerPage] = useState(10)
 
@@ -171,6 +175,7 @@ const Sales = ({ userId }) => {
   const [totalSalesYearFilter, setTotalSalesYearFilter] = useState("all")
   const [totalSalesCustomDate, setTotalSalesCustomDate] = useState(null)
   const [totalSalesUseCustomDate, setTotalSalesUseCustomDate] = useState(false)
+  const [totalSalesQuickFilter, setTotalSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [totalSalesCurrentPage, setTotalSalesCurrentPage] = useState(1)
   const [totalSalesItemsPerPage] = useState(10)
   const [totalSalesSubscriptionPlans, setTotalSalesSubscriptionPlans] = useState([])
@@ -193,6 +198,7 @@ const Sales = ({ userId }) => {
   const [productSalesYearFilter, setProductSalesYearFilter] = useState("all")
   const [productSalesCustomDate, setProductSalesCustomDate] = useState(null)
   const [productSalesUseCustomDate, setProductSalesUseCustomDate] = useState(false)
+  const [productSalesQuickFilter, setProductSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [productSalesCurrentPage, setProductSalesCurrentPage] = useState(1)
   const [productSalesItemsPerPage] = useState(10)
 
@@ -206,6 +212,8 @@ const Sales = ({ userId }) => {
   const [subscriptionYearFilter, setSubscriptionYearFilter] = useState("all")
   const [subscriptionCustomDate, setSubscriptionCustomDate] = useState(null)
   const [subscriptionUseCustomDate, setSubscriptionUseCustomDate] = useState(false)
+  const [subscriptionSalesQuickFilter, setSubscriptionSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
+  const [subscriptionSalesSearchQuery, setSubscriptionSalesSearchQuery] = useState("")
   const [subscriptionDayPassTypeFilter, setSubscriptionDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
   const [subscriptionGymSessionTypeFilter, setSubscriptionGymSessionTypeFilter] = useState("all") // all, subscription, guest - filters Gym Session by type
   const [subscriptionCurrentPage, setSubscriptionCurrentPage] = useState(1)
@@ -227,10 +235,59 @@ const Sales = ({ userId }) => {
     totalSubscriptionSales: 0,
   })
 
+  // Helper function to get today's date in Philippine time (YYYY-MM-DD format)
+  const getTodayInPHTime = () => {
+    const now = new Date()
+    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+    const year = phTime.getFullYear()
+    const month = String(phTime.getMonth() + 1).padStart(2, '0')
+    const day = String(phTime.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   // Load initial data
   useEffect(() => {
     loadInitialData()
+
+    // Check for navigation parameters from home page
+    const navParams = localStorage.getItem('adminNavParams')
+    if (navParams) {
+      try {
+        const params = JSON.parse(navParams)
+        if (params.openModal === 'totalSales') {
+          // Set today's date filter
+          if (params.useCustomDate && params.customDate) {
+            setTotalSalesCustomDate(new Date(params.customDate))
+            setTotalSalesUseCustomDate(true)
+          }
+          // Set quick filter to today
+          setTotalSalesQuickFilter("today")
+          // Open the modal
+          setTimeout(() => {
+            setTotalSalesDialogOpen(true)
+          }, 500) // Small delay to ensure page is loaded
+        }
+        // Clear the navigation params after using them
+        localStorage.removeItem('adminNavParams')
+        localStorage.removeItem('adminNavTarget')
+      } catch (e) {
+        console.error('Error parsing nav params:', e)
+      }
+    }
   }, [])
+
+  // Reset quick filter to "today" when modal opens
+  useEffect(() => {
+    if (totalSalesDialogOpen) {
+      setTotalSalesQuickFilter("today")
+      // Set today's date in Philippine time
+      const todayPH = getTodayInPHTime()
+      setTotalSalesCustomDate(new Date(todayPH + "T00:00:00"))
+      setTotalSalesUseCustomDate(true)
+      setTotalSalesMonthFilter("all")
+      setTotalSalesYearFilter("all")
+    }
+  }, [totalSalesDialogOpen])
 
   // Reload analytics when filter changes
   useEffect(() => {
@@ -246,6 +303,13 @@ const Sales = ({ userId }) => {
   useEffect(() => {
     if (coachingSalesDialogOpen) {
       loadCoaches()
+      // Set default to "today" when dialog opens
+      setCoachingSalesQuickFilter("today")
+      const todayPH = getTodayInPHTime()
+      setCoachingCustomDate(new Date(todayPH + "T00:00:00"))
+      setCoachingUseCustomDate(true)
+      setCoachingMonthFilter("all")
+      setCoachingYearFilter("all")
     }
   }, [coachingSalesDialogOpen])
 
@@ -262,12 +326,12 @@ const Sales = ({ userId }) => {
   // Reset to first page when filters change
   useEffect(() => {
     setCoachingCurrentPage(1)
-  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter])
+  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter, coachingSalesQuickFilter, coachingSalesSearchQuery])
 
   // Reset to first page when total sales dialog filters change
   useEffect(() => {
     setTotalSalesCurrentPage(1)
-  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, dayPassTypeFilter, gymSessionTypeFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter])
+  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, dayPassTypeFilter, gymSessionTypeFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter, totalSalesQuickFilter])
 
   // Reset filters when total sales dialog closes
   useEffect(() => {
@@ -324,7 +388,7 @@ const Sales = ({ userId }) => {
         selectedPlan.name.toLowerCase().includes('walkin') ||
         selectedPlan.name.toLowerCase().includes('guest')
       )
-      
+
       if (!isGymSessionPlan) {
         setGymSessionTypeFilter("all")
       }
@@ -343,7 +407,7 @@ const Sales = ({ userId }) => {
   // Reset to first page when product sales dialog filters change
   useEffect(() => {
     setProductSalesCurrentPage(1)
-  }, [selectedCategoryFilter, selectedProductFilter, productSalesMonthFilter, productSalesYearFilter, productSalesUseCustomDate, productSalesCustomDate, productSalesSearchQuery])
+  }, [selectedCategoryFilter, selectedProductFilter, productSalesMonthFilter, productSalesYearFilter, productSalesUseCustomDate, productSalesCustomDate, productSalesSearchQuery, productSalesQuickFilter])
 
   // Reset filters when product sales dialog closes
   useEffect(() => {
@@ -356,6 +420,7 @@ const Sales = ({ userId }) => {
       setProductSalesCustomDate(null)
       setProductSalesUseCustomDate(false)
       setProductSalesCurrentPage(1)
+      setProductSalesQuickFilter("today")
     }
   }, [productSalesDialogOpen])
 
@@ -363,6 +428,19 @@ const Sales = ({ userId }) => {
   useEffect(() => {
     if (subscriptionSalesDialogOpen) {
       loadSubscriptionPlans()
+    }
+  }, [subscriptionSalesDialogOpen])
+
+  // Reset quick filter to "today" when subscription sales modal opens
+  useEffect(() => {
+    if (subscriptionSalesDialogOpen) {
+      setSubscriptionSalesQuickFilter("today")
+      // Set today's date in Philippine time
+      const todayPH = getTodayInPHTime()
+      setSubscriptionCustomDate(new Date(todayPH + "T00:00:00"))
+      setSubscriptionUseCustomDate(true)
+      setSubscriptionMonthFilter("all")
+      setSubscriptionYearFilter("all")
     }
   }, [subscriptionSalesDialogOpen])
 
@@ -404,7 +482,7 @@ const Sales = ({ userId }) => {
         selectedPlan.name.toLowerCase().includes('gym session') ||
         selectedPlan.name.toLowerCase().includes('gymsession')
       ) && !isDayPassPlan
-      
+
       if (!isGymSessionPlan) {
         setSubscriptionGymSessionTypeFilter("all")
       }
@@ -432,6 +510,18 @@ const Sales = ({ userId }) => {
     } catch (error) {
       console.error("Error loading initial data:", error)
       alert("Error loading data. Please refresh the page.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setLoading(true)
+    try {
+      await Promise.all([loadProducts(), loadSales(), loadAnalytics()])
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      alert("Error refreshing data. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -1085,6 +1175,9 @@ const Sales = ({ userId }) => {
 
     setLoading(true)
     try {
+      // Convert "gcash" to "digital" for API consistency
+      const apiPaymentMethod = paymentMethod === "gcash" ? "digital" : paymentMethod
+
       const saleData = {
         total_amount: totalAmount,
         sale_type: "Product",
@@ -1093,9 +1186,10 @@ const Sales = ({ userId }) => {
           quantity: item.quantity,
           price: item.price,
         })),
-        payment_method: paymentMethod,
+        payment_method: apiPaymentMethod,
         amount_received: receivedAmount,
         gcash_reference: paymentMethod === "gcash" ? gcashReference : "",
+        reference_number: paymentMethod === "gcash" ? gcashReference : null,
         notes: ""
       }
 
@@ -1105,7 +1199,8 @@ const Sales = ({ userId }) => {
           ...response.data,
           change_given: change,
           total_amount: totalAmount,
-          payment_method: paymentMethod
+          payment_method: paymentMethod, // Keep original for display
+          reference_number: paymentMethod === "gcash" ? gcashReference : (response.data.reference_number || null)
         })
         setReceiptNumber(response.data.receipt_number)
         setChangeGiven(change)
@@ -1165,10 +1260,16 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        setSuccessMessage("Product added successfully!")
+        setSuccessMessage("Your product has been added to the inventory successfully.")
         setShowSuccessNotification(true)
         setNewProduct({ name: "", price: "", stock: "", category: "Uncategorized" })
+        setAddProductDialogOpen(false)
         await loadProducts()
+
+        // Auto-close success modal after 3 seconds
+        setTimeout(() => {
+          setShowSuccessNotification(false)
+        }, 3000)
       }
     } catch (error) {
       console.error("Error adding product:", error)
@@ -1550,7 +1651,7 @@ const Sales = ({ userId }) => {
       if (planName.toLowerCase().includes('guest walk in') || planName.toLowerCase().includes('guest walk-in')) {
         displayName = "Gym Session"
       }
-      
+
       const months = calculateSubscriptionMonths(subscription, sale)
       // Only show months if it's not 12 (since 12 months is the default)
       if (months > 1 && months !== 12) {
@@ -1718,9 +1819,21 @@ const Sales = ({ userId }) => {
       {/* Enhanced Header Card */}
       <Card className="border-0 shadow-lg bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100">
         <CardHeader className="pb-4">
-          <div>
-            <CardTitle className="text-3xl font-bold text-gray-900 mb-1">Sales Management</CardTitle>
-            <p className="text-sm text-gray-600">Manage product sales and inventory for CNERGY Gym</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-3xl font-bold text-gray-900 mb-1">Sales Management</CardTitle>
+              <p className="text-sm text-gray-600">Manage product sales and inventory for CNERGY Gym</p>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="h-10 w-10 border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
+              title="Refresh data"
+            >
+              <RefreshCw className={`h-5 w-5 text-gray-700 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </CardHeader>
       </Card>
@@ -1836,7 +1949,7 @@ const Sales = ({ userId }) => {
                   const today = new Date()
                   today.setHours(0, 0, 0, 0)
                   const todayStr = format(today, "yyyy-MM-dd")
-                  
+
                   return sales
                     .filter(sale => {
                       const saleDate = new Date(sale.sale_date)
@@ -1896,13 +2009,13 @@ const Sales = ({ userId }) => {
                   const today = new Date()
                   today.setHours(0, 0, 0, 0)
                   const todayStr = format(today, "yyyy-MM-dd")
-                  
+
                   const subscriptionSalesTotal = sales
                     .filter(sale => {
                       // Include both Subscription and Guest sales
                       const isSubscriptionOrGuest = sale.sale_type === 'Subscription' || sale.sale_type === 'Guest'
                       if (!isSubscriptionOrGuest) return false
-                      
+
                       // Filter to today's sales only
                       const saleDate = new Date(sale.sale_date)
                       const saleDateStr = format(saleDate, "yyyy-MM-dd")
@@ -2250,7 +2363,12 @@ const Sales = ({ userId }) => {
                     <div>
                       <CardTitle className="text-2xl font-bold text-gray-900">All Sales</CardTitle>
                       <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-                        <span>Showing {filteredSales.length} of {sales.length} sales (Page {allSalesCurrentPage} of {allSalesTotalPages})</span>
+                        <span>
+                          {filteredSales.length === sales.length
+                            ? `${filteredSales.length} ${filteredSales.length === 1 ? "sale" : "sales"}`
+                            : `Showing ${filteredSales.length} of ${sales.length} sales`
+                          }
+                        </span>
                         {saleTypeFilter !== "all" && (
                           <Badge variant="outline" className="text-xs bg-purple-100 text-purple-700 border-purple-300">
                             {saleTypeFilter} only
@@ -2449,7 +2567,7 @@ const Sales = ({ userId }) => {
                                 </div>
                               ) : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin" ? (
                                 <div className="flex items-center gap-2 flex-wrap">
-                                <div className="text-sm font-medium text-gray-900">
+                                  <div className="text-sm font-medium text-gray-900">
                                     {formatName(sale.guest_name || sale.user_name) || "Guest"}
                                   </div>
                                 </div>
@@ -2489,7 +2607,8 @@ const Sales = ({ userId }) => {
                               {(() => {
                                 const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
                                 if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                  return sale.reference_number || sale.receipt_number || "N/A"
+                                  // Check reference_number first, then gcash_reference, then receipt_number
+                                  return sale.reference_number || sale.gcash_reference || sale.receipt_number || "N/A"
                                 }
                                 return sale.receipt_number || "N/A"
                               })()}
@@ -2519,9 +2638,6 @@ const Sales = ({ userId }) => {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <div className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md min-w-[100px] text-center">
-                      Page {allSalesCurrentPage} of {allSalesTotalPages}
-                    </div>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2550,7 +2666,12 @@ const Sales = ({ userId }) => {
                     <div>
                       <CardTitle className="text-2xl font-bold text-gray-900">Product Inventory</CardTitle>
                       <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
-                        <span>Showing {filteredProducts.length} of {products.length} {showArchived ? "archived" : "active"} products (Page {inventoryCurrentPage} of {inventoryTotalPages})</span>
+                        <span>
+                          {filteredProducts.length === products.length
+                            ? `${filteredProducts.length} ${showArchived ? "archived" : "active"} ${filteredProducts.length === 1 ? "product" : "products"}`
+                            : `Showing ${filteredProducts.length} of ${products.length} ${showArchived ? "archived" : "active"} products`
+                          }
+                        </span>
                         {(categoryFilter !== "all" || productStockStatusFilter !== "all" || productPriceRangeFilter !== "all" || productSearchQuery) && (
                           <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300">
                             Filtered
@@ -2564,7 +2685,7 @@ const Sales = ({ userId }) => {
                       </div>
                     </div>
                   </div>
-                  <Dialog>
+                  <Dialog open={addProductDialogOpen} onOpenChange={setAddProductDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 shadow-md hover:shadow-lg transition-all duration-200">
                         <Plus className="mr-2 h-4 w-4" />
@@ -2665,97 +2786,98 @@ const Sales = ({ userId }) => {
                     </DialogContent>
                   </Dialog>
                 </div>
-                <div className="space-y-3 pt-2">
-                  {/* Archive Toggle and Search Row */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    {/* Archive Toggle */}
-                    <Button
-                      variant={showArchived ? "default" : "outline"}
-                      onClick={() => setShowArchived(!showArchived)}
-                      className={`h-10 border-2 transition-all duration-200 ${showArchived
-                        ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600 shadow-md"
-                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                        }`}
-                    >
-                      {showArchived ? (
-                        <>
+                <div className="pt-3">
+                  {/* All Filters in One Row */}
+                  <div className="bg-gradient-to-r from-gray-50 to-orange-50/30 rounded-lg border border-gray-200 shadow-sm p-4">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      {/* Search - Very Left */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          type="search"
+                          placeholder="Search products..."
+                          className="pl-10 h-10 w-48 text-sm border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200 bg-white"
+                          value={productSearchQuery}
+                          onChange={(e) => setProductSearchQuery(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Spacer - Big Space */}
+                      <div className="flex-1"></div>
+
+                      {/* Archive Button */}
+                      <Button
+                        variant={showArchived ? "default" : "outline"}
+                        onClick={() => setShowArchived(!showArchived)}
+                        className={`h-10 border-2 transition-all duration-200 ${showArchived
+                          ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600 shadow-md"
+                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
+                          }`}
+                      >
+                        {showArchived ? (
                           <RotateCcw className="mr-2 h-4 w-4" />
-                          View Active Products
-                        </>
-                      ) : (
-                        <>
+                        ) : (
                           <Archive className="mr-2 h-4 w-4" />
-                          View Archived Products
-                        </>
-                      )}
-                    </Button>
-                    {/* Search */}
-                    <div className="relative flex-1 min-w-[250px] max-w-md">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                      <Input
-                        type="search"
-                        placeholder="Search products..."
-                        className="pl-10 h-10 border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
-                        value={productSearchQuery}
-                        onChange={(e) => setProductSearchQuery(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  {/* Filter Row */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    {/* Category Filter */}
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="product-category-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                        <Filter className="h-4 w-4 inline mr-1" />
-                        Category:
-                      </Label>
-                      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                        <SelectTrigger className="w-44 h-10 border-2 border-gray-300 focus:border-orange-500">
-                          <SelectValue placeholder="All Categories" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Categories</SelectItem>
-                          {getUniqueCategories().map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {category}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {/* Stock Status Filter */}
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="stock-status-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                        Stock Status:
-                      </Label>
-                      <Select value={productStockStatusFilter} onValueChange={setProductStockStatusFilter}>
-                        <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-orange-500">
-                          <SelectValue placeholder="All Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Status</SelectItem>
-                          <SelectItem value="in_stock">In Stock (&gt;10)</SelectItem>
-                          <SelectItem value="low_stock">Low Stock (1-10)</SelectItem>
-                          <SelectItem value="out_of_stock">Out of Stock</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {/* Price Range Filter */}
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="price-range-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
-                        Price Range:
-                      </Label>
-                      <Select value={productPriceRangeFilter} onValueChange={setProductPriceRangeFilter}>
-                        <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-orange-500">
-                          <SelectValue placeholder="All Prices" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Prices</SelectItem>
-                          <SelectItem value="low">Low (&lt;₱100)</SelectItem>
-                          <SelectItem value="medium">Medium (₱100-₱500)</SelectItem>
-                          <SelectItem value="high">High (&gt;₱500)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        )}
+                        <span className="text-sm font-medium">Archive</span>
+                      </Button>
+
+                      {/* Category Filter */}
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="product-category-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap flex items-center gap-1">
+                          <Filter className="h-4 w-4" />
+                          Category:
+                        </Label>
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                          <SelectTrigger className="w-40 h-10 text-sm border-2 border-gray-300 focus:border-orange-500 bg-white">
+                            <SelectValue placeholder="All Categories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {getUniqueCategories().map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Stock Status Filter */}
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="stock-status-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Stock:
+                        </Label>
+                        <Select value={productStockStatusFilter} onValueChange={setProductStockStatusFilter}>
+                          <SelectTrigger className="w-36 h-10 text-sm border-2 border-gray-300 focus:border-orange-500 bg-white">
+                            <SelectValue placeholder="All Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Status</SelectItem>
+                            <SelectItem value="in_stock">In Stock (&gt;10)</SelectItem>
+                            <SelectItem value="low_stock">Low Stock (1-10)</SelectItem>
+                            <SelectItem value="out_of_stock">Out of Stock</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Price Range Filter */}
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="price-range-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">
+                          Price:
+                        </Label>
+                        <Select value={productPriceRangeFilter} onValueChange={setProductPriceRangeFilter}>
+                          <SelectTrigger className="w-32 h-10 text-sm border-2 border-gray-300 focus:border-orange-500 bg-white">
+                            <SelectValue placeholder="All Prices" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Prices</SelectItem>
+                            <SelectItem value="low">Low (&lt;₱100)</SelectItem>
+                            <SelectItem value="medium">Medium (₱100-₱500)</SelectItem>
+                            <SelectItem value="high">High (&gt;₱500)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2830,7 +2952,7 @@ const Sales = ({ userId }) => {
                                 size="sm"
                                 onClick={() => {
                                   setStockUpdateProduct(product)
-                                  setIsAddOnlyMode(false)
+                                  setStockUpdateType("add")
                                   setStockUpdateQuantity("")
                                 }}
                                 disabled={loading}
@@ -2896,9 +3018,6 @@ const Sales = ({ userId }) => {
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
-                    <div className="px-3 py-1 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-md min-w-[100px] text-center">
-                      Page {inventoryCurrentPage} of {inventoryTotalPages}
-                    </div>
                     <Button
                       variant="outline"
                       size="sm"
@@ -2919,22 +3038,18 @@ const Sales = ({ userId }) => {
       {/* Stock Update Dialog */}
       <Dialog open={!!stockUpdateProduct} onOpenChange={() => {
         setStockUpdateProduct(null)
-        setIsAddOnlyMode(false)
         setStockUpdateQuantity("")
+        setStockUpdateType("add")
       }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" hideClose>
           <DialogHeader className="space-y-3 pb-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${isAddOnlyMode || stockUpdateType === "add" ? "bg-green-100" : "bg-blue-100"}`}>
-                {isAddOnlyMode ? (
-                  <Plus className="h-5 w-5 text-green-600" />
-                ) : (
-                  <Package className={`h-5 w-5 ${stockUpdateType === "add" ? "text-green-600" : "text-blue-600"}`} />
-                )}
+              <div className="p-2 rounded-lg bg-green-100">
+                <Plus className="h-5 w-5 text-green-600" />
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold text-gray-900">
-                  {isAddOnlyMode ? "Add Stock" : "Update Stock"}
+                  Add Stock
                 </DialogTitle>
                 <DialogDescription className="text-sm text-gray-600 mt-1">
                   {stockUpdateProduct?.name}
@@ -2948,37 +3063,10 @@ const Sales = ({ userId }) => {
             </div>
           </DialogHeader>
           <div className="space-y-5 py-4">
-            {!isAddOnlyMode && (
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-gray-500" />
-                  Action
-                </Label>
-                <Select value={stockUpdateType} onValueChange={setStockUpdateType}>
-                  <SelectTrigger className="h-11 border-2 border-gray-300 focus:border-blue-500">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="add">
-                      <div className="flex items-center gap-2">
-                        <Plus className="h-4 w-4 text-green-600" />
-                        <span>Add Stock</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="remove">
-                      <div className="flex items-center gap-2">
-                        <Minus className="h-4 w-4 text-red-600" />
-                        <span>Remove Stock</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
             <div className="space-y-2">
               <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <Hash className="h-4 w-4 text-gray-500" />
-                {isAddOnlyMode ? "Quantity to Add" : "Quantity"}
+                Quantity to Add
               </Label>
               <Input
                 type="number"
@@ -2991,10 +3079,7 @@ const Sales = ({ userId }) => {
               />
             </div>
             {stockUpdateQuantity && stockUpdateProduct && (
-              <div className={`p-5 rounded-xl border-2 shadow-sm ${stockUpdateType === "add" || isAddOnlyMode
-                ? "bg-gradient-to-r from-green-50 to-emerald-50 border-green-200"
-                : "bg-gradient-to-r from-red-50 to-rose-50 border-red-200"
-                }`}>
+              <div className="p-5 rounded-xl border-2 shadow-sm bg-gradient-to-r from-green-50 to-emerald-50 border-green-200">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Stock Preview</p>
@@ -3006,22 +3091,15 @@ const Sales = ({ userId }) => {
                       <span className="text-2xl text-gray-400">→</span>
                       <div className="text-center">
                         <p className="text-xs text-gray-500 mb-1">New</p>
-                        <span className={`text-3xl font-bold ${stockUpdateType === "add" || isAddOnlyMode ? "text-green-700" : "text-red-700"
-                          }`}>
-                          {stockUpdateType === "add" || isAddOnlyMode
-                            ? Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")
-                            : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - Number.parseInt(stockUpdateQuantity || "0"))}
+                        <span className="text-3xl font-bold text-green-700">
+                          {Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")}
                         </span>
                       </div>
                       <span className="text-sm font-medium text-gray-600">units</span>
                     </div>
                   </div>
-                  <div className={`p-3 rounded-lg ${stockUpdateType === "add" || isAddOnlyMode ? "bg-green-100" : "bg-red-100"}`}>
-                    {stockUpdateType === "add" || isAddOnlyMode ? (
-                      <Plus className="h-6 w-6 text-green-700" />
-                    ) : (
-                      <Minus className="h-6 w-6 text-red-700" />
-                    )}
+                  <div className="p-3 rounded-lg bg-green-100">
+                    <Plus className="h-6 w-6 text-green-700" />
                   </div>
                 </div>
               </div>
@@ -3032,8 +3110,8 @@ const Sales = ({ userId }) => {
               variant="outline"
               onClick={() => {
                 setStockUpdateProduct(null)
-                setIsAddOnlyMode(false)
                 setStockUpdateQuantity("")
+                setStockUpdateType("add")
               }}
               className="h-11 border-2 border-gray-300 hover:bg-gray-50"
             >
@@ -3042,12 +3120,9 @@ const Sales = ({ userId }) => {
             <Button
               onClick={handleStockUpdate}
               disabled={loading || !stockUpdateQuantity}
-              className={`h-11 shadow-md hover:shadow-lg transition-all duration-200 ${isAddOnlyMode || stockUpdateType === "add"
-                ? "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
-                : "bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white"
-                }`}
+              className="h-11 shadow-md hover:shadow-lg transition-all duration-200 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
             >
-              {loading ? "Updating..." : isAddOnlyMode || stockUpdateType === "add" ? "Add Stock" : "Remove Stock"}
+              {loading ? "Processing..." : "Add Stock"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3230,10 +3305,17 @@ const Sales = ({ userId }) => {
                   <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Point of Sale Receipt</p>
                 </div>
                 <div className="pt-2 space-y-1.5">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
-                    <span className="text-sm font-bold text-gray-900">{receiptNumber}</span>
-                  </div>
+                  {lastTransaction.payment_method === "gcash" && lastTransaction.reference_number ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-xs font-medium text-gray-500">Reference #</span>
+                      <span className="text-sm font-bold text-gray-900">{lastTransaction.reference_number}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                      <span className="text-sm font-bold text-gray-900">{receiptNumber}</span>
+                    </div>
+                  )}
                   <p className="text-xs text-gray-500">
                     {formatDateTime().date} • {formatDateTime().time}
                   </p>
@@ -3245,10 +3327,24 @@ const Sales = ({ userId }) => {
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
                   <div className="flex justify-between items-center py-2">
                     <span className="text-sm font-medium text-gray-600">Payment Method</span>
-                    <span className="text-sm font-semibold text-gray-900 capitalize px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full">
-                      {lastTransaction.payment_method}
+                    <span className={`text-sm font-semibold text-gray-900 capitalize px-4 py-1.5 rounded-full ${lastTransaction.payment_method === "gcash"
+                      ? "bg-purple-100 text-purple-700"
+                      : "bg-blue-100 text-blue-700"
+                      }`}>
+                      {formatPaymentMethod(lastTransaction.payment_method)}
                     </span>
                   </div>
+
+                  {lastTransaction.payment_method === "gcash" && lastTransaction.reference_number && (
+                    <div className="space-y-3 pt-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">GCash Reference</span>
+                        <span className="text-sm font-semibold text-gray-900 font-mono">
+                          {lastTransaction.reference_number}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {lastTransaction.payment_method === "cash" && (
                     <div className="space-y-3 pt-3 border-t border-gray-200">
@@ -3534,20 +3630,25 @@ const Sales = ({ userId }) => {
 
       {/* Success Notification Dialog */}
       <Dialog open={showSuccessNotification} onOpenChange={setShowSuccessNotification}>
-        <DialogContent className="max-w-md border-0 shadow-2xl">
-          <div className="flex flex-col items-center text-center py-6 px-4">
-            <div className="p-4 rounded-full bg-gradient-to-br from-green-100 to-emerald-100 mb-4 shadow-lg">
-              <CheckCircle className="h-12 w-12 text-green-600" />
+        <DialogContent className="max-w-md border-0 shadow-2xl p-0 overflow-hidden">
+          <div className="flex flex-col items-center text-center py-8 px-6 bg-gradient-to-b from-white to-gray-50">
+            <div className="relative mb-6">
+              <div className="absolute inset-0 bg-green-100 rounded-full blur-xl opacity-50 animate-pulse"></div>
+              <div className="relative p-5 rounded-full bg-gradient-to-br from-green-50 to-emerald-50 border-4 border-green-100 shadow-lg">
+                <CheckCircle className="h-16 w-16 text-green-600" strokeWidth={2.5} />
+              </div>
             </div>
-            <DialogTitle className="text-2xl font-bold text-gray-900 mb-2">
-              Success!
+            <DialogTitle className="text-3xl font-bold text-gray-900 mb-3 tracking-tight">
+              Product Added Successfully!
             </DialogTitle>
-            <p className="text-gray-600 mb-6 text-lg">{successMessage}</p>
+            <p className="text-gray-600 mb-8 text-base leading-relaxed max-w-sm">
+              {successMessage}
+            </p>
             <Button
               onClick={() => setShowSuccessNotification(false)}
-              className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 text-base font-semibold shadow-md"
+              className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-10 py-3 text-base font-semibold shadow-lg hover:shadow-xl transition-all duration-200 rounded-lg"
             >
-              Got it!
+              Continue
             </Button>
           </div>
         </DialogContent>
@@ -3580,168 +3681,353 @@ const Sales = ({ userId }) => {
             </div>
           </DialogHeader>
           <div className="space-y-4 pt-4 flex-1 overflow-hidden flex flex-col">
+            {/* Quick Access Filters */}
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <span className="text-sm font-medium text-gray-700 mr-2">Quick Access:</span>
+              <Button
+                variant={coachingSalesQuickFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCoachingSalesQuickFilter("all")
+                  setCoachingUseCustomDate(false)
+                  setCoachingCustomDate(null)
+                  setCoachingMonthFilter("all")
+                  setCoachingYearFilter("all")
+                }}
+                className={`h-8 text-xs ${coachingSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                All Sales
+              </Button>
+              <Button
+                variant={coachingSalesQuickFilter === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCoachingSalesQuickFilter("today")
+                  const todayPH = getTodayInPHTime()
+                  setCoachingCustomDate(new Date(todayPH + "T00:00:00"))
+                  setCoachingUseCustomDate(true)
+                  setCoachingMonthFilter("all")
+                  setCoachingYearFilter("all")
+                }}
+                className={`h-8 text-xs ${coachingSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                Today
+              </Button>
+              <Button
+                variant={coachingSalesQuickFilter === "thisWeek" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCoachingSalesQuickFilter("thisWeek")
+                  setCoachingUseCustomDate(false)
+                  setCoachingCustomDate(null)
+                  setCoachingMonthFilter("all")
+                  setCoachingYearFilter("all")
+                }}
+                className={`h-8 text-xs ${coachingSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Week
+              </Button>
+              <Button
+                variant={coachingSalesQuickFilter === "thisMonth" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setCoachingSalesQuickFilter("thisMonth")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  setCoachingMonthFilter((phTime.getMonth() + 1).toString())
+                  setCoachingYearFilter(phTime.getFullYear().toString())
+                  setCoachingUseCustomDate(false)
+                  setCoachingCustomDate(null)
+                }}
+                className={`h-8 text-xs ${coachingSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Month
+              </Button>
+            </div>
+
             {/* Filters Row - All in One Row */}
-            <div className="flex items-center gap-4 flex-wrap bg-gradient-to-r from-gray-50 to-gray-50/50 p-3 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="coach-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">By Coach:</Label>
-                <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
-                  <SelectTrigger className="w-48 h-10 border-2 border-gray-300 focus:border-blue-500">
-                    <SelectValue placeholder="Select a coach" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Coaches</SelectItem>
-                    {coaches.map((coach) => {
-                      const memberCount = getMemberCountForCoach(coach.id)
-                      return (
-                        <SelectItem key={coach.id} value={coach.id.toString()}>
-                          {coach.name} ({memberCount} member{memberCount !== 1 ? 's' : ''})
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Label htmlFor="coaching-service-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Service:</Label>
-                <Select value={coachingServiceTypeFilter} onValueChange={setCoachingServiceTypeFilter}>
-                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500">
-                    <SelectValue placeholder="All Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="session">Session</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Label htmlFor="coaching-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
-                <Select value={coachingMonthFilter} onValueChange={(value) => {
-                  setCoachingMonthFilter(value)
-                  if (value !== "all") {
-                    setCoachingCustomDate(null)
-                    setCoachingUseCustomDate(false)
-                  }
-                }}>
-                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={coachingUseCustomDate}>
-                    <SelectValue placeholder="All Months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Label htmlFor="coaching-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
-                <Select value={coachingYearFilter} onValueChange={(value) => {
-                  setCoachingYearFilter(value)
-                  if (value !== "all") {
-                    setCoachingCustomDate(null)
-                    setCoachingUseCustomDate(false)
-                  }
-                }}>
-                  <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={coachingUseCustomDate}>
-                    <SelectValue placeholder="All Years" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Years</SelectItem>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Label htmlFor="coaching-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
+            <div className="flex items-center gap-3 flex-wrap pb-3 border-b">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  id="coaching-date-filter"
-                  type="date"
-                  value={coachingCustomDate ? format(coachingCustomDate, "yyyy-MM-dd") : ""}
-                  max={format(new Date(), "yyyy-MM-dd")}
-                  onChange={(e) => {
-                    const selectedDate = e.target.value
-                    if (selectedDate) {
-                      const date = new Date(selectedDate + "T00:00:00")
-                      const today = new Date()
-                      today.setHours(0, 0, 0, 0)
-
-                      if (date.getTime() <= today.getTime()) {
-                        setCoachingCustomDate(date)
-                        setCoachingUseCustomDate(true)
-                        setCoachingMonthFilter("all")
-                        setCoachingYearFilter("all")
-                      }
-                    } else {
-                      setCoachingCustomDate(null)
-                      setCoachingUseCustomDate(false)
-                    }
-                  }}
-                  className="h-10 text-sm border-2 border-gray-300 focus:border-blue-500 rounded-lg"
-                  placeholder="Select date"
+                  type="search"
+                  placeholder="Search coaching sales..."
+                  className="pl-10 h-9 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400"
+                  value={coachingSalesSearchQuery}
+                  onChange={(e) => setCoachingSalesSearchQuery(e.target.value)}
                 />
-                {coachingUseCustomDate && coachingCustomDate && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => {
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="coach-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">By Coach:</Label>
+                  <Select value={selectedCoachFilter} onValueChange={setSelectedCoachFilter}>
+                    <SelectTrigger className="w-48 h-9 text-sm border-gray-300">
+                      <SelectValue placeholder="Select a coach" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Coaches</SelectItem>
+                      {coaches
+                        .map((coach) => {
+                          // Calculate total sales for this coach
+                          const coachSales = sales.filter(sale => {
+                            const isCoachingSale = sale.sale_type === 'Coaching' ||
+                              sale.sale_type === 'Coach Assignment' ||
+                              sale.sale_type === 'Coach'
+                            return isCoachingSale && sale.coach_id && sale.coach_id.toString() === coach.id.toString()
+                          })
+                          const totalSales = coachSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                          return { ...coach, totalSales }
+                        })
+                        .sort((a, b) => b.totalSales - a.totalSales) // Sort by sales descending (biggest first)
+                        .map((coach) => (
+                          <SelectItem key={coach.id} value={coach.id.toString()}>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-gray-500" />
+                              <span>{coach.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="coaching-service-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Service:</Label>
+                  <Select value={coachingServiceTypeFilter} onValueChange={setCoachingServiceTypeFilter}>
+                    <SelectTrigger className="w-36 h-9 text-sm border-gray-300">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="session">Session</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="coaching-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
+                  <Select value={coachingMonthFilter} onValueChange={(value) => {
+                    setCoachingMonthFilter(value)
+                    if (value !== "all") {
                       setCoachingCustomDate(null)
                       setCoachingUseCustomDate(false)
+                      setCoachingSalesQuickFilter("all")
+                    }
+                  }}>
+                    <SelectTrigger className={`w-36 h-9 text-sm border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`} disabled={coachingSalesQuickFilter !== "all" || coachingUseCustomDate}>
+                      <SelectValue placeholder="All Months" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Months</SelectItem>
+                      <SelectItem value="1">January</SelectItem>
+                      <SelectItem value="2">February</SelectItem>
+                      <SelectItem value="3">March</SelectItem>
+                      <SelectItem value="4">April</SelectItem>
+                      <SelectItem value="5">May</SelectItem>
+                      <SelectItem value="6">June</SelectItem>
+                      <SelectItem value="7">July</SelectItem>
+                      <SelectItem value="8">August</SelectItem>
+                      <SelectItem value="9">September</SelectItem>
+                      <SelectItem value="10">October</SelectItem>
+                      <SelectItem value="11">November</SelectItem>
+                      <SelectItem value="12">December</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="coaching-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
+                  <Select value={coachingYearFilter} onValueChange={(value) => {
+                    setCoachingYearFilter(value)
+                    if (value !== "all") {
+                      setCoachingCustomDate(null)
+                      setCoachingUseCustomDate(false)
+                      setCoachingSalesQuickFilter("all")
+                    }
+                  }}>
+                    <SelectTrigger className={`w-28 h-9 text-sm border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`} disabled={coachingSalesQuickFilter !== "all" || coachingUseCustomDate}>
+                      <SelectValue placeholder="All Years" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="coaching-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
+                  <Input
+                    id="coaching-date-filter"
+                    type="date"
+                    value={coachingCustomDate ? format(coachingCustomDate, "yyyy-MM-dd") : ""}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+
+                        if (date.getTime() <= today.getTime()) {
+                          setCoachingCustomDate(date)
+                          setCoachingUseCustomDate(true)
+                          setCoachingMonthFilter("all")
+                          setCoachingYearFilter("all")
+                          setCoachingSalesQuickFilter("all")
+                        }
+                      } else {
+                        setCoachingCustomDate(null)
+                        setCoachingUseCustomDate(false)
+                      }
                     }}
-                    className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+                    disabled={coachingSalesQuickFilter !== "all"}
+                    className={`h-9 text-sm w-[140px] border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
+                    placeholder="Select date"
+                  />
+                  {coachingUseCustomDate && coachingCustomDate && coachingSalesQuickFilter === "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        setCoachingCustomDate(null)
+                        setCoachingUseCustomDate(false)
+                      }}
+                      className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Coach Member Count Display Card */}
-            {selectedCoachFilter !== "all" && (
-              <Card className="border border-gray-200 bg-white shadow-sm flex-shrink-0">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3.5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
-                        <Users className="h-6 w-6 text-gray-700" />
+            {/* Coach Total Transactions Display Card */}
+            {selectedCoachFilter !== "all" && (() => {
+              // Calculate total transactions for the selected coach based on current filters
+              const coachSales = sales.filter((sale) => {
+                const isCoachingSale = sale.sale_type === 'Coaching' ||
+                  sale.sale_type === 'Coach Assignment' ||
+                  sale.sale_type === 'Coach'
+                if (!isCoachingSale) return false
+                if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+
+                // Apply same date filters as the main filter
+                if (coachingSalesQuickFilter === "today") {
+                  const saleDate = new Date(sale.sale_date)
+                  saleDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (coachingSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek)
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6)
+                  endOfWeek.setHours(23, 59, 59, 999)
+                  const saleDate = new Date(sale.sale_date)
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (coachingSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (coachingSalesQuickFilter === "all") {
+                  if (coachingUseCustomDate && coachingCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
+                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                    if (saleDateStr !== customDateStr) return false
+                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
+                  } else if (coachingMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== coachingMonthFilter) return false
+                  } else if (coachingYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== coachingYearFilter) return false
+                  }
+                }
+
+                // Apply service type filter if set
+                if (coachingServiceTypeFilter !== "all") {
+                  const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                  const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                  const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
+                  if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                }
+
+                // Filter out package sales and N/A entries (broken data)
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                  serviceType === 'package' ? 'package' : 'monthly'
+
+                // Exclude package sales
+                if (normalizedServiceType === 'package') return false
+
+                // Exclude entries with N/A end dates (broken data)
+                if (!assignmentDetails?.endDate) return false
+
+                return true
+              })
+
+              const totalTransactions = coachSales.length
+
+              return (
+                <Card className="border border-gray-200 bg-white shadow-sm flex-shrink-0">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-3.5 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
+                          <TrendingUp className="h-6 w-6 text-blue-700" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {coaches.find(c => c.id.toString() === selectedCoachFilter)?.name || 'Selected Coach'}
+                          </p>
+                          <p className="text-xs text-gray-600 font-medium mt-0.5">Total Transactions</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {coaches.find(c => c.id.toString() === selectedCoachFilter)?.name || 'Selected Coach'}
+                      <div className="text-right">
+                        <div className="text-3xl font-bold text-gray-900">
+                          {totalTransactions}
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1 font-medium">
+                          {totalTransactions === 1 ? 'Transaction' : 'Transactions'}
                         </p>
-                        <p className="text-xs text-gray-600 font-medium mt-0.5">Total Members</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-3xl font-bold text-gray-900">
-                        {getMemberCountForCoach(selectedCoachFilter)}
-                      </div>
-                      <p className="text-xs text-gray-600 mt-1 font-medium">
-                        {getMemberCountForCoach(selectedCoachFilter) === 1 ? 'Member' : 'Members'}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  </CardContent>
+                </Card>
+              )
+            })()}
 
             {/* Sales Dashboard */}
             {(() => {
@@ -3756,26 +4042,61 @@ const Sales = ({ userId }) => {
                   if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
                 }
 
-                // Handle custom date first (highest priority)
-                if (coachingUseCustomDate && coachingCustomDate) {
+                // Filter by quick access filter
+                if (coachingSalesQuickFilter === "today") {
                   const saleDate = new Date(sale.sale_date)
-                  const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
-                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                  if (saleDateStr !== customDateStr) return false
-                } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
-                  // Specific month and year
+                  saleDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (coachingSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
-                } else if (coachingMonthFilter !== "all") {
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (coachingSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== coachingMonthFilter) return false
-                } else if (coachingYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== coachingYearFilter) return false
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (coachingSalesQuickFilter === "all") {
+                  // "All" - no date filtering, but still respect month/year/custom date if set manually
+                  // Handle custom date first (highest priority)
+                  if (coachingUseCustomDate && coachingCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
+                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                    if (saleDateStr !== customDateStr) return false
+                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
+                    // Specific month and year
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
+                  } else if (coachingMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== coachingMonthFilter) return false
+                  } else if (coachingYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== coachingYearFilter) return false
+                  }
                 }
 
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
@@ -3877,33 +4198,77 @@ const Sales = ({ userId }) => {
 
                 if (!isCoachingSale) return false
 
+                // Filter by search query
+                const matchesSearch = coachingSalesSearchQuery === "" ||
+                  sale.user_name?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                  sale.coach_name?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                  sale.receipt_number?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                  sale.payment_method?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase())
+
+                if (!matchesSearch) return false
+
                 // Filter by selected coach if not "all"
                 if (selectedCoachFilter !== "all") {
                   if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
                 }
 
-                // Handle custom date first (highest priority)
-                if (coachingUseCustomDate && coachingCustomDate) {
+                // Filter by quick access filter
+                if (coachingSalesQuickFilter === "today") {
                   const saleDate = new Date(sale.sale_date)
-                  const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
-                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                  if (saleDateStr !== customDateStr) return false
-                } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
-                  // Specific month and year
+                  saleDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (coachingSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
-                } else if (coachingMonthFilter !== "all") {
-                  // Filter by month if not "all"
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (coachingSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
-                  if (saleMonth.toString() !== coachingMonthFilter) return false
-                } else if (coachingYearFilter !== "all") {
-                  // Filter by year if not "all"
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== coachingYearFilter) return false
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (coachingSalesQuickFilter === "all") {
+                  // "All" - no date filtering, but still respect month/year/custom date if set manually
+                  // Handle custom date first (highest priority)
+                  if (coachingUseCustomDate && coachingCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
+                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                    if (saleDateStr !== customDateStr) return false
+                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
+                    // Specific month and year
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
+                  } else if (coachingMonthFilter !== "all") {
+                    // Filter by month if not "all"
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
+                    if (saleMonth.toString() !== coachingMonthFilter) return false
+                  } else if (coachingYearFilter !== "all") {
+                    // Filter by year if not "all"
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== coachingYearFilter) return false
+                  }
                 }
 
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
@@ -4004,7 +4369,8 @@ const Sales = ({ userId }) => {
                                     }
                                     // Otherwise check payment method
                                     if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                      // Check reference_number first, then gcash_reference, then receipt_number
+                                      return sale.reference_number || sale.gcash_reference || sale.receipt_number || 'N/A'
                                     }
                                     return sale.receipt_number || 'N/A'
                                   })()}
@@ -4083,8 +4449,8 @@ const Sales = ({ userId }) => {
           <DialogHeader className="px-6 pt-6 pb-4 border-b bg-gradient-to-r from-blue-50/50 to-indigo-50/30">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-100/60">
-                  <Receipt className="h-5 w-5 text-blue-700/80" />
+                <div className="p-2 rounded-lg bg-blue-50/40">
+                  <Receipt className="h-5 w-5 text-gray-600" />
                 </div>
                 <div>
                   <DialogTitle className="text-xl font-bold text-gray-900">All Sales Details</DialogTitle>
@@ -4104,6 +4470,70 @@ const Sales = ({ userId }) => {
             </div>
           </DialogHeader>
           <div className="flex-1 overflow-hidden flex flex-col px-6 pt-4 pb-6 space-y-4">
+            {/* Quick Access Filters */}
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <span className="text-sm font-medium text-gray-700 mr-2">Quick Access:</span>
+              <Button
+                variant={totalSalesQuickFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setTotalSalesQuickFilter("all")
+                  setTotalSalesUseCustomDate(false)
+                  setTotalSalesCustomDate(null)
+                  setTotalSalesMonthFilter("all")
+                  setTotalSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${totalSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                All Sales
+              </Button>
+              <Button
+                variant={totalSalesQuickFilter === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setTotalSalesQuickFilter("today")
+                  const todayPH = getTodayInPHTime()
+                  setTotalSalesCustomDate(new Date(todayPH + "T00:00:00"))
+                  setTotalSalesUseCustomDate(true)
+                  setTotalSalesMonthFilter("all")
+                  setTotalSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${totalSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                Today
+              </Button>
+              <Button
+                variant={totalSalesQuickFilter === "thisWeek" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setTotalSalesQuickFilter("thisWeek")
+                  setTotalSalesUseCustomDate(false)
+                  setTotalSalesCustomDate(null)
+                  setTotalSalesMonthFilter("all")
+                  setTotalSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${totalSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Week
+              </Button>
+              <Button
+                variant={totalSalesQuickFilter === "thisMonth" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setTotalSalesQuickFilter("thisMonth")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  setTotalSalesMonthFilter((phTime.getMonth() + 1).toString())
+                  setTotalSalesYearFilter(phTime.getFullYear().toString())
+                  setTotalSalesUseCustomDate(false)
+                  setTotalSalesCustomDate(null)
+                }}
+                className={`h-8 text-xs ${totalSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Month
+              </Button>
+            </div>
+
             {/* Filters Row */}
             <div className="flex items-center gap-3 flex-wrap pb-3 border-b">
               {/* Search */}
@@ -4152,7 +4582,7 @@ const Sales = ({ userId }) => {
                       selectedPlan.name.toLowerCase().includes('gym session') ||
                       selectedPlan.name.toLowerCase().includes('gymsession')
                     ) && !isDayPassPlan
-                    
+
                     if (!isDayPassPlan && value !== "all") {
                       setDayPassMethodFilter("all")
                       setDayPassTypeFilter("all")
@@ -4201,9 +4631,9 @@ const Sales = ({ userId }) => {
                         <SelectItem value="all">All Types</SelectItem>
                         <SelectItem value="subscription">Subscription</SelectItem>
                         <SelectItem value="guest">Guest</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
+                      </SelectContent>
+                    </Select>
+                  )}
 
                 {/* Day Pass Type Filter - Only show when Subscription > Day Pass plan is selected */}
                 {totalSalesTypeFilter === "Subscription" && (() => {
@@ -4301,8 +4731,12 @@ const Sales = ({ userId }) => {
                   </Select>
                 )}
 
-                <Select value={totalSalesMonthFilter} onValueChange={setTotalSalesMonthFilter}>
-                  <SelectTrigger className="w-[130px] h-9 text-sm">
+                <Select
+                  value={totalSalesMonthFilter}
+                  onValueChange={setTotalSalesMonthFilter}
+                  disabled={totalSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[130px] h-9 text-sm ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4322,8 +4756,12 @@ const Sales = ({ userId }) => {
                   </SelectContent>
                 </Select>
 
-                <Select value={totalSalesYearFilter} onValueChange={setTotalSalesYearFilter}>
-                  <SelectTrigger className="w-[100px] h-9 text-sm">
+                <Select
+                  value={totalSalesYearFilter}
+                  onValueChange={setTotalSalesYearFilter}
+                  disabled={totalSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[100px] h-9 text-sm ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
                   <SelectContent>
@@ -4353,16 +4791,18 @@ const Sales = ({ userId }) => {
                           setTotalSalesUseCustomDate(true)
                           setTotalSalesMonthFilter("all")
                           setTotalSalesYearFilter("all")
+                          setTotalSalesQuickFilter("all") // Switch to "all" when custom date is selected
                         }
                       } else {
                         setTotalSalesCustomDate(null)
                         setTotalSalesUseCustomDate(false)
                       }
                     }}
-                    className="h-9 text-sm w-[140px] border-gray-300"
+                    disabled={totalSalesQuickFilter !== "all"}
+                    className={`h-9 text-sm w-[140px] border-gray-300 ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
                     placeholder="Select date"
                   />
-                  {totalSalesUseCustomDate && totalSalesCustomDate && (
+                  {totalSalesUseCustomDate && totalSalesCustomDate && totalSalesQuickFilter === "all" && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -4429,8 +4869,12 @@ const Sales = ({ userId }) => {
                       }
                     }
                   } else if (totalSalesTypeFilter === "Subscription") {
+                    // Exclude product sales explicitly when filtering by Subscription type
+                    if (sale.sale_type === 'Product') {
+                      matchesSaleType = false
+                    }
                     // Must be a subscription sale or Day Pass guest sale
-                    if (sale.sale_type === 'Subscription') {
+                    else if (sale.sale_type === 'Subscription') {
                       // It's a subscription sale, now check subscription type filter
                       if (totalSalesSubscriptionTypeFilter !== "all") {
                         // Check if this sale's plan_id matches the selected plan
@@ -4469,13 +4913,13 @@ const Sales = ({ userId }) => {
                                 matchesSaleType = false // Subscription sales always have account
                               }
                             }
-                            
+
                             // Check if it's a Gym Session plan (but not Day Pass)
                             const isGymSessionPlan = selectedPlan && (
                               selectedPlan.name.toLowerCase().includes('gym session') ||
                               selectedPlan.name.toLowerCase().includes('gymsession')
                             ) && !isDayPassPlan
-                            
+
                             if (isGymSessionPlan) {
                               // Apply Gym Session type filter (Subscription vs Guest)
                               if (gymSessionTypeFilter === "guest") {
@@ -4514,13 +4958,13 @@ const Sales = ({ userId }) => {
                               matchesSaleType = false // Subscription sales always have account
                             }
                           }
-                          
+
                           // Check if it's a Gym Session plan (but not Day Pass)
                           const isGymSessionPlan = selectedPlan && (
                             selectedPlan.name.toLowerCase().includes('gym session') ||
                             selectedPlan.name.toLowerCase().includes('gymsession')
                           ) && !isDayPassPlan
-                          
+
                           if (isGymSessionPlan) {
                             // Apply Gym Session type filter (Subscription vs Guest)
                             if (gymSessionTypeFilter === "guest") {
@@ -4590,35 +5034,53 @@ const Sales = ({ userId }) => {
                             matchesSaleType = false
                           }
                         } else if (isGymSessionPlan) {
-                          // Check if this is a Guest/Walk-in sale for Gym Session
-                          const isGuestSale = sale.sale_type === 'Guest' ||
-                            sale.sale_type === 'Walk-in' ||
-                            sale.sale_type === 'Walkin' ||
-                            sale.guest_name ||
-                            (sale.user_id === null || sale.user_id === undefined)
-
-                          if (isGuestSale) {
-                            // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
-                            const salePlanId = sale.plan_id?.toString()
-                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
-
-                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
-                            if (salePlanId && salePlanId !== selectedPlanId) {
-                              matchesSaleType = false
-                            } else {
-                              // Apply Gym Session type filter (Subscription vs Guest)
-                              if (gymSessionTypeFilter === "subscription") {
-                                matchesSaleType = false // This is a guest sale, not a subscription sale
-                              }
-                            }
-                          } else {
+                          // Exclude product sales explicitly for Gym Session
+                          if (sale.sale_type === 'Product') {
                             matchesSaleType = false
+                          }
+                          // Check if this is a Guest/Walk-in sale for Gym Session
+                          else {
+                            const isGuestSale = sale.sale_type === 'Guest' ||
+                              sale.sale_type === 'Walk-in' ||
+                              sale.sale_type === 'Walkin' ||
+                              sale.guest_name ||
+                              (sale.user_id === null || sale.user_id === undefined)
+
+                            if (isGuestSale) {
+                              // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
+                              const salePlanId = sale.plan_id?.toString()
+                              const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                              // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                              if (salePlanId && salePlanId !== selectedPlanId) {
+                                matchesSaleType = false
+                              } else {
+                                // Apply Gym Session type filter (Subscription vs Guest)
+                                if (gymSessionTypeFilter === "subscription") {
+                                  matchesSaleType = false // This is a guest sale, not a subscription sale
+                                }
+                              }
+                            } else {
+                              matchesSaleType = false
+                            }
                           }
                         } else {
                           matchesSaleType = false
                         }
                       } else {
-                        matchesSaleType = false
+                        // When filtering by Subscription type with "all" plans, include session sales (guest/walk-in/day pass)
+                        const isSessionSale = sale.sale_type === 'Walk-in' ||
+                          sale.sale_type === 'Walkin' ||
+                          sale.sale_type === 'Guest' ||
+                          sale.sale_type === 'Day Pass' ||
+                          sale.guest_name ||
+                          (sale.user_id === null || sale.user_id === undefined)
+
+                        if (isSessionSale) {
+                          matchesSaleType = true
+                        } else {
+                          matchesSaleType = false
+                        }
                       }
                     }
                   } else if (totalSalesTypeFilter === "Coach Assignment") {
@@ -4653,29 +5115,65 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Filter by month
-                if (totalSalesMonthFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== totalSalesMonthFilter) return false
-                }
-
-                // Filter by year
-                if (totalSalesYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== totalSalesYearFilter) return false
-                }
-
-                // Filter by custom date
-                if (totalSalesUseCustomDate && totalSalesCustomDate) {
+                // Filter by quick access filter
+                if (totalSalesQuickFilter === "today") {
                   const saleDate = new Date(sale.sale_date)
                   saleDate.setHours(0, 0, 0, 0)
-                  const customDate = new Date(totalSalesCustomDate)
-                  customDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
                   const saleDateStr = saleDate.toISOString().split('T')[0]
-                  const customDateStr = customDate.toISOString().split('T')[0]
-                  if (saleDateStr !== customDateStr) return false
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (totalSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+
+                  const saleDate = new Date(sale.sale_date)
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (totalSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const saleDate = new Date(sale.sale_date)
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (totalSalesQuickFilter === "all") {
+                  // "All" - no date filtering, but still respect month/year/custom date if set manually
+                  // Filter by month
+                  if (totalSalesMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== totalSalesMonthFilter) return false
+                  }
+
+                  // Filter by year
+                  if (totalSalesYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== totalSalesYearFilter) return false
+                  }
+
+                  // Filter by custom date
+                  if (totalSalesUseCustomDate && totalSalesCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    saleDate.setHours(0, 0, 0, 0)
+                    const customDate = new Date(totalSalesCustomDate)
+                    customDate.setHours(0, 0, 0, 0)
+                    const saleDateStr = saleDate.toISOString().split('T')[0]
+                    const customDateStr = customDate.toISOString().split('T')[0]
+                    if (saleDateStr !== customDateStr) return false
+                  }
                 }
 
                 return matchesSearch && matchesSaleType
@@ -4721,12 +5219,14 @@ const Sales = ({ userId }) => {
               })
 
               const productTotal = productSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-              const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-              const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
               const dayPassTotal = dayPassSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+              // Add session sales to subscription total - when filtering by Subscription type, session sales are already included in filteredSales
+              const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0) + dayPassTotal
+              const subscriptionSalesCount = subscriptionSales.length + dayPassSales.length
+              const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
 
               return (
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   <Card className="border-2 border-blue-400/60 bg-gradient-to-br from-blue-50/40 to-indigo-50/20 shadow-sm hover:shadow transition-shadow">
                     <CardContent className="p-3">
                       <div className="flex items-center justify-between">
@@ -4763,7 +5263,7 @@ const Sales = ({ userId }) => {
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Subscription</p>
                           <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(subscriptionTotal)}</p>
-                          <p className="text-[10px] text-gray-600 mt-0.5">{subscriptionSales.length} sale{subscriptionSales.length !== 1 ? 's' : ''}</p>
+                          <p className="text-[10px] text-gray-600 mt-0.5">{subscriptionSalesCount} sale{subscriptionSalesCount !== 1 ? 's' : ''}</p>
                         </div>
                         <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
                           <CreditCard className="h-4 w-4 text-gray-600" />
@@ -4782,21 +5282,6 @@ const Sales = ({ userId }) => {
                         </div>
                         <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
                           <UserCheck className="h-4 w-4 text-gray-600" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border border-gray-200 bg-white shadow-sm hover:shadow transition-shadow">
-                    <CardContent className="p-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] font-medium text-gray-600 uppercase tracking-wide mb-1">Day Pass</p>
-                          <p className="text-lg font-bold text-gray-900 truncate">{formatCurrency(dayPassTotal)}</p>
-                          <p className="text-[10px] text-gray-600 mt-0.5">{dayPassSales.length} sale{dayPassSales.length !== 1 ? 's' : ''}</p>
-                        </div>
-                        <div className="p-1.5 rounded-lg bg-gray-100 ml-2 flex-shrink-0">
-                          <Ticket className="h-4 w-4 text-gray-600" />
                         </div>
                       </div>
                     </CardContent>
@@ -4854,8 +5339,12 @@ const Sales = ({ userId }) => {
                       }
                     }
                   } else if (totalSalesTypeFilter === "Subscription") {
+                    // Exclude product sales explicitly when filtering by Subscription type
+                    if (sale.sale_type === 'Product') {
+                      matchesSaleType = false
+                    }
                     // Must be a subscription sale or Day Pass guest sale
-                    if (sale.sale_type === 'Subscription') {
+                    else if (sale.sale_type === 'Subscription') {
                       // It's a subscription sale, now check subscription type filter
                       if (totalSalesSubscriptionTypeFilter !== "all") {
                         // Check if this sale's plan_id matches the selected plan
@@ -4894,13 +5383,13 @@ const Sales = ({ userId }) => {
                                 matchesSaleType = false // Subscription sales always have account
                               }
                             }
-                            
+
                             // Check if it's a Gym Session plan (but not Day Pass)
                             const isGymSessionPlan = selectedPlan && (
                               selectedPlan.name.toLowerCase().includes('gym session') ||
                               selectedPlan.name.toLowerCase().includes('gymsession')
                             ) && !isDayPassPlan
-                            
+
                             if (isGymSessionPlan) {
                               // Apply Gym Session type filter (Subscription vs Guest)
                               if (gymSessionTypeFilter === "guest") {
@@ -4939,13 +5428,13 @@ const Sales = ({ userId }) => {
                               matchesSaleType = false // Subscription sales always have account
                             }
                           }
-                          
+
                           // Check if it's a Gym Session plan (but not Day Pass)
                           const isGymSessionPlan = selectedPlan && (
                             selectedPlan.name.toLowerCase().includes('gym session') ||
                             selectedPlan.name.toLowerCase().includes('gymsession')
                           ) && !isDayPassPlan
-                          
+
                           if (isGymSessionPlan) {
                             // Apply Gym Session type filter (Subscription vs Guest)
                             if (gymSessionTypeFilter === "guest") {
@@ -5015,35 +5504,53 @@ const Sales = ({ userId }) => {
                             matchesSaleType = false
                           }
                         } else if (isGymSessionPlan) {
-                          // Check if this is a Guest/Walk-in sale for Gym Session
-                          const isGuestSale = sale.sale_type === 'Guest' ||
-                            sale.sale_type === 'Walk-in' ||
-                            sale.sale_type === 'Walkin' ||
-                            sale.guest_name ||
-                            (sale.user_id === null || sale.user_id === undefined)
-
-                          if (isGuestSale) {
-                            // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
-                            const salePlanId = sale.plan_id?.toString()
-                            const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
-
-                            // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
-                            if (salePlanId && salePlanId !== selectedPlanId) {
-                              matchesSaleType = false
-                            } else {
-                              // Apply Gym Session type filter (Subscription vs Guest)
-                              if (gymSessionTypeFilter === "subscription") {
-                                matchesSaleType = false // This is a guest sale, not a subscription sale
-                              }
-                            }
-                          } else {
+                          // Exclude product sales explicitly for Gym Session
+                          if (sale.sale_type === 'Product') {
                             matchesSaleType = false
+                          }
+                          // Check if this is a Guest/Walk-in sale for Gym Session
+                          else {
+                            const isGuestSale = sale.sale_type === 'Guest' ||
+                              sale.sale_type === 'Walk-in' ||
+                              sale.sale_type === 'Walkin' ||
+                              sale.guest_name ||
+                              (sale.user_id === null || sale.user_id === undefined)
+
+                            if (isGuestSale) {
+                              // Check if plan_id matches (if available), or include all Guest sales for Gym Session plan
+                              const salePlanId = sale.plan_id?.toString()
+                              const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+
+                              // Include if plan_id matches OR if no plan_id (guest sales might not have plan_id)
+                              if (salePlanId && salePlanId !== selectedPlanId) {
+                                matchesSaleType = false
+                              } else {
+                                // Apply Gym Session type filter (Subscription vs Guest)
+                                if (gymSessionTypeFilter === "subscription") {
+                                  matchesSaleType = false // This is a guest sale, not a subscription sale
+                                }
+                              }
+                            } else {
+                              matchesSaleType = false
+                            }
                           }
                         } else {
                           matchesSaleType = false
                         }
                       } else {
-                        matchesSaleType = false
+                        // When filtering by Subscription type with "all" plans, include session sales (guest/walk-in/day pass)
+                        const isSessionSale = sale.sale_type === 'Walk-in' ||
+                          sale.sale_type === 'Walkin' ||
+                          sale.sale_type === 'Guest' ||
+                          sale.sale_type === 'Day Pass' ||
+                          sale.guest_name ||
+                          (sale.user_id === null || sale.user_id === undefined)
+
+                        if (isSessionSale) {
+                          matchesSaleType = true
+                        } else {
+                          matchesSaleType = false
+                        }
                       }
                     }
                   } else if (totalSalesTypeFilter === "Coach Assignment") {
@@ -5305,11 +5812,87 @@ const Sales = ({ userId }) => {
               </Button>
             </div>
           </DialogHeader>
-          <div className="space-y-4 pt-4 flex-1 overflow-hidden flex flex-col">
-            {/* Filters Row - All in One Row */}
-            <div className="flex items-center gap-4 flex-wrap bg-gradient-to-r from-gray-50 to-gray-50/50 p-3 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="plan-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">By Plan:</Label>
+          <div className="flex-1 overflow-hidden flex flex-col px-6 pt-4 pb-6 space-y-4">
+            {/* Quick Access Filters */}
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <span className="text-sm font-medium text-gray-700 mr-2">Quick Access:</span>
+              <Button
+                variant={subscriptionSalesQuickFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSubscriptionSalesQuickFilter("all")
+                  setSubscriptionUseCustomDate(false)
+                  setSubscriptionCustomDate(null)
+                  setSubscriptionMonthFilter("all")
+                  setSubscriptionYearFilter("all")
+                }}
+                className={`h-8 text-xs ${subscriptionSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                All Sales
+              </Button>
+              <Button
+                variant={subscriptionSalesQuickFilter === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSubscriptionSalesQuickFilter("today")
+                  const todayPH = getTodayInPHTime()
+                  setSubscriptionCustomDate(new Date(todayPH + "T00:00:00"))
+                  setSubscriptionUseCustomDate(true)
+                  setSubscriptionMonthFilter("all")
+                  setSubscriptionYearFilter("all")
+                }}
+                className={`h-8 text-xs ${subscriptionSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                Today
+              </Button>
+              <Button
+                variant={subscriptionSalesQuickFilter === "thisWeek" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSubscriptionSalesQuickFilter("thisWeek")
+                  setSubscriptionUseCustomDate(false)
+                  setSubscriptionCustomDate(null)
+                  setSubscriptionMonthFilter("all")
+                  setSubscriptionYearFilter("all")
+                }}
+                className={`h-8 text-xs ${subscriptionSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Week
+              </Button>
+              <Button
+                variant={subscriptionSalesQuickFilter === "thisMonth" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSubscriptionSalesQuickFilter("thisMonth")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  setSubscriptionMonthFilter((phTime.getMonth() + 1).toString())
+                  setSubscriptionYearFilter(phTime.getFullYear().toString())
+                  setSubscriptionUseCustomDate(false)
+                  setSubscriptionCustomDate(null)
+                }}
+                className={`h-8 text-xs ${subscriptionSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Month
+              </Button>
+            </div>
+
+            {/* Filters Row */}
+            <div className="flex items-center gap-3 flex-wrap pb-3 border-b">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="search"
+                  placeholder="Search subscriptions..."
+                  className="pl-10 h-9 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400"
+                  value={subscriptionSalesSearchQuery}
+                  onChange={(e) => setSubscriptionSalesSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Filter Controls */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <Select value={selectedPlanFilter} onValueChange={(value) => {
                   setSelectedPlanFilter(value)
                   // Reset Day Pass type filter when plan changes
@@ -5327,7 +5910,7 @@ const Sales = ({ userId }) => {
                     selectedPlan.name.toLowerCase().includes('gym session') ||
                     selectedPlan.name.toLowerCase().includes('gymsession')
                   ) && !isDayPassPlan
-                  
+
                   if (!isDayPassPlan) {
                     setSubscriptionDayPassTypeFilter("all")
                   }
@@ -5335,8 +5918,8 @@ const Sales = ({ userId }) => {
                     setSubscriptionGymSessionTypeFilter("all")
                   }
                 }}>
-                  <SelectTrigger className="w-56 h-10 border-2 border-gray-300 focus:border-blue-500">
-                    <SelectValue placeholder="Select a plan" />
+                  <SelectTrigger className="w-[200px] h-9 text-sm">
+                    <SelectValue placeholder="All Plans" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Plans</SelectItem>
@@ -5347,25 +5930,22 @@ const Sales = ({ userId }) => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
 
-              {/* Day Pass Type Filter - Only show when Day Pass plan is selected */}
-              {(() => {
-                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
-                const isDayPassPlan = selectedPlan && (
-                  selectedPlan.name.toLowerCase().includes('day pass') ||
-                  selectedPlan.name.toLowerCase().includes('daypass') ||
-                  selectedPlan.name.toLowerCase().includes('walk-in') ||
-                  selectedPlan.name.toLowerCase().includes('walkin') ||
-                  selectedPlan.name.toLowerCase().includes('guest') ||
-                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
-                  selectedPlan.name.toLowerCase() === 'day pass'
-                )
-                return isDayPassPlan ? (
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="subscription-daypass-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Type:</Label>
+                {/* Day Pass Type Filter - Only show when Day Pass plan is selected */}
+                {(() => {
+                  const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                  const isDayPassPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('day pass') ||
+                    selectedPlan.name.toLowerCase().includes('daypass') ||
+                    selectedPlan.name.toLowerCase().includes('walk-in') ||
+                    selectedPlan.name.toLowerCase().includes('walkin') ||
+                    selectedPlan.name.toLowerCase().includes('guest') ||
+                    (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                    selectedPlan.name.toLowerCase() === 'day pass'
+                  )
+                  return isDayPassPlan ? (
                     <Select value={subscriptionDayPassTypeFilter} onValueChange={setSubscriptionDayPassTypeFilter}>
-                      <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-blue-500">
+                      <SelectTrigger className="w-[160px] h-9 text-sm">
                         <SelectValue placeholder="All Types" />
                       </SelectTrigger>
                       <SelectContent>
@@ -5374,31 +5954,28 @@ const Sales = ({ userId }) => {
                         <SelectItem value="guest">Guest</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                ) : null
-              })()}
+                  ) : null
+                })()}
 
-              {/* Gym Session Type Filter - Only show when Gym Session plan is selected */}
-              {(() => {
-                const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
-                const isDayPassPlan = selectedPlan && (
-                  selectedPlan.name.toLowerCase().includes('day pass') ||
-                  selectedPlan.name.toLowerCase().includes('daypass') ||
-                  selectedPlan.name.toLowerCase().includes('walk-in') ||
-                  selectedPlan.name.toLowerCase().includes('walkin') ||
-                  selectedPlan.name.toLowerCase().includes('guest') ||
-                  (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
-                  selectedPlan.name.toLowerCase() === 'day pass'
-                )
-                const isGymSessionPlan = selectedPlan && (
-                  selectedPlan.name.toLowerCase().includes('gym session') ||
-                  selectedPlan.name.toLowerCase().includes('gymsession')
-                ) && !isDayPassPlan
-                return isGymSessionPlan ? (
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="subscription-gymsession-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Type:</Label>
+                {/* Gym Session Type Filter - Only show when Gym Session plan is selected */}
+                {(() => {
+                  const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                  const isDayPassPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('day pass') ||
+                    selectedPlan.name.toLowerCase().includes('daypass') ||
+                    selectedPlan.name.toLowerCase().includes('walk-in') ||
+                    selectedPlan.name.toLowerCase().includes('walkin') ||
+                    selectedPlan.name.toLowerCase().includes('guest') ||
+                    (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                    selectedPlan.name.toLowerCase() === 'day pass'
+                  )
+                  const isGymSessionPlan = selectedPlan && (
+                    selectedPlan.name.toLowerCase().includes('gym session') ||
+                    selectedPlan.name.toLowerCase().includes('gymsession')
+                  ) && !isDayPassPlan
+                  return isGymSessionPlan ? (
                     <Select value={subscriptionGymSessionTypeFilter} onValueChange={setSubscriptionGymSessionTypeFilter}>
-                      <SelectTrigger className="w-40 h-10 border-2 border-gray-300 focus:border-blue-500">
+                      <SelectTrigger className="w-[160px] h-9 text-sm">
                         <SelectValue placeholder="Type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -5407,20 +5984,21 @@ const Sales = ({ userId }) => {
                         <SelectItem value="guest">Guest</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                ) : null
-              })()}
+                  ) : null
+                })()}
 
-              <div className="flex items-center gap-2">
-                <Label htmlFor="subscription-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
-                <Select value={subscriptionMonthFilter} onValueChange={(value) => {
-                  setSubscriptionMonthFilter(value)
-                  if (value !== "all") {
-                    setSubscriptionCustomDate(null)
-                    setSubscriptionUseCustomDate(false)
-                  }
-                }}>
-                  <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={subscriptionUseCustomDate}>
+                <Select
+                  value={subscriptionMonthFilter}
+                  onValueChange={(value) => {
+                    setSubscriptionMonthFilter(value)
+                    if (value !== "all") {
+                      setSubscriptionCustomDate(null)
+                      setSubscriptionUseCustomDate(false)
+                    }
+                  }}
+                  disabled={subscriptionSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[130px] h-9 text-sm ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -5439,18 +6017,19 @@ const Sales = ({ userId }) => {
                     <SelectItem value="12">December</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <Label htmlFor="subscription-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
-                <Select value={subscriptionYearFilter} onValueChange={(value) => {
-                  setSubscriptionYearFilter(value)
-                  if (value !== "all") {
-                    setSubscriptionCustomDate(null)
-                    setSubscriptionUseCustomDate(false)
-                  }
-                }}>
-                  <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-blue-500" disabled={subscriptionUseCustomDate}>
+                <Select
+                  value={subscriptionYearFilter}
+                  onValueChange={(value) => {
+                    setSubscriptionYearFilter(value)
+                    if (value !== "all") {
+                      setSubscriptionCustomDate(null)
+                      setSubscriptionUseCustomDate(false)
+                    }
+                  }}
+                  disabled={subscriptionSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[100px] h-9 text-sm ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
                   <SelectContent>
@@ -5462,57 +6041,67 @@ const Sales = ({ userId }) => {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <Label htmlFor="subscription-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
-                <Input
-                  id="subscription-date-filter"
-                  type="date"
-                  value={subscriptionCustomDate ? format(subscriptionCustomDate, "yyyy-MM-dd") : ""}
-                  max={format(new Date(), "yyyy-MM-dd")}
-                  onChange={(e) => {
-                    const selectedDate = e.target.value
-                    if (selectedDate) {
-                      const date = new Date(selectedDate + "T00:00:00")
-                      const today = new Date()
-                      today.setHours(0, 0, 0, 0)
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={subscriptionCustomDate ? format(subscriptionCustomDate, "yyyy-MM-dd") : ""}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
 
-                      if (date.getTime() <= today.getTime()) {
-                        setSubscriptionCustomDate(date)
-                        setSubscriptionUseCustomDate(true)
-                        setSubscriptionMonthFilter("all")
-                        setSubscriptionYearFilter("all")
+                        if (date.getTime() <= today.getTime()) {
+                          setSubscriptionCustomDate(date)
+                          setSubscriptionUseCustomDate(true)
+                          setSubscriptionMonthFilter("all")
+                          setSubscriptionYearFilter("all")
+                          setSubscriptionSalesQuickFilter("all") // Switch to "all" when custom date is selected
+                        }
+                      } else {
+                        setSubscriptionCustomDate(null)
+                        setSubscriptionUseCustomDate(false)
                       }
-                    } else {
-                      setSubscriptionCustomDate(null)
-                      setSubscriptionUseCustomDate(false)
-                    }
-                  }}
-                  className="h-10 text-sm border-2 border-gray-300 focus:border-blue-500 rounded-lg"
-                  placeholder="Select date"
-                />
-                {subscriptionUseCustomDate && subscriptionCustomDate && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => {
-                      setSubscriptionCustomDate(null)
-                      setSubscriptionUseCustomDate(false)
                     }}
-                    className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+                    disabled={subscriptionSalesQuickFilter !== "all"}
+                    className={`h-9 text-sm w-[140px] border-gray-300 ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
+                    placeholder="Select date"
+                  />
+                  {subscriptionUseCustomDate && subscriptionCustomDate && subscriptionSalesQuickFilter === "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        setSubscriptionCustomDate(null)
+                        setSubscriptionUseCustomDate(false)
+                      }}
+                      className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      ✕
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
             {/* Sales Dashboard */}
             {(() => {
               const filteredSales = sales.filter((sale) => {
-                // Check if selected plan is "Day Pass"
+                // Filter by search query
+                const matchesSearch = subscriptionSalesSearchQuery === "" ||
+                  sale.user_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                  sale.guest_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                  sale.receipt_number?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                  sale.plan_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                  sale.payment_method?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase())
+
+                if (!matchesSearch) return false
+
+                // Check if selected plan is "Day Pass" or "Gym Session"
                 const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
                 const isDayPassPlan = selectedPlan && (
                   selectedPlan.name.toLowerCase().includes('day pass') ||
@@ -5522,7 +6111,14 @@ const Sales = ({ userId }) => {
                   selectedPlan.name.toLowerCase().includes('guest') ||
                   (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                   selectedPlan.name.toLowerCase() === 'day pass'
+                ) && !(
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
                 )
+                const isGymSessionPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
+                ) && !isDayPassPlan
 
                 // Debug: Log when Day Pass plan is selected
                 if (isDayPassPlan) {
@@ -5544,25 +6140,60 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
 
-                    // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
                     }
 
                     // Status filter removed - show all sales
@@ -5577,25 +6208,60 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
 
-                    // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
                     }
 
                     // Status filter removed - show all sales
@@ -5603,6 +6269,160 @@ const Sales = ({ userId }) => {
                   }
 
                   // If Day Pass plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // If Gym Session plan is selected, handle Gym Session sales
+                if (isGymSessionPlan) {
+                  // Exclude product sales explicitly
+                  if (sale.sale_type === 'Product') {
+                    return false
+                  }
+
+                  // Check if this is a Gym Session guest sale
+                  const isGymSessionGuestSale = (sale.sale_type === 'Guest' || sale.guest_name) && (
+                    sale.plan_name?.toLowerCase().includes('gym session') ||
+                    sale.plan_name?.toLowerCase().includes('gymsession') ||
+                    (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)
+                  )
+
+                  if (isGymSessionGuestSale) {
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "subscription") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+
+                    return true
+                  }
+
+                  // Check if this is a Gym Session subscription sale
+                  if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+
+                    return true
+                  }
+
+                  // If Gym Session plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
+                // Exclude product sales for subscription sales modal
+                if (sale.sale_type === 'Product') {
                   return false
                 }
 
@@ -5628,28 +6448,60 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Handle custom date first (highest priority)
-                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                // Filter by quick access filter
+                if (subscriptionSalesQuickFilter === "today") {
                   const saleDate = new Date(sale.sale_date)
-                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                  if (saleDateStr !== customDateStr) return false
-                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                  // Specific month and year
+                  saleDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                } else if (subscriptionMonthFilter !== "all") {
-                  // Filter by month if not "all"
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                } else if (subscriptionYearFilter !== "all") {
-                  // Filter by year if not "all"
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== subscriptionYearFilter) return false
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (subscriptionSalesQuickFilter === "all") {
+                  // "All" - no date filtering, but still respect month/year/custom date if set manually
+                  if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                    if (saleDateStr !== customDateStr) return false
+                  } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                  } else if (subscriptionMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                  } else if (subscriptionYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== subscriptionYearFilter) return false
+                  }
                 }
 
                 // Status filter removed - show all sales
@@ -5664,15 +6516,19 @@ const Sales = ({ userId }) => {
                 const isDayPassPlan = selectedPlan && (
                   selectedPlan.name.toLowerCase().includes('day pass') ||
                   selectedPlan.name.toLowerCase().includes('daypass') ||
-                  selectedPlan.name.toLowerCase().includes('gym session') ||
-                  selectedPlan.name.toLowerCase().includes('gymsession') ||
-                  selectedPlan.id === 6 ||
                   selectedPlan.name.toLowerCase().includes('walk-in') ||
                   selectedPlan.name.toLowerCase().includes('walkin') ||
                   selectedPlan.name.toLowerCase().includes('guest') ||
                   (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
                   selectedPlan.name.toLowerCase() === 'day pass'
+                ) && !(
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
                 )
+                const isGymSessionPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
+                ) && !isDayPassPlan
 
                 // Helper function to check if a sale is a Day Pass subscription (user with account)
                 const isDayPassSubscription = (sale) => {
@@ -5738,25 +6594,60 @@ const Sales = ({ userId }) => {
                 if (isDayPassPlan) {
                   // Check if this is a Day Pass guest/walk-in sale (user without account)
                   if (isDayPassGuestSale(sale)) {
-                    // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
                     }
 
                     // Day Pass guest sales always show (they don't expire)
@@ -5765,25 +6656,60 @@ const Sales = ({ userId }) => {
 
                   // Check if this is a Day Pass subscription sale (user with account)
                   if (isDayPassSubscription(sale)) {
-                    // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
                     }
 
                     // Day Pass subscription sales are included (will be filtered by status below)
@@ -5794,34 +6720,251 @@ const Sales = ({ userId }) => {
                   return false
                 }
 
+                // If Gym Session plan is selected, handle Gym Session sales
+                if (isGymSessionPlan) {
+                  // Check if this is a Gym Session guest sale
+                  const isGymSessionGuestSale = (sale.sale_type === 'Guest' || sale.guest_name) && (
+                    sale.plan_name?.toLowerCase().includes('gym session') ||
+                    sale.plan_name?.toLowerCase().includes('gymsession') ||
+                    (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)
+                  )
+
+                  if (isGymSessionGuestSale) {
+                    // Apply date filters (type filter will be applied in filteredSalesForStats)
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek)
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6)
+                      endOfWeek.setHours(23, 59, 59, 999)
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+                    return true
+                  }
+
+                  // Check if this is a Gym Session subscription sale
+                  if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                    // Apply date filters (type filter will be applied in filteredSalesForStats)
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek)
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6)
+                      endOfWeek.setHours(23, 59, 59, 999)
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+                    return true
+                  }
+
+                  // If Gym Session plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
                 // For "All Plans", include both subscription sales and guest sales
                 if (selectedPlanFilter === "all") {
                   // Include subscription sales
                   if (sale.sale_type === 'Subscription') {
-                    // Continue with date filters below
-                  } 
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+                    return true
+                  }
                   // Include guest sales (Guest Walk In) in "All Plans"
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
-                    // Apply date filters for guest sales
-                    // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                       const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
                     }
                     return true // Guest sale included in "All Plans"
                   } else {
@@ -5852,28 +6995,60 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Handle custom date first (highest priority)
-                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                // Filter by quick access filter
+                if (subscriptionSalesQuickFilter === "today") {
                   const saleDate = new Date(sale.sale_date)
-                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                  if (saleDateStr !== customDateStr) return false
-                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                  // Specific month and year
+                  saleDate.setHours(0, 0, 0, 0)
+                  const todayPH = getTodayInPHTime()
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  todayDate.setHours(0, 0, 0, 0)
+                  const saleDateStr = saleDate.toISOString().split('T')[0]
+                  const todayStr = todayDate.toISOString().split('T')[0]
+                  if (saleDateStr !== todayStr) return false
+                } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                } else if (subscriptionMonthFilter !== "all") {
-                  // Filter by month if not "all"
+                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                } else if (subscriptionYearFilter !== "all") {
-                  // Filter by year if not "all"
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== subscriptionYearFilter) return false
+                  const saleMonth = saleDate.getMonth()
+                  const saleYear = saleDate.getFullYear()
+                  const currentMonth = phTime.getMonth()
+                  const currentYear = phTime.getFullYear()
+                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                } else if (subscriptionSalesQuickFilter === "all") {
+                  // "All" - no date filtering, but still respect month/year/custom date if set manually
+                  if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    const saleDate = new Date(sale.sale_date)
+                    const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                    if (saleDateStr !== customDateStr) return false
+                  } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                  } else if (subscriptionMonthFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth() + 1
+                    if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                  } else if (subscriptionYearFilter !== "all") {
+                    const saleDate = new Date(sale.sale_date)
+                    const saleYear = saleDate.getFullYear().toString()
+                    if (saleYear !== subscriptionYearFilter) return false
+                  }
                 }
 
                 return true
@@ -5971,8 +7146,12 @@ const Sales = ({ userId }) => {
               const filteredSalesForStats = allSalesForCounts.filter((sale) => {
                 const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
                 const isDayPassPlan = isDayPassPlanForStats(selectedPlanFilter)
+                const isGymSessionPlan = selectedPlan && (
+                  selectedPlan.name.toLowerCase().includes('gym session') ||
+                  selectedPlan.name.toLowerCase().includes('gymsession')
+                ) && !isDayPassPlan
 
-                // If Day Pass/Gym Session plan is selected, include ALL Day Pass sales (both guest and subscription)
+                // If Day Pass plan is selected, include ALL Day Pass sales (both guest and subscription)
                 if (isDayPassPlan) {
                   // Check if this is a Day Pass guest/walk-in sale (user without account)
                   if (isDayPassGuestSaleForStats(sale)) {
@@ -6030,12 +7209,175 @@ const Sales = ({ userId }) => {
                   return false
                 }
 
+                // If Gym Session plan is selected, handle Gym Session sales with type filter
+                if (isGymSessionPlan) {
+                  // Exclude product sales explicitly
+                  if (sale.sale_type === 'Product') {
+                    return false
+                  }
+
+                  // Check if this is a Gym Session guest sale (same logic as main filteredSales)
+                  const isGymSessionGuestSale = (sale.sale_type === 'Guest' || sale.guest_name) && (
+                    sale.plan_name?.toLowerCase().includes('gym session') ||
+                    sale.plan_name?.toLowerCase().includes('gymsession') ||
+                    (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)
+                  )
+
+                  if (isGymSessionGuestSale) {
+                    // Apply Gym Session type filter (Subscription vs Guest) - same logic as Total Sales modal
+                    if (subscriptionGymSessionTypeFilter === "subscription") {
+                      // Filter out guest sales when filtering for subscriptions
+                      return false
+                    }
+                    // If type filter is "guest" or "all", include this guest sale
+
+                    // Apply quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+                    return true
+                  }
+
+                  // Check if this is a Gym Session subscription sale
+                  if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                    // Apply Gym Session type filter (Subscription vs Guest) - same logic as Total Sales modal
+                    if (subscriptionGymSessionTypeFilter === "guest") {
+                      // Filter out subscription sales when filtering for guests
+                      return false
+                    }
+                    // If type filter is "subscription" or "all", include this subscription sale
+
+                    // Apply quick access filter
+                    if (subscriptionSalesQuickFilter === "today") {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const todayPH = getTodayInPHTime()
+                      const todayDate = new Date(todayPH + "T00:00:00")
+                      todayDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const todayStr = todayDate.toISOString().split('T')[0]
+                      if (saleDateStr !== todayStr) return false
+                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const today = new Date(phTime)
+                      today.setHours(0, 0, 0, 0)
+                      const dayOfWeek = today.getDay()
+                      const startOfWeek = new Date(today)
+                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                      const endOfWeek = new Date(startOfWeek)
+                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                      endOfWeek.setHours(23, 59, 59, 999)
+                      const saleDate = new Date(sale.sale_date)
+                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                      const now = new Date()
+                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth()
+                      const saleYear = saleDate.getFullYear()
+                      const currentMonth = phTime.getMonth()
+                      const currentYear = phTime.getFullYear()
+                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                    } else if (subscriptionSalesQuickFilter === "all") {
+                      // "All" - no date filtering, but still respect month/year/custom date if set manually
+                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
+                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                        if (saleDateStr !== customDateStr) return false
+                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
+                      } else if (subscriptionMonthFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleMonth = saleDate.getMonth() + 1
+                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
+                      } else if (subscriptionYearFilter !== "all") {
+                        const saleDate = new Date(sale.sale_date)
+                        const saleYear = saleDate.getFullYear().toString()
+                        if (saleYear !== subscriptionYearFilter) return false
+                      }
+                    }
+                    return true
+                  }
+
+                  // If Gym Session plan is selected but this sale doesn't match the Gym Session guest/subscription conditions,
+                  // apply type filter as a final check before excluding - same logic as Total Sales modal
+                  if (subscriptionGymSessionTypeFilter === "guest") {
+                    // Filter out subscription sales (those with user_id)
+                    if (sale.user_id !== null && sale.user_id !== undefined) {
+                      return false
+                    }
+                  } else if (subscriptionGymSessionTypeFilter === "subscription") {
+                    // Filter out guest sales (those without user_id or with guest_name)
+                    if (sale.user_id === null || sale.user_id === undefined || sale.guest_name) {
+                      return false
+                    }
+                  }
+
+                  // If Gym Session plan is selected but this sale doesn't match, exclude it
+                  return false
+                }
+
                 // For "All Plans", include both subscription sales and guest sales
                 if (selectedPlanFilter === "all") {
                   // Include subscription sales
                   if (sale.sale_type === 'Subscription') {
                     // Continue with date filters below
-                  } 
+                  }
                   // Include guest sales (Guest Walk In) in "All Plans"
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
                     // Apply date filters for guest sales
@@ -6304,32 +7646,32 @@ const Sales = ({ userId }) => {
               const isDayPassGuestSale = (sale) => {
                 // Check by sale_type first
                 if (sale.sale_type === 'Walk-in' ||
-                    sale.sale_type === 'Walkin' ||
-                    sale.sale_type === 'Guest' ||
-                    sale.sale_type === 'Day Pass') {
+                  sale.sale_type === 'Walkin' ||
+                  sale.sale_type === 'Guest' ||
+                  sale.sale_type === 'Day Pass') {
                   return true
                 }
-                
+
                 // Check by guest_name
                 if (sale.guest_name) {
                   return true
                 }
-                
+
                 // Check by plan_name (Guest Walk In)
                 if (sale.plan_name && (
-                    sale.plan_name.toLowerCase().includes('guest walk in') ||
-                    sale.plan_name.toLowerCase().includes('guest walk-in') ||
-                    sale.plan_name.toLowerCase().includes('walk in') ||
-                    sale.plan_name.toLowerCase().includes('walk-in')
-                  )) {
+                  sale.plan_name.toLowerCase().includes('guest walk in') ||
+                  sale.plan_name.toLowerCase().includes('guest walk-in') ||
+                  sale.plan_name.toLowerCase().includes('walk in') ||
+                  sale.plan_name.toLowerCase().includes('walk-in')
+                )) {
                   return true
                 }
-                
+
                 // Check by plan_id = 6 and sale_type = Guest
                 if (sale.plan_id === 6 && sale.sale_type === 'Guest') {
                   return true
                 }
-                
+
                 return false
               }
 
@@ -6478,7 +7820,7 @@ const Sales = ({ userId }) => {
                   // Include subscription sales
                   if (sale.sale_type === 'Subscription') {
                     // Continue with date filters below
-                  } 
+                  }
                   // Include guest sales (Guest Walk In) in "All Plans"
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
                     // Apply date filters for guest sales
@@ -6590,15 +7932,22 @@ const Sales = ({ userId }) => {
                             const isDayPassSubscriptionSale = isDayPassSubscription(sale)
 
                             const subscriptionDetail = getSubscriptionDetails(sale.id)
+                            // Always use the actual plan name from the sale data, never override based on filters
                             let planName = sale.plan_name || subscriptionDetail?.planName || 'N/A'
 
-                            // For Day Pass/Gym Session sales (both guest and subscription), set plan name to "Gym Session"
-                            if (isDayPassGuest || isDayPassSubscriptionSale) {
-                              planName = 'Gym Session'
-                            }
-                            
-                            // Also check if it's a Gym Session plan by plan_id
-                            if (sale.plan_id && selectedPlan && selectedPlan.id.toString() === sale.plan_id.toString() && isGymSessionPlan) {
+                            // For Guest Walk In sales, show "Session" instead
+                            // Check if it's a guest sale (has guest_name) or if plan name indicates guest walk-in
+                            const planNameLower = planName.toLowerCase()
+                            const isGuestWalkIn = isDayPassGuest ||
+                              planNameLower.includes('guest walk in') ||
+                              planNameLower.includes('guest walk-in') ||
+                              planNameLower.includes('guest walkin') ||
+                              planNameLower === 'guest walk in' ||
+                              planNameLower === 'guest walk-in' ||
+                              planNameLower === 'guest walkin' ||
+                              (sale.guest_name && (planNameLower.includes('walk') || planNameLower.includes('guest') || planNameLower.includes('session')))
+
+                            if (isGuestWalkIn) {
                               planName = 'Gym Session'
                             }
 
@@ -6610,9 +7959,9 @@ const Sales = ({ userId }) => {
                                 <TableCell className="text-gray-700 py-3">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <div>
-                                  {isDayPassGuest
+                                      {isDayPassGuest
                                         ? formatName(sale.guest_name || sale.user_name) || 'Guest'
-                                    : isDayPassSubscriptionSale && subscriptionDetail?.userName
+                                        : isDayPassSubscriptionSale && subscriptionDetail?.userName
                                           ? formatName(subscriptionDetail.userName)
                                           : formatName(sale.user_name) || 'N/A'}
                                     </div>
@@ -6645,7 +7994,8 @@ const Sales = ({ userId }) => {
                                     }
                                     // Otherwise check payment method
                                     if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                      return sale.reference_number || sale.receipt_number || 'N/A'
+                                      // Check reference_number first, then gcash_reference, then receipt_number
+                                      return sale.reference_number || sale.gcash_reference || sale.receipt_number || 'N/A'
                                     }
                                     return sale.receipt_number || 'N/A'
                                   })()}
@@ -6746,130 +8096,202 @@ const Sales = ({ userId }) => {
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
-            {/* Filters Section */}
-            <div className="px-6 pt-5 pb-4 bg-white border-b border-gray-200">
-              <div className="space-y-4">
-                {/* Search Bar */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <div className="flex-1 overflow-hidden flex flex-col px-6 pt-4 pb-6 space-y-4">
+            {/* Quick Access Filters */}
+            <div className="flex items-center gap-2 pb-2 border-b">
+              <span className="text-sm font-medium text-gray-700 mr-2">Quick Access:</span>
+              <Button
+                variant={productSalesQuickFilter === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setProductSalesQuickFilter("all")
+                  setProductSalesUseCustomDate(false)
+                  setProductSalesCustomDate(null)
+                  setProductSalesMonthFilter("all")
+                  setProductSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${productSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                All Sales
+              </Button>
+              <Button
+                variant={productSalesQuickFilter === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setProductSalesQuickFilter("today")
+                  const todayPH = getTodayInPHTime()
+                  setProductSalesCustomDate(new Date(todayPH + "T00:00:00"))
+                  setProductSalesUseCustomDate(true)
+                  setProductSalesMonthFilter("all")
+                  setProductSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${productSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                Today
+              </Button>
+              <Button
+                variant={productSalesQuickFilter === "thisWeek" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setProductSalesQuickFilter("thisWeek")
+                  setProductSalesUseCustomDate(false)
+                  setProductSalesCustomDate(null)
+                  setProductSalesMonthFilter("all")
+                  setProductSalesYearFilter("all")
+                }}
+                className={`h-8 text-xs ${productSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Week
+              </Button>
+              <Button
+                variant={productSalesQuickFilter === "thisMonth" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setProductSalesQuickFilter("thisMonth")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  setProductSalesMonthFilter((phTime.getMonth() + 1).toString())
+                  setProductSalesYearFilter(phTime.getFullYear().toString())
+                  setProductSalesUseCustomDate(false)
+                  setProductSalesCustomDate(null)
+                }}
+                className={`h-8 text-xs ${productSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
+              >
+                This Month
+              </Button>
+            </div>
+
+            {/* Filters Row */}
+            <div className="flex items-center gap-3 flex-wrap pb-3 border-b">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  type="search"
+                  placeholder="Search products, customers, receipt numbers..."
+                  className="pl-10 h-9 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400"
+                  value={productSalesSearchQuery}
+                  onChange={(e) => setProductSalesSearchQuery(e.target.value)}
+                />
+              </div>
+
+              {/* Filter Controls */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
+                  <SelectTrigger className="w-[160px] h-9 text-sm">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {getUniqueCategories().map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={selectedProductFilter} onValueChange={setSelectedProductFilter}>
+                  <SelectTrigger className="w-[180px] h-9 text-sm">
+                    <SelectValue placeholder="All Products" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Products</SelectItem>
+                    {products
+                      .filter(p => selectedCategoryFilter === "all" || p.category === selectedCategoryFilter)
+                      .map((product) => (
+                        <SelectItem key={product.id} value={product.id.toString()}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={productSalesMonthFilter}
+                  onValueChange={setProductSalesMonthFilter}
+                  disabled={productSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[130px] h-9 text-sm ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Months</SelectItem>
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  value={productSalesYearFilter}
+                  onValueChange={setProductSalesYearFilter}
+                  disabled={productSalesQuickFilter !== "all"}
+                >
+                  <SelectTrigger className={`w-[100px] h-9 text-sm ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Years</SelectItem>
+                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
                   <Input
-                    type="search"
-                    placeholder="Search products, customers, receipt numbers..."
-                    className="pl-10 h-10 text-sm border border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-400 rounded-lg"
-                    value={productSalesSearchQuery}
-                    onChange={(e) => setProductSalesSearchQuery(e.target.value)}
-                  />
-                </div>
+                    type="date"
+                    value={productSalesCustomDate ? format(productSalesCustomDate, "yyyy-MM-dd") : ""}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
 
-                {/* Filter Controls */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <Select value={selectedCategoryFilter} onValueChange={setSelectedCategoryFilter}>
-                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
-                      <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Categories</SelectItem>
-                      {getUniqueCategories().map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={selectedProductFilter} onValueChange={setSelectedProductFilter}>
-                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
-                      <SelectValue placeholder="All Products" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Products</SelectItem>
-                      {products
-                        .filter(p => selectedCategoryFilter === "all" || p.category === selectedCategoryFilter)
-                        .map((product) => (
-                          <SelectItem key={product.id} value={product.id.toString()}>
-                            {product.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={productSalesMonthFilter} onValueChange={setProductSalesMonthFilter}>
-                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
-                      <SelectValue placeholder="All Months" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Months</SelectItem>
-                      <SelectItem value="1">January</SelectItem>
-                      <SelectItem value="2">February</SelectItem>
-                      <SelectItem value="3">March</SelectItem>
-                      <SelectItem value="4">April</SelectItem>
-                      <SelectItem value="5">May</SelectItem>
-                      <SelectItem value="6">June</SelectItem>
-                      <SelectItem value="7">July</SelectItem>
-                      <SelectItem value="8">August</SelectItem>
-                      <SelectItem value="9">September</SelectItem>
-                      <SelectItem value="10">October</SelectItem>
-                      <SelectItem value="11">November</SelectItem>
-                      <SelectItem value="12">December</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={productSalesYearFilter} onValueChange={setProductSalesYearFilter}>
-                    <SelectTrigger className="h-10 text-sm border border-gray-300 rounded-lg">
-                      <SelectValue placeholder="All Years" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Years</SelectItem>
-                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                        <SelectItem key={year} value={year.toString()}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="date"
-                      value={productSalesCustomDate ? format(productSalesCustomDate, "yyyy-MM-dd") : ""}
-                      max={format(new Date(), "yyyy-MM-dd")}
-                      onChange={(e) => {
-                        const selectedDate = e.target.value
-                        if (selectedDate) {
-                          const date = new Date(selectedDate + "T00:00:00")
-                          const today = new Date()
-                          today.setHours(0, 0, 0, 0)
-
-                          if (date.getTime() <= today.getTime()) {
-                            setProductSalesCustomDate(date)
-                            setProductSalesUseCustomDate(true)
-                            setProductSalesMonthFilter("all")
-                            setProductSalesYearFilter("all")
-                          }
-                        } else {
-                          setProductSalesCustomDate(null)
-                          setProductSalesUseCustomDate(false)
+                        if (date.getTime() <= today.getTime()) {
+                          setProductSalesCustomDate(date)
+                          setProductSalesUseCustomDate(true)
+                          setProductSalesMonthFilter("all")
+                          setProductSalesYearFilter("all")
+                          setProductSalesQuickFilter("all") // Switch to "all" when custom date is selected
                         }
+                      } else {
+                        setProductSalesCustomDate(null)
+                        setProductSalesUseCustomDate(false)
+                      }
+                    }}
+                    disabled={productSalesQuickFilter !== "all"}
+                    className={`h-9 text-sm w-[140px] border-gray-300 ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
+                    placeholder="Select date"
+                  />
+                  {productSalesUseCustomDate && productSalesCustomDate && productSalesQuickFilter === "all" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        setProductSalesCustomDate(null)
+                        setProductSalesUseCustomDate(false)
                       }}
-                      className="h-10 text-sm border border-gray-300 rounded-lg"
-                      placeholder="Select date"
-                    />
-                    {productSalesUseCustomDate && productSalesCustomDate && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          setProductSalesCustomDate(null)
-                          setProductSalesUseCustomDate(false)
-                        }}
-                        className="h-10 w-10 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                      className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      ✕
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -6915,29 +8337,65 @@ const Sales = ({ userId }) => {
                     if (!hasProductMatch) return false
                   }
 
-                  // Filter by month
-                  if (productSalesMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== productSalesMonthFilter) return false
-                  }
-
-                  // Filter by year
-                  if (productSalesYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== productSalesYearFilter) return false
-                  }
-
-                  // Filter by custom date
-                  if (productSalesUseCustomDate && productSalesCustomDate) {
+                  // Filter by quick access filter
+                  if (productSalesQuickFilter === "today") {
                     const saleDate = new Date(sale.sale_date)
                     saleDate.setHours(0, 0, 0, 0)
-                    const customDate = new Date(productSalesCustomDate)
-                    customDate.setHours(0, 0, 0, 0)
+                    const todayPH = getTodayInPHTime()
+                    const todayDate = new Date(todayPH + "T00:00:00")
+                    todayDate.setHours(0, 0, 0, 0)
                     const saleDateStr = saleDate.toISOString().split('T')[0]
-                    const customDateStr = customDate.toISOString().split('T')[0]
-                    if (saleDateStr !== customDateStr) return false
+                    const todayStr = todayDate.toISOString().split('T')[0]
+                    if (saleDateStr !== todayStr) return false
+                  } else if (productSalesQuickFilter === "thisWeek") {
+                    const now = new Date()
+                    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                    const today = new Date(phTime)
+                    today.setHours(0, 0, 0, 0)
+                    const dayOfWeek = today.getDay()
+                    const startOfWeek = new Date(today)
+                    startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                    const endOfWeek = new Date(startOfWeek)
+                    endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                    endOfWeek.setHours(23, 59, 59, 999)
+
+                    const saleDate = new Date(sale.sale_date)
+                    if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                  } else if (productSalesQuickFilter === "thisMonth") {
+                    const now = new Date()
+                    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                    const saleDate = new Date(sale.sale_date)
+                    const saleMonth = saleDate.getMonth()
+                    const saleYear = saleDate.getFullYear()
+                    const currentMonth = phTime.getMonth()
+                    const currentYear = phTime.getFullYear()
+                    if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                  } else if (productSalesQuickFilter === "all") {
+                    // "All" - no date filtering, but still respect month/year/custom date if set manually
+                    // Filter by month
+                    if (productSalesMonthFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleMonth = saleDate.getMonth() + 1
+                      if (saleMonth.toString() !== productSalesMonthFilter) return false
+                    }
+
+                    // Filter by year
+                    if (productSalesYearFilter !== "all") {
+                      const saleDate = new Date(sale.sale_date)
+                      const saleYear = saleDate.getFullYear().toString()
+                      if (saleYear !== productSalesYearFilter) return false
+                    }
+
+                    // Filter by custom date
+                    if (productSalesUseCustomDate && productSalesCustomDate) {
+                      const saleDate = new Date(sale.sale_date)
+                      saleDate.setHours(0, 0, 0, 0)
+                      const customDate = new Date(productSalesCustomDate)
+                      customDate.setHours(0, 0, 0, 0)
+                      const saleDateStr = saleDate.toISOString().split('T')[0]
+                      const customDateStr = customDate.toISOString().split('T')[0]
+                      if (saleDateStr !== customDateStr) return false
+                    }
                   }
 
                   return matchesSearch
@@ -7147,10 +8605,7 @@ const Sales = ({ userId }) => {
                                     </div>
                                   </TableCell>
                                   <TableCell className="py-3.5 px-5">
-                                    <Badge variant="outline" className={`text-xs px-2.5 py-1 font-medium ${formatPaymentMethod(sale.payment_method) === 'GCash'
-                                      ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                      : 'bg-gray-50 text-gray-700 border-gray-200'
-                                      }`}>
+                                    <Badge variant="outline" className="text-xs px-2.5 py-1 font-medium bg-gray-50 text-gray-700 border-gray-200">
                                       {formatPaymentMethod(sale.payment_method)}
                                     </Badge>
                                   </TableCell>

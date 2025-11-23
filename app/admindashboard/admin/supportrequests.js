@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, Mail, Search, MessageSquare, Calendar, User, AlertCircle, Send, RefreshCw, Filter } from "lucide-react"
+import { Loader2, Mail, Search, MessageSquare, Calendar, User, AlertCircle, Send, RefreshCw, Filter, Headphones, MessageCircle } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { format } from "date-fns"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -307,17 +307,26 @@ const SupportRequests = () => {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
+      <Card className="border border-gray-200 shadow-sm">
+        <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 border-b border-orange-200">
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center">
-                <MessageSquare className="mr-2 h-5 w-5" />
-                Support Tickets
-              </CardTitle>
-              <CardDescription>View and manage support tickets from users</CardDescription>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-orange-500 shadow-sm">
+                <Headphones className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2 text-gray-900">
+                  Support Tickets
+                  {tickets.filter(t => t.status === 'pending' || t.status === 'in_progress').length > 0 && (
+                    <Badge className="bg-orange-500 text-white hover:bg-orange-600">
+                      {tickets.filter(t => t.status === 'pending' || t.status === 'in_progress').length} active
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription className="text-gray-600 mt-0.5">View and manage support tickets from users</CardDescription>
+              </div>
             </div>
-            <Button onClick={fetchSupportTickets} variant="outline" size="sm">
+            <Button onClick={fetchSupportTickets} variant="outline" size="sm" className="bg-white hover:bg-gray-50">
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
@@ -362,53 +371,67 @@ const SupportRequests = () => {
                 : "No support tickets found."}
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {filteredTickets.map((ticket) => (
                 <div
                   key={ticket.id}
-                  className="flex items-center justify-between p-4 border rounded-md hover:bg-accent/50 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-5 border-2 border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md bg-white transition-all cursor-pointer group"
                   onClick={() => handleViewTicket(ticket)}
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-semibold text-sm">{ticket.ticket_number}</span>
-                      {getStatusBadge(ticket.status)}
-                      {getSourceBadge(ticket.source)}
-                      {ticket.message_count > 0 && (
-                        <Badge variant="secondary" className="text-xs">
-                          {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
-                        </Badge>
-                      )}
+                  <div className="flex items-start gap-4 flex-1">
+                    <div className="p-3 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 group-hover:from-orange-200 group-hover:to-orange-300 transition-colors">
+                      <User className="h-5 w-5 text-orange-600" />
                     </div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium text-sm">
-                        {ticket.user_name || ticket.user_email || 'Unknown User'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Mail className="h-3 w-3" />
-                      <span className="font-semibold">{ticket.subject}</span>
-                    </div>
-                    <div className="text-sm text-muted-foreground line-clamp-2">
-                      {ticket.message}
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        <span>Created: {formatDate(ticket.created_at)}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="font-bold text-base text-gray-900">{ticket.ticket_number}</span>
+                        {getStatusBadge(ticket.status)}
+                        {getSourceBadge(ticket.source)}
+                        {ticket.message_count > 0 && (
+                          <Badge className="bg-orange-500 text-white hover:bg-orange-600 text-xs">
+                            {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
+                          </Badge>
+                        )}
                       </div>
-                      {ticket.last_message_at && (
-                        <div className="flex items-center gap-1">
-                          <MessageSquare className="h-3 w-3" />
-                          <span>Last message: {formatDate(ticket.last_message_at)}</span>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="font-semibold text-base text-gray-900">
+                          {ticket.user_name || ticket.user_email || 'Unknown User'}
+                        </span>
+                      </div>
+                      {ticket.user_email && ticket.user_name && (
+                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                          <Mail className="h-3.5 w-3.5" />
+                          <span>{ticket.user_email}</span>
                         </div>
                       )}
+                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                        <Mail className="h-3.5 w-3.5 text-orange-500" />
+                        <span>{ticket.subject}</span>
+                      </div>
+                      <div className="text-sm text-gray-600 line-clamp-2 mb-3">
+                        {ticket.message}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5" />
+                          <span>Created: {formatDate(ticket.created_at)}</span>
+                        </div>
+                        {ticket.last_message_at && (
+                          <div className="flex items-center gap-1.5">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span>Latest: {formatDate(ticket.last_message_at)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon">
-                    <AlertCircle className="h-4 w-4" />
-                  </Button>
+                  <div className="ml-4">
+                    {(ticket.status === 'pending' || ticket.status === 'in_progress') && (
+                      <Badge className="bg-orange-500 text-white hover:bg-orange-600 px-3 py-1">
+                        {ticket.status === 'pending' ? '1 active' : '1 active'}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -425,12 +448,17 @@ const SupportRequests = () => {
           setNewMessage("")
         }
       }}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] !bg-white border-2 border-gray-300 shadow-2xl p-0 overflow-hidden">
+          <DialogHeader className="pb-4 pt-6 px-6 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-orange-100">
             <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5" />
-                <span>Ticket {selectedTicket?.ticket_number}</span>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-orange-500 shadow-md">
+                  <MessageCircle className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <span className="text-2xl font-bold text-gray-900">Ticket {selectedTicket?.ticket_number}</span>
+                  <DialogDescription className="text-sm text-gray-600 mt-1">View and respond to support ticket</DialogDescription>
+                </div>
               </div>
               {selectedTicket && (
                 <div className="flex items-center gap-2">
@@ -439,33 +467,32 @@ const SupportRequests = () => {
                 </div>
               )}
             </DialogTitle>
-            <DialogDescription>View and respond to support ticket</DialogDescription>
           </DialogHeader>
           
           {selectedTicket && (
-            <div className="space-y-4">
+            <div className="space-y-5 p-6 bg-white">
               {/* Ticket Info */}
-              <div className="grid grid-cols-2 gap-4 p-4 border rounded-md">
+              <div className="grid grid-cols-2 gap-4 p-5 bg-gray-50 border border-gray-200 rounded-lg">
                 <div>
-                  <Label className="text-xs text-muted-foreground">User</Label>
-                  <div className="font-medium">
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">User</Label>
+                  <div className="font-semibold text-gray-900">
                     {selectedTicket.user_name || selectedTicket.user_email || 'Unknown User'}
                   </div>
                   {selectedTicket.user_email && (
-                    <div className="text-sm text-muted-foreground">{selectedTicket.user_email}</div>
+                    <div className="text-sm text-gray-600 mt-0.5">{selectedTicket.user_email}</div>
                   )}
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Subject</Label>
-                  <div className="font-medium">{selectedTicket.subject}</div>
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Subject</Label>
+                  <div className="font-semibold text-gray-900">{selectedTicket.subject}</div>
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Created</Label>
-                  <div className="text-sm">{formatDate(selectedTicket.created_at)}</div>
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Created</Label>
+                  <div className="text-sm text-gray-700">{formatDate(selectedTicket.created_at)}</div>
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Last Updated</Label>
-                  <div className="text-sm">{formatDate(selectedTicket.updated_at)}</div>
+                  <Label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1 block">Last Updated</Label>
+                  <div className="text-sm text-gray-700">{formatDate(selectedTicket.updated_at)}</div>
                 </div>
               </div>
 
@@ -492,62 +519,70 @@ const SupportRequests = () => {
 
               {/* Messages */}
               <div className="space-y-2">
-                <Label>Conversation</Label>
-                <ScrollArea className="h-64 border rounded-md p-4">
+                <Label className="text-sm font-semibold text-gray-700">Conversation</Label>
+                <ScrollArea className="h-80 border border-gray-200 rounded-lg p-4 bg-gray-50">
                   {isLoadingMessages ? (
-                    <div className="flex justify-center py-4">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
                     </div>
                   ) : messages.length === 0 ? (
-                    <div className="text-center py-4 text-muted-foreground text-sm">
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      <MessageCircle className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                       No messages yet. Start the conversation below.
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {messages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${isAdminMessage(message) ? 'justify-end' : 'justify-start'}`}
-                        >
+                      {messages.map((message) => {
+                        const isAdmin = isAdminMessage(message)
+                        return (
                           <div
-                            className={`max-w-[80%] rounded-lg p-3 ${
-                              isAdminMessage(message)
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted'
-                            }`}
+                            key={message.id}
+                            className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}
                           >
-                            <div className="text-xs font-semibold mb-1">
-                              {message.sender_name || 'Unknown User'}
-                              {isAdminMessage(message) && (
-                                <span className="ml-2 opacity-75">(Admin)</span>
-                              )}
-                            </div>
-                            <div className="text-sm whitespace-pre-wrap">{message.message}</div>
-                            <div className="text-xs opacity-75 mt-1">
-                              {formatDate(message.created_at)}
+                            <div
+                              className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${
+                                isAdmin
+                                  ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-tr-sm'
+                                  : 'bg-white text-gray-900 border border-gray-200 rounded-tl-sm'
+                              }`}
+                            >
+                              <div className={`flex items-center gap-2 mb-1.5 ${isAdmin ? 'text-orange-50' : 'text-gray-700'}`}>
+                                <span className="text-xs font-semibold">
+                                  {isAdmin ? 'Support Team' : (message.sender_name || 'User')}
+                                </span>
+                              </div>
+                              <div className={`text-sm whitespace-pre-wrap leading-relaxed ${isAdmin ? 'text-white' : 'text-gray-800'}`}>
+                                {message.message}
+                              </div>
+                              <div className={`text-xs mt-2 ${isAdmin ? 'text-orange-100' : 'text-gray-500'}`}>
+                                {formatDate(message.created_at)}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </ScrollArea>
               </div>
 
               {/* Reply Section */}
-              <div className="space-y-2">
-                <Label htmlFor="message">Reply</Label>
-                <Textarea
-                  id="message"
-                  placeholder="Type your message here..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  rows={3}
-                />
+              <div className="space-y-2 pt-2 border-t border-gray-200">
+                <Label htmlFor="message" className="text-sm font-semibold text-gray-700">Reply</Label>
+                <div className="flex gap-2">
+                  <Textarea
+                    id="message"
+                    placeholder="Type your message here..."
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    rows={3}
+                    className="resize-none border-gray-300 focus:border-orange-500 focus:ring-orange-500"
+                  />
+                </div>
                 <Button 
                   onClick={handleSendMessage} 
                   disabled={isSendingMessage || !newMessage.trim()}
-                  className="w-full"
+                  className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md"
                 >
                   {isSendingMessage ? (
                     <>

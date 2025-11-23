@@ -516,6 +516,22 @@ const ViewMembers = ({ userId }) => {
     if (typeof window !== 'undefined') {
       const role = sessionStorage.getItem('user_role') || 'admin'
       setUserRole(role)
+      
+      // Check for navigation parameters from home page
+      const navParams = localStorage.getItem('adminNavParams')
+      if (navParams) {
+        try {
+          const params = JSON.parse(navParams)
+          if (params.filter) {
+            setStatusFilter(params.filter === 'all' ? 'all' : 'approved')
+          }
+          // Clear the navigation params after using them
+          localStorage.removeItem('adminNavParams')
+          localStorage.removeItem('adminNavTarget')
+        } catch (e) {
+          console.error('Error parsing nav params:', e)
+        }
+      }
     }
   }, [toast])
 

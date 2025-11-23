@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react"
 import Sidebar from "./sidebar"
-import Home from "./home"
 import ViewMembers from "./viewmembers"
 import ViewCoach from "./viewcoach"
 import Topbar from "./topbar"
@@ -22,7 +21,7 @@ import Settings from "./settings"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function StaffDashboardClient() {
-  const [currentSection, setCurrentSection] = useState("Home")
+  const [currentSection, setCurrentSection] = useState("ViewClients")
   const [searchQuery, setSearchQuery] = useState("")
   const [userRole, setUserRole] = useState("")
   const [userId, setUserId] = useState(null)
@@ -175,8 +174,6 @@ export default function StaffDashboardClient() {
 
   const renderSection = () => {
     switch (currentSection) {
-      case "Home":
-        return <Home />
       case "ViewClients":
         return <ViewMembers userId={userId} />
       case "ViewCoach":
@@ -198,11 +195,12 @@ export default function StaffDashboardClient() {
       case "Merchandise":
         return <Merchandise />
       case "Sales":
+      case "Product Checkout":
         return <Sales userId={userId} />
       case "Settings":
         return <Settings userId={userId} />
       default:
-        return <Home />
+        return <ViewMembers userId={userId} />
     }
   }
 

@@ -6,7 +6,23 @@ import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, Cart
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { format } from "date-fns"
-import { Users, CreditCard, UserCheck, AlertTriangle, Calendar, TrendingUp, TrendingDown } from "lucide-react"
+import { Users, CreditCard, AlertTriangle, Calendar, TrendingUp, TrendingDown, DollarSign, Package, Activity } from "lucide-react"
+
+// Helper function to get Philippine time
+const getPhilippineTime = () => {
+  const now = new Date()
+  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+  return phTime
+}
+
+// Helper function to get today's date in Philippine time (YYYY-MM-DD format)
+const getTodayInPHTime = () => {
+  const phTime = getPhilippineTime()
+  const year = phTime.getFullYear()
+  const month = String(phTime.getMonth() + 1).padStart(2, '0')
+  const day = String(phTime.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 // Trend Indicator Component
 const TrendIndicator = ({ trend, isPositive }) => {
@@ -67,13 +83,14 @@ const ErrorDisplay = ({ error, onRetry, retryCount }) => (
 const GymDashboard = () => {
   const [membershipData, setMembershipData] = useState([])
   const [revenueData, setRevenueData] = useState([])
+  const [allSales, setAllSales] = useState([]) // Store all sales for accurate today calculation
   const [summaryStats, setSummaryStats] = useState({
     members: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
     totalUsers: { active: { value: 0, trend: 0, isPositive: true }, total: { value: 0, trend: 0, isPositive: true } },
     salesToday: { value: 0, trend: 0, isPositive: true },
     activeSubscriptions: { value: 0, trend: 0, isPositive: true },
-    checkinsToday: { value: 0, trend: 0, isPositive: true },
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
+    attendanceToday: { value: 0, trend: 0, isPositive: true },
   })
   const [timePeriod, setTimePeriod] = useState("today")
   const [loading, setLoading] = useState(false)
@@ -85,9 +102,15 @@ const GymDashboard = () => {
     setError(null)
 
     try {
+      // For "today" period, send Philippine timezone date to ensure accuracy
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
 
-      // Don't send date parameter to API - we'll filter client-side
+      if (period === "today") {
+        const todayPH = getTodayInPHTime()
+        apiUrl += `&ph_date=${todayPH}`
+        console.log("Using Philippine time for today:", todayPH)
+      }
+
       console.log("Fetching data for period:", period, "URL:", apiUrl)
 
       const response = await axios.get(apiUrl, {
@@ -97,9 +120,216 @@ const GymDashboard = () => {
       console.log("API Response received:", response.data)
 
       if (response.data.success) {
-        setSummaryStats(response.data.summaryStats)
+        const stats = response.data.summaryStats
+        
+        // Fetch today's sales separately to calculate accurately using Philippine time (same as sales page)
+        if (period === "today") {
+          try {
+            // Get today's date in Philippine time
+            const phTime = getPhilippineTime()
+            phTime.setHours(0, 0, 0, 0)
+            const todayStr = format(phTime, "yyyy-MM-dd")
+            
+            // Fetch all sales (we'll filter client-side like the sales page does)
+            const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
+              timeout: 10000
+            })
+            const allSalesData = salesResponse.data.sales || []
+            
+            // Calculate today's sales using Philippine time (same logic as sales page)
+            const accurateTodaySales = allSalesData
+              .filter(sale => {
+                const saleDate = new Date(sale.sale_date)
+                saleDate.setHours(0, 0, 0, 0)
+                const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                return saleDateStr === todayStr
+              })
+              .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+            
+            // Update salesToday with accurate value calculated using Philippine time
+            stats.salesToday.value = accurateTodaySales
+            setAllSales(allSalesData)
+            console.log("Today's sales (PH Time):", accurateTodaySales, "Date:", todayStr)
+          } catch (salesError) {
+            console.error("Error fetching today's sales:", salesError)
+            // Keep the API value if sales fetch fails
+          }
+        }
+        
+        // Fetch active subscriptions and clients using the same logic as monitoring subscription page
+        try {
+          const subscriptionsResponse = await axios.get(`https://api.cnergy.site/monitor_subscription.php`, {
+            timeout: 10000
+          })
+          const allSubscriptions = subscriptionsResponse.data.subscriptions || []
+          
+          // Filter active subscriptions (same logic as monitoring subscription page - getActiveSubscriptions)
+          const now = new Date()
+          const activeSubscriptions = allSubscriptions.filter((s) => {
+            // Check if subscription is expired (end_date is in the past)
+            if (s.end_date) {
+              const endDate = new Date(s.end_date)
+              if (endDate < now) return false
+            }
+            
+            // Only show if status is Active or approved and not expired
+            return s.display_status === "Active" || s.status_name === "approved"
+          })
+          
+          // Group by user (same as monitoring subscription page - groupSubscriptionsByUser)
+          const grouped = {}
+          activeSubscriptions.forEach((subscription) => {
+            // Use the exact same logic as groupSubscriptionsByUser
+            const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
+              ? `guest_${subscription.guest_name || subscription.id}`
+              : subscription.user_id || `unknown_${subscription.id}`
+            
+            if (!grouped[key]) {
+              grouped[key] = []
+            }
+            grouped[key].push(subscription)
+          })
+          
+          const activeCount = Object.keys(grouped).length
+          stats.activeSubscriptions.value = activeCount
+          
+          // Update Annual Members count - same as active subscriptions (users with active membership plans)
+          stats.members.active.value = activeCount
+          
+          // Fetch total clients (same logic as View Clients page - only approved clients)
+          try {
+            const clientsResponse = await axios.get(`https://api.cnergy.site/member_management.php`, {
+              timeout: 10000
+            })
+            // member_management.php returns users with user_type_id = 4 (clients/members only)
+            const allClients = Array.isArray(clientsResponse.data) ? clientsResponse.data : []
+            // Filter to only approved clients (same as View Clients page)
+            const approvedClients = allClients.filter((m) => m.account_status === "approved")
+            const clientsCount = approvedClients.length
+            
+            stats.totalUsers.active.value = clientsCount
+            console.log("Total clients count (approved only):", clientsCount, "Total members:", allClients.length)
+          } catch (clientsError) {
+            console.error("Error fetching clients:", clientsError)
+            // Keep the API value if clients fetch fails
+          }
+          
+          console.log("Active subscriptions count (grouped by user):", activeCount, "Total active subscriptions:", activeSubscriptions.length)
+          
+          // Calculate expiring subscriptions (same logic as monitoring subscription page - getExpiringSoonSubscriptions)
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const sevenDaysFromNow = new Date()
+          sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+          sevenDaysFromNow.setHours(23, 59, 59, 999)
+          
+          const expiringSoonSubscriptions = allSubscriptions.filter((s) => {
+            if (!s.end_date) return false
+            
+            const endDate = new Date(s.end_date)
+            // Check if subscription is already expired (end_date is in the past)
+            if (endDate < now) return false
+            
+            endDate.setHours(0, 0, 0, 0)
+            return (s.display_status === "Active" || s.status_name === "approved") &&
+              endDate >= today &&
+              endDate <= sevenDaysFromNow
+          })
+          
+          // Group expiring subscriptions by user (same logic as groupSubscriptionsByUser)
+          const groupedExpiring = {}
+          expiringSoonSubscriptions.forEach((subscription) => {
+            const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
+              ? `guest_${subscription.guest_name || subscription.id}`
+              : subscription.user_id || `unknown_${subscription.id}`
+            
+            if (!groupedExpiring[key]) {
+              groupedExpiring[key] = []
+            }
+            groupedExpiring[key].push(subscription)
+          })
+          
+          const expiringCount = Object.keys(groupedExpiring).length
+          stats.upcomingExpirations.value = expiringCount
+          console.log("Expiring subscriptions count (grouped by user):", expiringCount, "Total expiring subscriptions:", expiringSoonSubscriptions.length)
+        } catch (subscriptionsError) {
+          console.error("Error fetching active subscriptions:", subscriptionsError)
+          // Keep the API value if subscriptions fetch fails
+        }
+        
+        // Fetch active attendance (only currently checked in, not total)
+        try {
+          const attendanceResponse = await axios.get(`https://api.cnergy.site/attendance.php?action=attendance`, {
+            timeout: 10000
+          })
+          // The API returns an array directly, not wrapped in an object
+          const attendanceData = Array.isArray(attendanceResponse.data) ? attendanceResponse.data : (attendanceResponse.data?.attendance || [])
+          
+          // Filter for only active sessions (same logic as attendance tracking page)
+          const activeAttendance = attendanceData.filter(entry => {
+            // Active if check_out is null, undefined, or contains "Still in gym"
+            return !entry.check_out || entry.check_out === null || (typeof entry.check_out === 'string' && entry.check_out.includes("Still in gym"))
+          })
+          
+          stats.attendanceToday = { 
+            value: activeAttendance.length, 
+            trend: 0, 
+            isPositive: true 
+          }
+        } catch (attendanceError) {
+          console.error("Error fetching attendance:", attendanceError)
+          stats.attendanceToday = { value: 0, trend: 0, isPositive: true }
+        }
+        
+        setSummaryStats(stats)
         setMembershipData(response.data.membershipData || [])
-        setRevenueData(response.data.revenueData || [])
+        
+        // Filter revenue data for "today" period to only include today's data in Philippine timezone
+        let filteredRevenueData = response.data.revenueData || []
+        if (period === "today") {
+          const phToday = getPhilippineTime()
+          phToday.setHours(0, 0, 0, 0)
+          const todayStr = format(phToday, "yyyy-MM-dd")
+          
+          filteredRevenueData = filteredRevenueData.filter(item => {
+            // If it's a time format (HH:MM), check if it represents today in Philippine time
+            if (item.name && item.name.match(/^\d{1,2}:\d{2}$/)) {
+              const [utcHours, minutes] = item.name.split(':').map(Number)
+              
+              // Get today's date in UTC
+              const now = new Date()
+              const utcYear = now.getUTCFullYear()
+              const utcMonth = now.getUTCMonth()
+              const utcDay = now.getUTCDate()
+              
+              // Try both today and yesterday in UTC (since late UTC hours might be from previous day)
+              const utcDateToday = new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHours, minutes, 0))
+              const utcDateYesterday = new Date(Date.UTC(utcYear, utcMonth, utcDay - 1, utcHours, minutes, 0))
+              
+              // Convert to Philippine time and get the date
+              const getPHDate = (utcDate) => {
+                const phTimeStr = utcDate.toLocaleString("en-US", {
+                  timeZone: "Asia/Manila",
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit"
+                })
+                const [phMonth, phDay, phYear] = phTimeStr.split('/').map(Number)
+                return `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
+              }
+              
+              const phDate1 = getPHDate(utcDateToday)
+              const phDate2 = getPHDate(utcDateYesterday)
+              
+              // Include if either conversion results in today's date in Philippine time
+              return phDate1 === todayStr || phDate2 === todayStr
+            }
+            // For non-time formats, include them (they should already be filtered by API)
+            return true
+          })
+        }
+        
+        setRevenueData(filteredRevenueData)
         setRetryCount(0)
       } else {
         throw new Error(response.data.error || 'Failed to fetch dashboard data')
@@ -146,6 +376,25 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
+  // Helper function to convert UTC time to Philippine time
+  const convertTimeToPH = (timeString) => {
+    // Parse time string (HH:MM format) - assume it's UTC
+    const [utcHours, minutes] = timeString.split(':').map(Number)
+    
+    // Philippine time is UTC+8, so add 8 hours
+    let phHours = utcHours + 8
+    
+    // Handle day rollover (if hour exceeds 23, it's next day, but for display we just show the hour)
+    if (phHours >= 24) {
+      phHours = phHours - 24
+    }
+    
+    // Format as 12-hour with AM/PM
+    const period = phHours >= 12 ? 'PM' : 'AM'
+    const hour12 = phHours % 12 || 12
+    return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+  }
+
   // Format chart data to show proper dates
   const formatChartData = (data) => {
     if (!data || data.length === 0) return []
@@ -158,12 +407,18 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), convert to 12-hour format with AM/PM
+      // If it's a time format (HH:MM), convert to Philippine timezone first, then to 12-hour format with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-        const [hours, minutes] = item.name.split(':').map(Number)
-        const period = hours >= 12 ? 'PM' : 'AM'
-        const hour12 = hours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
-        const formattedTime = `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+        // For "today" period, convert UTC time to Philippine time
+        const formattedTime = timePeriod === "today" 
+          ? convertTimeToPH(item.name)
+          : (() => {
+              // For other periods, just format as 12-hour
+              const [hours, minutes] = item.name.split(':').map(Number)
+              const period = hours >= 12 ? 'PM' : 'AM'
+              const hour12 = hours % 12 || 12
+              return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+            })()
         return { ...item, displayName: formattedTime }
       }
 
@@ -200,21 +455,24 @@ const GymDashboard = () => {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Dashboard Overview */}
-      <Card>
-        <CardHeader>
+      {/* Dashboard */}
+      <Card className="border border-gray-100 shadow-sm bg-white">
+        <CardHeader className="pb-4 pt-5 px-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg sm:text-xl">Dashboard Overview</CardTitle>
-              <CardDescription className="text-sm">
-                Welcome to the CNERGY Gym Admin Dashboard – Manage Staff, Members, Coaches, and Operations!
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <div className="h-1 w-1 rounded-full bg-gray-400"></div>
+                <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Dashboard</CardTitle>
+              </div>
+              <CardDescription className="text-sm text-gray-500 mt-1 ml-4">
+                Key metrics and performance insights
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+                <Calendar className="h-4 w-4 text-gray-600" />
                 <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-[140px] border-0 focus:ring-0">
                     <SelectValue placeholder="Period" />
                   </SelectTrigger>
                   <SelectContent>
@@ -225,51 +483,37 @@ const GymDashboard = () => {
                   </SelectContent>
                 </Select>
               </div>
-
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
             {loading ? (
               // Show loading skeletons
-              Array.from({ length: 6 }).map((_, index) => <CardSkeleton key={index} />)
+              Array.from({ length: 4 }).map((_, index) => <CardSkeleton key={index} />)
             ) : (
               <>
-                {/* Annual Members */}
-                <Card>
+                {/* Total Clients */}
+                <Card 
+                  className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
+                  onClick={() => {
+                    localStorage.setItem('adminNavTarget', 'ViewClients')
+                    localStorage.setItem('adminNavParams', JSON.stringify({ filter: 'all' }))
+                    window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'ViewClients' } }))
+                  }}
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Annual Members</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-semibold text-gray-700">Total Clients</CardTitle>
+                    <div className="p-2 rounded-lg bg-gray-100">
+                      <Users className="h-4 w-4 text-gray-600" />
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">
-                      {summaryStats.members.active.value || 0}/{summaryStats.members.total.value || 0}
+                    <div className="text-2xl font-bold text-gray-900 mb-1">
+                      {summaryStats.totalUsers.active.value || 0}
                     </div>
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Active / Total</p>
-                      {summaryStats.members.active.trend !== undefined && (
-                        <TrendIndicator
-                          trend={summaryStats.members.active.trend}
-                          isPositive={summaryStats.members.active.isPositive}
-                        />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Total Users */}
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {summaryStats.totalUsers.active.value || 0}/{summaryStats.totalUsers.total.value || 0}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Active / Total</p>
+                      <p className="text-xs text-gray-600">Approved clients</p>
                       {summaryStats.totalUsers.active.trend !== undefined && (
                         <TrendIndicator
                           trend={summaryStats.totalUsers.active.trend}
@@ -280,36 +524,80 @@ const GymDashboard = () => {
                   </CardContent>
                 </Card>
 
-                {/* Sales Today */}
-                <Card>
+                {/* Sales Card */}
+                <Card 
+                  className="border border-green-300 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
+                  onClick={() => {
+                    const today = getTodayInPHTime()
+                    localStorage.setItem('adminNavTarget', 'Sales')
+                    localStorage.setItem('adminNavParams', JSON.stringify({ 
+                      openModal: 'totalSales',
+                      filter: timePeriod === 'today' ? 'today' : timePeriod === 'week' ? 'thisWeek' : timePeriod === 'month' ? 'thisMonth' : 'thisYear',
+                      customDate: timePeriod === 'today' ? today : undefined,
+                      useCustomDate: timePeriod === 'today'
+                    }))
+                    window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'Sales' } }))
+                  }}
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Sales Today</CardTitle>
-                    <span className="text-muted-foreground">₱</span>
+                    <CardTitle className="text-sm font-semibold text-gray-700">Sales</CardTitle>
+                    <div className="p-2 rounded-lg bg-green-50 border border-green-200">
+                      <DollarSign className="h-4 w-4 text-green-600" />
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">₱{(summaryStats.salesToday.value || 0).toLocaleString()}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Today's revenue</p>
-                      {summaryStats.salesToday.trend !== undefined && (
-                        <TrendIndicator
-                          trend={summaryStats.salesToday.trend}
-                          isPositive={summaryStats.salesToday.isPositive}
-                        />
-                      )}
-                    </div>
+                    <div className="text-2xl font-bold text-green-700 mb-1">₱{Number(summaryStats.salesToday.value || 0).toLocaleString('en-US')}</div>
+                    <p className="text-xs text-gray-600">
+                      {timePeriod === "today" ? "Today's revenue" :
+                        timePeriod === "week" ? "This week's revenue" :
+                          timePeriod === "month" ? "This month's revenue" :
+                            "This year's revenue"}
+                    </p>
                   </CardContent>
                 </Card>
 
-                {/* Active Monthly Subscriptions */}
-                <Card>
+                {/* Attendance Card */}
+                <Card 
+                  className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
+                  onClick={() => {
+                    localStorage.setItem('adminNavTarget', 'AttendanceTracking')
+                    localStorage.setItem('adminNavParams', JSON.stringify({ filterType: 'active' }))
+                    window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'AttendanceTracking' } }))
+                  }}
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Active Monthly Subscriptions</CardTitle>
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-semibold text-gray-700">Attendance</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.activeSubscriptions.value || 0}</div>
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="text-2xl font-bold text-gray-900">{Number(summaryStats.attendanceToday.value || 0).toLocaleString('en-US')}</div>
+                      <div className="p-2 rounded-lg bg-gray-100">
+                        <Activity className="h-4 w-4 text-gray-600" />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-600">Currently active</p>
+                  </CardContent>
+                </Card>
+
+                {/* Active Subscriptions */}
+                <Card 
+                  className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
+                  onClick={() => {
+                    localStorage.setItem('adminNavTarget', 'MonitorSubscriptions')
+                    localStorage.setItem('adminNavParams', JSON.stringify({ tab: 'active' }))
+                    window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'MonitorSubscriptions' } }))
+                  }}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-semibold text-gray-700">Active Subscriptions</CardTitle>
+                    <div className="p-2 rounded-lg bg-gray-100">
+                      <CreditCard className="h-4 w-4 text-gray-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-gray-900 mb-1">{summaryStats.activeSubscriptions.value || 0}</div>
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Monthly plan subscribers</p>
+                      <p className="text-xs text-gray-600">Active subscription plans</p>
                       {summaryStats.activeSubscriptions.trend !== undefined && (
                         <TrendIndicator
                           trend={summaryStats.activeSubscriptions.trend}
@@ -320,36 +608,25 @@ const GymDashboard = () => {
                   </CardContent>
                 </Card>
 
-                {/* Gym Check-ins */}
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Gym Check-ins Today</CardTitle>
-                    <UserCheck className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.checkinsToday.value || 0}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Today's visits</p>
-                      {summaryStats.checkinsToday.trend !== undefined && (
-                        <TrendIndicator
-                          trend={summaryStats.checkinsToday.trend}
-                          isPositive={summaryStats.checkinsToday.isPositive}
-                        />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
                 {/* Expirations */}
-                <Card>
+                <Card 
+                  className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
+                  onClick={() => {
+                    localStorage.setItem('adminNavTarget', 'MonitorSubscriptions')
+                    localStorage.setItem('adminNavParams', JSON.stringify({ tab: 'upcoming' }))
+                    window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'MonitorSubscriptions' } }))
+                  }}
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Upcoming Expirations</CardTitle>
-                    <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+                    <CardTitle className="text-sm font-semibold text-gray-700">Upcoming Expirations</CardTitle>
+                    <div className="p-2 rounded-lg bg-yellow-100">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                    </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold">{summaryStats.upcomingExpirations.value || 0}</div>
+                    <div className="text-2xl font-bold text-gray-900 mb-1">{summaryStats.upcomingExpirations.value || 0}</div>
                     <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Next 7 days</p>
+                      <p className="text-xs text-gray-600">Expiring subscriptions</p>
                       {summaryStats.upcomingExpirations.trend !== undefined && (
                         <TrendIndicator
                           trend={summaryStats.upcomingExpirations.trend}
@@ -367,56 +644,73 @@ const GymDashboard = () => {
 
       {/* Charts */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {timePeriod === "today" ? "Today's" :
-                timePeriod === "week" ? "Weekly" :
-                  timePeriod === "month" ? "Monthly" :
-                    "Yearly"} Membership Growth
-            </CardTitle>
-            <CardDescription>Membership growth trend</CardDescription>
+        <Card className="border border-gray-100 shadow-sm bg-white overflow-hidden">
+          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
+                  {timePeriod === "today" ? "Today's" :
+                    timePeriod === "week" ? "Weekly" :
+                      timePeriod === "month" ? "Monthly" :
+                        "Yearly"} Client Growth
+                </CardTitle>
+                <CardDescription className="text-xs text-gray-500 mt-0">Client growth trend</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6 pt-4">
             <ChartContainer
               config={{
-                members: { label: "Members", color: "hsl(var(--chart-1))" },
+                members: { label: "Clients", color: "hsl(var(--chart-1))" },
               }}
-              className="h-[300px]"
+              className="h-[320px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(membershipData)}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <LineChart 
+                  data={formatChartData(membershipData)}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid 
+                    strokeDasharray="3 3" 
+                    stroke="#f3f4f6" 
+                    strokeOpacity={0.5}
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="displayName"
-                    className="text-xs fill-muted-foreground"
+                    className="text-xs fill-gray-500"
                     tickLine={false}
                     axisLine={false}
+                    tickMargin={8}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
                   />
                   <YAxis
-                    className="text-xs fill-muted-foreground"
+                    className="text-xs fill-gray-500"
                     tickLine={false}
                     axisLine={false}
                     tickFormatter={formatNumber}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
+                    tickMargin={8}
+                    width={60}
                   />
                   <Line
                     type="monotone"
                     dataKey="members"
-                    strokeWidth={2}
+                    strokeWidth={2.5}
+                    stroke="#f97316"
+                    dot={{ fill: '#f97316', r: 4, strokeWidth: 2 }}
                     activeDot={{
-                      r: 8,
-                      style: { fill: "hsl(var(--chart-1))", opacity: 0.8 },
+                      r: 6,
+                      stroke: '#f97316',
+                      strokeWidth: 2,
+                      fill: '#fff',
                     }}
-                    style={{ stroke: "hsl(var(--chart-1))" }}
                   />
                   <ChartTooltip
                     content={<ChartTooltipContent
-                      formatter={(value, name, props) => [
-                        formatNumber(value),
-                        "Members",
-                        `Date: ${props.payload?.name || 'N/A'}`
-                      ]}
-                      labelFormatter={(label) => `Period: ${label}`}
+                      className="bg-white border border-gray-200 shadow-lg rounded-lg"
+                      formatter={(value) => formatNumber(value)}
+                      labelFormatter={(label) => label || 'N/A'}
                     />}
                   />
                 </LineChart>
@@ -425,47 +719,101 @@ const GymDashboard = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {timePeriod === "today" ? "Today's" :
-                timePeriod === "week" ? "Weekly" :
-                  timePeriod === "month" ? "Monthly" :
-                    "Yearly"} Revenue
-            </CardTitle>
-            <CardDescription>Revenue performance over time</CardDescription>
+        <Card className="border border-gray-100 shadow-sm bg-white overflow-hidden">
+          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
+                  {timePeriod === "today" ? "Today's" :
+                    timePeriod === "week" ? "Weekly" :
+                      timePeriod === "month" ? "Monthly" :
+                        "Yearly"} Revenue
+                </CardTitle>
+                <CardDescription className="text-xs text-gray-500 mt-0">Revenue performance</CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6 pt-4">
             <ChartContainer
               config={{
-                revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
+                revenue: { label: "Revenue", color: "#14b8a6" },
               }}
-              className="h-[300px]"
+              className="h-[320px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={formatChartData(revenueData)}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <BarChart 
+                  data={formatChartData(revenueData)}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid 
+                    strokeDasharray="3 3" 
+                    stroke="#f3f4f6" 
+                    strokeOpacity={0.5}
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="displayName"
-                    className="text-xs fill-muted-foreground"
+                    className="text-xs fill-gray-500"
                     tickLine={false}
                     axisLine={false}
+                    tickMargin={8}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
                   />
                   <YAxis
-                    className="text-xs fill-muted-foreground"
+                    className="text-xs fill-gray-500"
                     tickLine={false}
                     axisLine={false}
                     tickFormatter={formatCurrency}
+                    tick={{ fill: '#6b7280', fontSize: 11 }}
+                    tickMargin={8}
+                    width={70}
                   />
-                  <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
+                  <Bar 
+                    dataKey="revenue" 
+                    fill="#14b8a6"
+                    radius={[6, 6, 0, 0]}
+                    opacity={0.85}
+                    activeBar={{
+                      fill: '#0d9488',
+                      opacity: 1,
+                      stroke: '#0d9488',
+                      strokeWidth: 1.5,
+                      radius: [6, 6, 0, 0],
+                    }}
+                  />
                   <ChartTooltip
                     content={<ChartTooltipContent
-                      formatter={(value, name, props) => [
-                        formatCurrency(value),
-                        "Revenue",
-                        `Period: ${props.payload?.name || 'N/A'}`
-                      ]}
-                      labelFormatter={(label) => `Revenue Period: ${label}`}
+                      className="bg-white border border-gray-200 shadow-lg rounded-lg"
+                      formatter={(value) => {
+                        // Format currency with commas and proper decimal places
+                        const numValue = typeof value === 'number' ? value : parseFloat(value) || 0
+                        return `₱${numValue.toLocaleString('en-US', { 
+                          minimumFractionDigits: 2, 
+                          maximumFractionDigits: 2 
+                        })}`
+                      }}
+                      labelFormatter={(label) => {
+                        if (!label) return 'N/A'
+                        
+                        // If it's already in 12-hour format (has AM/PM), return as is
+                        if (typeof label === 'string' && (label.includes('AM') || label.includes('PM'))) {
+                          return label
+                        }
+                        
+                        // If it's in 24-hour format (HH:MM or HH:MM:SS), convert to 12-hour
+                        if (typeof label === 'string') {
+                          const timeMatch = label.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+                          if (timeMatch) {
+                            const hours = parseInt(timeMatch[1])
+                            const minutes = timeMatch[2]
+                            const period = hours >= 12 ? 'PM' : 'AM'
+                            const hour12 = hours % 12 || 12
+                            return `${hour12}:${minutes} ${period}`
+                          }
+                        }
+                        
+                        return label
+                      }}
                     />}
                   />
                 </BarChart>
