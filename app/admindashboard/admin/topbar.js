@@ -168,11 +168,17 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
         if (currentUserId) {
           console.log('[Topbar] Fetching profile photo for user:', currentUserId)
           const photoUrl = await fetchProfilePhoto(currentUserId)
+          console.log('[Topbar] Photo URL result:', photoUrl)
           if (photoUrl) {
             console.log('[Topbar] Setting profile photo:', photoUrl)
-            setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+            setUserData(prev => {
+              const updated = { ...prev, profilePhoto: photoUrl }
+              console.log('[Topbar] Updated userData:', updated)
+              return updated
+            })
           } else {
-            console.log('[Topbar] No profile photo found')
+            console.log('[Topbar] No profile photo found, keeping fallback')
+            setUserData(prev => ({ ...prev, profilePhoto: null }))
           }
         }
       }
@@ -775,16 +781,30 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
               <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
             </div>
             <div className="relative">
-              <Avatar className="w-9 h-9 rounded-lg border-2 border-white dark:border-gray-900">
-                <AvatarImage 
-                  src={userData.profilePhoto} 
+              {userData.profilePhoto ? (
+                <img
+                  src={userData.profilePhoto}
                   alt={userData.firstName}
-                  className="object-cover"
+                  className="w-9 h-9 rounded-lg border-2 border-white dark:border-gray-900 object-cover"
+                  onError={(e) => {
+                    console.error('[Topbar] ❌ Failed to load profile image')
+                    console.error('[Topbar] Attempted URL:', userData.profilePhoto)
+                    e.target.style.display = 'none'
+                    // Show fallback instead
+                    const fallback = e.target.nextElementSibling
+                    if (fallback) fallback.style.display = 'flex'
+                  }}
+                  onLoad={() => {
+                    console.log('[Topbar] ✅ Profile image loaded successfully!')
+                    console.log('[Topbar] Image URL:', userData.profilePhoto)
+                  }}
                 />
-                <AvatarFallback className="bg-gray-800 dark:bg-gray-700 text-white font-semibold text-sm rounded-lg">
-                  {userData.firstName?.charAt(0) || "A"}
-                </AvatarFallback>
-              </Avatar>
+              ) : null}
+              <div 
+                className={`w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm border-2 border-white dark:border-gray-900 ${userData.profilePhoto ? 'hidden' : ''}`}
+              >
+                <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
+              </div>
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
             </div>
           </button>

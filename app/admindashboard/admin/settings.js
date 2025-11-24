@@ -128,14 +128,19 @@ const Settings = ({ userId, open, onOpenChange }) => {
 
   useEffect(() => {
     if (open && userId) {
-      // Only fetch if we don't have user data or if user ID changed
+      // Only fetch if we don't have user data loaded yet
       const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
-      if (currentUserId && (!user || user.id != currentUserId)) {
+      if (currentUserId && !user) {
+        console.log('[Settings] Fetching user data on dialog open')
         fetchUserData()
+      } else if (user) {
+        // User data already loaded, just ensure loading is false
+        console.log('[Settings] User data already loaded, skipping fetch')
+        setLoading(false)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, userId])
+  }, [open])
 
   // Handle profile photo change
   const handleProfilePhotoChange = (e) => {
@@ -283,16 +288,21 @@ const Settings = ({ userId, open, onOpenChange }) => {
         // Refresh user data with the updated info from response
         if (data.user) {
           console.log('[Settings] Updating state with saved user data:', data.user)
-          setUser(data.user)
-          setFname(data.user.fname || "")
-          setMname(data.user.mname || "")
-          setLname(data.user.lname || "")
-          setEmail(data.user.email || "")
-          const photoUrl = normalizeProfilePhotoUrl(data.user.profile_photo_url)
+          const updatedUser = data.user
+          setUser(updatedUser)
+          setFname(updatedUser.fname || "")
+          setMname(updatedUser.mname || "")
+          setLname(updatedUser.lname || "")
+          setEmail(updatedUser.email || "")
+          const photoUrl = normalizeProfilePhotoUrl(updatedUser.profile_photo_url)
+          console.log('[Settings] Profile photo URL from response:', updatedUser.profile_photo_url)
           console.log('[Settings] Normalized photo URL:', photoUrl)
           setProfilePhotoPreview(photoUrl)
           // Clear the file input but keep the preview
           setProfilePhotoFile(null)
+          
+          // Force a small delay to ensure state is updated
+          await new Promise(resolve => setTimeout(resolve, 100))
         } else {
           // Fallback: refetch from API
           console.log('[Settings] No user data in response, refetching...')
