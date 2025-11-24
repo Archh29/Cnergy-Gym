@@ -260,10 +260,17 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
         if (userResponse.ok) {
           const userInfo = await userResponse.json()
           if (userInfo.success) {
-            setUserData({
+            // Get profile photo URL from API response or preserve existing one
+            const profilePhotoUrl = userInfo.user.profile_photo_url 
+              ? normalizeProfilePhotoUrl(userInfo.user.profile_photo_url)
+              : null
+            setUserData(prev => ({
+              ...prev,
               firstName: userInfo.user.fname || 'Staff',
-              role: userInfo.user.user_type_name || 'Staff Member'
-            })
+              role: userInfo.user.user_type_name || 'Staff Member',
+              // Use profile photo from API, or preserve existing one if API doesn't have it
+              profilePhoto: profilePhotoUrl || prev.profilePhoto
+            }))
           }
         }
       } else {
@@ -277,10 +284,17 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
           if (userResponse.ok) {
             const userInfo = await userResponse.json()
             if (userInfo.success) {
-              setUserData({
+              // Get profile photo URL from API response or preserve existing one
+              const profilePhotoUrl = userInfo.user.profile_photo_url 
+                ? normalizeProfilePhotoUrl(userInfo.user.profile_photo_url)
+                : null
+              setUserData(prev => ({
+                ...prev,
                 firstName: userInfo.user.fname || 'Staff',
-                role: userInfo.user.user_type_name || 'Staff Member'
-              })
+                role: userInfo.user.user_type_name || 'Staff Member',
+                // Use profile photo from API, or preserve existing one if API doesn't have it
+                profilePhoto: profilePhotoUrl || prev.profilePhoto
+              }))
             }
           }
         }
