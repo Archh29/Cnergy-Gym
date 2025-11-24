@@ -2018,6 +2018,47 @@ const SubscriptionMonitor = ({ userId }) => {
   const expiredSubscriptions = getExpiredSubscriptions()
   const cancelledSubscriptions = getCancelledSubscriptions()
 
+  // Helper functions for analytics - get subscriptions WITHOUT filters
+  const getAllActiveSubscriptions = () => {
+    const now = new Date()
+    return (subscriptions || []).filter((s) => {
+      // Check if subscription is expired (end_date is in the past)
+      const endDate = new Date(s.end_date)
+      if (endDate < now) return false
+      // Only show if status is Active or approved and not expired
+      return s.display_status === "Active" || s.status_name === "approved"
+    })
+  }
+
+  const getAllExpiringSoonSubscriptions = () => {
+    const now = new Date()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const sevenDaysFromNow = new Date()
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+    sevenDaysFromNow.setHours(23, 59, 59, 999)
+
+    return (subscriptions || []).filter((s) => {
+      const endDate = new Date(s.end_date)
+      return endDate >= today && endDate <= sevenDaysFromNow && 
+             (s.display_status === "Active" || s.status_name === "approved")
+    })
+  }
+
+  const getAllExpiredSubscriptions = () => {
+    const now = new Date()
+    return (subscriptions || []).filter((s) => {
+      const endDate = new Date(s.end_date)
+      return endDate < now && (s.display_status === "Active" || s.status_name === "approved")
+    })
+  }
+
+  const getAllCancelledSubscriptions = () => {
+    return (subscriptions || []).filter((s) => {
+      return s.status_name === "cancelled" || s.display_status === "Cancelled"
+    })
+  }
+
   // Pagination helper function
   const getPaginatedData = (data, tabKey) => {
     const page = currentPage[tabKey] || 1
@@ -2091,11 +2132,12 @@ const SubscriptionMonitor = ({ userId }) => {
 
   // Get analytics - use grouped subscriptions to count users (matching staff dashboard)
   // For total, group ALL subscriptions (not filtered) to get the total user count
+  // For active/expiring/expired/cancelled, use unfiltered data for accurate counts
   const groupedAllSubscriptions = groupSubscriptionsByUser(subscriptions || [])
-  const groupedActive = groupSubscriptionsByUser(activeSubscriptions)
-  const groupedExpiring = groupSubscriptionsByUser(expiringSoonSubscriptions)
-  const groupedExpired = groupSubscriptionsByUser(expiredSubscriptions)
-  const groupedCancelled = groupSubscriptionsByUser(cancelledSubscriptions)
+  const groupedActive = groupSubscriptionsByUser(getAllActiveSubscriptions())
+  const groupedExpiring = groupSubscriptionsByUser(getAllExpiringSoonSubscriptions())
+  const groupedExpired = groupSubscriptionsByUser(getAllExpiredSubscriptions())
+  const groupedCancelled = groupSubscriptionsByUser(getAllCancelledSubscriptions())
   
   const analytics = {
     total: groupedAllSubscriptions.length,

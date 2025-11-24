@@ -16,8 +16,6 @@ export default function Login() {
   const [captchaValid, setCaptchaValid] = useState(false);
   const [captchaResponse, setCaptchaResponse] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [captchaError, setCaptchaError] = useState(false);
-  const [captchaLoaded, setCaptchaLoaded] = useState(false);
 
   const router = useRouter();
 
@@ -38,74 +36,10 @@ export default function Login() {
     }
   }, [router, setCookie]);
 
-  // Handle reCAPTCHA load errors gracefully
-  useEffect(() => {
-    const handleRecaptchaError = () => {
-      console.warn('reCAPTCHA failed to load. Proceeding without CAPTCHA verification.');
-      setCaptchaError(true);
-      setCaptchaLoaded(true);
-      // Allow login without CAPTCHA if it fails to load (for development/local environments)
-      setCaptchaValid(true);
-    };
-
-    // Set a timeout to detect if reCAPTCHA doesn't load within 10 seconds
-    const timeout = setTimeout(() => {
-      if (!captchaLoaded && !captchaError) {
-        handleRecaptchaError();
-      }
-    }, 10000);
-
-    // Listen for reCAPTCHA script errors and suppress console spam
-    const scriptErrorHandler = (event) => {
-      if (event.target && event.target.src && event.target.src.includes('recaptcha')) {
-        // Prevent the error from propagating and causing console spam
-        event.preventDefault();
-        event.stopPropagation();
-        handleRecaptchaError();
-        return true; // Suppress the error
-      }
-    };
-
-    // Global error handler to catch and suppress reCAPTCHA connection errors
-    const globalErrorHandler = (event) => {
-      if (event.message && event.message.includes('recaptcha')) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!captchaError) {
-          handleRecaptchaError();
-        }
-        return true;
-      }
-    };
-
-    window.addEventListener('error', scriptErrorHandler, true);
-    window.addEventListener('unhandledrejection', (event) => {
-      if (event.reason && event.reason.toString().includes('recaptcha')) {
-        event.preventDefault();
-        if (!captchaError) {
-          handleRecaptchaError();
-        }
-      }
-    });
-
-    return () => {
-      clearTimeout(timeout);
-      window.removeEventListener('error', scriptErrorHandler, true);
-    };
-  }, [captchaLoaded, captchaError]);
 
   const handleCaptchaChange = (response) => {
     setCaptchaResponse(response);
     setCaptchaValid(!!response);
-    setCaptchaLoaded(true);
-  };
-
-  const handleCaptchaError = () => {
-    console.warn('reCAPTCHA error occurred. Proceeding without CAPTCHA verification.');
-    setCaptchaError(true);
-    setCaptchaLoaded(true);
-    // Allow login without CAPTCHA if it fails
-    setCaptchaValid(true);
   };
 
   const handleCaptchaExpired = () => {
@@ -124,8 +58,8 @@ export default function Login() {
       return;
     }
 
-    // Only require CAPTCHA if it's loaded and not in error state
-    if (!captchaError && !captchaResponse) {
+    // Require CAPTCHA verification
+    if (!captchaResponse) {
       setError("Please complete the CAPTCHA.");
       setLoading(false);
       return;
@@ -241,21 +175,14 @@ export default function Login() {
                 Forgot Password?
               </a>
             </div>
-            {!captchaError ? (
-              <div className="flex justify-center">
-                <ReCAPTCHA
-                  sitekey="6LdRiNMqAAAAALOse29KCWAoHGDop9DQMPgeMoUo"
-                  onChange={handleCaptchaChange}
-                  onErrored={handleCaptchaError}
-                  onExpired={handleCaptchaExpired}
-                  theme="dark"
-                />
-              </div>
-            ) : (
-              <div className="text-center text-sm text-yellow-400 bg-yellow-900/20 border border-yellow-600/50 p-3 rounded-lg">
-                <p>⚠️ CAPTCHA verification unavailable. Login will proceed without CAPTCHA.</p>
-              </div>
-            )}
+            <div className="flex justify-center">
+              <ReCAPTCHA
+                sitekey="6LdRiNMqAAAAALOse29KCWAoHGDop9DQMPgeMoUo"
+                onChange={handleCaptchaChange}
+                onExpired={handleCaptchaExpired}
+                theme="dark"
+              />
+            </div>
             <button
               type="submit"
               className="w-full py-3 rounded-lg bg-orange-500 text-white disabled:bg-orange-400"
