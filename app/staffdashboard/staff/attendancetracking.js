@@ -100,6 +100,7 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   // Helper function to parse date from various formats
+  // Dates from backend are in Philippine timezone, so we need to parse them correctly
   const parseDateFromEntry = (entry) => {
     // Try different date fields
     let dateStr = entry.date || entry.check_in || entry.timestamp || entry.created_at
@@ -113,22 +114,30 @@ const AttendanceTracking = ({ userId }) => {
         return dateStr.substring(0, 10)
       }
 
-      // If it's in "Oct 24, 2025" format
-      if (dateStr.match(/^[A-Za-z]{3} \d{1,2}, \d{4}/)) {
-        const date = new Date(dateStr)
-        return date.toISOString().substring(0, 10)
+      // If it's in "Oct 24, 2025" or "Oct 24, 2025 11:17 PM" format
+      // Parse the date components directly to avoid timezone conversion issues
+      const dateMatch = dateStr.match(/^([A-Za-z]{3}) (\d{1,2}), (\d{4})/)
+      if (dateMatch) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const month = monthNames.indexOf(dateMatch[1])
+        const day = parseInt(dateMatch[2], 10)
+        const year = parseInt(dateMatch[3], 10)
+        
+        if (month !== -1 && day && year) {
+          // Create date in Philippine timezone to avoid UTC conversion issues
+          // Format as YYYY-MM-DD
+          const monthStr = String(month + 1).padStart(2, '0')
+          const dayStr = String(day).padStart(2, '0')
+          return `${year}-${monthStr}-${dayStr}`
+        }
       }
 
-      // If it's in "Oct 24, 2025 11:17 PM" format
-      if (dateStr.match(/^[A-Za-z]{3} \d{1,2}, \d{4} \d{1,2}:\d{2} [AP]M/)) {
-        const date = new Date(dateStr)
-        return date.toISOString().substring(0, 10)
-      }
-
-      // If it's a full datetime string
+      // Fallback: try parsing as ISO date string or other formats
       const date = new Date(dateStr)
       if (!isNaN(date.getTime())) {
-        return date.toISOString().substring(0, 10)
+        // Use Philippine timezone for date extraction
+        const phDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+        return phDate.toISOString().substring(0, 10)
       }
 
       return null
@@ -140,39 +149,65 @@ const AttendanceTracking = ({ userId }) => {
 
   // Helper function to get date range for quick filters
   const getQuickFilterDateRange = () => {
+    // Get current date in Philippine timezone
     const now = new Date()
-    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+    const formatter = new Intl.DateTimeFormat("en-CA", { 
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+    const phDateParts = formatter.formatToParts(now)
+    const phYear = parseInt(phDateParts.find(p => p.type === 'year').value, 10)
+    const phMonth = parseInt(phDateParts.find(p => p.type === 'month').value, 10)
+    const phDay = parseInt(phDateParts.find(p => p.type === 'day').value, 10)
+    const phDate = new Date(phYear, phMonth - 1, phDay) // Create date in local timezone (month is 0-indexed)
 
     switch (quickFilter) {
       case "today": {
-        const today = phTime.toISOString().split('T')[0]
+        const today = `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
         return { start: today, end: today }
       }
       case "yesterday": {
-        const yesterday = new Date(phTime)
-        yesterday.setDate(yesterday.getDate() - 1)
-        const yesterdayStr = yesterday.toISOString().split('T')[0]
+        const yesterdayDate = new Date(phDate)
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+        const yYear = yesterdayDate.getFullYear()
+        const yMonth = yesterdayDate.getMonth() + 1
+        const yDay = yesterdayDate.getDate()
+        const yesterdayStr = `${yYear}-${String(yMonth).padStart(2, '0')}-${String(yDay).padStart(2, '0')}`
         return { start: yesterdayStr, end: yesterdayStr }
       }
       case "last-week": {
-        const lastWeekEnd = new Date(phTime)
+        const lastWeekEnd = new Date(phDate)
         lastWeekEnd.setDate(lastWeekEnd.getDate() - 1) // Yesterday
         const lastWeekStart = new Date(lastWeekEnd)
         lastWeekStart.setDate(lastWeekStart.getDate() - 6) // 7 days ago
+        const endYear = lastWeekEnd.getFullYear()
+        const endMonth = lastWeekEnd.getMonth() + 1
+        const endDay = lastWeekEnd.getDate()
+        const startYear = lastWeekStart.getFullYear()
+        const startMonth = lastWeekStart.getMonth() + 1
+        const startDay = lastWeekStart.getDate()
         return {
-          start: lastWeekStart.toISOString().split('T')[0],
-          end: lastWeekEnd.toISOString().split('T')[0]
+          start: `${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
+          end: `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
         }
       }
       case "last-month": {
-        const lastMonthEnd = new Date(phTime)
+        const lastMonthEnd = new Date(phDate)
         lastMonthEnd.setDate(lastMonthEnd.getDate() - 1) // Yesterday
         const lastMonthStart = new Date(lastMonthEnd)
         lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
         lastMonthStart.setDate(1) // First day of last month
+        const endYear = lastMonthEnd.getFullYear()
+        const endMonth = lastMonthEnd.getMonth() + 1
+        const endDay = lastMonthEnd.getDate()
+        const startYear = lastMonthStart.getFullYear()
+        const startMonth = lastMonthStart.getMonth() + 1
+        const startDay = lastMonthStart.getDate()
         return {
-          start: lastMonthStart.toISOString().split('T')[0],
-          end: lastMonthEnd.toISOString().split('T')[0]
+          start: `${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
+          end: `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
         }
       }
       case "all-time":
@@ -249,20 +284,22 @@ const AttendanceTracking = ({ userId }) => {
     if (filterType === "premium") {
       filtered = filtered.filter(entry => {
         if (entry.user_type !== "member") return false
-        // Check is_premium flag or plan_id
-        if (entry.is_premium === true || entry.plan_id === 2) return true
+        // Check is_premium flag or plan_id (plan_id 2 = Premium)
+        const planId = entry.plan_id ? parseInt(entry.plan_id) : null
+        if (entry.is_premium === true || planId === 2) return true
         // Fallback: check plan_name
         const planName = (entry.plan_name || "").toLowerCase()
-        return planName.includes("premium")
+        return planName.includes("premium") || planName.includes("with membership")
       })
     } else if (filterType === "standard") {
       filtered = filtered.filter(entry => {
         if (entry.user_type !== "member") return false
-        // Check is_standard flag or plan_id
-        if (entry.is_standard === true || entry.plan_id === 3) return true
+        // Check is_standard flag or plan_id (plan_id 3 = Standard)
+        const planId = entry.plan_id ? parseInt(entry.plan_id) : null
+        if (entry.is_standard === true || planId === 3) return true
         // Fallback: check plan_name
         const planName = (entry.plan_name || "").toLowerCase()
-        return planName.includes("standard") && !planName.includes("premium")
+        return (planName.includes("standard") || planName.includes("monthly standalone")) && !planName.includes("premium")
       })
     } else if (filterType === "guests") {
       // Filter for Gym Session - includes both guest sessions and gym session subscriptions
@@ -270,7 +307,8 @@ const AttendanceTracking = ({ userId }) => {
         // Guest sessions
         const isGuest = entry.user_type === "guest"
         // Gym session subscriptions (with account)
-        const isGymSession = entry.is_session === true || entry.plan_id === 6
+        const planId = entry.plan_id ? parseInt(entry.plan_id) : null
+        const isGymSession = entry.is_session === true || planId === 6
         // Fallback: check plan_name
         const planName = (entry.plan_name || "").toLowerCase()
         const isGymSessionByName = planName.includes("session") || planName.includes("gym session")
@@ -1188,22 +1226,23 @@ const AttendanceTracking = ({ userId }) => {
                               ? "bg-blue-100 text-blue-800"
                               : (() => {
                                 // Check is_session flag first for Gym Session/Day Pass
-                                if (entry.is_session === true || entry.plan_id === 6) {
+                                const planId = entry.plan_id ? parseInt(entry.plan_id) : null
+                                if (entry.is_session === true || planId === 6) {
                                   return "bg-blue-100 text-blue-800"
                                 }
-                                // Check is_premium/is_standard flags
-                                if (entry.is_premium === true || entry.plan_id === 2) {
+                                // Check is_premium/is_standard flags (plan_id 2 = Premium, plan_id 3 = Standard)
+                                if (entry.is_premium === true || planId === 2) {
                                   return "bg-yellow-100 text-yellow-800"
-                                } else if (entry.is_standard === true || entry.plan_id === 3) {
+                                } else if (entry.is_standard === true || planId === 3) {
                                   return "bg-gray-100 text-gray-800"
                                 }
                                 // Fallback: check plan_name
                                 const planName = (entry.plan_name || "").toLowerCase()
                                 if (planName.includes("session") || planName.includes("gym session")) {
                                   return "bg-blue-100 text-blue-800"
-                                } else if (planName.includes("premium")) {
+                                } else if (planName.includes("premium") || planName.includes("with membership")) {
                                   return "bg-yellow-100 text-yellow-800"
-                                } else if (planName.includes("standard")) {
+                                } else if (planName.includes("standard") || planName.includes("monthly standalone")) {
                                   return "bg-gray-100 text-gray-800"
                                 }
                                 // Default to standard if we can't determine (shouldn't happen, but safety)
@@ -1225,22 +1264,23 @@ const AttendanceTracking = ({ userId }) => {
                                   })
                                 }
                                 // Check is_session flag first for Gym Session/Day Pass
-                                if (entry.is_session === true || entry.plan_id === 6) {
+                                const planId = entry.plan_id ? parseInt(entry.plan_id) : null
+                                if (entry.is_session === true || planId === 6) {
                                   return "Session"
                                 }
-                                // Check is_premium/is_standard flags
-                                if (entry.is_premium === true || entry.plan_id === 2) {
+                                // Check is_premium/is_standard flags (plan_id 2 = Premium, plan_id 3 = Standard)
+                                if (entry.is_premium === true || planId === 2) {
                                   return "Premium"
-                                } else if (entry.is_standard === true || entry.plan_id === 3) {
+                                } else if (entry.is_standard === true || planId === 3) {
                                   return "Standard"
                                 }
                                 // Fallback: check plan_name
                                 const planName = (entry.plan_name || "").toLowerCase()
                                 if (planName.includes("session") || planName.includes("gym session")) {
                                   return "Session"
-                                } else if (planName.includes("premium")) {
+                                } else if (planName.includes("premium") || planName.includes("with membership")) {
                                   return "Premium"
-                                } else if (planName.includes("standard")) {
+                                } else if (planName.includes("standard") || planName.includes("monthly standalone")) {
                                   return "Standard"
                                 }
                                 // Default to standard if we can't determine (shouldn't happen, but safety)
