@@ -2321,8 +2321,8 @@ const ViewMembers = ({ userId }) => {
               <Button
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
                 className={`h-10 px-4 font-medium transition-all ${currentView === "active"
-                    ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm"
-                    : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
+                  ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm"
+                  : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
                   }`}
               >
                 {currentView === "active" ? "Active" : "Deactivated"}
@@ -2567,8 +2567,8 @@ const ViewMembers = ({ userId }) => {
                                 return (
                                   <Badge
                                     className={`text-xs px-2 py-1 font-semibold border ${activeDiscount.discount_type === 'student'
-                                        ? 'bg-blue-100 text-blue-700 border-blue-300'
-                                        : 'bg-purple-100 text-purple-700 border-purple-300'
+                                      ? 'bg-blue-100 text-blue-700 border-blue-300'
+                                      : 'bg-purple-100 text-purple-700 border-purple-300'
                                       }`}
                                     variant="outline"
                                   >
@@ -2857,8 +2857,8 @@ const ViewMembers = ({ userId }) => {
                         })
                       }}
                       className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${verificationSubscriptionForm.discount_type === 'student'
-                          ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
-                          : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
+                        ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
+                        : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
                         }`}
                     >
                       <GraduationCap className={`h-6 w-6 ${verificationSubscriptionForm.discount_type === 'student' ? 'text-blue-700' : 'text-blue-600'}`} />
@@ -2897,8 +2897,8 @@ const ViewMembers = ({ userId }) => {
                         })
                       }}
                       className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${verificationSubscriptionForm.discount_type === 'senior'
-                          ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
-                          : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
+                        ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
+                        : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
                         }`}
                     >
                       <UserCircle className={`h-6 w-6 ${verificationSubscriptionForm.discount_type === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
@@ -2946,8 +2946,8 @@ const ViewMembers = ({ userId }) => {
                         <div
                           key={plan.id}
                           className={`p-3 rounded-lg border-2 transition-all ${isSelected
-                              ? 'border-blue-400 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                            ? 'border-blue-400 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
                             } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={(e) => {
                             if (e.target.type === 'number' || e.target.tagName === 'INPUT') {
@@ -3841,8 +3841,8 @@ const ViewMembers = ({ userId }) => {
                       })
                     }}
                     className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${subscriptionForm.discount_type === 'student'
-                        ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
-                        : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
+                      ? 'border-blue-400 bg-blue-50 hover:bg-blue-100 shadow-md'
+                      : 'border-blue-200 hover:border-blue-300 hover:bg-blue-50'
                       }`}
                   >
                     <GraduationCap className={`h-6 w-6 ${subscriptionForm.discount_type === 'student' ? 'text-blue-700' : 'text-blue-600'}`} />
@@ -3882,8 +3882,8 @@ const ViewMembers = ({ userId }) => {
                       })
                     }}
                     className={`h-auto py-4 flex flex-col items-center gap-2 border-2 transition-all ${subscriptionForm.discount_type === 'senior'
-                        ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
-                        : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
+                      ? 'border-purple-400 bg-purple-50 hover:bg-purple-100 shadow-md'
+                      : 'border-purple-200 hover:border-purple-300 hover:bg-purple-50'
                       }`}
                   >
                     <UserCircle className={`h-6 w-6 ${subscriptionForm.discount_type === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
@@ -3932,8 +3932,8 @@ const ViewMembers = ({ userId }) => {
                       <div
                         key={plan.id}
                         className={`p-3 rounded-lg border-2 transition-all ${isSelected
-                            ? 'border-blue-400 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
                           } ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                         onClick={(e) => {
                           // Don't trigger if clicking on input field (quantity)
@@ -4905,8 +4905,8 @@ const ViewMembers = ({ userId }) => {
                     <div className="space-y-2">
                       <div
                         className={`flex items-center justify-between p-3 rounded-lg border-2 ${activeDiscount.discount_type === 'student'
-                            ? 'bg-blue-50 border-blue-200'
-                            : 'bg-purple-50 border-purple-200'
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-purple-50 border-purple-200'
                           }`}
                       >
                         <div className="flex items-center gap-2">
@@ -4972,8 +4972,8 @@ const ViewMembers = ({ userId }) => {
                           onClick={() => handleAddDiscount('student')}
                           disabled={discountLoading || hasActiveDiscount}
                           className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${hasActiveDiscount
-                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
-                              : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                            ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                            : 'border-blue-200 hover:border-blue-400 hover:bg-blue-50'
                             }`}
                         >
                           <GraduationCap className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-blue-600'}`} />
@@ -4984,8 +4984,8 @@ const ViewMembers = ({ userId }) => {
                           onClick={() => handleAddDiscount('senior')}
                           disabled={discountLoading || hasActiveDiscount}
                           className={`h-auto py-4 flex flex-col items-center gap-2 border-2 ${hasActiveDiscount
-                              ? 'border-gray-200 opacity-50 cursor-not-allowed'
-                              : 'border-purple-200 hover:border-purple-400 hover:bg-purple-50'
+                            ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                            : 'border-purple-200 hover:border-purple-400 hover:bg-purple-50'
                             }`}
                         >
                           <UserCircle className={`h-6 w-6 ${hasActiveDiscount ? 'text-gray-400' : 'text-purple-600'}`} />
