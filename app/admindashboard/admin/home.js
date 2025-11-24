@@ -166,6 +166,14 @@ const GymDashboard = () => {
           // Filter active subscriptions (same logic as monitoring subscription page - getActiveSubscriptions)
           const now = new Date()
           const activeSubscriptions = allSubscriptions.filter((s) => {
+            // Exclude cancelled subscriptions
+            if (s.status_name?.toLowerCase() === "cancelled" || 
+                s.display_status?.toLowerCase() === "cancelled" ||
+                s.status_name?.toLowerCase() === "canceled" || 
+                s.display_status?.toLowerCase() === "canceled") {
+              return false
+            }
+            
             // Check if subscription is expired (end_date is in the past)
             if (s.end_date) {
               const endDate = new Date(s.end_date)
@@ -414,8 +422,8 @@ const GymDashboard = () => {
           ? convertTimeToPH(item.name)
           : (() => {
               // For other periods, just format as 12-hour
-              const [hours, minutes] = item.name.split(':').map(Number)
-              const period = hours >= 12 ? 'PM' : 'AM'
+        const [hours, minutes] = item.name.split(':').map(Number)
+        const period = hours >= 12 ? 'PM' : 'AM'
               const hour12 = hours % 12 || 12
               return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
             })()
@@ -596,15 +604,7 @@ const GymDashboard = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-gray-900 mb-1">{summaryStats.activeSubscriptions.value || 0}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-600">Active subscription plans</p>
-                      {summaryStats.activeSubscriptions.trend !== undefined && (
-                        <TrendIndicator
-                          trend={summaryStats.activeSubscriptions.trend}
-                          isPositive={summaryStats.activeSubscriptions.isPositive}
-                        />
-                      )}
-                    </div>
+                    <p className="text-xs text-gray-600">Active subscription plans</p>
                   </CardContent>
                 </Card>
 
@@ -625,15 +625,7 @@ const GymDashboard = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-gray-900 mb-1">{summaryStats.upcomingExpirations.value || 0}</div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-gray-600">Expiring subscriptions</p>
-                      {summaryStats.upcomingExpirations.trend !== undefined && (
-                        <TrendIndicator
-                          trend={summaryStats.upcomingExpirations.trend}
-                          isPositive={summaryStats.upcomingExpirations.isPositive}
-                        />
-                      )}
-                    </div>
+                    <p className="text-xs text-gray-600">Expiring subscriptions</p>
                   </CardContent>
                 </Card>
               </>
@@ -649,11 +641,11 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-                  {timePeriod === "today" ? "Today's" :
-                    timePeriod === "week" ? "Weekly" :
-                      timePeriod === "month" ? "Monthly" :
-                        "Yearly"} Client Growth
-                </CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Client Growth
+            </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Client growth trend</CardDescription>
               </div>
             </div>
@@ -724,11 +716,11 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-                  {timePeriod === "today" ? "Today's" :
-                    timePeriod === "week" ? "Weekly" :
-                      timePeriod === "month" ? "Monthly" :
-                        "Yearly"} Revenue
-                </CardTitle>
+              {timePeriod === "today" ? "Today's" :
+                timePeriod === "week" ? "Weekly" :
+                  timePeriod === "month" ? "Monthly" :
+                    "Yearly"} Revenue
+            </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Revenue performance</CardDescription>
               </div>
             </div>

@@ -863,6 +863,12 @@ function getSalesData($pdo)
 					$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
 					$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 				}
+				// Also store quantity at sale level for easy access
+				if (!isset($salesGrouped[$saleId]['quantity']) && !empty($row['quantity'])) {
+					$salesGrouped[$saleId]['quantity'] = (int) $row['quantity'];
+				} elseif (!isset($salesGrouped[$saleId]['quantity'])) {
+					$salesGrouped[$saleId]['quantity'] = 1; // Default to 1 if not set
+				}
 			}
 
 			// Include guest_session_id in detail if present

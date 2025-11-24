@@ -2540,22 +2540,37 @@ const Sales = ({ userId }) => {
                           <TableCell className="py-4">
                             <div className="space-y-2">
                               {sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0 ? (
-                                sale.sales_details.map((detail, index) => (
-                                  <div key={index} className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-semibold text-gray-900">
-                                      {getProductName(detail, sale)}
-                                    </span>
-                                    {!detail.subscription_id && detail.quantity && detail.quantity > 1 && (
-                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 font-medium">
-                                        {detail.quantity}x
-                                      </Badge>
-                                    )}
-                                  </div>
-                                ))
+                                sale.sales_details.map((detail, index) => {
+                                  // Get quantity from detail or sale level
+                                  const quantity = detail.quantity || sale.quantity || 1
+                                  return (
+                                    <div key={index} className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-sm font-semibold text-gray-900">
+                                        {getProductName(detail, sale)}
+                                      </span>
+                                      {quantity > 1 && (
+                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 font-medium">
+                                          {quantity}x
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  )
+                                })
                               ) : (
-                                <span className="text-sm font-semibold text-gray-900">
-                                  {getProductName({}, sale)}
-                                </span>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {getProductName({}, sale)}
+                                  </span>
+                                  {(() => {
+                                    // Get quantity from sale level for subscriptions without sales_details
+                                    const quantity = sale.quantity || 1
+                                    return quantity > 1 ? (
+                                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 font-medium">
+                                        {quantity}x
+                                      </Badge>
+                                    ) : null
+                                  })()}
+                                </div>
                               )}
                             </div>
                           </TableCell>
@@ -3795,7 +3810,7 @@ const Sales = ({ userId }) => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="coaching-service-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Service:</Label>
+                  <Label htmlFor="coaching-service-type-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Service Type:</Label>
                   <Select value={coachingServiceTypeFilter} onValueChange={setCoachingServiceTypeFilter}>
                     <SelectTrigger className="w-36 h-9 text-sm border-gray-300">
                       <SelectValue placeholder="All Types" />
@@ -3975,16 +3990,26 @@ const Sales = ({ userId }) => {
                   }
                 }
 
+                // Filter out package sales and N/A entries (broken data)
+                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+
+                // If no assignment details, it's likely a session sale
+                if (!assignmentDetails) {
+                  // If service type filter is set to "session", include it (session sales might not have assignments)
+                  if (coachingServiceTypeFilter === "session") return true
+                  // If service type filter is set to "monthly", exclude it (monthly sales have assignments)
+                  if (coachingServiceTypeFilter === "monthly") return false
+                  // If filter is "all", include it
+                  return true
+                }
+
                 // Apply service type filter if set
                 if (coachingServiceTypeFilter !== "all") {
-                  const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
                   const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                   const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
                   if (normalizedServiceType !== coachingServiceTypeFilter) return false
                 }
 
-                // Filter out package sales and N/A entries (broken data)
-                const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
                   serviceType === 'package' ? 'package' : 'monthly'
@@ -3992,8 +4017,9 @@ const Sales = ({ userId }) => {
                 // Exclude package sales
                 if (normalizedServiceType === 'package') return false
 
-                // Exclude entries with N/A end dates (broken data)
-                if (!assignmentDetails?.endDate) return false
+                // For session sales, allow them even without assignment details (session sales might not have assignments)
+                // For monthly sales, require assignment details with endDate (to filter out broken data)
+                if (normalizedServiceType === 'monthly' && !assignmentDetails?.endDate) return false
 
                 return true
               })
@@ -4101,6 +4127,16 @@ const Sales = ({ userId }) => {
 
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
 
+                // If no assignment details, it's likely a session sale
+                if (!assignmentDetails) {
+                  // If service type filter is set to "session", include it (session sales might not have assignments)
+                  if (coachingServiceTypeFilter === "session") return true
+                  // If service type filter is set to "monthly", exclude it (monthly sales have assignments)
+                  if (coachingServiceTypeFilter === "monthly") return false
+                  // If filter is "all", include it
+                  return true
+                }
+
                 // Filter out package sales and N/A entries (broken data)
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
@@ -4109,8 +4145,9 @@ const Sales = ({ userId }) => {
                 // Exclude package sales
                 if (normalizedServiceType === 'package') return false
 
-                // Exclude entries with N/A end dates (broken data)
-                if (!assignmentDetails?.endDate) return false
+                // For session sales, allow them even without assignment details (session sales might not have assignments)
+                // For monthly sales, require assignment details with endDate (to filter out broken data)
+                if (normalizedServiceType === 'monthly' && !assignmentDetails?.endDate) return false
 
                 if (coachingServiceTypeFilter !== "all") {
                   if (normalizedServiceType !== coachingServiceTypeFilter) return false
@@ -4123,11 +4160,15 @@ const Sales = ({ userId }) => {
               const totalSales = filteredSalesForStats.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
               const sessionSales = filteredSalesForStats.filter(sale => {
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                // If no assignment details, it's a session sale (session sales might not have assignments)
+                if (!assignmentDetails) return true
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 return serviceType === 'per_session' || serviceType === 'session'
               })
               const monthlySales = filteredSalesForStats.filter(sale => {
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                // If no assignment details, it's not a monthly sale (monthly sales have assignments)
+                if (!assignmentDetails) return false
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 const normalizedType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
                 return normalizedType === 'monthly'
@@ -4273,6 +4314,16 @@ const Sales = ({ userId }) => {
 
                 const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
 
+                // If no assignment details, it's likely a session sale
+                if (!assignmentDetails) {
+                  // If service type filter is set to "session", include it (session sales might not have assignments)
+                  if (coachingServiceTypeFilter === "session") return true
+                  // If service type filter is set to "monthly", exclude it (monthly sales have assignments)
+                  if (coachingServiceTypeFilter === "monthly") return false
+                  // If filter is "all", include it
+                  return true
+                }
+
                 // Filter out package sales and N/A entries (broken data)
                 const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                 const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
@@ -4281,8 +4332,9 @@ const Sales = ({ userId }) => {
                 // Exclude package sales
                 if (normalizedServiceType === 'package') return false
 
-                // Exclude entries with N/A end dates (broken data)
-                if (!assignmentDetails?.endDate) return false
+                // For session sales, allow them even without assignment details (session sales might not have assignments)
+                // For monthly sales, require assignment details with endDate (to filter out broken data)
+                if (normalizedServiceType === 'monthly' && !assignmentDetails?.endDate) return false
 
                 if (coachingServiceTypeFilter !== "all") {
                   if (normalizedServiceType !== coachingServiceTypeFilter) return false
@@ -4338,6 +4390,14 @@ const Sales = ({ userId }) => {
                                 </TableCell>
                                 <TableCell className="py-3">
                                   {(() => {
+                                    // If no assignment details, it's likely a session sale (session sales might not have assignments)
+                                    if (!assignmentDetails) {
+                                      return (
+                                        <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300 font-medium">
+                                          Session
+                                        </Badge>
+                                      )
+                                    }
                                     const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
                                     const displayType = serviceType === 'per_session' || serviceType === 'session' ? 'Session' : 'Monthly'
                                     return (
@@ -5652,22 +5712,37 @@ const Sales = ({ userId }) => {
                               <TableCell className="py-3 align-top">
                                 <div className="space-y-1">
                                   {sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0 ? (
-                                    sale.sales_details.map((detail, index) => (
-                                      <div key={index} className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-xs font-medium text-gray-900">
-                                          {getProductName(detail, sale)}
-                                        </span>
-                                        {!detail.subscription_id && detail.quantity && detail.quantity > 1 && (
-                                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
-                                            {detail.quantity}x
-                                          </Badge>
-                                        )}
-                                      </div>
-                                    ))
+                                    sale.sales_details.map((detail, index) => {
+                                      // Get quantity from detail or sale level
+                                      const quantity = detail.quantity || sale.quantity || 1
+                                      return (
+                                        <div key={index} className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-xs font-medium text-gray-900">
+                                            {getProductName(detail, sale)}
+                                          </span>
+                                          {quantity > 1 && (
+                                            <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                              {quantity}x
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      )
+                                    })
                                   ) : (
-                                    <span className="text-xs font-medium text-gray-900">
-                                      {getProductName({}, sale)}
-                                    </span>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-xs font-medium text-gray-900">
+                                        {getProductName({}, sale)}
+                                      </span>
+                                      {(() => {
+                                        // Get quantity from sale level for subscriptions without sales_details
+                                        const quantity = sale.quantity || 1
+                                        return quantity > 1 ? (
+                                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                            {quantity}x
+                                          </Badge>
+                                        ) : null
+                                      })()}
+                                    </div>
                                   )}
                                 </div>
                               </TableCell>
@@ -7987,6 +8062,9 @@ const Sales = ({ userId }) => {
                               planName = 'Gym Session'
                             }
 
+                            // Get quantity from sale (now available at sale level from API) or default to 1
+                            const quantity = sale.quantity || (sale.sales_details && sale.sales_details.length > 0 ? sale.sales_details[0].quantity : null) || sale.detail_quantity || 1
+
                             return (
                               <TableRow key={sale.id} className="hover:bg-gray-50/50 transition-colors border-b border-gray-100">
                                 <TableCell className="font-medium text-gray-900 py-3">
@@ -8010,7 +8088,9 @@ const Sales = ({ userId }) => {
                                 </TableCell>
                                 <TableCell className="py-3">
                                   {planName ? (
-                                    <Badge variant="secondary" className="font-medium">{planName}</Badge>
+                                    <Badge variant="secondary" className="font-medium">
+                                      {planName}{quantity > 1 ? ` x${quantity}` : ''}
+                                    </Badge>
                                   ) : (
                                     <span className="text-xs text-muted-foreground">N/A</span>
                                   )}

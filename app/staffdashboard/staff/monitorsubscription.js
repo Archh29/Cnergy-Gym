@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useState, useEffect, useContext } from "react"
+import React, { useState, useEffect, useContext } from "react"
 import axios from "axios"
 // No UserContext available - will get userId from props
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -96,10 +96,10 @@ const SubscriptionMonitor = ({ userId }) => {
   const [showUserDropdown, setShowUserDropdown] = useState(false)
   const [userActiveDiscount, setUserActiveDiscount] = useState(null) // Track user's active discount
   const [userActiveSubscriptions, setUserActiveSubscriptions] = useState([]) // Track user's active subscriptions
-  const [planQuantity, setPlanQuantity] = useState(1) // Quantity for advance payment/renewal (months for Plan 2/3, years for Plan 1)
+  const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [subscriptionForm, setSubscriptionForm] = useState({
     user_id: "",
-    plan_id: "",
+    selected_plan_ids: [], // Changed from plan_id to array
     start_date: new Date().toISOString().split("T")[0],
     discount_type: "none",
     amount_paid: "",
@@ -144,7 +144,7 @@ const SubscriptionMonitor = ({ userId }) => {
             config[key] = {
               name: discount.name,
               discount: discount.amount,
-              description: discount.amount === 0 ? "No discount" : `${discount.name} - ₱${discount.amount} off`
+              description: discount.amount === 0 ? "No discount" : `${discount.name} - &#8369;${discount.amount} off`
             }
           })
           return config
@@ -156,8 +156,8 @@ const SubscriptionMonitor = ({ userId }) => {
     // Fallback to default discounts with original keys
     return {
       regular: { name: "Regular Rate", discount: 0, description: "No discount" },
-      student: { name: "Student Discount", discount: 150, description: "Student discount - ₱150 off" },
-      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - ₱200 off" }
+      student: { name: "Student Discount", discount: 150, description: "Student discount - &#8369;150 off" },
+      senior: { name: "Senior Discount", discount: 200, description: "Senior citizen discount - &#8369;200 off" }
     }
   })
 
@@ -209,17 +209,10 @@ const SubscriptionMonitor = ({ userId }) => {
   const [transactionHistoryPlanFilter, setTransactionHistoryPlanFilter] = useState("all") // Filter by plan
   const transactionsPerPage = 5 // Show 5 transactions per page
 
-  useEffect(() => {
-    fetchAllData()
-    fetchSubscriptionPlans()
-    fetchAvailableUsers()
-    fetchGymSessionPlan()
-  }, [])
-
   // Fetch all sales for a user
   const fetchAllUserSales = async (userId) => {
     if (!userId) return []
-    
+
     try {
       const response = await axios.get(`${API_URL}?action=get-user-sales&user_id=${userId}`)
       if (response.data && response.data.success) {
@@ -237,12 +230,12 @@ const SubscriptionMonitor = ({ userId }) => {
   // Fetch all subscription history for a user (all plans)
   const fetchAllUserSubscriptionHistory = async (userId) => {
     if (!userId) return []
-    
+
     try {
       // Get all unique plan IDs for this user from current subscriptions
       const userSubscriptions = viewDetailsModal.subscriptions || []
       const uniquePlanIds = [...new Set(userSubscriptions.map(sub => sub.plan_id).filter(Boolean))]
-      
+
       // Fetch history for each plan
       const allHistory = []
       for (const planId of uniquePlanIds) {
@@ -256,14 +249,14 @@ const SubscriptionMonitor = ({ userId }) => {
           console.error(`Error fetching subscription history for user ${userId}, plan ${planId}:`, error)
         }
       }
-      
+
       // Sort by start_date descending (most recent first)
       allHistory.sort((a, b) => {
         const dateA = new Date(a.start_date || 0)
         const dateB = new Date(b.start_date || 0)
         return dateB - dateA
       })
-      
+
       setAllUserSubscriptionHistory(allHistory)
       return allHistory
     } catch (error) {
@@ -272,10 +265,33 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
+  useEffect(() => {
+    fetchAllData()
+    fetchSubscriptionPlans()
+    fetchAvailableUsers()
+    fetchGymSessionPlan()
+
+    // Check for navigation parameters from home page
+    const navParams = localStorage.getItem('adminNavParams')
+    if (navParams) {
+      try {
+        const params = JSON.parse(navParams)
+        if (params.tab) {
+          setActiveTab(params.tab)
+        }
+        // Clear the navigation params after using them
+        localStorage.removeItem('adminNavParams')
+        localStorage.removeItem('adminNavTarget')
+      } catch (e) {
+        console.error('Error parsing nav params:', e)
+      }
+    }
+  }, [])
+
   // Fetch guest session sales
   const fetchGuestSessionSales = async (guestSessionId) => {
     if (!guestSessionId) return []
-    
+
     try {
       const response = await axios.get(`${API_URL}?action=get-guest-sales&guest_session_id=${guestSessionId}`)
       if (response.data && response.data.success) {
@@ -310,8 +326,6 @@ const SubscriptionMonitor = ({ userId }) => {
     } else if (!viewDetailsModal.open) {
       setAllUserSubscriptionHistory([])
       setAllUserSales([])
-      setTransactionHistoryPage(1)
-      setTransactionHistoryPlanFilter("all")
     }
   }, [viewDetailsModal.open, viewDetailsModal.user])
 
@@ -380,7 +394,51 @@ const SubscriptionMonitor = ({ userId }) => {
     try {
       const response = await axios.get(API_URL)
       if (response.data.success && Array.isArray(response.data.subscriptions)) {
-        setSubscriptions(response.data.subscriptions)
+        console.log("🔍 DEBUG - All subscriptions received:", response.data.subscriptions.length)
+        if (response.data.subscriptions.length > 0) {
+          const firstSub = response.data.subscriptions[0]
+          console.log("🔍 DEBUG - First subscription:")
+          console.log("  - ID:", firstSub.id)
+          console.log("  - created_at:", firstSub.created_at)
+          console.log("  - start_date:", firstSub.start_date)
+          console.log("  - end_date:", firstSub.end_date)
+          console.log("  - plan_name:", firstSub.plan_name)
+          console.log("  - status_name:", firstSub.status_name)
+          console.log("  - Full object:", firstSub)
+        }
+        // Sort by subscription ID descending (newest first) - IDs are auto-incrementing so higher ID = newer
+        // Use created_at as secondary sort for consistency
+        const sortedSubscriptions = [...response.data.subscriptions].sort((a, b) => {
+          // Primary sort: by created_at descending (newest first)
+          // This ensures guest sessions and subscriptions are sorted by actual creation time
+          const dateA = new Date(a.created_at || a.start_date || '1970-01-01').getTime()
+          const dateB = new Date(b.created_at || b.start_date || '1970-01-01').getTime()
+
+          if (dateB !== dateA) {
+            return dateB - dateA
+          }
+
+          // Secondary sort: by ID descending (higher ID = newer)
+          // Extract numeric ID (handle guest_ prefix and guest_session_id)
+          let idA = 0
+          let idB = 0
+
+          // For guest sessions, use guest_session_id (the actual database ID)
+          if (a.is_guest_session || a.subscription_type === 'guest') {
+            idA = a.guest_session_id ? parseInt(a.guest_session_id) : (a.id && typeof a.id === 'string' && a.id.startsWith('guest_') ? parseInt(a.id.replace('guest_', '')) : 0)
+          } else {
+            idA = isNaN(parseInt(a.id)) ? parseInt(a.id?.toString().replace('guest_', '') || '0') : parseInt(a.id)
+          }
+
+          if (b.is_guest_session || b.subscription_type === 'guest') {
+            idB = b.guest_session_id ? parseInt(b.guest_session_id) : (b.id && typeof b.id === 'string' && b.id.startsWith('guest_') ? parseInt(b.id.replace('guest_', '')) : 0)
+          } else {
+            idB = isNaN(parseInt(b.id)) ? parseInt(b.id?.toString().replace('guest_', '') || '0') : parseInt(b.id)
+          }
+
+          return idB - idA
+        })
+        setSubscriptions(sortedSubscriptions)
       }
     } catch (error) {
       console.error("Error fetching subscriptions:", error)
@@ -391,6 +449,18 @@ const SubscriptionMonitor = ({ userId }) => {
     try {
       const response = await axios.get(`${API_URL}?action=pending`)
       if (response.data.success) {
+        console.log("🔍 DEBUG - Pending subscriptions received:", response.data.data?.length || 0)
+        if (response.data.data && response.data.data.length > 0) {
+          const firstPending = response.data.data[0]
+          console.log("🔍 DEBUG - First pending subscription:")
+          console.log("  - Subscription ID:", firstPending.subscription_id)
+          console.log("  - created_at:", firstPending.created_at)
+          console.log("  - start_date:", firstPending.start_date)
+          console.log("  - end_date:", firstPending.end_date)
+          console.log("  - plan_name:", firstPending.plan_name)
+          console.log("  - status_name:", firstPending.status_name)
+          console.log("  - Full object:", firstPending)
+        }
         setPendingSubscriptions(response.data.data)
       }
     } catch (error) {
@@ -639,6 +709,16 @@ const SubscriptionMonitor = ({ userId }) => {
     setActionLoading("create")
     setMessage(null)
 
+    // Validate that at least one plan is selected
+    if (!subscriptionForm.selected_plan_ids || subscriptionForm.selected_plan_ids.length === 0) {
+      setMessage({
+        type: "error",
+        text: "Please select at least one plan."
+      })
+      setActionLoading(null)
+      return
+    }
+
     // Ensure userId is available
     let currentUserId = userId
     if (!currentUserId) {
@@ -679,39 +759,238 @@ const SubscriptionMonitor = ({ userId }) => {
         return
       }
 
-      // Auto-generate receipt number
+      // Auto-generate base receipt number (will be made unique for each subscription)
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const hour = String(now.getHours()).padStart(2, '0');
       const minute = String(now.getMinutes()).padStart(2, '0');
-      const autoReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
+      const baseReceiptNumber = `SUB${year}${month}${day}${hour}${minute}`;
 
-      const requestData = {
-        user_id: subscriptionForm.user_id,
-        plan_id: subscriptionForm.plan_id,
-        start_date: subscriptionForm.start_date,
-        amount_paid: totalAmount,
-        quantity: planQuantity || 1, // Quantity for advance payment/renewal
-        payment_method: paymentMethod,
-        amount_received: receivedAmount,
-        change_given: change,
-        receipt_number: autoReceiptNumber,
-        reference_number: paymentMethod === "gcash" ? referenceNumber : null, // Include reference number for GCash
-        notes: "",
-        created_by: "Admin",
-        staff_id: currentUserId, // Use current user ID with fallback
-        transaction_status: "confirmed", // CRITICAL: Mark transaction as confirmed
-        discount_type: subscriptionForm.discount_type // Include discount type
-      };
+      // Create subscriptions for each selected plan
+      // First, calculate total expected amount and payment distribution
+      let totalExpectedAmount = 0
+      const planDataArray = subscriptionForm.selected_plan_ids.map((planIdStr) => {
+        const planId = parseInt(planIdStr)
+        if (isNaN(planId) || planId <= 0) {
+          throw new Error(`Invalid plan ID: ${planIdStr}`)
+        }
 
-      console.log("Sending request data:", requestData);
-      console.log("staff_id being sent:", requestData.staff_id);
+        const quantity = planQuantities[planIdStr] || 1
+        if (quantity <= 0) {
+          throw new Error(`Invalid quantity for plan ${planIdStr}: ${quantity}`)
+        }
 
-      const response = await axios.post(`${API_URL}?action=create_manual`, requestData);
+        // Calculate price for this specific plan
+        const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+        if (!plan) {
+          throw new Error(`Plan not found: ${planIdStr}`)
+        }
+        let planPrice = parseFloat(plan?.price || 0)
+        if (isNaN(planPrice) || planPrice <= 0) {
+          throw new Error(`Invalid price for plan ${planIdStr}: ${planPrice}`)
+        }
 
-      if (response.data.success) {
+        // Apply discount if applicable
+        let discountType = subscriptionForm.discount_type || "none"
+        if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
+          discountType = userActiveDiscount
+          planPrice = calculateDiscountedPrice(planPrice, discountType)
+        }
+
+        const planTotalPrice = planPrice * quantity
+        totalExpectedAmount += planTotalPrice
+
+        return {
+          planId,
+          planIdStr,
+          quantity,
+          planTotalPrice,
+          discountType
+        }
+      })
+
+      // Distribute payment proportionally across subscriptions
+      const subscriptionPromises = planDataArray.map(async (planData, index) => {
+        const { planId, planIdStr, quantity, planTotalPrice, discountType } = planData
+
+        // Generate unique receipt number for each subscription
+        // Add seconds, milliseconds, and index to ensure uniqueness
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+        const uniqueReceiptNumber = `${baseReceiptNumber}${seconds}${milliseconds}${String(index + 1).padStart(2, '0')}`;
+
+        // Calculate proportional amount received for this plan
+        let amountReceivedForPlan = planTotalPrice
+        let changeForPlan = 0
+
+        if (paymentMethod === 'cash') {
+          // Distribute amount_received proportionally
+          const proportion = planTotalPrice / totalExpectedAmount
+          amountReceivedForPlan = receivedAmount * proportion
+
+          // Apply all change to the first subscription
+          if (index === 0) {
+            changeForPlan = change
+            // Adjust amount_received to account for change
+            amountReceivedForPlan = planTotalPrice + change
+          }
+        } else {
+          // For GCash, amount received equals amount paid (no change)
+          amountReceivedForPlan = planTotalPrice
+        }
+
+        // Validate required fields before creating request
+        if (!subscriptionForm.user_id || !subscriptionForm.start_date) {
+          throw new Error(`Missing required fields: user_id=${subscriptionForm.user_id}, start_date=${subscriptionForm.start_date}`)
+        }
+
+        // Ensure all values are properly set (not null/undefined)
+        const requestData = {
+          user_id: String(subscriptionForm.user_id || '').trim(),
+          plan_id: parseInt(planId),
+          start_date: String(subscriptionForm.start_date || '').trim(),
+          amount_paid: String(planTotalPrice.toFixed(2)), // Keep as string
+          quantity: parseInt(quantity) || 1,
+          payment_method: String(paymentMethod || 'cash'),
+          amount_received: String(amountReceivedForPlan.toFixed(2)),
+          change_given: String(changeForPlan.toFixed(2)),
+          receipt_number: uniqueReceiptNumber,
+          reference_number: paymentMethod === "gcash" ? (String(referenceNumber || '').trim() || null) : null,
+          notes: String(subscriptionForm.notes || ''),
+          created_by: "Admin",
+          staff_id: parseInt(currentUserId) || null,
+          transaction_status: "confirmed",
+          discount_type: String(discountType || "none")
+        };
+
+        // Double-check required fields are not empty
+        if (!requestData.user_id || requestData.user_id === '') {
+          throw new Error(`user_id is required but got: "${subscriptionForm.user_id}"`)
+        }
+        if (!requestData.plan_id || isNaN(requestData.plan_id)) {
+          throw new Error(`plan_id is required but got: "${planId}"`)
+        }
+        if (!requestData.start_date || requestData.start_date === '') {
+          throw new Error(`start_date is required but got: "${subscriptionForm.start_date}"`)
+        }
+        if (!requestData.amount_paid || requestData.amount_paid === '' || parseFloat(requestData.amount_paid) <= 0) {
+          throw new Error(`amount_paid is required and must be > 0 but got: "${planTotalPrice}"`)
+        }
+
+        console.log(`Creating subscription ${index + 1}/${planDataArray.length}:`, JSON.stringify(requestData, null, 2));
+
+        // Validate all required fields are present and not empty
+        const requiredFields = ['user_id', 'plan_id', 'start_date', 'amount_paid'];
+        const missingFields = requiredFields.filter(field => !requestData[field] || requestData[field] === '');
+        if (missingFields.length > 0) {
+          console.error(`Missing required fields for subscription ${index + 1}:`, missingFields);
+          throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+        }
+
+        return axios.post(`${API_URL}?action=create_manual`, requestData).catch(error => {
+          console.error(`=== Error creating subscription ${index + 1} ===`);
+          console.error("Status:", error?.response?.status);
+          console.error("Status Text:", error?.response?.statusText);
+          console.error("Response Data:", JSON.stringify(error?.response?.data, null, 2));
+          console.error("Request Data:", JSON.stringify(requestData, null, 2));
+          if (error?.response?.data?.error) {
+            console.error("Backend Error:", error.response.data.error);
+          }
+          if (error?.response?.data?.message) {
+            console.error("Backend Message:", error.response.data.message);
+          }
+          console.error("=====================================");
+          throw error;
+        });
+      });
+
+      console.log("Creating multiple subscriptions:", planDataArray.length);
+
+      const responses = await Promise.allSettled(subscriptionPromises);
+
+      // Check for any failures
+      const failures = responses.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && (!r.value?.data || !r.value.data.success)));
+
+      if (failures.length > 0) {
+        console.error("Subscription creation failures:", failures);
+        const errorMessages = failures.map((f, idx) => {
+          let errorMsg = "Unknown error";
+          let errorDetails = null;
+
+          if (f.status === 'rejected') {
+            const error = f.reason;
+            errorDetails = {
+              error: error,
+              response: error?.response,
+              responseData: error?.response?.data,
+              status: error?.response?.status,
+              statusText: error?.response?.statusText
+            };
+
+            errorMsg = error?.response?.data?.error ||
+              error?.response?.data?.message ||
+              error?.message ||
+              (error?.response?.status ? `HTTP ${error.response.status}: ${error.response.statusText || 'Bad Request'}` : '') ||
+              "Unknown error";
+
+            // Log detailed error information
+            console.error(`=== Subscription ${idx + 1} Failed ===`);
+            console.error("Error Message:", errorMsg);
+            console.error("Request Data:", JSON.stringify(planDataArray[idx], null, 2));
+            console.error("Response Status:", error?.response?.status);
+            console.error("Response Data:", JSON.stringify(error?.response?.data, null, 2));
+            console.error("Response Headers:", error?.response?.headers);
+            if (error?.response?.data?.error) {
+              console.error("Backend Error:", error.response.data.error);
+            }
+            if (error?.response?.data?.message) {
+              console.error("Backend Message:", error.response.data.message);
+            }
+            console.error("Full Error Object:", error);
+            console.error("================================");
+          } else {
+            // Fulfilled but API returned error
+            errorDetails = {
+              response: f.value?.data,
+              success: f.value?.data?.success
+            };
+
+            errorMsg = f.value?.data?.error || f.value?.data?.message || "API returned error";
+
+            console.error(`Subscription ${idx + 1} failed (API error):`, {
+              error: errorMsg,
+              errorDetails: errorDetails,
+              request: planDataArray[idx],
+              fullResponse: f.value
+            });
+          }
+          return errorMsg;
+        });
+        throw new Error(`Failed to create ${failures.length} subscription(s): ${errorMessages.join(", ")}`);
+      }
+
+      // All succeeded
+      const allSuccess = true;
+
+      // Extract successful responses
+      const successfulResponses = responses.filter(r => r.status === 'fulfilled' && r.value?.data?.success);
+
+      if (successfulResponses.length === 0) {
+        throw new Error("All subscription creation requests failed");
+      }
+
+      // Use the first successful response for confirmation data
+      const response = successfulResponses[0].value;
+
+      console.log("Response received:", response.data);
+      if (response.data.data) {
+        console.log("Response payment_method:", response.data.data.payment_method);
+      }
+
+      if (allSuccess) {
+        // Use the first response for confirmation data, but include count of subscriptions
         const confirmationData = {
           ...response.data.data,
           change_given: change,
@@ -719,13 +998,14 @@ const SubscriptionMonitor = ({ userId }) => {
           payment_method: paymentMethod,
           amount_received: receivedAmount,
           receipt_number: response.data.data.receipt_number,
-          reference_number: paymentMethod === "gcash" ? referenceNumber : null
+          reference_number: paymentMethod === "gcash" ? referenceNumber : null,
+          subscription_count: planDataArray.length
         };
 
         setConfirmationData(confirmationData);
         setShowConfirmationModal(true);
       } else {
-        throw new Error(response.data.message || "Failed to create manual subscription");
+        throw new Error("Failed to create one or more subscriptions");
       }
 
       setIsCreateSubscriptionDialogOpen(false)
@@ -737,6 +1017,99 @@ const SubscriptionMonitor = ({ userId }) => {
       setMessage({ type: "error", text: errorMessage })
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  // Create Guest Session Handler
+  const handleCreateGuestSession = async () => {
+    if (!guestSessionForm.guest_name || !gymSessionPlan) {
+      setMessage({
+        type: "error",
+        text: "Please fill in the guest name"
+      })
+      return
+    }
+
+    const totalAmount = parseFloat(gymSessionPlan.price) || 0
+    const receivedAmount = parseFloat(guestSessionForm.amount_received) || totalAmount
+
+    if (guestSessionForm.payment_method === "cash" && receivedAmount < totalAmount) {
+      setMessage({
+        type: "error",
+        text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`
+      })
+      return
+    }
+
+    setGuestSessionLoading(true)
+    setMessage(null)
+
+    try {
+      // Get current user ID
+      let currentUserId = userId
+      if (!currentUserId) {
+        const storedUserId = sessionStorage.getItem("user_id")
+        if (storedUserId) {
+          currentUserId = parseInt(storedUserId)
+        }
+      }
+
+      const change = Math.max(0, receivedAmount - totalAmount)
+
+      // Keep payment method as is (cash or digital for GCash)
+      const apiPaymentMethod = guestSessionForm.payment_method
+
+      // Call guest session API
+      const response = await axios.post('https://api.cnergy.site/guest_session_admin.php', {
+        action: 'create_guest_session',
+        guest_name: guestSessionForm.guest_name,
+        guest_type: 'walkin',
+        staff_id: currentUserId,
+        amount_paid: totalAmount,
+        payment_method: apiPaymentMethod,
+        amount_received: receivedAmount,
+        gcash_reference: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : "",
+        reference_number: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : null,
+        notes: guestSessionForm.notes || ""
+      }, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.data.success) {
+        const transactionData = {
+          ...response.data,
+          change_given: change,
+          total_amount: totalAmount,
+          payment_method: guestSessionForm.payment_method,
+          amount_received: receivedAmount,
+          guest_name: guestSessionForm.guest_name,
+          reference_number: response.data.reference_number || guestSessionForm.gcash_reference || null
+        }
+
+        setLastGuestTransaction(transactionData)
+        setShowGuestReceipt(true)
+
+        // Reset form and close dialog
+        setGuestSessionForm({
+          guest_name: "",
+          payment_method: "cash",
+          amount_received: "",
+          gcash_reference: "",
+          notes: ""
+        })
+        setIsCreateGuestSessionDialogOpen(false)
+        await fetchAllData()
+      } else {
+        throw new Error(response.data.message || "Failed to create guest session")
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create guest session"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setGuestSessionLoading(false)
     }
   }
 
@@ -815,185 +1188,119 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
-  // Create Guest Session Handler
-  const handleCreateGuestSession = async () => {
-    if (!guestSessionForm.guest_name || !gymSessionPlan) {
-      setMessage({
-        type: "error",
-        text: "Please fill in the guest name"
-      })
-      return
-    }
-
-    const totalAmount = parseFloat(gymSessionPlan.price) || 0
-    const receivedAmount = parseFloat(guestSessionForm.amount_received) || totalAmount
-
-    if (guestSessionForm.payment_method === "cash" && receivedAmount < totalAmount) {
-      setMessage({
-        type: "error",
-        text: `Insufficient Payment: Amount received (₱${receivedAmount.toFixed(2)}) is less than required amount (₱${totalAmount.toFixed(2)}). Please collect ₱${(totalAmount - receivedAmount).toFixed(2)} more.`
-      })
-      return
-    }
-
-    setGuestSessionLoading(true)
-    setMessage(null)
-
-    try {
-      // Get current user ID
-      let currentUserId = userId
-      if (!currentUserId) {
-        const storedUserId = sessionStorage.getItem("user_id")
-        if (storedUserId) {
-          currentUserId = parseInt(storedUserId)
-        }
-      }
-
-      const change = Math.max(0, receivedAmount - totalAmount)
-
-      // Keep payment method as is (cash or digital for GCash)
-      const apiPaymentMethod = guestSessionForm.payment_method === "digital" ? "gcash" : "cash"
-
-      // Call guest session API
-      const response = await axios.post('https://api.cnergy.site/guest_session_admin.php', {
-        action: 'create_guest_session',
-        guest_name: guestSessionForm.guest_name,
-        guest_type: 'walkin',
-        staff_id: currentUserId,
-        amount_paid: totalAmount,
-        payment_method: apiPaymentMethod,
-        amount_received: receivedAmount,
-        gcash_reference: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : "",
-        reference_number: (apiPaymentMethod === "gcash" || apiPaymentMethod === "digital") ? (guestSessionForm.gcash_reference || "") : null,
-        notes: guestSessionForm.notes || ""
-      }, {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      })
-
-      if (response.data.success) {
-        const transactionData = {
-          ...response.data,
-          change_given: change,
-          total_amount: totalAmount,
-          payment_method: guestSessionForm.payment_method,
-          amount_received: receivedAmount,
-          guest_name: guestSessionForm.guest_name
-        }
-
-        setLastGuestTransaction(transactionData)
-        setShowGuestReceipt(true)
-
-        // Reset form and close dialog
-        setGuestSessionForm({
-          guest_name: "",
-          payment_method: "cash",
-          amount_received: "",
-          notes: ""
-        })
-        setIsCreateGuestSessionDialogOpen(false)
-        await fetchAllData()
-      } else {
-        throw new Error(response.data.message || "Failed to create guest session")
-      }
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to create guest session"
-      setMessage({ type: "error", text: errorMessage })
-    } finally {
-      setGuestSessionLoading(false)
-    }
-  }
-
   const resetSubscriptionForm = () => {
     setSubscriptionForm({
       user_id: "",
-      plan_id: "",
+      selected_plan_ids: [],
       start_date: new Date().toISOString().split("T")[0],
-      discount_type: "regular",
+      discount_type: "none",
       amount_paid: "",
       payment_method: "cash",
       amount_received: "",
       notes: ""
     })
     setSelectedUserInfo(null)
+    setUserSearchQuery("")
+    setShowUserDropdown(false)
+    setUserActiveDiscount(null)
+    setPlanQuantities({})
     // Reset to all plans
     fetchSubscriptionPlans()
   }
 
-  const handlePlanChange = (planId) => {
-    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == planId) : null
-    if (selectedPlan) {
-      // Reset quantity when plan changes
-      setPlanQuantity(1)
-      
-      // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
-      // Plan ID 5 includes Monthly Access Premium, so discount should apply
-      let discountType = "none"
-      if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
-        discountType = userActiveDiscount
-      }
-      
-      // Calculate price: base price * quantity, then apply discount
-      const basePrice = parseFloat(selectedPlan.price || 0)
-      const totalPrice = basePrice * planQuantity
-      const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
-      
-      setSubscriptionForm((prev) => ({
-        ...prev,
-        plan_id: planId,
-        discount_type: discountType,
-        amount_paid: discountedPrice.toString(),
-      }))
-    }
-  }
-  
-  // Handle quantity change for advance payment/renewal
-  const handleQuantityChange = (quantity) => {
-    const qty = Math.max(1, parseInt(quantity) || 1)
-    setPlanQuantity(qty)
-    
-    if (subscriptionForm.plan_id) {
-      const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-      if (selectedPlan) {
-        // Apply discount for plan_id 2, 3, or 5 (Monthly plans or package with monthly access) if user has active discount
-        // Plan ID 5 includes Monthly Access Premium, so discount should apply
-        let discountType = subscriptionForm.discount_type || "none"
-        if ((subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5) && userActiveDiscount) {
-          discountType = userActiveDiscount
-        }
-        
-        // Calculate price: base price * quantity, then apply discount
-        const basePrice = parseFloat(selectedPlan.price || 0)
-        const totalPrice = basePrice * qty
-        const discountedPrice = calculateDiscountedPrice(totalPrice, discountType)
-        
-        setSubscriptionForm((prev) => ({
-          ...prev,
-          discount_type: discountType,
-          amount_paid: discountedPrice.toString(),
+  // Handle plan selection (toggle) for multiple plans
+  const handlePlanToggle = (planId) => {
+    const planIdStr = planId.toString()
+    setSubscriptionForm(prev => {
+      const currentPlans = prev.selected_plan_ids || []
+      const isSelected = currentPlans.includes(planIdStr)
+
+      let newPlans
+      if (isSelected) {
+        // Remove plan
+        newPlans = currentPlans.filter(id => id !== planIdStr)
+        // Remove quantity for this plan
+        setPlanQuantities(prevQty => {
+          const newQty = { ...prevQty }
+          delete newQty[planIdStr]
+          return newQty
+        })
+      } else {
+        // Add plan
+        newPlans = [...currentPlans, planIdStr]
+        // Set default quantity to 1 for this plan
+        setPlanQuantities(prevQty => ({
+          ...prevQty,
+          [planIdStr]: 1
         }))
       }
-    }
+
+      // Calculate total price for all selected plans
+      let totalPrice = 0
+      newPlans.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const quantity = planQuantities[selectedPlanId] || (selectedPlanId === planIdStr ? 1 : (planQuantities[selectedPlanId] || 1))
+
+          let pricePerUnit = basePrice
+          // Apply discount if applicable
+          let discountType = prev.discount_type || "none"
+          if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
+            discountType = userActiveDiscount
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+          }
+
+          totalPrice += pricePerUnit * quantity
+        }
+      })
+
+      return {
+        ...prev,
+        selected_plan_ids: newPlans,
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
   }
 
-  const handleDiscountTypeChange = (discountType) => {
-    const selectedPlan = subscriptionPlans && Array.isArray(subscriptionPlans) ? subscriptionPlans.find((plan) => plan.id == subscriptionForm.plan_id) : null
-    if (selectedPlan) {
-      const discountedPrice = calculateDiscountedPrice(selectedPlan.price, discountType)
-      setSubscriptionForm((prev) => ({
+  // Handle quantity change for a specific plan
+  const handleQuantityChange = (planId, value) => {
+    const quantity = Math.max(1, parseInt(value) || 1)
+    const planIdStr = planId.toString()
+
+    setPlanQuantities(prev => ({
+      ...prev,
+      [planIdStr]: quantity
+    }))
+
+    // Recalculate total price
+    setSubscriptionForm(prev => {
+      let totalPrice = 0
+      prev.selected_plan_ids.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        if (plan) {
+          const basePrice = parseFloat(plan.price || 0)
+          const qty = selectedPlanId === planIdStr ? quantity : (planQuantities[selectedPlanId] || 1)
+
+          let pricePerUnit = basePrice
+          // Apply discount if applicable
+          let discountType = prev.discount_type || "none"
+          if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
+            discountType = userActiveDiscount
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+          }
+
+          totalPrice += pricePerUnit * qty
+        }
+      })
+
+      return {
         ...prev,
-        discount_type: discountType,
-        amount_paid: discountedPrice.toString(),
-      }))
-    } else {
-      setSubscriptionForm((prev) => ({
-        ...prev,
-        discount_type: discountType,
-      }))
-    }
+        amount_paid: totalPrice.toFixed(2)
+      }
+    })
   }
+
 
   // Fetch user's active discount eligibility
   const fetchUserDiscount = async (userId) => {
@@ -1020,13 +1327,13 @@ const SubscriptionMonitor = ({ userId }) => {
       setSubscriptionForm((prev) => ({
         ...prev,
         user_id: userId,
-        plan_id: "", // Reset plan selection
+        selected_plan_ids: [], // Reset plan selection
         discount_type: "none", // Reset discount
         amount_paid: "", // Reset amount
       }))
       setUserActiveDiscount(null) // Reset discount
       setUserActiveSubscriptions([]) // Reset active subscriptions
-      setPlanQuantity(1) // Reset quantity
+      setPlanQuantities({}) // Reset quantities
 
       if (userId) {
         // Find the user from availableUsers array
@@ -1040,10 +1347,10 @@ const SubscriptionMonitor = ({ userId }) => {
           setSelectedUserInfo(null)
           setUserSearchQuery("")
         }
-        
+
         // Fetch user's active discount
         await fetchUserDiscount(userId)
-        
+
         // Fetch available plans for the user
         await fetchAvailablePlansForUser(userId)
       } else {
@@ -1090,10 +1397,22 @@ const SubscriptionMonitor = ({ userId }) => {
       case "declined":
         return "bg-red-100 text-red-800 border-red-200"
       case "expired":
-        return "bg-gray-100 text-gray-800 border-gray-200"
+        return "bg-red-100 text-red-700 border-red-300"
       default:
         return "bg-blue-100 text-blue-800 border-blue-200"
     }
+  }
+
+  // Calculate quantity/months based on payment amount
+  const calculateMonths = (subscription) => {
+    const amountPaid = parseFloat(subscription.amount_paid || subscription.discounted_price || 0)
+    const planPrice = parseFloat(subscription.price || 0)
+
+    if (planPrice > 0 && amountPaid > 0) {
+      const months = Math.floor(amountPaid / planPrice)
+      return months > 0 ? months : 1
+    }
+    return 1 // Default to 1 month if calculation fails
   }
 
   const getStatusIcon = (status) => {
@@ -1105,6 +1424,8 @@ const SubscriptionMonitor = ({ userId }) => {
       case "active":
         return <CheckCircle className="h-3 w-3" />
       case "declined":
+        return <XCircle className="h-3 w-3" />
+      case "expired":
         return <XCircle className="h-3 w-3" />
       default:
         return <Clock className="h-3 w-3" />
@@ -1126,9 +1447,11 @@ const SubscriptionMonitor = ({ userId }) => {
 
   const formatDateTime = (dateString) => {
     if (!dateString) return "N/A"
+    // Handle both date strings and timestamps
     const date = new Date(dateString)
     if (isNaN(date.getTime())) return "N/A"
-    // Format date and time in Philippines timezone
+
+    // Format in Philippines timezone
     return date.toLocaleString("en-US", {
       timeZone: "Asia/Manila",
       year: "numeric",
@@ -1192,18 +1515,6 @@ const SubscriptionMonitor = ({ userId }) => {
     const fname = (subscription.fname || '').trim()
     const lname = (subscription.lname || '').trim()
     return `${fname[0] || ''}${lname[0] || ''}`.toUpperCase()
-  }
-
-  // Calculate months from subscription
-  const calculateMonths = (subscription) => {
-    const amountPaid = parseFloat(subscription.amount_paid || subscription.discounted_price || 0)
-    const planPrice = parseFloat(subscription.price || 0)
-
-    if (planPrice > 0 && amountPaid > 0) {
-      const months = Math.floor(amountPaid / planPrice)
-      return months > 0 ? months : 1
-    }
-    return 1 // Default to 1 month if calculation fails
   }
 
   // Calculate days left until end date
@@ -1275,10 +1586,10 @@ const SubscriptionMonitor = ({ userId }) => {
     return { type: 'days', days: diffDays }
   }
 
-  // Helper function to check if subscription matches month/year filter (must be defined before use)
+  // Helper function to check if subscription matches month/year filter
   const matchesMonthYearFilter = (subscription) => {
     if (!subscription.start_date) return true
-    
+
     const subscriptionDate = new Date(subscription.start_date)
     const today = new Date()
     const currentMonth = today.getMonth()
@@ -1326,7 +1637,18 @@ const SubscriptionMonitor = ({ userId }) => {
     // Year filter logic
     if (yearFilter !== "all") {
       if (yearFilter === "this_year") {
-        if (subscriptionDate.getFullYear() !== currentYear) {
+        // For "this_year", show subscriptions that:
+        // 1. Start in current year, OR
+        // 2. Are active (end_date is today or future), OR
+        // 3. Start in future year but are relevant to current year
+        const subscriptionYear = subscriptionDate.getFullYear()
+        const isCurrentYear = subscriptionYear === currentYear
+        const today = new Date()
+        // Include if subscription is active (end_date is today or future)
+        const isActive = subscription.end_date && new Date(subscription.end_date) >= today
+        // Include if subscription starts in current year or future (upcoming subscriptions)
+        const isRelevant = subscriptionYear >= currentYear
+        if (!isCurrentYear && !isActive && !isRelevant) {
           return false
         }
       } else if (yearFilter === "last_year") {
@@ -1346,6 +1668,125 @@ const SubscriptionMonitor = ({ userId }) => {
     }
 
     return true
+  }
+
+  // Group subscriptions by user_id
+  const groupSubscriptionsByUser = (subscriptionList) => {
+    const grouped = {}
+
+    subscriptionList.forEach((subscription) => {
+      // For guest sessions, use guest_name as the key (they don't have user_id)
+      const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
+        ? `guest_${subscription.guest_name || subscription.id}`
+        : subscription.user_id || `unknown_${subscription.id}`
+
+      if (!grouped[key]) {
+        grouped[key] = {
+          user_id: subscription.user_id,
+          fname: subscription.fname,
+          mname: subscription.mname,
+          lname: subscription.lname,
+          email: subscription.email,
+          guest_name: subscription.guest_name,
+          is_guest_session: subscription.is_guest_session,
+          subscription_type: subscription.subscription_type,
+          session_code: subscription.session_code || null,
+          guest_session_id: subscription.guest_session_id || null,
+          subscriptions: []
+        }
+      } else {
+        // Update session_code if it's not set but available in this subscription
+        if (!grouped[key].session_code && subscription.session_code) {
+          grouped[key].session_code = subscription.session_code
+        }
+        // Update guest_session_id if it's not set but available in this subscription
+        if (!grouped[key].guest_session_id && subscription.guest_session_id) {
+          grouped[key].guest_session_id = subscription.guest_session_id
+        }
+      }
+
+      grouped[key].subscriptions.push(subscription)
+    })
+
+    // Convert to array and calculate totals
+    const userArray = Object.values(grouped).map((user) => {
+      // Calculate total paid across all subscriptions
+      const totalPaid = user.subscriptions.reduce((sum, sub) => {
+        return sum + (parseFloat(sub.total_paid) || 0)
+      }, 0)
+
+      // Get the earliest start date and latest end date
+      const startDates = user.subscriptions.map(s => new Date(s.start_date)).filter(d => !isNaN(d))
+      const endDates = user.subscriptions.map(s => new Date(s.end_date)).filter(d => !isNaN(d))
+
+      const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null
+      const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null
+
+      // Get the newest created_at and subscription ID for sorting
+      // Use created_at as primary sort since guest sessions and subscriptions have different ID ranges
+      let newestCreatedAt = null
+      let newestSubscriptionId = 0
+
+      user.subscriptions.forEach(sub => {
+        // Track newest created_at (primary sort)
+        const createdAt = sub.created_at || sub.start_date
+        if (createdAt) {
+          const date = new Date(createdAt).getTime()
+          if (!newestCreatedAt || date > newestCreatedAt) {
+            newestCreatedAt = date
+          }
+        }
+
+        // Extract numeric ID (handle guest_ prefix and guest_session_id) for secondary sort
+        let id = 0
+        if (sub.is_guest_session || sub.subscription_type === 'guest') {
+          // For guest sessions, prioritize guest_session_id (the actual database ID)
+          if (sub.guest_session_id) {
+            id = parseInt(sub.guest_session_id) || 0
+          } else if (sub.id && typeof sub.id === 'string' && sub.id.startsWith('guest_')) {
+            // Fallback: extract from 'guest_123' format
+            id = parseInt(sub.id.replace('guest_', '')) || 0
+          } else {
+            id = parseInt(sub.id) || 0
+          }
+        } else {
+          // For regular subscriptions, use the subscription ID
+          id = isNaN(parseInt(sub.id)) ? parseInt(sub.id?.toString().replace('guest_', '') || '0') : parseInt(sub.id)
+        }
+
+        if (id > newestSubscriptionId) {
+          newestSubscriptionId = id
+        }
+      })
+
+      return {
+        ...user,
+        total_paid: totalPaid,
+        earliest_start_date: earliestStart,
+        latest_end_date: latestEnd,
+        subscription_count: user.subscriptions.length,
+        newest_created_at: newestCreatedAt, // Primary sort
+        newest_subscription_id: newestSubscriptionId // Secondary sort
+      }
+    })
+
+    // Sort by newest created_at descending (newest accounts first)
+    // This ensures guest sessions and subscriptions are sorted by actual creation time
+    userArray.sort((a, b) => {
+      // Primary sort: by created_at (newest first)
+      const dateA = a.newest_created_at || 0
+      const dateB = b.newest_created_at || 0
+
+      if (dateB !== dateA) {
+        return dateB - dateA
+      }
+
+      // Secondary sort: by subscription ID (higher ID = newer)
+      // Guest sessions use guest_session_id, regular subscriptions use subscription id
+      return b.newest_subscription_id - a.newest_subscription_id
+    })
+
+    return userArray
   }
 
   // Get analytics - filter by plan if planFilter is set
@@ -1445,7 +1886,7 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
-      
+
       // Apply subscription type filter
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1459,10 +1900,10 @@ const SubscriptionMonitor = ({ userId }) => {
       if (!matchesMonthYearFilter(s)) return false
 
       // Check if subscription is cancelled
-      return s.status_name?.toLowerCase() === "cancelled" || 
-             s.display_status?.toLowerCase() === "cancelled" ||
-             s.status_name?.toLowerCase() === "canceled" ||
-             s.display_status?.toLowerCase() === "canceled"
+      return s.status_name?.toLowerCase() === "cancelled" ||
+        s.display_status?.toLowerCase() === "cancelled" ||
+        s.status_name?.toLowerCase() === "canceled" ||
+        s.display_status?.toLowerCase() === "canceled"
     })
   }
 
@@ -1542,7 +1983,18 @@ const SubscriptionMonitor = ({ userId }) => {
         const currentYear = today.getFullYear()
 
         if (yearFilter === "this_year") {
-          matchesYear = subscriptionDate.getFullYear() === currentYear
+          // For "this_year", show subscriptions that:
+          // 1. Start in current year, OR
+          // 2. Are active (end_date is in current year or future), OR
+          // 3. Start in future year but are relevant to current year
+          const subscriptionYear = subscriptionDate.getFullYear()
+          const isCurrentYear = subscriptionYear === currentYear
+          const today = new Date()
+          // Include if subscription is active (end_date is today or future)
+          const isActive = subscription.end_date && new Date(subscription.end_date) >= today
+          // Include if subscription starts in current year or future (upcoming subscriptions)
+          const isRelevant = subscriptionYear >= currentYear
+          matchesYear = isCurrentYear || isActive || isRelevant
         } else if (yearFilter === "last_year") {
           matchesYear = subscriptionDate.getFullYear() === currentYear - 1
         } else if (yearFilter === "last_last_year") {
@@ -1588,8 +2040,12 @@ const SubscriptionMonitor = ({ userId }) => {
 
     return (subscriptions || []).filter((s) => {
       const endDate = new Date(s.end_date)
-      return endDate >= today && endDate <= sevenDaysFromNow && 
-             (s.display_status === "Active" || s.status_name === "approved")
+      // Check if subscription is already expired (end_date is in the past)
+      if (endDate < now) return false
+
+      endDate.setHours(0, 0, 0, 0)
+      return endDate >= today && endDate <= sevenDaysFromNow &&
+        (s.display_status === "Active" || s.status_name === "approved")
     })
   }
 
@@ -1607,114 +2063,6 @@ const SubscriptionMonitor = ({ userId }) => {
     })
   }
 
-  // Group subscriptions by user_id
-  const groupSubscriptionsByUser = (subscriptionList) => {
-    const grouped = {}
-    
-    subscriptionList.forEach((subscription) => {
-      // For guest sessions, use guest_name as the key (they don't have user_id)
-      const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
-        ? `guest_${subscription.guest_name || subscription.id}`
-        : subscription.user_id || `unknown_${subscription.id}`
-      
-      if (!grouped[key]) {
-        grouped[key] = {
-          user_id: subscription.user_id,
-          fname: subscription.fname,
-          mname: subscription.mname,
-          lname: subscription.lname,
-          email: subscription.email,
-          guest_name: subscription.guest_name,
-          is_guest_session: subscription.is_guest_session,
-          subscription_type: subscription.subscription_type,
-          subscriptions: []
-        }
-      }
-      
-      grouped[key].subscriptions.push(subscription)
-    })
-    
-    // Convert to array and calculate totals
-    const userArray = Object.values(grouped).map((user) => {
-      // Calculate total paid across all subscriptions
-      const totalPaid = user.subscriptions.reduce((sum, sub) => {
-        return sum + (parseFloat(sub.total_paid) || 0)
-      }, 0)
-      
-      // Get the earliest start date and latest end date
-      const startDates = user.subscriptions.map(s => new Date(s.start_date)).filter(d => !isNaN(d))
-      const endDates = user.subscriptions.map(s => new Date(s.end_date)).filter(d => !isNaN(d))
-      
-      const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null
-      const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null
-      
-      // Get the newest created_at and subscription ID for sorting
-      // Use created_at as primary sort since guest sessions and subscriptions have different ID ranges
-      let newestCreatedAt = null
-      let newestSubscriptionId = 0
-      
-      user.subscriptions.forEach(sub => {
-        // Track newest created_at (primary sort)
-        const createdAt = sub.created_at || sub.start_date
-        if (createdAt) {
-          const date = new Date(createdAt).getTime()
-          if (!newestCreatedAt || date > newestCreatedAt) {
-            newestCreatedAt = date
-          }
-        }
-        
-        // Extract numeric ID (handle guest_ prefix and guest_session_id) for secondary sort
-        let id = 0
-        if (sub.is_guest_session || sub.subscription_type === 'guest') {
-          // For guest sessions, prioritize guest_session_id (the actual database ID)
-          if (sub.guest_session_id) {
-            id = parseInt(sub.guest_session_id) || 0
-          } else if (sub.id && typeof sub.id === 'string' && sub.id.startsWith('guest_')) {
-            // Fallback: extract from 'guest_123' format
-            id = parseInt(sub.id.replace('guest_', '')) || 0
-          } else {
-            id = parseInt(sub.id) || 0
-          }
-        } else {
-          // For regular subscriptions, use the subscription ID
-          id = isNaN(parseInt(sub.id)) ? parseInt(sub.id?.toString().replace('guest_', '') || '0') : parseInt(sub.id)
-        }
-        
-        if (id > newestSubscriptionId) {
-          newestSubscriptionId = id
-        }
-      })
-      
-      return {
-        ...user,
-        total_paid: totalPaid,
-        earliest_start_date: earliestStart,
-        latest_end_date: latestEnd,
-        subscription_count: user.subscriptions.length,
-        newest_created_at: newestCreatedAt, // Primary sort
-        newest_subscription_id: newestSubscriptionId // Secondary sort
-      }
-    })
-    
-    // Sort by newest created_at descending (newest accounts first)
-    // This ensures guest sessions and subscriptions are sorted by actual creation time
-    userArray.sort((a, b) => {
-      // Primary sort: by created_at (newest first)
-      const dateA = a.newest_created_at || 0
-      const dateB = b.newest_created_at || 0
-      
-      if (dateB !== dateA) {
-        return dateB - dateA
-      }
-      
-      // Secondary sort: by subscription ID (higher ID = newer)
-      // Guest sessions use guest_session_id, regular subscriptions use subscription id
-      return b.newest_subscription_id - a.newest_subscription_id
-    })
-    
-    return userArray
-  }
-
   // Pagination helper function
   const getPaginatedData = (data, tabKey) => {
     const page = currentPage[tabKey] || 1
@@ -1728,7 +2076,18 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }
 
-  // Get filtered subscriptions by plan and subscription type for analytics
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage({
+      pending: 1,
+      active: 1,
+      upcoming: 1,
+      expired: 1,
+      cancelled: 1
+    })
+  }, [searchQuery, statusFilter, planFilter, subscriptionTypeFilter, monthFilter, yearFilter])
+
+  // Get analytics - filtered by plan and subscription type if filters are set
   const getFilteredSubscriptionsByPlan = () => {
     let filtered = subscriptions || []
 
@@ -1774,19 +2133,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const filteredByPlan = getFilteredSubscriptionsByPlan()
   const filteredPendingByPlan = getFilteredPendingByPlan()
 
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage({
-      pending: 1,
-      active: 1,
-      upcoming: 1,
-      expired: 1,
-      cancelled: 1,
-      all: 1
-    })
-  }, [searchQuery, statusFilter, planFilter, subscriptionTypeFilter, monthFilter, yearFilter])
-
-  // Get analytics - use grouped subscriptions to count users
+  // Get analytics - use grouped subscriptions to count users (matching staff dashboard)
   // For total, group ALL subscriptions (not filtered) to get the total user count
   // For active/expiring/expired/cancelled, use unfiltered data for accurate counts
   const groupedAllSubscriptions = groupSubscriptionsByUser(subscriptions || [])
@@ -1794,7 +2141,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const groupedExpiring = groupSubscriptionsByUser(getAllExpiringSoonSubscriptions())
   const groupedExpired = groupSubscriptionsByUser(getAllExpiredSubscriptions())
   const groupedCancelled = groupSubscriptionsByUser(getAllCancelledSubscriptions())
-  
+
   const analytics = {
     total: groupedAllSubscriptions.length,
     pending: filteredPendingByPlan?.length || 0,
@@ -1820,27 +2167,7 @@ const SubscriptionMonitor = ({ userId }) => {
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-        <Card
-          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group cursor-pointer"
-          onClick={() => setActiveTab("all")}
-        >
-          <CardContent className="flex items-center p-6 relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
-              <Users className="h-6 w-6 text-slate-700" />
-            </div>
-            <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                {planFilter !== "all" ? "Total Requests" : "Total Requests"}
-              </p>
-              <p className="text-3xl font-bold text-slate-900">{analytics.total}</p>
-              {planFilter !== "all" && (
-                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("active")}
@@ -1895,7 +2222,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card 
+        <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-gray-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("cancelled")}
         >
@@ -1943,7 +2270,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <CardDescription className="text-slate-600 font-medium">Monitor subscription status and track upcoming expirations</CardDescription>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <Button onClick={fetchAllData} variant="outline" size="sm" className="h-9 w-9 p-0 shadow-md hover:shadow-lg hover:bg-slate-50 transition-all border-slate-300" title="Refresh">
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -2003,10 +2330,7 @@ const SubscriptionMonitor = ({ userId }) => {
         </CardHeader>
         <CardContent className="p-6 bg-slate-50/30">
           <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="active" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
-              <TabsTrigger value="all" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-100 data-[state=active]:to-slate-50 data-[state=active]:shadow-md data-[state=active]:text-slate-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-slate-200">
-                All ({analytics.total})
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
               <TabsTrigger value="active" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-50 data-[state=active]:to-green-100/50 data-[state=active]:shadow-md data-[state=active]:text-green-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-green-200">
                 Active ({analytics.active})
               </TabsTrigger>
@@ -2020,100 +2344,6 @@ const SubscriptionMonitor = ({ userId }) => {
                 Cancelled ({analytics.cancelled})
               </TabsTrigger>
             </TabsList>
-
-            <TabsContent value="pending" className="space-y-4">
-              {!pendingSubscriptions || pendingSubscriptions.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No pending subscription requests</p>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Plan</TableHead>
-                        <TableHead>Requested</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {pendingSubscriptions.map((subscription) => {
-                        console.log("Rendering subscription row:", subscription);
-                        return (
-                          <TableRow key={subscription.subscription_id}>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-10 w-10">
-                                  <AvatarFallback>
-                                    {subscription.fname[0]}
-                                    {subscription.lname[0]}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div>
-                                  <div className="font-medium">
-                                    {`${subscription.fname} ${subscription.mname || ""} ${subscription.lname}`}
-                                  </div>
-                                  <div className="text-sm text-muted-foreground">{subscription.email}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{subscription.plan_name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {formatCurrency(subscription.price)}/month
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="text-sm">{formatDateTime(subscription.created_at)}</div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="flex items-center gap-1 w-fit">
-                                <Clock className="h-3 w-3" />
-                                {subscription.status_name === 'pending_approval' ? 'Pending' : subscription.status_name}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    console.log("Approve button clicked for subscription:", subscription);
-                                    handleApprove(subscription.subscription_id);
-                                  }}
-                                  disabled={actionLoading === subscription.subscription_id}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  {actionLoading === subscription.subscription_id ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CheckCircle className="h-4 w-4" />
-                                  )}
-                                  Approve
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => setDeclineDialog({ open: true, subscription })}
-                                  disabled={actionLoading === subscription.subscription_id}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  Decline
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </TabsContent>
 
             <TabsContent value="active" className="space-y-4 mt-6">
               {/* Filters */}
@@ -2239,73 +2469,72 @@ const SubscriptionMonitor = ({ userId }) => {
                         </TableHeader>
                         <TableBody>
                           {activePagination.paginated.map((user) => {
-                              // Get the primary subscription (most recent or active)
-                              const primarySub = user.subscriptions[0]
-                              
-                              return (
-                                <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                                  <TableCell>
-                                    <div className="flex items-center gap-3">
-                                      <Avatar className="h-10 w-10">
-                                        <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
-                                        <AvatarFallback>
-                                          {primarySub ? getAvatarInitials(primarySub) : 'U'}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div>
-                                        <div className="font-medium flex items-center gap-2">
-                                          {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
-                                          {user.is_guest_session && (
-                                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                              Guest
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
-                                        </div>
+                            // Get the primary subscription (most recent or active)
+                            const primarySub = user.subscriptions[0]
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
                                       </div>
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-right pr-0">
-                                    {primarySub && (
-                                      <div className="flex justify-end">
-                                        <Badge
-                                          className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
-                                        >
-                                          {getStatusIcon(primarySub.status_name)}
-                                          {primarySub.display_status || primarySub.status_name}
-                                        </Badge>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right pl-1">
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right pr-0">
+                                  {primarySub && (
                                     <div className="flex justify-end">
-                                      <Button
-                                        variant="default"
-                                        size="sm"
-                                      onClick={() => {
-                                        setViewDetailsModal({
-                                          open: true,
-                                          user: user,
-                                          subscriptions: user.subscriptions
-                                        })
-                                      }}
-                                        className="h-9 px-4 text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                      <Badge
+                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
                                       >
-                                        <Eye className="h-4 w-4" />
-                                        View Details
-                                      </Button>
+                                        {getStatusIcon(primarySub.status_name)}
+                                        {primarySub.display_status || primarySub.status_name}
+                                      </Badge>
                                     </div>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })}
+                                      className="h-9 px-4 text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      View Details
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
-
-                    {/* Pagination */}
+                    {/* Pagination Controls */}
                     {groupedActive.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
@@ -2466,13 +2695,14 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableBody>
                           {expiringPagination.paginated.map((user) => {
                             const primarySub = user.subscriptions[0]
-                            
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
                                     <Avatar className="h-10 w-10">
-                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
                                       <AvatarFallback>
                                         {primarySub ? getAvatarInitials(primarySub) : 'U'}
                                       </AvatarFallback>
@@ -2529,8 +2759,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         </TableBody>
                       </Table>
                     </div>
-
-                    {/* Pagination */}
+                    {/* Pagination Controls */}
                     {groupedExpiring.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
@@ -2601,7 +2830,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
@@ -2691,7 +2920,9 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableBody>
                           {expiredPagination.paginated.map((user) => {
                             const primarySub = user.subscriptions[0]
-                            
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
@@ -2789,98 +3020,7 @@ const SubscriptionMonitor = ({ userId }) => {
               })()}
             </TabsContent>
 
-            <TabsContent value="cancelled" className="space-y-4">
-              {(() => {
-                const filteredCancelled = filterSubscriptions(cancelledSubscriptions)
-                const groupedCancelled = groupSubscriptionsByUser(filteredCancelled)
-                const cancelledPagination = getPaginatedData(groupedCancelled, 'cancelled')
-
-                return groupedCancelled.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No cancelled subscriptions found</p>
-                  </div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead className="text-right">Status</TableHead>
-                          <TableHead className="text-right">Details</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {cancelledPagination.paginated.map((user) => {
-                          const primarySub = user.subscriptions[0]
-                          
-                          return (
-                            <TableRow key={user.user_id || `guest_${user.guest_name}`}>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="h-10 w-10">
-                                    <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
-                                    <AvatarFallback>
-                                      {primarySub ? getAvatarInitials(primarySub) : 'U'}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <div className="font-medium flex items-center gap-2">
-                                      {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
-                                      {user.is_guest_session && (
-                                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                          Guest
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
-                                    </div>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {primarySub && (
-                                  <div className="flex justify-end">
-                                    <Badge
-                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 w-fit"
-                                    >
-                                      {getStatusIcon(primarySub.status_name)}
-                                      {primarySub.display_status || primarySub.status_name}
-                                    </Badge>
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end">
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => {
-                                      setViewDetailsModal({
-                                        open: true,
-                                        user: user,
-                                        subscriptions: user.subscriptions
-                                      })
-                                    }}
-                                    className="h-9 px-4 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    View Details
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          )
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )
-              })()}
-            </TabsContent>
-
-            <TabsContent value="all" className="space-y-4 mt-6">
+            <TabsContent value="cancelled" className="space-y-4 mt-6">
               {/* Filters */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -2895,7 +3035,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
                       />
                     </div>
-                    <Label htmlFor="all-plan-filter">Plan:</Label>
+                    <Label htmlFor="cancelled-plan-filter">Plan:</Label>
                     <Select value={planFilter} onValueChange={(value) => {
                       setPlanFilter(value)
                       // Reset type filter when plan filter changes away from Gym Session/Day Pass
@@ -2903,7 +3043,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         setSubscriptionTypeFilter("all")
                       }
                     }}>
-                      <SelectTrigger className="w-40" id="all-plan-filter">
+                      <SelectTrigger className="w-40" id="cancelled-plan-filter">
                         <SelectValue placeholder="All Plans" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2915,13 +3055,13 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
-                        <Label htmlFor="all-subscription-type-filter">Type:</Label>
+                        <Label htmlFor="cancelled-subscription-type-filter">Type:</Label>
                         <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
-                          <SelectTrigger className="w-40" id="all-subscription-type-filter">
+                          <SelectTrigger className="w-40" id="cancelled-subscription-type-filter">
                             <SelectValue placeholder="All Types" />
                           </SelectTrigger>
                           <SelectContent>
@@ -2936,9 +3076,9 @@ const SubscriptionMonitor = ({ userId }) => {
 
                   {/* Right side - Month and Year Filters */}
                   <div className="flex items-center gap-4 flex-wrap">
-                    <Label htmlFor="all-month-filter">Month:</Label>
+                    <Label htmlFor="cancelled-month-filter">Month:</Label>
                     <Select value={monthFilter} onValueChange={setMonthFilter}>
-                      <SelectTrigger className="w-40" id="all-month-filter">
+                      <SelectTrigger className="w-40" id="cancelled-month-filter">
                         <SelectValue placeholder="All Months" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2960,9 +3100,9 @@ const SubscriptionMonitor = ({ userId }) => {
                       </SelectContent>
                     </Select>
 
-                    <Label htmlFor="all-year-filter">Year:</Label>
+                    <Label htmlFor="cancelled-year-filter">Year:</Label>
                     <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-32" id="all-year-filter">
+                      <SelectTrigger className="w-32" id="cancelled-year-filter">
                         <SelectValue placeholder="All Years" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2980,37 +3120,37 @@ const SubscriptionMonitor = ({ userId }) => {
                 </div>
               </div>
 
-              {/* All Subscriptions Table */}
+              {/* Cancelled Subscriptions Table */}
               {(() => {
-                const groupedAll = groupSubscriptionsByUser(filteredSubscriptions)
-                const allPagination = getPaginatedData(groupedAll, 'all')
+                const filteredCancelled = filterSubscriptions(cancelledSubscriptions)
+                const groupedCancelled = groupSubscriptionsByUser(filteredCancelled)
+                const cancelledPagination = getPaginatedData(groupedCancelled, 'cancelled')
 
-                return groupedAll.length === 0 ? (
+                return groupedCancelled.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>{!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}</p>
+                    <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No cancelled subscriptions found</p>
                   </div>
                 ) : (
                   <>
                     <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
                       <Table>
                         <TableHeader>
-                          <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
+                          <TableRow className="bg-gradient-to-r from-gray-50 to-gray-100/50 hover:bg-gray-100 border-b-2 border-gray-200">
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
                             <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {allPagination.paginated.map((user) => {
+                          {cancelledPagination.paginated.map((user) => {
                             const primarySub = user.subscriptions[0]
-                            
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
                                   <div className="flex items-center gap-3">
                                     <Avatar className="h-10 w-10">
-                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
                                       <AvatarFallback>
                                         {primarySub ? getAvatarInitials(primarySub) : 'U'}
                                       </AvatarFallback>
@@ -3034,7 +3174,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                   {primarySub && (
                                     <div className="flex justify-end">
                                       <Badge
-                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
+                                        className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
                                       >
                                         {getStatusIcon(primarySub.status_name)}
                                         {primarySub.display_status || primarySub.status_name}
@@ -3054,7 +3194,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                           subscriptions: user.subscriptions
                                         })
                                       }}
-                                      className="h-9 px-4 text-sm font-medium bg-slate-600 hover:bg-slate-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                      className="h-9 px-4 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                     >
                                       <Eye className="h-4 w-4" />
                                       View Details
@@ -3068,29 +3208,29 @@ const SubscriptionMonitor = ({ userId }) => {
                       </Table>
                     </div>
                     {/* Pagination Controls */}
-                    {filteredSubscriptions.length > 0 && (
+                    {groupedCancelled.length > 0 && (
                       <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
                         <div className="text-sm text-slate-500">
-                          {filteredSubscriptions.length} {filteredSubscriptions.length === 1 ? 'entry' : 'entries'} total
+                          {groupedCancelled.length} {groupedCancelled.length === 1 ? 'user' : 'users'} total
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.max(1, prev.all - 1) }))}
-                            disabled={allPagination.currentPage === 1}
+                            onClick={() => setCurrentPage(prev => ({ ...prev, cancelled: Math.max(1, prev.cancelled - 1) }))}
+                            disabled={cancelledPagination.currentPage === 1}
                             className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </Button>
                           <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
-                            Page {allPagination.currentPage} of {allPagination.totalPages}
+                            Page {cancelledPagination.currentPage} of {cancelledPagination.totalPages}
                           </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.min(allPagination.totalPages, prev.all + 1) }))}
-                            disabled={allPagination.currentPage === allPagination.totalPages}
+                            onClick={() => setCurrentPage(prev => ({ ...prev, cancelled: Math.min(cancelledPagination.totalPages, prev.cancelled + 1) }))}
+                            disabled={cancelledPagination.currentPage === cancelledPagination.totalPages}
                             className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <ChevronRight className="h-4 w-4" />
@@ -3102,6 +3242,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 )
               })()}
             </TabsContent>
+
           </Tabs>
         </CardContent>
       </Card>
@@ -3171,8 +3312,8 @@ const SubscriptionMonitor = ({ userId }) => {
                     </div>
                     {showUserDropdown && (
                       <>
-                        <div 
-                          className="fixed inset-0 z-10" 
+                        <div
+                          className="fixed inset-0 z-10"
                           onClick={() => setShowUserDropdown(false)}
                         />
                         <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -3183,7 +3324,7 @@ const SubscriptionMonitor = ({ userId }) => {
                               const email = (user.email || '').toLowerCase()
                               return fullName.includes(searchLower) || email.includes(searchLower)
                             })
-                            
+
                             if (filteredUsers.length === 0) {
                               return (
                                 <div className="p-3 text-sm text-gray-500 text-center">
@@ -3191,7 +3332,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               )
                             }
-                            
+
                             return filteredUsers.map((user) => (
                               <div
                                 key={user.id}
@@ -3219,7 +3360,10 @@ const SubscriptionMonitor = ({ userId }) => {
                 )}
               </div>
               <div className="space-y-2">
-                <Label className="text-sm text-gray-700 font-semibold">Plan Name</Label>
+                <Label className="text-sm text-gray-700 font-semibold">Select Plan(s)</Label>
+                <p className="text-xs text-gray-600">
+                  {currentSubscriptionId ? "Plan details for this subscription" : "You can select multiple plans to assign to this user"}
+                </p>
                 {currentSubscriptionId ? (
                   <Input
                     value={subscriptionForm.plan_name || 'Loading...'}
@@ -3228,71 +3372,79 @@ const SubscriptionMonitor = ({ userId }) => {
                     className="h-10 text-sm border border-gray-300 bg-gray-50"
                   />
                 ) : (
-                  <Select 
-                    value={subscriptionForm.plan_id} 
-                    onValueChange={handlePlanChange}
-                  >
-                    <SelectTrigger className="h-10 text-sm border border-gray-300">
-                      <SelectValue placeholder="Select a plan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subscriptionPlans.map((plan) => {
-                        const isAvailable = plan.is_available !== false
-                        const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
-                        return (
-                          <SelectItem 
-                            key={plan.id} 
-                            value={plan.id.toString()}
-                            disabled={!isAvailable}
-                            className={!isAvailable ? "opacity-50 cursor-not-allowed" : ""}
-                          >
-                            <div className="flex flex-col w-full">
-                              <div className="flex items-center justify-between w-full">
-                                <span>{plan.plan_name}</span>
-                                {isActivePlan && (
-                                  <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs ml-2">
-                                    Active
-                                  </Badge>
-                                )}
+                  <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                    {subscriptionPlans.map((plan) => {
+                      const isAvailable = plan.is_available !== false
+                      const planIdStr = plan.id.toString()
+                      const isSelected = subscriptionForm.selected_plan_ids?.includes(planIdStr) || false
+                      const quantity = planQuantities[planIdStr] || 1
+                      const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
+
+                      return (
+                        <div
+                          key={plan.id}
+                          className={`p-3 rounded-lg border-2 transition-all ${isSelected
+                            ? 'border-blue-400 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                            } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          onClick={(e) => {
+                            // Don't trigger if clicking on input field (quantity)
+                            if (e.target.type === 'number' || e.target.tagName === 'INPUT') {
+                              return
+                            }
+                            // Toggle the plan when clicking on the card
+                            if (isAvailable) {
+                              handlePlanToggle(plan.id)
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium text-gray-900 cursor-pointer">
+                                  {plan.plan_name}
+                                  {isActivePlan && (
+                                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300 text-xs ml-2">
+                                      Active
+                                    </Badge>
+                                  )}
+                                </Label>
+                                <span className="text-sm font-semibold text-gray-700">
+                                  ₱{parseFloat(plan.price || 0).toFixed(2)}
+                                </span>
                               </div>
                               {isActivePlan && isAvailable && (
-                                <span className="text-xs text-gray-600 mt-0.5">
+                                <p className="text-xs text-gray-600 mt-0.5">
                                   Renewal/Advance Payment - Will extend existing subscription
-                                </span>
+                                </p>
+                              )}
+                              {isSelected && (plan.id == 1 || plan.id == 2 || plan.id == 3) && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Label className="text-xs text-gray-600">
+                                    {plan.id == 1 ? "Years:" : "Months:"}
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="1"
+                                    value={quantity}
+                                    onChange={(e) => {
+                                      e.stopPropagation()
+                                      handleQuantityChange(plan.id, e.target.value)
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="h-8 w-20 text-xs border border-gray-300"
+                                  />
+                                </div>
                               )}
                             </div>
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
             </div>
-
-            {/* Quantity Input for Plan ID 1, 2, 3 (Advance Payment/Renewal) */}
-            {subscriptionForm.plan_id && (subscriptionForm.plan_id == 1 || subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3) && (
-              <div className="space-y-2">
-                <Label className="text-sm text-gray-700 font-semibold">
-                  {userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(subscriptionForm.plan_id))
-                    ? "Renewal/Advance Payment - How much to extend?"
-                    : "How much of the plan do you want to renew or advance payment?"}
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={planQuantity}
-                  onChange={(e) => handleQuantityChange(e.target.value)}
-                  placeholder="Enter quantity"
-                  className="h-10 text-sm border border-gray-300"
-                />
-                <p className="text-xs text-gray-500">
-                  {subscriptionForm.plan_id == 1 
-                    ? "Enter number of years for Gym Membership" 
-                    : "Enter number of months for Monthly Plan"}
-                </p>
-              </div>
-            )}
 
             {/* Second Row: Amount to Pay and Payment Method */}
             <div className="grid grid-cols-2 gap-4">
@@ -3364,16 +3516,15 @@ const SubscriptionMonitor = ({ userId }) => {
                       {userActiveSubscriptions.map((sub, index) => {
                         const endDate = new Date(sub.end_date)
                         const isExpiringSoon = endDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
-                        const isSelectedPlan = subscriptionForm.plan_id && parseInt(subscriptionForm.plan_id) === parseInt(sub.plan_id)
-                        
+                        const isSelectedPlan = subscriptionForm.selected_plan_ids?.some(pid => parseInt(pid) === parseInt(sub.plan_id))
+
                         return (
-                          <div 
+                          <div
                             key={index}
-                            className={`p-3 rounded-md border ${
-                              isSelectedPlan 
-                                ? 'bg-blue-50 border-blue-300' 
-                                : 'bg-white border-green-200'
-                            }`}
+                            className={`p-3 rounded-md border ${isSelectedPlan
+                              ? 'bg-blue-50 border-blue-300'
+                              : 'bg-white border-green-200'
+                              }`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
@@ -3411,16 +3562,15 @@ const SubscriptionMonitor = ({ userId }) => {
             {selectedUserInfo && userActiveDiscount && (
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-center gap-2">
-                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${
-                    userActiveDiscount === 'student' 
-                      ? 'bg-blue-100 text-blue-700 border border-blue-300' 
-                      : 'bg-purple-100 text-purple-700 border border-purple-300'
-                  }`}>
+                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${userActiveDiscount === 'student'
+                    ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                    : 'bg-purple-100 text-purple-700 border border-purple-300'
+                    }`}>
                     {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
                   </div>
                   <span className="text-sm text-gray-600">
-                    {subscriptionForm.plan_id == 2 || subscriptionForm.plan_id == 3 || subscriptionForm.plan_id == 5
-                      ? 'Discount will be automatically applied to this plan'
+                    {subscriptionForm.selected_plan_ids?.some(pid => pid == 2 || pid == 3 || pid == 5)
+                      ? 'Discount will be automatically applied to eligible plans'
                       : 'Discount is available for Monthly Access plans'}
                   </span>
                 </div>
@@ -3428,29 +3578,41 @@ const SubscriptionMonitor = ({ userId }) => {
             )}
 
             {/* Price Breakdown */}
-            {subscriptionForm.plan_id && (
+            {subscriptionForm.selected_plan_ids && subscriptionForm.selected_plan_ids.length > 0 && (
               <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <h4 className="text-gray-700 mb-2 text-sm font-semibold">Price Breakdown</h4>
                 <div className="text-sm text-gray-600 space-y-2">
-                  {(() => {
-                    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === subscriptionForm.plan_id)
+                  {subscriptionForm.selected_plan_ids.map((planIdStr, index) => {
+                    const selectedPlan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+                    if (!selectedPlan) return null
                     const planPrice = parseFloat(selectedPlan?.price || 0)
-                    const amountPaid = parseFloat(subscriptionForm.amount_paid || 0)
-                    const discount = discountConfig[subscriptionForm.discount_type]?.discount || 0
-                    const hasDiscount = subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && discount > 0
-                    
-                    // Calculate original total: base price * quantity
-                    const quantity = planQuantity || 1
+                    const quantity = planQuantities[planIdStr] || 1
+                    const planId = parseInt(planIdStr)
+
+                    // Apply discount if applicable
+                    let pricePerUnit = planPrice
+                    let discount = 0
+                    let hasDiscount = false
+                    if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
+                      discount = discountConfig[userActiveDiscount]?.discount || 0
+                      if (discount > 0) {
+                        hasDiscount = true
+                        pricePerUnit = calculateDiscountedPrice(planPrice, userActiveDiscount)
+                      }
+                    }
+
                     const originalTotal = planPrice * quantity
+                    const discountedTotal = pricePerUnit * quantity
 
                     return (
-                      <>
+                      <div key={planIdStr} className={index > 0 ? "border-t border-gray-300 pt-2 mt-2" : ""}>
+                        <div className="font-medium text-gray-900 mb-1">{selectedPlan.plan_name}</div>
                         <div className="flex justify-between">
                           <span>Original Price:</span>
                           <span className="font-medium text-gray-900">
                             {quantity > 1 ? (
                               <span>
-                                ₱{planPrice.toFixed(2)} × {quantity} {subscriptionForm.plan_id == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
+                                ₱{planPrice.toFixed(2)} × {quantity} {planId == 1 ? 'year' : 'month'}{quantity > 1 ? 's' : ''} = ₱{originalTotal.toFixed(2)}
                               </span>
                             ) : (
                               `₱${planPrice.toFixed(2)}`
@@ -3459,17 +3621,21 @@ const SubscriptionMonitor = ({ userId }) => {
                         </div>
                         {hasDiscount && (
                           <div className="flex justify-between text-blue-700">
-                            <span>Discount ({discountConfig[subscriptionForm.discount_type]?.name}):</span>
-                            <span className="font-medium">-₱{discount.toFixed(2)}</span>
+                            <span>Discount ({discountConfig[userActiveDiscount]?.name}):</span>
+                            <span className="font-medium">-₱{(discount * quantity).toFixed(2)}</span>
                           </div>
                         )}
-                        <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
-                          <span className="text-gray-900">Final Price:</span>
-                          <span className="text-gray-900">₱{amountPaid.toFixed(2)}</span>
+                        <div className="flex justify-between font-medium text-gray-900">
+                          <span>Plan Total:</span>
+                          <span>₱{discountedTotal.toFixed(2)}</span>
                         </div>
-                      </>
+                      </div>
                     )
-                  })()}
+                  })}
+                  <div className="flex justify-between font-semibold border-t border-gray-300 pt-2 mt-2">
+                    <span className="text-gray-900">Total Amount:</span>
+                    <span className="text-gray-900">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -3508,7 +3674,8 @@ const SubscriptionMonitor = ({ userId }) => {
                 actionLoading === "create" ||
                 !subscriptionForm.amount_paid ||
                 !subscriptionForm.user_id ||
-                !subscriptionForm.plan_id ||
+                !subscriptionForm.selected_plan_ids ||
+                subscriptionForm.selected_plan_ids.length === 0 ||
                 (paymentMethod === "cash" && (!amountReceived || parseFloat(amountReceived) < parseFloat(subscriptionForm.amount_paid))) ||
                 (paymentMethod === "gcash" && !referenceNumber.trim())
               }
@@ -3557,7 +3724,7 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 rounded-xl p-5 space-y-4 border border-gray-200">
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-sm font-medium text-gray-600">Member Name</span>
+                    <span className="text-sm font-medium text-gray-600">User Name</span>
                     <span className="text-sm font-semibold text-gray-900">{confirmationData.user_name}</span>
                   </div>
 
@@ -3625,6 +3792,53 @@ const SubscriptionMonitor = ({ userId }) => {
         </DialogContent>
       </Dialog>
 
+      {/* Decline Dialog */}
+      <Dialog open={declineDialog.open} onOpenChange={(open) => setDeclineDialog({ open, subscription: open ? declineDialog.subscription : null })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Decline Subscription</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for declining this subscription request
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Decline Reason</Label>
+              <Textarea
+                placeholder="Enter reason for declining..."
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeclineDialog({ open: false, subscription: null })
+                setDeclineReason("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDecline}
+              disabled={actionLoading === declineDialog.subscription?.subscription_id || !declineReason.trim()}
+            >
+              {actionLoading === declineDialog.subscription?.subscription_id ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Decline Subscription
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Guest Session Dialog */}
       <Dialog open={isCreateGuestSessionDialogOpen} onOpenChange={setIsCreateGuestSessionDialogOpen}>
         <DialogContent className="max-w-lg w-[95vw] overflow-x-hidden" hideClose>
@@ -3674,7 +3888,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "cash", amount_received: prev.payment_method === "cash" ? prev.amount_received : "" }))}
-                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "cash"
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "cash"
                     ? "border-gray-900 bg-gray-900 text-white shadow-md"
                     : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
                     }`}
@@ -3684,7 +3898,7 @@ const SubscriptionMonitor = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
-                  className={`h-9 rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "digital"
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "digital"
                     ? "border-gray-900 bg-gray-900 text-white shadow-md"
                     : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
                     }`}
@@ -3782,10 +3996,17 @@ const SubscriptionMonitor = ({ userId }) => {
                     <CheckCircle className="h-4 w-4 text-green-600" />
                     <p className="text-sm font-medium text-green-700">Transaction Completed Successfully</p>
                   </div>
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
-                    <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
-                  </div>
+                  {lastGuestTransaction.payment_method === "digital" && lastGuestTransaction.reference_number ? (
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <span className="text-xs font-medium text-gray-500">Reference:</span>
+                      <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.reference_number}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                      <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
+                    </div>
+                  )}
                   <p className="text-xs text-gray-500">
                     {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -3805,7 +4026,7 @@ const SubscriptionMonitor = ({ userId }) => {
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-200">
                     <span className="text-sm font-medium text-gray-600">Payment Method</span>
-                    <span className="text-sm font-semibold text-gray-900 capitalize">{lastGuestTransaction.payment_method}</span>
+                    <span className="text-sm font-semibold text-gray-900">{lastGuestTransaction.payment_method === "digital" ? "GCash" : lastGuestTransaction.payment_method.charAt(0).toUpperCase() + lastGuestTransaction.payment_method.slice(1)}</span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-t border-gray-200">
                     <span className="text-sm font-medium text-gray-600">Amount Paid</span>
@@ -3866,18 +4087,29 @@ const SubscriptionMonitor = ({ userId }) => {
               {viewDetailsModal.user && (
                 <div className="space-y-0.5">
                   <p className="text-base font-medium text-gray-900">
-                    {viewDetailsModal.user.is_guest_session 
-                      ? viewDetailsModal.user.guest_name 
+                    {viewDetailsModal.user.is_guest_session
+                      ? viewDetailsModal.user.guest_name
                       : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
                   </p>
                   {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
                     <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
                   )}
+                  {viewDetailsModal.user.is_guest_session && (
+                    (viewDetailsModal.user.session_code ||
+                      (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
+                      <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
+                        Session Code: <span className="text-gray-900">
+                          {viewDetailsModal.user.session_code ||
+                            (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
+                        </span>
+                      </p>
+                    )
+                  )}
                 </div>
               )}
             </div>
           </DialogHeader>
-          
+
           <div className="space-y-6 mt-6 px-0">
             {viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 ? (
               <div>
@@ -3894,122 +4126,134 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableHead className="font-semibold text-gray-700">Start Date</TableHead>
                         <TableHead className="font-semibold text-gray-700">End Date</TableHead>
                         <TableHead className="font-semibold text-gray-700">Remaining</TableHead>
+                        {viewDetailsModal.user?.is_guest_session && (
+                          <TableHead className="font-semibold text-gray-700">Session Code</TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                    {viewDetailsModal.subscriptions.map((subscription) => {
-                      const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                      const daysLeft = calculateDaysLeft(subscription.end_date)
-                      const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                      const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                      const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                      
-                      return (
-                        <TableRow key={subscription.id}>
-                          <TableCell className="font-medium">{subscription.plan_name}</TableCell>
-                          <TableCell>
-                            <Badge
-                              className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                            >
-                              {getStatusIcon(subscription.status_name)}
-                              {subscription.display_status || subscription.status_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{formatDate(subscription.start_date)}</TableCell>
-                          <TableCell>{formatDate(subscription.end_date)}</TableCell>
-                          <TableCell>
-                            {timeRemaining ? (() => {
-                              if (timeRemaining.type === 'expired_minutes') {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'expired_hours') {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'expired') {
-                                return (
-                                  <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                    {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                  </Badge>
-                                )
-                              }
-                              if (isWalkIn || isDay1Session) {
-                                if (timeRemaining.type === 'minutes') {
-                                  return (
-                                    <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                      {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'hours') {
-                                  return (
-                                    <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                      {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                }
-                                return (
-                                  <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                    {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'minutes') {
-                                return (
-                                  <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                    {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'hours') {
-                                return (
-                                  <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                    {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'years_months') {
-                                const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                return (
-                                  <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                    {yearText}{monthText} left
-                                  </Badge>
-                                )
-                              }
-                              if (timeRemaining.type === 'months_days') {
-                                const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
-                                return (
-                                  <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                    'bg-green-100 text-green-700 border-green-300'
-                                    }`}>
-                                    {monthText}{daysText} left
-                                  </Badge>
-                                )
-                              }
-                              return (
-                                <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                  'bg-green-100 text-green-700 border-green-300'
-                                  }`}>
-                                  {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                      {viewDetailsModal.subscriptions.map((subscription) => {
+                        const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                        const daysLeft = calculateDaysLeft(subscription.end_date)
+                        const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                        const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                        const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
+
+                        return (
+                          <React.Fragment key={subscription.id}>
+                            <TableRow>
+                              <TableCell className="font-medium">{subscription.plan_name}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                                >
+                                  {getStatusIcon(subscription.status_name)}
+                                  {subscription.display_status || subscription.status_name}
                                 </Badge>
-                              )
-                            })() : <span className="text-slate-500">N/A</span>}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
+                              </TableCell>
+                              <TableCell>{formatDate(subscription.start_date)}</TableCell>
+                              <TableCell>{formatDate(subscription.end_date)}</TableCell>
+                              <TableCell>
+                                {timeRemaining ? (() => {
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    return (
+                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'hours') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  return (
+                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                      'bg-green-100 text-green-700 border-green-300'
+                                      }`}>
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                    </Badge>
+                                  )
+                                })() : <span className="text-slate-500">N/A</span>}
+                              </TableCell>
+                              {viewDetailsModal.user?.is_guest_session && (
+                                <TableCell>
+                                  <span className="text-sm font-mono font-semibold text-gray-900">
+                                    {subscription.session_code || 'N/A'}
+                                  </span>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          </React.Fragment>
+                        )
+                      })}
+                    </TableBody>
                   </Table>
                 </div>
               </div>
@@ -4018,192 +4262,202 @@ const SubscriptionMonitor = ({ userId }) => {
                 <p className="text-gray-500">No active subscriptions</p>
               </div>
             )}
-            
+
             {/* Transaction History Section */}
             {allUserSales.length > 0 && (() => {
               // Get unique plan names for filter
               const uniquePlans = [...new Set(allUserSales.map(sale => sale.plan_name).filter(Boolean))]
-              
+
               // Sort sales by plan_id (Membership first), then by sale_date (latest first)
               const sortedSales = [...allUserSales].sort((a, b) => {
                 const planIdA = a.plan_id || 999 // Put items without plan_id at the end
                 const planIdB = b.plan_id || 999
-                
+
                 // First sort by plan_id (ascending - so plan 1 comes before plan 2)
                 if (planIdA !== planIdB) {
                   return planIdA - planIdB
                 }
-                
+
                 // If same plan_id, sort by date (descending - latest first)
                 const dateA = new Date(a.sale_date || 0).getTime()
                 const dateB = new Date(b.sale_date || 0).getTime()
                 return dateB - dateA
               })
-              
+
               // Filter transactions by selected plan
-              const filteredSales = transactionHistoryPlanFilter === "all" 
-                ? sortedSales 
+              const filteredSales = transactionHistoryPlanFilter === "all"
+                ? sortedSales
                 : sortedSales.filter(sale => sale.plan_name === transactionHistoryPlanFilter)
-              
+
               const totalFiltered = filteredSales.length
               const totalPages = Math.ceil(totalFiltered / transactionsPerPage)
-              
+
               return (
-              <div className="pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Transaction History</h3>
-                  <div className="flex items-center gap-3">
-                    <Select 
-                      value={transactionHistoryPlanFilter} 
-                      onValueChange={(value) => {
-                        setTransactionHistoryPlanFilter(value)
-                        setTransactionHistoryPage(1) // Reset to first page when filter changes
-                      }}
-                    >
-                      <SelectTrigger className="h-8 w-40 text-xs border-gray-300">
-                        <SelectValue placeholder="Filter by plan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Plans</SelectItem>
-                        {uniquePlans.map((planName) => (
-                          <SelectItem key={planName} value={planName}>
-                            {planName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {totalFiltered > transactionsPerPage && (
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
-                        Showing {((transactionHistoryPage - 1) * transactionsPerPage) + 1}-{Math.min(transactionHistoryPage * transactionsPerPage, totalFiltered)} of {totalFiltered}
-                      </span>
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Transaction History</h3>
+                    <div className="flex items-center gap-3">
+                      <Select
+                        value={transactionHistoryPlanFilter}
+                        onValueChange={(value) => {
+                          setTransactionHistoryPlanFilter(value)
+                          setTransactionHistoryPage(1) // Reset to first page when filter changes
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-40 text-xs border-gray-300">
+                          <SelectValue placeholder="Filter by plan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Plans</SelectItem>
+                          {uniquePlans.map((planName) => (
+                            <SelectItem key={planName} value={planName}>
+                              {planName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {totalFiltered > transactionsPerPage && (
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          Showing {((transactionHistoryPage - 1) * transactionsPerPage) + 1}-{Math.min(transactionHistoryPage * transactionsPerPage, totalFiltered)} of {totalFiltered}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {filteredSales.length > 0 ? (
+                      filteredSales
+                        .slice((transactionHistoryPage - 1) * transactionsPerPage, transactionHistoryPage * transactionsPerPage)
+                        .map((sale, idx) => {
+                          // Get payment method from multiple possible sources
+                          // Check payments array first, then sales table, then subscription table
+                          let paymentMethodRaw = 'cash'
+                          if (sale.payments && sale.payments.length > 0 && sale.payments[0].payment_method) {
+                            paymentMethodRaw = sale.payments[0].payment_method
+                          } else if (sale.payment_method) {
+                            paymentMethodRaw = sale.payment_method
+                          } else if (sale.payment_table_payment_method) {
+                            paymentMethodRaw = sale.payment_table_payment_method
+                          } else if (sale.subscription_payment_method) {
+                            paymentMethodRaw = sale.subscription_payment_method
+                          }
+                          const paymentMethod = paymentMethodRaw.toLowerCase()
+                          const quantity = sale.quantity || sale.detail_quantity || 1
+
+                          return (
+                            <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors">
+                              <div className="p-4">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      <span className="text-sm font-semibold text-gray-900">{sale.plan_name || 'N/A'}</span>
+                                      <span className="text-xs text-gray-600 font-medium">
+                                        {quantity}x
+                                      </span>
+                                      <span className="text-xs text-gray-500">
+                                        {sale.transaction_status || 'confirmed'}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">{formatDate(sale.sale_date)}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm text-gray-700">{formatCurrency(sale.total_amount || 0)}</p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">Payment</p>
+                                    <span className="text-xs text-gray-700 font-medium">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash' ? 'GCASH' : paymentMethod.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash'
+                                        ? 'Reference'
+                                        : 'Receipt'}
+                                    </p>
+                                    <p className="text-xs font-mono text-gray-700 break-all">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash'
+                                        ? (sale.reference_number || sale.payment_reference_number || (sale.payments && sale.payments.length > 0 ? sale.payments[0].reference_number : null) || sale.receipt_number || 'N/A')
+                                        : (sale.receipt_number || 'N/A')}
+                                    </p>
+                                  </div>
+                                  {sale.session_code && (
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">Session Code</p>
+                                      <p className="text-xs font-mono font-semibold text-gray-900">
+                                        {sale.session_code}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })) : (
+                      <div className="text-center py-8 text-gray-500 text-sm">
+                        No transactions found for selected plan
+                      </div>
                     )}
                   </div>
-                </div>
-                
-                <div className="space-y-3">
-                  {filteredSales.length > 0 ? (
-                    filteredSales
-                      .slice((transactionHistoryPage - 1) * transactionsPerPage, transactionHistoryPage * transactionsPerPage)
-                      .map((sale, idx) => {
-                    // Get payment method from multiple possible sources
-                    // Check payments array first, then sales table, then subscription table
-                    let paymentMethodRaw = 'cash'
-                    if (sale.payments && sale.payments.length > 0 && sale.payments[0].payment_method) {
-                        paymentMethodRaw = sale.payments[0].payment_method
-                    } else if (sale.payment_method) {
-                        paymentMethodRaw = sale.payment_method
-                    } else if (sale.payment_table_payment_method) {
-                        paymentMethodRaw = sale.payment_table_payment_method
-                    } else if (sale.subscription_payment_method) {
-                        paymentMethodRaw = sale.subscription_payment_method
-                    }
-                    const paymentMethod = paymentMethodRaw.toLowerCase()
-                    const quantity = sale.quantity || sale.detail_quantity || 1
-                    
-                    return (
-                      <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors">
-                        <div className="p-4">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="text-sm font-semibold text-gray-900">{sale.plan_name || 'N/A'}</span>
-                                <Badge variant="outline" className="text-xs">Qty: {quantity}</Badge>
-                                <span className="text-xs text-gray-500">
-                                  {sale.transaction_status || 'confirmed'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-1">{formatDate(sale.sale_date)}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-gray-700">{formatCurrency(sale.total_amount || 0)}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
-                            <div>
-                              <p className="text-xs text-gray-500 mb-1">Payment</p>
-                              <span className="text-xs text-gray-700 font-medium">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' ? 'GCASH' : paymentMethod.toUpperCase()}
+
+                  {/* Pagination Controls */}
+                  {totalFiltered > transactionsPerPage && (
+                    <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-gray-200">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransactionHistoryPage(prev => Math.max(1, prev - 1))}
+                        disabled={transactionHistoryPage === 1}
+                        className="h-8 px-3"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                          // Show first page, last page, current page, and pages around current
+                          if (
+                            page === 1 ||
+                            page === totalPages ||
+                            (page >= transactionHistoryPage - 1 && page <= transactionHistoryPage + 1)
+                          ) {
+                            return (
+                              <Button
+                                key={page}
+                                variant={transactionHistoryPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setTransactionHistoryPage(page)}
+                                className={`h-8 w-8 p-0 ${transactionHistoryPage === page ? 'bg-gray-900 text-white hover:bg-gray-800' : ''}`}
+                              >
+                                {page}
+                              </Button>
+                            )
+                          } else if (
+                            page === transactionHistoryPage - 2 ||
+                            page === transactionHistoryPage + 2
+                          ) {
+                            return (
+                              <span key={page} className="px-2 text-gray-400">
+                                ...
                               </span>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 mb-1">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
-                                  ? 'Reference' 
-                                  : 'Receipt'}
-                              </p>
-                              <p className="text-xs font-mono text-gray-700 break-all">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
-                                  ? (sale.reference_number || sale.payment_reference_number || (sale.payments && sale.payments.length > 0 ? sale.payments[0].reference_number : null) || sale.receipt_number || 'N/A')
-                                  : (sale.receipt_number || 'N/A')}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                            )
+                          }
+                          return null
+                        })}
                       </div>
-                    )
-                  })) : (
-                    <div className="text-center py-8 text-gray-500 text-sm">
-                      No transactions found for selected plan
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransactionHistoryPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={transactionHistoryPage >= totalPages}
+                        className="h-8 px-3"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
                   )}
                 </div>
-                
-                {/* Pagination Controls */}
-                {totalFiltered > transactionsPerPage && (
-                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-gray-200">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setTransactionHistoryPage(prev => Math.max(1, prev - 1))}
-                      disabled={transactionHistoryPage === 1}
-                      className="h-8 px-3"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                        // Show first page, last page, current page, and pages around current
-                        if (
-                          page === 1 ||
-                          page === totalPages ||
-                          (page >= transactionHistoryPage - 1 && page <= transactionHistoryPage + 1)
-                        ) {
-                          return (
-                            <Button
-                              key={page}
-                              variant={transactionHistoryPage === page ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => setTransactionHistoryPage(page)}
-                              className={`h-8 w-8 p-0 ${transactionHistoryPage === page ? 'bg-gray-900 text-white hover:bg-gray-800' : ''}`}
-                            >
-                              {page}
-                            </Button>
-                          )
-                        } else if (
-                          page === transactionHistoryPage - 2 ||
-                          page === transactionHistoryPage + 2
-                        ) {
-                          return (
-                            <span key={page} className="px-2 text-gray-400">
-                              ...
-                            </span>
-                          )
-                        }
-                        return null
-                      })}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setTransactionHistoryPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={transactionHistoryPage >= totalPages}
-                      className="h-8 px-3"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-              </div>
               )
             })()}
           </div>

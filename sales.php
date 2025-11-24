@@ -557,7 +557,7 @@ function getSalesData($pdo)
 	try {
 		$stmt->execute($mainParams);
 		$salesData = $stmt->fetchAll();
-		
+
 		// Debug: Log coaching sales found
 		$coachingSalesCount = 0;
 		$coachingSalesWithoutCoach = 0;
@@ -573,7 +573,7 @@ function getSalesData($pdo)
 			}
 		}
 		error_log("DEBUG sales_api: Total coaching sales found in query: " . $coachingSalesCount . ", Without coach info: " . $coachingSalesWithoutCoach);
-		
+
 		// Debug: Check if there are any coaching sales in the database at all
 		if ($coachingSalesCount == 0) {
 			$checkStmt = $pdo->query("SELECT COUNT(*) as cnt FROM sales WHERE sale_type = 'Coaching'");
@@ -888,6 +888,12 @@ function getSalesData($pdo)
 					$salesGrouped[$saleId]['subscription_amount_paid'] = !empty($row['subscription_amount_paid']) ? (float) $row['subscription_amount_paid'] : null;
 					$salesGrouped[$saleId]['subscription_discounted_price'] = !empty($row['subscription_discounted_price']) ? (float) $row['subscription_discounted_price'] : null;
 				}
+				// Also store quantity at sale level for easy access
+				if (!isset($salesGrouped[$saleId]['quantity']) && !empty($row['quantity'])) {
+					$salesGrouped[$saleId]['quantity'] = (int) $row['quantity'];
+				} elseif (!isset($salesGrouped[$saleId]['quantity'])) {
+					$salesGrouped[$saleId]['quantity'] = 1; // Default to 1 if not set
+				}
 			}
 
 			// Include guest_session_id in detail if present
@@ -965,7 +971,7 @@ function getSalesData($pdo)
 					$saleDate = $sale['sale_date'];
 					$coachStmt->execute([$sale['user_id'], $saleDate, $saleDate, $saleDate, $saleDate, $saleDate, $saleDate]);
 					$coachInfo = $coachStmt->fetch();
-					
+
 					// If still no match, try without expiration check (just find any approved assignment for this member)
 					if (!$coachInfo || !$coachInfo['coach_id']) {
 						$coachStmt2 = $pdo->prepare("
@@ -982,7 +988,7 @@ function getSalesData($pdo)
 						$coachStmt2->execute([$sale['user_id']]);
 						$coachInfo = $coachStmt2->fetch();
 					}
-					
+
 					if ($coachInfo && $coachInfo['coach_id']) {
 						$salesGrouped[$saleId]['coach_id'] = (int) $coachInfo['coach_id'];
 						$salesGrouped[$saleId]['coach_name'] = trim($coachInfo['coach_fullname'] ?? '');
@@ -991,7 +997,7 @@ function getSalesData($pdo)
 					error_log("Error fetching coach info for coaching sale $saleId: " . $e->getMessage());
 				}
 			}
-			
+
 			// Ensure coaching sales have at least one detail entry
 			if (empty($sale['sales_details'])) {
 				$detail = [
@@ -1836,7 +1842,7 @@ function createSale($pdo, $data)
 	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$changeGiven = $data['change_given'] ?? 0.00;
 	$notes = $data['notes'] ?? '';
-	
+
 	// Get reference number for GCash/digital payments (check both reference_number and gcash_reference)
 	$referenceNumber = $data['reference_number'] ?? $data['gcash_reference'] ?? null;
 	// Only set reference number if payment method is digital/gcash and reference is provided
@@ -2175,7 +2181,7 @@ function createPOSSale($pdo, $data)
 	$receiptNumber = generateReceiptNumber($pdo);
 	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$notes = $data['notes'] ?? '';
-	
+
 	// Get reference number for GCash/digital payments (check both reference_number and gcash_reference)
 	$referenceNumber = $data['reference_number'] ?? $data['gcash_reference'] ?? null;
 	// Only set reference number if payment method is digital/gcash and reference is provided
@@ -2432,9 +2438,9 @@ function getCoachSales($pdo)
 		WHERE s.sale_type = 'Coaching'
 		ORDER BY s.sale_date DESC
 	");
-	
+
 	$allSales = $salesStmt->fetchAll();
-	
+
 	// Group sales by coach
 	$coachSalesMap = [];
 	foreach ($allSales as $sale) {
@@ -2443,14 +2449,14 @@ function getCoachSales($pdo)
 			// If no coach assigned, skip or handle separately
 			continue;
 		}
-		
+
 		if (!isset($coachSalesMap[$coachUserId])) {
 			$coachSalesMap[$coachUserId] = [];
 		}
-		
+
 		// Format sale for frontend
 		$coachSalesMap[$coachUserId][] = [
-			'sale_id' => (int)$sale['sale_id'],
+			'sale_id' => (int) $sale['sale_id'],
 			'item' => $sale['member_name'] ?? 'N/A', // Use member name as item
 			'amount' => floatval($sale['amount']),
 			'sale_date' => $sale['sale_date'],
@@ -2458,7 +2464,7 @@ function getCoachSales($pdo)
 			'receipt_number' => $sale['receipt_number'],
 			'payment_method' => $sale['payment_method'] ?? 'cash',
 			'member_name' => $sale['member_name'] ?? 'N/A',
-			'member_id' => (int)$sale['user_id']
+			'member_id' => (int) $sale['user_id']
 		];
 	}
 
@@ -2466,7 +2472,7 @@ function getCoachSales($pdo)
 	$out = [];
 	foreach ($coaches as $coach) {
 		$coachUserId = $coach['user_id'];
-		
+
 		// Core profile info for frontend
 		$coachObj = [
 			'user_id' => $coach['user_id'],
@@ -2481,7 +2487,7 @@ function getCoachSales($pdo)
 		];
 		$out[] = $coachObj;
 	}
-	
+
 	echo json_encode(['coaches' => $out], JSON_UNESCAPED_UNICODE);
 }
 ?>

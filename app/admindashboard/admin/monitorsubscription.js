@@ -2040,6 +2040,10 @@ const SubscriptionMonitor = ({ userId }) => {
 
     return (subscriptions || []).filter((s) => {
       const endDate = new Date(s.end_date)
+      // Check if subscription is already expired (end_date is in the past)
+      if (endDate < now) return false
+      
+      endDate.setHours(0, 0, 0, 0)
       return endDate >= today && endDate <= sevenDaysFromNow && 
              (s.display_status === "Active" || s.status_name === "approved")
     })
@@ -2079,8 +2083,7 @@ const SubscriptionMonitor = ({ userId }) => {
       active: 1,
       upcoming: 1,
       expired: 1,
-      cancelled: 1,
-      all: 1
+      cancelled: 1
     })
   }, [searchQuery, statusFilter, planFilter, subscriptionTypeFilter, monthFilter, yearFilter])
 
@@ -2164,27 +2167,7 @@ const SubscriptionMonitor = ({ userId }) => {
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-        <Card 
-          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50 to-white overflow-hidden group cursor-pointer"
-          onClick={() => setActiveTab("all")}
-        >
-          <CardContent className="flex items-center p-6 relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-slate-100 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
-            <div className="p-4 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
-              <Users className="h-6 w-6 text-slate-700" />
-            </div>
-            <div className="flex-1 relative z-10">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-                {planFilter !== "all" ? "Total Requests" : "Total Requests"}
-              </p>
-              <p className="text-3xl font-bold text-slate-900">{analytics.total}</p>
-              {planFilter !== "all" && (
-                <p className="text-xs text-slate-500 mt-1 truncate">{planFilter}</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
         <Card 
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("active")}
@@ -2347,10 +2330,7 @@ const SubscriptionMonitor = ({ userId }) => {
         </CardHeader>
         <CardContent className="p-6 bg-slate-50/30">
           <Tabs value={activeTab} onValueChange={setActiveTab} defaultValue="active" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
-              <TabsTrigger value="all" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-slate-100 data-[state=active]:to-slate-50 data-[state=active]:shadow-md data-[state=active]:text-slate-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-slate-200">
-                All ({analytics.total})
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 h-12 bg-white p-1.5 rounded-xl border border-slate-200 shadow-inner">
               <TabsTrigger value="active" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-green-50 data-[state=active]:to-green-100/50 data-[state=active]:shadow-md data-[state=active]:text-green-900 font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 data-[state=active]:border data-[state=active]:border-green-200">
                 Active ({analytics.active})
               </TabsTrigger>
@@ -3263,229 +3243,6 @@ const SubscriptionMonitor = ({ userId }) => {
               })()}
             </TabsContent>
 
-            <TabsContent value="all" className="space-y-4 mt-6">
-              {/* Filters */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  {/* Left side - Search and Plan */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
-                      <Input
-                        placeholder="Search members, emails, or plans..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
-                      />
-                    </div>
-                    <Label htmlFor="plan-filter">Plan:</Label>
-                    <Select value={planFilter} onValueChange={(value) => {
-                      setPlanFilter(value)
-                      // Reset type filter when plan filter changes away from Gym Session/Day Pass
-                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
-                        setSubscriptionTypeFilter("all")
-                      }
-                    }}>
-                      <SelectTrigger className="w-40" id="plan-filter">
-                        <SelectValue placeholder="All Plans" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Plans</SelectItem>
-                        {subscriptionPlans.map((plan) => (
-                          <SelectItem key={plan.id} value={plan.plan_name}>
-                            {plan.plan_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    
-                    {/* Only show Type filter when Gym Session/Day Pass is selected */}
-                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
-                      <>
-                        <Label htmlFor="all-subscription-type-filter">Type:</Label>
-                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
-                          <SelectTrigger className="w-40" id="all-subscription-type-filter">
-                            <SelectValue placeholder="All Types" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Types</SelectItem>
-                            <SelectItem value="regular">Session</SelectItem>
-                            <SelectItem value="guest">Guest Session</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Right side - Month and Year Filters */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <Label htmlFor="month-filter">Month:</Label>
-                    <Select value={monthFilter} onValueChange={setMonthFilter}>
-                      <SelectTrigger className="w-40" id="month-filter">
-                        <SelectValue placeholder="All Months" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        <SelectItem value="this_month">This Month</SelectItem>
-                        <SelectItem value="last_3_months">Last 3 Months</SelectItem>
-                        <SelectItem value="1">January</SelectItem>
-                        <SelectItem value="2">February</SelectItem>
-                        <SelectItem value="3">March</SelectItem>
-                        <SelectItem value="4">April</SelectItem>
-                        <SelectItem value="5">May</SelectItem>
-                        <SelectItem value="6">June</SelectItem>
-                        <SelectItem value="7">July</SelectItem>
-                        <SelectItem value="8">August</SelectItem>
-                        <SelectItem value="9">September</SelectItem>
-                        <SelectItem value="10">October</SelectItem>
-                        <SelectItem value="11">November</SelectItem>
-                        <SelectItem value="12">December</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Label htmlFor="year-filter">Year:</Label>
-                    <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-32" id="year-filter">
-                        <SelectValue placeholder="All Years" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Years</SelectItem>
-                        <SelectItem value="this_year">This Year</SelectItem>
-                        <SelectItem value="last_year">Last Year ({new Date().getFullYear() - 1})</SelectItem>
-                        <SelectItem value="last_last_year">{new Date().getFullYear() - 2}</SelectItem>
-                        <SelectItem value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 2).toString()}>{new Date().getFullYear() - 2}</SelectItem>
-                        <SelectItem value={(new Date().getFullYear() - 3).toString()}>{new Date().getFullYear() - 3}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* All Subscriptions Table */}
-              {(() => {
-                const groupedAll = groupSubscriptionsByUser(filteredSubscriptions)
-                const allPagination = getPaginatedData(groupedAll, 'all')
-
-                return groupedAll.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>{!subscriptions || subscriptions.length === 0 ? "No subscriptions found" : "No subscriptions match your search"}</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-gradient-to-r from-slate-50 to-slate-100/50 hover:bg-slate-100 border-b-2 border-slate-200">
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
-                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {allPagination.paginated.map((user) => {
-                            const primarySub = user.subscriptions[0]
-                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
-                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
-                            
-                            return (
-                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                                <TableCell>
-                                  <div className="flex items-center gap-3">
-                                    <Avatar className="h-10 w-10">
-                                      <AvatarFallback>
-                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <div className="font-medium flex items-center gap-2">
-                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
-                                        {user.is_guest_session && (
-                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                            Guest
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <div className="text-sm text-muted-foreground">
-                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right pr-0">
-                                  {primarySub && (
-                                    <div className="flex justify-end">
-                                    <Badge
-                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
-                                    >
-                                      {getStatusIcon(primarySub.status_name)}
-                                      {primarySub.display_status || primarySub.status_name}
-                                    </Badge>
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right pl-1">
-                                  <div className="flex justify-end">
-                                  <Button
-                                      variant="default"
-                                    size="sm"
-                                    onClick={() => {
-                                      setViewDetailsModal({
-                                        open: true,
-                                        user: user,
-                                        subscriptions: user.subscriptions
-                                      })
-                                    }}
-                                      className="h-9 px-4 text-sm font-medium bg-slate-600 hover:bg-slate-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
-                                  >
-                                      <Eye className="h-4 w-4" />
-                                      Details
-                                  </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {/* Pagination Controls */}
-                    {groupedAll.length > 0 && (
-                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
-                        <div className="text-sm text-slate-500">
-                          {groupedAll.length} {groupedAll.length === 1 ? 'user' : 'users'} total
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.max(1, prev.all - 1) }))}
-                            disabled={allPagination.currentPage === 1}
-                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </Button>
-                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
-                            Page {allPagination.currentPage} of {allPagination.totalPages}
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setCurrentPage(prev => ({ ...prev, all: Math.min(allPagination.totalPages, prev.all + 1) }))}
-                            disabled={allPagination.currentPage === allPagination.totalPages}
-                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )
-              })()}
-            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -3633,36 +3390,16 @@ const SubscriptionMonitor = ({ userId }) => {
                           } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={(e) => {
                             // Don't trigger if clicking on input field (quantity)
-                            if (e.target.type === 'number' || (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox')) {
+                            if (e.target.type === 'number' || e.target.tagName === 'INPUT') {
                               return
                             }
-                            // If clicking on checkbox, let it handle its own change
-                            if (e.target.type === 'checkbox') {
-                              e.stopPropagation()
-                              if (isAvailable) {
-                                handlePlanToggle(plan.id)
-                              }
-                              return
-                            }
-                            // For other clicks on the div, toggle the plan
+                            // Toggle the plan when clicking on the card
                             if (isAvailable) {
                               handlePlanToggle(plan.id)
                             }
                           }}
                         >
                           <div className="flex items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                e.stopPropagation()
-                                if (isAvailable) {
-                                  handlePlanToggle(plan.id)
-                                }
-                              }}
-                              disabled={!isAvailable}
-                              className="mt-1 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                            />
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
                                 <Label className="text-sm font-medium text-gray-900 cursor-pointer">

@@ -2311,9 +2311,9 @@ function approveSubscription($pdo, $data)
             $hasPaymentIntentId = in_array('payment_intent_id', $paymentColumns);
             $hasPaymentLinkId = in_array('payment_link_id', $paymentColumns);
 
-            // Get subscription details for payment amount
+            // Get subscription details for payment amount and receipt number
             $subDetailsStmt = $pdo->prepare("
-                    SELECT s.discounted_price, s.amount_paid, s.payment_method, p.price 
+                    SELECT s.discounted_price, s.amount_paid, s.payment_method, s.receipt_number, p.price 
                     FROM subscription s 
                     JOIN member_subscription_plan p ON s.plan_id = p.id 
                     WHERE s.id = ?
@@ -2323,6 +2323,7 @@ function approveSubscription($pdo, $data)
 
             $paymentAmount = $subDetails['amount_paid'] ?? $subDetails['discounted_price'] ?? $subDetails['price'] ?? 0;
             $subPaymentMethod = $subDetails['payment_method'] ?? 'cash';
+            $subscriptionReceiptNumber = $subDetails['receipt_number'] ?? null;
 
             // Get PayMongo payment fields from request data
             $paymentIntentId = $data['payment_intent_id'] ?? null;
@@ -2368,8 +2369,8 @@ function approveSubscription($pdo, $data)
             $payment_id = $pdo->lastInsertId();
             error_log("Payment record created successfully. Payment ID: $payment_id, Subscription ID: $subscriptionId, Amount: $paymentAmount, Method: $subPaymentMethod");
 
-            // Also create sales record
-            $receiptNumber = generateSubscriptionReceiptNumber($pdo);
+            // Also create sales record - use subscription's receipt_number if available, otherwise generate a new one
+            $receiptNumber = $subscriptionReceiptNumber ?? generateSubscriptionReceiptNumber($pdo);
             $salesStmt = $pdo->prepare("
                     INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
                     VALUES (?, ?, NOW(), 'Subscription', ?, 'confirmed', ?, ?, 0.00)

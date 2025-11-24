@@ -142,17 +142,42 @@ const SubscriptionPlans = () => {
       const response = await axios.get(MONITOR_API_URL)
       if (response.data && Array.isArray(response.data.subscriptions)) {
         const now = new Date()
-        const activeCount = response.data.subscriptions.filter((s) => {
+        // Filter active subscriptions (same logic as monitoring subscription page)
+        const activeSubscriptions = response.data.subscriptions.filter((s) => {
+          // Exclude cancelled subscriptions
+          if (s.status_name?.toLowerCase() === "cancelled" ||
+            s.display_status?.toLowerCase() === "cancelled" ||
+            s.status_name?.toLowerCase() === "canceled" ||
+            s.display_status?.toLowerCase() === "canceled") {
+            return false
+          }
+
           // Check if subscription is expired (end_date is in the past)
           if (s.end_date) {
             const endDate = new Date(s.end_date)
             if (endDate < now) return false
           }
-          
-          // Only count if status is Active or approved and not expired
+
+          // Only show if status is Active or approved and not expired
           return s.display_status === "Active" || s.status_name === "approved"
-        }).length
-        
+        })
+
+        // Group by user (same as monitoring subscription page - groupSubscriptionsByUser)
+        const grouped = {}
+        activeSubscriptions.forEach((subscription) => {
+          // Use the exact same logic as groupSubscriptionsByUser
+          const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
+            ? `guest_${subscription.guest_name || subscription.id}`
+            : subscription.user_id || `unknown_${subscription.id}`
+
+          if (!grouped[key]) {
+            grouped[key] = []
+          }
+          grouped[key].push(subscription)
+        })
+
+        const activeCount = Object.keys(grouped).length
+
         setAnalytics(prev => ({
           ...prev,
           activeSubscriptions: activeCount
@@ -554,7 +579,7 @@ const SubscriptionPlans = () => {
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-slate-600 uppercase tracking-wider">Active Subscriptions</p>
                 <p className="text-4xl font-bold text-orange-600">{analytics.activeSubscriptions}</p>
-                <p className="text-sm text-slate-500 font-medium">Premium & standard</p>
+                <p className="text-sm text-slate-500 font-medium">Active clients across all plans</p>
               </div>
               <div className="p-4 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 shadow-md group-hover:scale-110 transition-transform">
                 <Users className="h-7 w-7 text-orange-700" />

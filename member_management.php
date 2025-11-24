@@ -226,14 +226,30 @@ try {
         // This ensures pending accounts are rejected and old rejected accounts are deleted
         cleanupAccountVerifications($pdo);
 
-        $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+        // Check if deactivation_reason column exists
+        $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'deactivation_reason'");
+        $hasDeactivationReason = $checkColumnStmt->rowCount() > 0;
+
+        if ($hasDeactivationReason) {
+            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+        } else {
+            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+        }
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);
     }
 
     // GET: single member by id
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['id'])) {
-        $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE id = ?');
+        // Check if deactivation_reason column exists
+        $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'deactivation_reason'");
+        $hasDeactivationReason = $checkColumnStmt->rowCount() > 0;
+
+        if ($hasDeactivationReason) {
+            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason FROM `user` WHERE id = ?');
+        } else {
+            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE id = ?');
+        }
         $stmt->execute([$_GET['id']]);
         $member = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$member) {
@@ -248,7 +264,7 @@ try {
             // Handle both JSON and FormData (for file uploads)
             $input = [];
             $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
-            
+
             // Check if this is a multipart/form-data request (FormData with file upload)
             if (strpos($contentType, 'multipart/form-data') !== false || !empty($_FILES)) {
                 // FormData request - get data from $_POST
@@ -332,13 +348,13 @@ try {
                 if (isset($_FILES['parent_consent_file'])) {
                     $fileError = $_FILES['parent_consent_file']['error'];
                     error_log("Parent consent file upload - Error code: $fileError");
-                    
+
                     if ($fileError === UPLOAD_ERR_OK) {
                         // Calculate age to verify upload is needed
                         $birthDate = new DateTime($input['bday']);
                         $today = new DateTime();
                         $age = $today->diff($birthDate)->y;
-                        
+
                         if ($age < 18) {
                             $uploadDir = 'uploads/consents/';
                             // Create directory if it doesn't exist
@@ -351,18 +367,18 @@ try {
                                     ], 500);
                                 }
                             }
-                            
+
                             $file = $_FILES['parent_consent_file'];
                             $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
                             $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
-                            
+
                             if (!in_array($fileExtension, $allowedExtensions)) {
                                 respond([
                                     'error' => 'Invalid file type',
                                     'message' => 'Parent consent file must be an image file (JPG, PNG, or GIF).'
                                 ], 400);
                             }
-                            
+
                             // Validate file size (max 5MB)
                             if ($file['size'] > 5 * 1024 * 1024) {
                                 respond([
@@ -370,11 +386,11 @@ try {
                                     'message' => 'Parent consent file must be smaller than 5MB.'
                                 ], 400);
                             }
-                            
+
                             // Generate unique filename
                             $uniqueFilename = 'consent_' . time() . '_' . uniqid() . '.' . $fileExtension;
                             $uploadPath = $uploadDir . $uniqueFilename;
-                            
+
                             // Move uploaded file
                             if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
                                 $parentConsentFileUrl = $uploadPath;
@@ -413,7 +429,7 @@ try {
                         $birthDate = new DateTime($input['bday']);
                         $today = new DateTime();
                         $age = $today->diff($birthDate)->y;
-                        
+
                         if ($age < 18 && $age >= 13) {
                             respond([
                                 'error' => 'Parent consent required',
@@ -434,7 +450,7 @@ try {
             // Check if parent_consent_file_url column exists
             $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
             $columnExists = $checkColumnStmt->rowCount() > 0;
-            
+
             if ($columnExists) {
                 $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status, parent_consent_file_url) 
                                        VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)');
@@ -508,28 +524,89 @@ try {
 
         // Status-only update
         if (isset($input['id'], $input['account_status']) && !isset($input['fname'], $input['mname'], $input['lname'], $input['email'], $input['gender_id'], $input['bday'])) {
-            error_log("DEBUG: Status-only update detected for ID: " . $input['id'] . ", Status: " . $input['account_status']);
+            try {
+                error_log("DEBUG: Status-only update detected for ID: " . $input['id'] . ", Status: " . $input['account_status']);
 
-            // Get member details for logging
-            $stmt = $pdo->prepare('SELECT fname, lname FROM `user` WHERE id = ?');
-            $stmt->execute([$input['id']]);
-            $member = $stmt->fetch(PDO::FETCH_ASSOC);
+                // Get member details for logging
+                $stmt = $pdo->prepare('SELECT fname, lname FROM `user` WHERE id = ?');
+                $stmt->execute([$input['id']]);
+                $member = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if (!$member) {
-                respond(['error' => 'Member not found'], 404);
+                if (!$member) {
+                    respond(['error' => 'Member not found'], 404);
+                }
+
+                // Check if deactivation_reason column exists
+                try {
+                    $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'deactivation_reason'");
+                    $hasDeactivationReason = $checkColumnStmt->rowCount() > 0;
+                    error_log("DEBUG: deactivation_reason column exists: " . ($hasDeactivationReason ? 'yes' : 'no'));
+                } catch (PDOException $e) {
+                    error_log("Error checking deactivation_reason column: " . $e->getMessage());
+                    $hasDeactivationReason = false;
+                }
+
+                // Handle deactivation reason
+                $deactivationReason = null;
+                if (isset($input['deactivation_reason']) && $input['deactivation_reason'] !== null) {
+                    $trimmed = trim($input['deactivation_reason']);
+                    $deactivationReason = $trimmed !== '' ? $trimmed : null;
+                }
+
+                // If reactivating (status is not deactivated), clear the reason
+                if ($input['account_status'] !== 'deactivated') {
+                    $deactivationReason = null;
+                }
+
+                error_log("DEBUG: deactivation_reason value: " . ($deactivationReason ?? 'NULL'));
+                error_log("DEBUG: account_status: " . $input['account_status']);
+
+                if ($hasDeactivationReason) {
+                    // Update both account_status and deactivation_reason
+                    $stmt = $pdo->prepare('UPDATE `user` SET account_status = ?, deactivation_reason = ? WHERE id = ?');
+                    if ($deactivationReason === null) {
+                        $stmt->bindValue(1, $input['account_status'], PDO::PARAM_STR);
+                        $stmt->bindValue(2, null, PDO::PARAM_NULL);
+                        $stmt->bindValue(3, $input['id'], PDO::PARAM_INT);
+                        $stmt->execute();
+                    } else {
+                        $stmt->execute([$input['account_status'], $deactivationReason, $input['id']]);
+                    }
+                } else {
+                    // Column doesn't exist yet, only update account_status
+                    $stmt = $pdo->prepare('UPDATE `user` SET account_status = ? WHERE id = ?');
+                    $stmt->execute([$input['account_status'], $input['id']]);
+                }
+
+                // Log activity using centralized logger (same as monitor_subscription.php)
+                $staffId = $input['staff_id'] ?? null;
+                $logMessage = "Member account {$input['account_status']}: {$member['fname']} {$member['lname']} (ID: {$input['id']})";
+                if ($deactivationReason && $input['account_status'] === 'deactivated') {
+                    $logMessage .= " - Reason: {$deactivationReason}";
+                }
+                error_log("DEBUG Member Status Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
+                if (function_exists('logStaffActivity')) {
+                    logStaffActivity($pdo, $staffId, "Update Member Status", $logMessage, "Member Management");
+                }
+
+                respond(['message' => 'Account status updated successfully']);
+            } catch (PDOException $e) {
+                error_log("Database error in status update: " . $e->getMessage());
+                error_log("Error code: " . $e->getCode());
+                error_log("Error info: " . print_r($e->errorInfo, true));
+                respond([
+                    'error' => 'Database error',
+                    'message' => 'Failed to update account status: ' . $e->getMessage(),
+                    'details' => $e->getMessage()
+                ], 500);
+            } catch (Exception $e) {
+                error_log("Error in status update: " . $e->getMessage());
+                respond([
+                    'error' => 'Server error',
+                    'message' => 'Failed to update account status: ' . $e->getMessage(),
+                    'details' => $e->getMessage()
+                ], 500);
             }
-
-            $stmt = $pdo->prepare('UPDATE `user` SET account_status = ? WHERE id = ?');
-            $stmt->execute([$input['account_status'], $input['id']]);
-
-            // Log activity using centralized logger (same as monitor_subscription.php)
-            $staffId = $input['staff_id'] ?? null;
-            error_log("DEBUG Member Status Update - staffId: " . ($staffId ?? 'NULL') . " from request data");
-            if (function_exists('logStaffActivity')) {
-                logStaffActivity($pdo, $staffId, "Update Member Status", "Member account {$input['account_status']}: {$member['fname']} {$member['lname']} (ID: {$input['id']})", "Member Management");
-            }
-
-            respond(['message' => 'Account status updated successfully']);
         }
 
         // Full update requires core fields (mname, gender_id and account_status are not editable by admin)
