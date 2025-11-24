@@ -534,21 +534,18 @@ function getSalesData($pdo)
 		)
 		LEFT JOIN `coach_member_list` cml ON s.user_id = cml.member_id 
 			AND s.sale_type = 'Coaching'
-			AND cml.status = 'active'
-			AND cml.coach_approval = 'approved'
-			AND cml.staff_approval = 'approved'
-			AND (cml.expires_at IS NULL OR cml.expires_at >= DATE(s.sale_date))
-			AND DATE(cml.staff_approved_at) <= DATE(s.sale_date)
 			AND cml.id = (
 				SELECT cml2.id
 				FROM `coach_member_list` cml2
 				WHERE cml2.member_id = s.user_id
-					AND cml2.status = 'active'
-					AND cml2.coach_approval = 'approved'
-					AND cml2.staff_approval = 'approved'
-					AND (cml2.expires_at IS NULL OR cml2.expires_at >= DATE(s.sale_date))
-					AND DATE(cml2.staff_approved_at) <= DATE(s.sale_date)
-				ORDER BY cml2.staff_approved_at DESC
+				ORDER BY 
+					CASE 
+						WHEN cml2.staff_approved_at IS NOT NULL AND DATE(cml2.staff_approved_at) <= DATE(s.sale_date) THEN 0
+						WHEN cml2.requested_at IS NOT NULL AND DATE(cml2.requested_at) <= DATE(s.sale_date) THEN 1
+						ELSE 2
+					END,
+					COALESCE(cml2.staff_approved_at, cml2.requested_at, '1970-01-01') DESC,
+					cml2.id DESC
 				LIMIT 1
 			)
 		LEFT JOIN `user` u_coach ON cml.coach_id = u_coach.id
@@ -1675,6 +1672,15 @@ function createSale($pdo, $data)
 	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$changeGiven = $data['change_given'] ?? 0.00;
 	$notes = $data['notes'] ?? '';
+	
+	// Get reference number for GCash/digital payments (check both reference_number and gcash_reference)
+	$referenceNumber = $data['reference_number'] ?? $data['gcash_reference'] ?? null;
+	// Only set reference number if payment method is digital/gcash and reference is provided
+	if (($paymentMethod === 'digital' || $paymentMethod === 'gcash') && !empty($referenceNumber)) {
+		$referenceNumber = trim($referenceNumber);
+	} else {
+		$referenceNumber = null;
+	}
 
 	// Debug logging for cashier_id
 	error_log("Sales API - Cashier ID: $cashierId, Data cashier_id: " . ($data['cashier_id'] ?? 'null') . ", Data staff_id: " . ($data['staff_id'] ?? 'null') . ", GET staff_id: " . ($_GET['staff_id'] ?? 'null') . ", Session user_id: " . ($_SESSION['user_id'] ?? 'null'));
@@ -1683,8 +1689,8 @@ function createSale($pdo, $data)
 
 	try {
 		$stmt = $pdo->prepare("
-			INSERT INTO `sales` (user_id, total_amount, sale_type, sale_date, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes)
-			VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?)
+			INSERT INTO `sales` (user_id, total_amount, sale_type, sale_date, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes, reference_number)
+			VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)
 		");
 		$stmt->execute([
 			$data['user_id'] ?? null,
@@ -1695,7 +1701,8 @@ function createSale($pdo, $data)
 			$receiptNumber,
 			$cashierId,
 			$changeGiven,
-			$notes
+			$notes,
+			$referenceNumber
 		]);
 
 		$saleId = $pdo->lastInsertId();
@@ -2004,13 +2011,22 @@ function createPOSSale($pdo, $data)
 	$receiptNumber = generateReceiptNumber($pdo);
 	$cashierId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 	$notes = $data['notes'] ?? '';
+	
+	// Get reference number for GCash/digital payments (check both reference_number and gcash_reference)
+	$referenceNumber = $data['reference_number'] ?? $data['gcash_reference'] ?? null;
+	// Only set reference number if payment method is digital/gcash and reference is provided
+	if (($paymentMethod === 'digital' || $paymentMethod === 'gcash') && !empty($referenceNumber)) {
+		$referenceNumber = trim($referenceNumber);
+	} else {
+		$referenceNumber = null;
+	}
 
 	$pdo->beginTransaction();
 
 	try {
 		$stmt = $pdo->prepare("
-			INSERT INTO `sales` (user_id, total_amount, sale_type, sale_date, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes)
-			VALUES (?, ?, ?, NOW(), ?, 'confirmed', ?, ?, ?, ?)
+			INSERT INTO `sales` (user_id, total_amount, sale_type, sale_date, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes, reference_number)
+			VALUES (?, ?, ?, NOW(), ?, 'confirmed', ?, ?, ?, ?, ?)
 		");
 		$stmt->execute([
 			$data['user_id'] ?? null,
@@ -2020,7 +2036,8 @@ function createPOSSale($pdo, $data)
 			$receiptNumber,
 			$cashierId,
 			$changeGiven,
-			$notes
+			$notes,
+			$referenceNumber
 		]);
 
 		$saleId = $pdo->lastInsertId();

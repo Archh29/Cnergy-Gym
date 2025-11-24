@@ -46,7 +46,7 @@ const CoachAssignments = ({ userId }) => {
   
   // Enhanced filters
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("active") // Changed default to 'active'
   const [rateTypeFilter, setRateTypeFilter] = useState("all")
   const [dateFilter, setDateFilter] = useState("all")
   const [coachMembersRateFilter, setCoachMembersRateFilter] = useState("all")
@@ -73,9 +73,9 @@ const CoachAssignments = ({ userId }) => {
     total_members: 0,
   })
 
-  const fetchAssignedMembers = async () => {
+  const fetchAssignedMembers = async (status = 'active') => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=assigned-members`)
+      const response = await axios.get(`${API_BASE_URL}?action=assigned-members&status=${status}`)
       if (response.data.success) {
         setAssignedMembers(response.data.assignments || [])
       } else {
@@ -231,7 +231,7 @@ const CoachAssignments = ({ userId }) => {
     setLoading(true)
     setError(null)
     try {
-      await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchAvailableCoaches(), fetchAvailableMembers()])
+      await Promise.all([fetchAssignedMembers(statusFilter), fetchDashboardStats(), fetchAvailableCoaches(), fetchAvailableMembers()])
     } catch (err) {
       console.error("Error loading data:", err)
       setError("Failed to load data")
@@ -239,6 +239,14 @@ const CoachAssignments = ({ userId }) => {
       setLoading(false)
     }
   }
+  
+  // Update assigned members when status filter changes
+  useEffect(() => {
+    if (!loading) {
+      fetchAssignedMembers(statusFilter)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter])
 
   useEffect(() => {
     const getCurrentUser = async () => {
@@ -292,11 +300,12 @@ const CoachAssignments = ({ userId }) => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchAssignedMembers()
+      fetchAssignedMembers(statusFilter)
       fetchDashboardStats()
       fetchAvailableMembers()
     }, 30000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const openAssignModal = (member = null) => {
@@ -402,11 +411,12 @@ const CoachAssignments = ({ userId }) => {
         return false
       }
 
-      // Status filter
+      // Status filter - backend already handles this, but keep for client-side filtering if needed
       if (statusFilter !== "all") {
-        const status = assignment.status?.toLowerCase() || "active"
-        if (statusFilter === "active" && status !== "active") return false
-        if (statusFilter === "expired" && (assignment.expiresAt && new Date(assignment.expiresAt) >= new Date())) return false
+        const isExpired = assignment.status === 'expired' || 
+          (assignment.expiresAt && new Date(assignment.expiresAt) < new Date())
+        if (statusFilter === "active" && isExpired) return false
+        if (statusFilter === "expired" && !isExpired) return false
       }
 
       // Rate type filter
@@ -709,6 +719,39 @@ const CoachAssignments = ({ userId }) => {
               </div>
               {selectedCoachFilter !== "all" && (
                 <div className="mt-4 space-y-3">
+                  {/* Status Filter Tabs */}
+                  <div className="flex gap-2 border-b">
+                    <button
+                      onClick={() => setStatusFilter("active")}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        statusFilter === "active"
+                          ? "border-emerald-500 text-emerald-600"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Active
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter("expired")}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        statusFilter === "expired"
+                          ? "border-gray-500 text-gray-600"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      Expired
+                    </button>
+                    <button
+                      onClick={() => setStatusFilter("all")}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        statusFilter === "all"
+                          ? "border-blue-500 text-blue-600"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      All
+                    </button>
+                  </div>
                   {/* Subscription Filter */}
                   <Select value={coachMembersRateFilter} onValueChange={setCoachMembersRateFilter}>
                     <SelectTrigger className="h-9 w-full">
@@ -751,48 +794,77 @@ const CoachAssignments = ({ userId }) => {
                     )}
                   </div>
                 ) : (
-                  coachMembers.map((assignment) => (
-                    <div key={assignment.id} className="border rounded-lg p-3 hover:bg-gray-50/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10 border-2 border-gray-100">
-                          <AvatarImage src="/placeholder.svg?height=40&width=40" />
-                          <AvatarFallback className="bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700 font-semibold text-xs">
-                            {getInitials(assignment.member?.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-foreground truncate">{assignment.member?.name || "Unknown"}</div>
-                          <div className="text-xs text-muted-foreground truncate">{assignment.member?.email}</div>
-                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            <Badge 
-                              variant="default" 
-                              className={`text-xs ${
-                                assignment.status === 'active' 
-                                  ? 'bg-emerald-100 text-emerald-800' 
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
-                            >
-                              {assignment.status || "active"}
-                            </Badge>
-                            {assignment.rateType && (
+                  coachMembers.map((assignment) => {
+                    const isExpired = assignment.status === 'expired' || 
+                      (assignment.expiresAt && new Date(assignment.expiresAt) < new Date())
+                    return (
+                      <div 
+                        key={assignment.id} 
+                        className={`border rounded-lg p-3 transition-colors ${
+                          isExpired 
+                            ? 'bg-gray-50/50 opacity-75 border-gray-200 hover:bg-gray-100/50' 
+                            : 'hover:bg-gray-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Avatar className={`h-10 w-10 border-2 ${
+                            isExpired ? 'border-gray-200' : 'border-gray-100'
+                          }`}>
+                            <AvatarImage src="/placeholder.svg?height=40&width=40" />
+                            <AvatarFallback className={`font-semibold text-xs ${
+                              isExpired 
+                                ? 'bg-gradient-to-br from-gray-200 to-gray-300 text-gray-500' 
+                                : 'bg-gradient-to-br from-gray-100 to-gray-200 text-gray-700'
+                            }`}>
+                              {getInitials(assignment.member?.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className={`font-medium text-sm truncate ${
+                              isExpired ? 'text-gray-500' : 'text-foreground'
+                            }`}>
+                              {assignment.member?.name || "Unknown"}
+                            </div>
+                            <div className={`text-xs truncate ${
+                              isExpired ? 'text-gray-400' : 'text-muted-foreground'
+                            }`}>
+                              {assignment.member?.email}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                               <Badge 
-                                variant="outline" 
-                                className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                                variant="default" 
+                                className={`text-xs ${
+                                  isExpired
+                                    ? 'bg-gray-300 text-gray-700 border-gray-400'
+                                    : assignment.status === 'active' 
+                                      ? 'bg-emerald-100 text-emerald-800' 
+                                      : 'bg-gray-100 text-gray-800'
+                                }`}
                               >
-                                <Package className="h-3 w-3 mr-1" />
-                                {assignment.rateType === 'monthly' ? 'Monthly' : 
-                                 assignment.rateType === 'per_session' ? 'Session' : 
-                                 assignment.rateType}
+                                {isExpired ? 'Expired' : (assignment.status || "active")}
                               </Badge>
-                            )}
-                            <span className="text-xs text-muted-foreground">
-                              {formatDateShort(assignment.assignedAt)}
-                            </span>
+                              {assignment.rateType && (
+                                <Badge 
+                                  variant="outline" 
+                                  className="text-xs bg-blue-50 text-blue-700 border-blue-200"
+                                >
+                                  <Package className="h-3 w-3 mr-1" />
+                                  {assignment.rateType === 'monthly' ? 'Monthly' : 
+                                   assignment.rateType === 'per_session' ? 'Session' : 
+                                   assignment.rateType}
+                                </Badge>
+                              )}
+                              <span className={`text-xs ${
+                                isExpired ? 'text-gray-400' : 'text-muted-foreground'
+                              }`}>
+                                {assignment.expiresAt ? `Exp: ${formatDateShort(assignment.expiresAt)}` : formatDateShort(assignment.assignedAt)}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </CardContent>

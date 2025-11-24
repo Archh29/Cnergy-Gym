@@ -121,6 +121,9 @@ function handleGetRequest(PDO $pdo, string $action): void
         case 'attendance':
             getAttendance($pdo);
             break;
+        case 'denied_logs':
+            getDeniedLogs($pdo);
+            break;
         case 'qr_scan':
             // Handle QR scan via GET as workaround for server issues
             $qrData = $_GET['qr_data'] ?? '';
@@ -530,6 +533,200 @@ function getAttendance(PDO $pdo): void
     }
 }
 
+function getDeniedLogs(PDO $pdo): void
+{
+    try {
+        // Check if table exists
+        try {
+            $tableCheck = $pdo->query("SHOW TABLES LIKE 'attendance_denied_log'");
+            if ($tableCheck && $tableCheck->rowCount() == 0) {
+                // Table doesn't exist yet, return empty array
+                echo json_encode([]);
+                return;
+            }
+        } catch (Exception $e) {
+            error_log("Error checking table existence: " . $e->getMessage());
+            // Continue anyway - try to query the table
+        }
+
+        // Get date filter if provided
+        $dateFilter = $_GET['date'] ?? '';
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100; // Default to 100 most recent
+        
+        // Ensure limit is positive and reasonable
+        if ($limit < 1 || $limit > 1000) {
+            $limit = 100;
+        }
+        
+        $whereClause = '';
+        $params = [];
+
+        if (!empty($dateFilter)) {
+            $whereClause = "WHERE DATE(adl.attempted_at) = ?";
+            $params[] = $dateFilter;
+        }
+
+        // Fetch denied logs with user names - handle NULL values properly
+        $sql = "
+            SELECT 
+                adl.id,
+                adl.user_id,
+                adl.guest_session_id,
+                adl.denial_reason,
+                adl.attempted_at,
+                adl.expired_date,
+                adl.plan_name,
+                adl.message,
+                adl.entry_method,
+                CASE 
+                    WHEN u.fname IS NOT NULL AND u.lname IS NOT NULL THEN CONCAT(COALESCE(u.fname, ''), ' ', COALESCE(u.lname, ''))
+                    WHEN u.fname IS NOT NULL THEN COALESCE(u.fname, '')
+                    WHEN u.lname IS NOT NULL THEN COALESCE(u.lname, '')
+                    ELSE NULL
+                END AS user_name
+            FROM attendance_denied_log adl
+            LEFT JOIN `user` u ON adl.user_id = u.id
+            " . $whereClause . "
+            ORDER BY adl.attempted_at DESC
+            LIMIT " . (int)$limit . "
+        ";
+
+        $stmt = $pdo->prepare($sql);
+        if (!empty($params)) {
+            $stmt->execute($params);
+        } else {
+            $stmt->execute();
+        }
+        $logs = $stmt->fetchAll();
+
+        // Format the response to match frontend expectations
+        $formatted = [];
+        foreach ($logs as $log) {
+            // Use user_name from database, or fallback to extracting from message
+            $memberName = $log['user_name'] ?? null;
+            if (empty($memberName) || trim($memberName) === '') {
+                // Try to extract name from message
+                if (!empty($log['message']) && preg_match('/❌\s*([^-]+)\s*-/', $log['message'], $matches)) {
+                    $memberName = trim($matches[1]);
+                } elseif (!empty($log['user_id'])) {
+                    $memberName = "Member ID: " . $log['user_id'];
+                } else {
+                    $memberName = 'Unknown';
+                }
+            }
+
+            // Format message - remove emoji and clean up
+            $message = $log['message'] ?? '';
+            $message = str_replace('❌', '', $message);
+            $message = trim($message);
+
+            $formatted[] = [
+                'id' => $log['id'] ?? null,
+                'user_id' => $log['user_id'] ?? null,
+                'timestamp' => $log['attempted_at'] ?? null,
+                'type' => $log['denial_reason'] ?? 'unknown',
+                'message' => $message,
+                'memberName' => $memberName,
+                'entryMethod' => $log['entry_method'] ?? 'unknown',
+                'expired_date' => $log['expired_date'] ?? null,
+                'plan_name' => $log['plan_name'] ?? null
+            ];
+        }
+
+        echo json_encode($formatted);
+    } catch (Exception $e) {
+        error_log('Error in getDeniedLogs: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        error_log('File: ' . $e->getFile() . ' Line: ' . $e->getLine());
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to fetch denied logs: ' . $e->getMessage()]);
+    } catch (Throwable $e) {
+        error_log('Fatal error in getDeniedLogs: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        error_log('File: ' . $e->getFile() . ' Line: ' . $e->getLine());
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to fetch denied logs: ' . $e->getMessage()]);
+    }
+}
+
+// Helper function to log denied attendance attempts
+function logDeniedAttendance(PDO $pdo, int $userId, string $denialReason, array $extraData = [], string $entryMethod = 'unknown'): void
+{
+    try {
+        // Check if table exists, if not create it
+        $tableCheck = $pdo->query("SHOW TABLES LIKE 'attendance_denied_log'");
+        if ($tableCheck->rowCount() == 0) {
+            // Table doesn't exist, try to create it
+            $createTableSql = "
+                CREATE TABLE IF NOT EXISTS `attendance_denied_log` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `user_id` int(11) DEFAULT NULL,
+                  `guest_session_id` int(11) DEFAULT NULL,
+                  `denial_reason` varchar(50) NOT NULL,
+                  `attempted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  `expired_date` date DEFAULT NULL,
+                  `plan_name` varchar(255) DEFAULT NULL,
+                  `message` text DEFAULT NULL,
+                  `entry_method` enum('qr','manual','unknown') DEFAULT 'unknown',
+                  PRIMARY KEY (`id`),
+                  KEY `idx_user_id` (`user_id`),
+                  KEY `idx_denial_reason` (`denial_reason`),
+                  KEY `idx_attempted_at` (`attempted_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci
+            ";
+            $pdo->exec($createTableSql);
+        }
+
+        // Prepare data for insertion
+        $expiredDate = null;
+        $planName = null;
+        $message = $extraData['message'] ?? null;
+
+        if (isset($extraData['expired_date'])) {
+            // Convert formatted date back to MySQL date format
+            $expiredDateStr = $extraData['expired_date'];
+            if ($expiredDateStr) {
+                $dateObj = DateTime::createFromFormat('M j, Y', $expiredDateStr);
+                if ($dateObj === false) {
+                    // Try other formats
+                    $dateObj = DateTime::createFromFormat('Y-m-d', $expiredDateStr);
+                }
+                if ($dateObj !== false) {
+                    $expiredDate = $dateObj->format('Y-m-d');
+                }
+            }
+        }
+
+        if (isset($extraData['expired_date_db'])) {
+            // Already in MySQL date format
+            $expiredDate = $extraData['expired_date_db'];
+        }
+
+        $planName = $extraData['plan_name'] ?? null;
+
+        // Insert log entry
+        $logStmt = $pdo->prepare("
+            INSERT INTO `attendance_denied_log` 
+            (user_id, denial_reason, attempted_at, expired_date, plan_name, message, entry_method)
+            VALUES (?, ?, NOW(), ?, ?, ?, ?)
+        ");
+
+        $logStmt->execute([
+            $userId,
+            $denialReason,
+            $expiredDate,
+            $planName,
+            $message,
+            $entryMethod
+        ]);
+
+        error_log("✅ Denied attendance logged: User ID {$userId}, Reason: {$denialReason}");
+    } catch (Exception $e) {
+        error_log("ERROR logging denied attendance: " . $e->getMessage());
+        // Don't throw - logging failure shouldn't break the main flow
+    }
+}
+
 function handleQRScan(PDO $pdo, array $input): void
 {
     $qrData = $input['qr_data'] ?? $input['scanned_data'] ?? '';
@@ -626,20 +823,40 @@ function handleQRScan(PDO $pdo, array $input): void
             return;
         }
 
+        // Determine entry method (qr_scan is always QR, others are manual)
+        $entryMethod = isset($input['action']) && $input['action'] === 'qr_scan' ? 'qr' : 'manual';
+
         if ($expiredPlan) {
             $expiredDate = date('M j, Y', strtotime($expiredPlan['end_date']));
+            $denialMessage = "❌ {$user['fname']} {$user['lname']} - Gym access expired on {$expiredDate}";
+            
+            // Log denied attendance
+            logDeniedAttendance($pdo, (int) $userId, 'expired_plan', [
+                'message' => $denialMessage,
+                'expired_date' => $expiredDate,
+                'expired_date_db' => $expiredPlan['end_date'],
+                'plan_name' => $expiredPlan['plan_name']
+            ], $entryMethod);
+            
             echo json_encode([
                 'success' => false,
-                'message' => "❌ {$user['fname']} {$user['lname']} - Gym access expired on {$expiredDate}",
+                'message' => $denialMessage,
                 'type' => 'expired_plan',
                 'user_name' => $user['fname'] . ' ' . $user['lname'],
                 'expired_date' => $expiredDate,
                 'plan_name' => $expiredPlan['plan_name']
             ]);
         } else {
+            $denialMessage = "❌ {$user['fname']} {$user['lname']} - No active gym access plan found";
+            
+            // Log denied attendance
+            logDeniedAttendance($pdo, (int) $userId, 'no_plan', [
+                'message' => $denialMessage
+            ], $entryMethod);
+            
             echo json_encode([
                 'success' => false,
-                'message' => "❌ {$user['fname']} {$user['lname']} - No active gym access plan found",
+                'message' => $denialMessage,
                 'type' => 'no_plan',
                 'user_name' => $user['fname'] . ' ' . $user['lname']
             ]);

@@ -186,30 +186,46 @@ const App = () => {
         let memberName = "Unknown"
         let memberId = null
 
-        if (response.data && response.data.member_name) {
+        // First, check for user_name in response (backend returns this)
+        if (response.data && response.data.user_name) {
+          memberName = response.data.user_name
+        } else if (response.data && response.data.member_name) {
+          // Fallback to member_name if it exists
           memberName = response.data.member_name
-        } else if (cleanedData && cleanedData.includes(':')) {
-          // Try to extract from QR data format: CNERGY_ATTENDANCE:ID
-          const parts = cleanedData.split(':')
-          if (parts.length > 1) {
-            memberId = parts[1]
+        } else {
+          // Try to extract member ID from QR data
+          if (cleanedData) {
+            if (cleanedData.includes(':')) {
+              // Try to extract from QR data format: CNERGY_ATTENDANCE:ID
+              const parts = cleanedData.split(':')
+              if (parts.length > 1) {
+                memberId = parts[1].trim()
+              }
+            } else if (/^\d+$/.test(cleanedData.trim())) {
+              // QR data is just a numeric ID
+              memberId = cleanedData.trim()
+            }
           }
-        }
 
-        // If we only have member ID, fetch the member name from API
-        if (memberId && memberName === "Unknown") {
-          try {
-            const membersResponse = await axios.get("https://api.cnergy.site/attendance.php?action=members")
-            const members = membersResponse.data || []
-            const member = members.find(m => m.id === parseInt(memberId))
-            if (member) {
-              memberName = `${member.fname || ''} ${member.lname || ''}`.trim() || `Member ID: ${memberId}`
-            } else {
+          // If we only have member ID, fetch the member name from API
+          if (memberId) {
+            try {
+              const membersResponse = await axios.get("https://api.cnergy.site/attendance.php?action=members")
+              const members = membersResponse.data || []
+              const member = members.find(m => m.id === parseInt(memberId))
+              if (member) {
+                memberName = `${member.fname || ''} ${member.lname || ''}`.trim()
+                // If still empty after trimming, fallback to Member ID
+                if (!memberName) {
+                  memberName = `Member ID: ${memberId}`
+                }
+              } else {
+                memberName = `Member ID: ${memberId}`
+              }
+            } catch (err) {
+              console.error("Failed to fetch member name:", err)
               memberName = `Member ID: ${memberId}`
             }
-          } catch (err) {
-            console.error("Failed to fetch member name:", err)
-            memberName = `Member ID: ${memberId}`
           }
         }
 
@@ -235,37 +251,20 @@ const App = () => {
 
         // Only log subscription-related denials (no_plan, expired_plan, guest errors)
         // Don't log: already_attended_today, already_checked_in, cooldown, etc.
+        // Note: Backend automatically logs denied attempts to database, no need for localStorage
         if (errorType === "no_plan" || errorType === "expired_plan" || errorType === "guest_expired" || errorType === "guest_error") {
-          const failedScan = {
-            timestamp: new Date().toISOString(),
-            type: errorType,
-            message: errorMessage,
-            memberName: memberName,
-            qrData: cleanedData || "Unknown",
-            entryMethod: "qr" // Mark as QR scan entry
-          }
-
-          try {
-            // Get existing failed scans from localStorage
-            const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
-            existingFailures.unshift(failedScan) // Add to beginning
-            // Store all failed scans (no limit)
-            localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
-            console.log("✅ Failed QR scan logged to denied attendance log:", failedScan)
-          } catch (storageError) {
-            console.error("❌ Error saving failed scan to localStorage:", storageError)
-          }
+          console.log("✅ Denied attendance logged to database by backend:", { memberName, errorType, entryMethod: "qr" })
         }
 
         // Handle plan validation errors with better messages
         if (response.data.type === "expired_plan") {
-          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
-          const errorMessage = `${memberName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
+          const displayName = memberName !== "Unknown" ? `${memberName} - ` : ''
+          const errorMessage = `${displayName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
           showNotification(errorMessage, "error")
         }
         else if (response.data.type === "no_plan") {
-          const memberName = response.data.member_name ? `${response.data.member_name} - ` : ''
-          const errorMessage = `${memberName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
+          const displayName = memberName !== "Unknown" ? `${memberName} - ` : ''
+          const errorMessage = `${displayName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
           showNotification(errorMessage, "error")
         }
         // Handle cooldown errors

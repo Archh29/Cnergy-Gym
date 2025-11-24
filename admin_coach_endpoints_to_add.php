@@ -1,8 +1,21 @@
 <?php
+/**
+ * TEMPLATE FILE: Code snippets to add to admin_coach.php
+ * 
+ * PURPOSE: This file contains template code showing endpoints and functions
+ * that should be integrated into admin_coach.php. It's a reference file,
+ * not meant to be executed directly.
+ * 
+ * NOTE: Some of these endpoints/functions may already exist in admin_coach.php.
+ * Please check before adding duplicate code.
+ */
+
+// ============================================================================
 // ADD THESE CASES TO THE SWITCH STATEMENT IN admin_coach.php
+// (Check if they already exist first! Look for the switch statement around line 130-176)
+// ============================================================================
 
-// In the switch statement, add these cases:
-
+/*
 case 'unassigned-members':
     if ($method === 'GET') getUnassignedMembers($pdo);
     break;
@@ -14,8 +27,11 @@ case 'assign-coach':
 case 'available-members':
     if ($method === 'GET') getAvailableMembers($pdo);
     break;
+*/
 
-// ADD THESE FUNCTIONS TO admin_coach.php:
+// ============================================================================
+// ADD THESE FUNCTIONS TO admin_coach.php (if they don't already exist)
+// ============================================================================
 
 function getUnassignedMembers($pdo) {
     try {
@@ -36,7 +52,7 @@ function getUnassignedMembers($pdo) {
                 AND cml.coach_approval = 'approved' 
                 AND cml.staff_approval = 'approved'
                 AND (cml.status = 'active' OR cml.status IS NULL)
-                AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
+                AND (cml.expires_at IS NULL OR cml.expires_at >= NOW())
             WHERE p.id = 1
                 AND u.user_type_id = 4
                 AND u.account_status = 'approved'
@@ -74,7 +90,15 @@ function getUnassignedMembers($pdo) {
     }
 }
 
-function assignCoach($pdo) {
+/**
+ * NOTE: The assignCoach function already exists in admin_coach.php (around line 1469)
+ * This is just a template showing the expected structure.
+ * The actual implementation in admin_coach.php has been updated with:
+ * - Philippine Time support
+ * - Proper expiration logic for per_session (9pm same day)
+ * - Payment received column handling
+ */
+function assignCoach_TEMPLATE($pdo) {
     try {
         $input = json_decode(file_get_contents('php://input'), true);
         
@@ -148,7 +172,7 @@ function assignCoach($pdo) {
                 AND coach_approval = 'approved'
                 AND staff_approval = 'approved'
                 AND (status = 'active' OR status IS NULL)
-                AND (expires_at IS NULL OR expires_at >= CURDATE())
+                AND (expires_at IS NULL OR expires_at >= NOW())
         ");
         $existingStmt->execute([$memberId, $coachId]);
         if ($existingStmt->fetch()) {
@@ -159,10 +183,25 @@ function assignCoach($pdo) {
             return;
         }
         
+        // Check if expires_at column is DATE type, if so change it to DATETIME to support time-based expiration
+        try {
+            $checkExpiresAt = $pdo->query("SHOW COLUMNS FROM coach_member_list WHERE Field = 'expires_at'");
+            $expiresAtColumn = $checkExpiresAt->fetch(PDO::FETCH_ASSOC);
+            if ($expiresAtColumn && strtoupper($expiresAtColumn['Type']) === 'DATE') {
+                $pdo->exec("ALTER TABLE coach_member_list MODIFY COLUMN expires_at DATETIME DEFAULT NULL");
+                error_log("Updated expires_at column from DATE to DATETIME to support time-based expiration");
+            }
+        } catch (Exception $e) {
+            error_log("Could not alter expires_at column: " . $e->getMessage());
+        }
+        
         // Start transaction
         $pdo->beginTransaction();
         
         try {
+            // Get rate_type from input, default to 'monthly'
+            $rateType = $input['rate_type'] ?? 'monthly';
+            
             // Get coach's default rate (monthly rate if available)
             $coachInfoStmt = $pdo->prepare("
                 SELECT monthly_rate, session_package_rate, per_session_rate
@@ -172,8 +211,15 @@ function assignCoach($pdo) {
             $coachInfoStmt->execute([$coachId]);
             $coachInfo = $coachInfoStmt->fetch(PDO::FETCH_ASSOC);
             
-            // Calculate expiration date (30 days from now for monthly)
-            $expiresAt = date('Y-m-d', strtotime('+30 days'));
+            // Calculate expiration date/time based on rate type (Philippine Time)
+            if ($rateType === 'per_session') {
+                // For session assignments, expire at 9pm on the same day (Philippine Time)
+                $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                $expiresAt = $now->format('Y-m-d') . ' 21:00:00'; // Today at 9:00 PM PH time
+            } else {
+                // For monthly/package, 30 days from now (Philippine Time)
+                $expiresAt = date('Y-m-d H:i:s', strtotime('+30 days'));
+            }
             
             // Insert new coach assignment
             $insertStmt = $pdo->prepare("
@@ -191,7 +237,7 @@ function assignCoach($pdo) {
                     expires_at,
                     remaining_sessions,
                     rate_type
-                ) VALUES (?, ?, 'active', 'approved', 'approved', NOW(), NOW(), NOW(), ?, ?, ?, 18, 'monthly')
+                ) VALUES (?, ?, 'active', 'approved', 'approved', NOW(), NOW(), NOW(), ?, ?, ?, 18, ?)
             ");
             
             $insertStmt->execute([
@@ -200,6 +246,7 @@ function assignCoach($pdo) {
                 $coachId,  // handled_by_coach
                 $adminId,  // handled_by_staff
                 $expiresAt,
+                $rateType,  // rate_type
             ]);
             
             $assignmentId = $pdo->lastInsertId();
@@ -294,8 +341,11 @@ function getAvailableMembers($pdo) {
     }
 }
 
-// Also update getDashboardStats to include unassigned_members count:
+// ============================================================================
+// OPTIONAL: Update getDashboardStats to include unassigned_members count
+// ============================================================================
 
+/*
 // In getDashboardStats function, add this query:
 // Get unassigned members count (members with plan_id 1 who don't have active coach)
 $unassignedStmt = $pdo->prepare("
@@ -307,7 +357,7 @@ $unassignedStmt = $pdo->prepare("
         AND cml.coach_approval = 'approved' 
         AND cml.staff_approval = 'approved'
         AND (cml.status = 'active' OR cml.status IS NULL)
-        AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
+        AND (cml.expires_at IS NULL OR cml.expires_at >= NOW())
     WHERE p.id = 1
         AND u.user_type_id = 4
         AND u.account_status = 'approved'
@@ -321,6 +371,6 @@ $unassignedCount = $unassignedStmt->fetch()['count'];
 // Then in the return statement, add:
 'unassigned_members' => (int)$unassignedCount,
 'assigned_members' => (int)$approvedCount,  // Rename from approved_assignments
+*/
 
 ?>
-

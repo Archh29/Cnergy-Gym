@@ -1,4 +1,7 @@
 <?php
+// Set timezone to Philippines
+date_default_timezone_set('Asia/Manila');
+
 require 'activity_logger.php';
 
 header("Access-Control-Allow-Origin: *");
@@ -23,6 +26,8 @@ try {
     $pdo->setAttribute(PDO::ATTR_STRINGIFY_FETCHES, false);
     // Ensure proper UTF-8 encoding for special characters like peso sign
     $pdo->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // Set MySQL timezone to Philippines
+    $pdo->exec("SET time_zone = '+08:00'");
 
 } catch (PDOException $e) {
     echo json_encode([
@@ -297,14 +302,83 @@ function getPendingRequests($pdo) {
 }
 
 function getAssignedMembers($pdo) {
+    // Get status filter from query parameter (default to 'active' for backward compatibility)
+    $statusFilter = $_GET['status'] ?? 'active';
+    
     try {
+        // Ensure expires_at column is DATETIME (not DATE) to support time-based expiration
+        try {
+            $checkExpiresAt = $pdo->query("SHOW COLUMNS FROM coach_member_list WHERE Field = 'expires_at'");
+            $expiresAtColumn = $checkExpiresAt->fetch(PDO::FETCH_ASSOC);
+            if ($expiresAtColumn && strtoupper($expiresAtColumn['Type']) === 'DATE') {
+                $pdo->exec("ALTER TABLE coach_member_list MODIFY COLUMN expires_at DATETIME DEFAULT NULL");
+                error_log("Updated expires_at column from DATE to DATETIME to support time-based expiration");
+            }
+        } catch (Exception $e) {
+            error_log("Could not alter expires_at column: " . $e->getMessage());
+        }
+        
+        // First, fix existing per_session assignments that have wrong expiration dates
+        // For per_session, expiration should be 9pm on the same day they were created
+        try {
+            $fixPerSessionStmt = $pdo->prepare("
+                UPDATE coach_member_list 
+                SET expires_at = CONCAT(DATE(staff_approved_at), ' 21:00:00')
+                WHERE rate_type = 'per_session'
+                AND (status = 'active' OR status IS NULL)
+                AND staff_approved_at IS NOT NULL
+                AND (expires_at IS NULL OR DATE(expires_at) != DATE(staff_approved_at) OR TIME(expires_at) != '21:00:00')
+            ");
+            $fixPerSessionStmt->execute();
+            $fixedCount = $fixPerSessionStmt->rowCount();
+            if ($fixedCount > 0) {
+                error_log("Fixed $fixedCount per_session assignment(s) expiration to 9pm on creation day");
+            }
+        } catch (Exception $e) {
+            error_log("Error fixing per_session expiration dates: " . $e->getMessage());
+        }
+        
+        // Now automatically update expired assignments in the database
+        // For per_session: check if it's past 9pm on the creation day
+        // For others: check if expires_at < NOW()
+        try {
+            $updateStmt = $pdo->prepare("
+                UPDATE coach_member_list 
+                SET status = 'expired'
+                WHERE (status = 'active' OR status IS NULL)
+                AND (
+                    -- For per_session: expired if past 9pm on creation day
+                    (rate_type = 'per_session' 
+                     AND staff_approved_at IS NOT NULL
+                     AND (
+                         DATE(staff_approved_at) < CURDATE() 
+                         OR (DATE(staff_approved_at) = CURDATE() AND TIME(NOW()) >= '21:00:00')
+                     ))
+                    OR
+                    -- For other types: expired if expires_at < NOW()
+                    (rate_type != 'per_session' 
+                     AND expires_at IS NOT NULL 
+                     AND expires_at < NOW())
+                )
+            ");
+            $updateStmt->execute();
+            $updatedCount = $updateStmt->rowCount();
+            if ($updatedCount > 0) {
+                error_log("Auto-updated $updatedCount expired coach assignment(s) to 'expired' status");
+            }
+        } catch (Exception $e) {
+            error_log("Error updating expired assignments: " . $e->getMessage());
+        }
+        
         $stmt = $pdo->prepare("
             SELECT 
                 cml.id as assignment_id,
                 cml.staff_approved_at as assigned_at,
+                cml.requested_at,
                 cml.rate_type,
                 cml.remaining_sessions,
                 cml.expires_at,
+                cml.status,
                 
                 -- Member data
                 m.id as member_id,
@@ -328,17 +402,89 @@ function getAssignedMembers($pdo) {
             LEFT JOIN coaches coach_info ON c.id = coach_info.user_id
             WHERE cml.coach_approval = 'approved' 
             AND cml.staff_approval = 'approved'
-            AND (cml.status = 'active' OR cml.status IS NULL)
-            AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
+            AND (
+                CASE 
+                    WHEN :statusFilter = 'active' THEN
+                        (cml.status = 'active' OR cml.status IS NULL)
+                        AND (
+                            -- For per_session: active if not past 9pm on creation day
+                            (cml.rate_type = 'per_session' 
+                             AND cml.staff_approved_at IS NOT NULL
+                             AND (
+                                 DATE(cml.staff_approved_at) > CURDATE()
+                                 OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) < '21:00:00')
+                             ))
+                            OR
+                            -- For other types: active if expires_at is NULL or >= NOW()
+                            (cml.rate_type != 'per_session' 
+                             AND (cml.expires_at IS NULL OR cml.expires_at >= NOW()))
+                        )
+                    WHEN :statusFilter = 'expired' THEN
+                        cml.status = 'expired'
+                        OR (
+                            (cml.status = 'active' OR cml.status IS NULL)
+                            AND (
+                                -- For per_session: expired if past 9pm on creation day
+                                (cml.rate_type = 'per_session' 
+                                 AND cml.staff_approved_at IS NOT NULL
+                                 AND (
+                                     DATE(cml.staff_approved_at) < CURDATE()
+                                     OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) >= '21:00:00')
+                                 ))
+                                OR
+                                -- For other types: expired if expires_at < NOW()
+                                (cml.rate_type != 'per_session' 
+                                 AND cml.expires_at IS NOT NULL 
+                                 AND cml.expires_at < NOW())
+                            )
+                        )
+                    ELSE
+                        -- 'all' status - show all approved assignments
+                        1=1
+                END
+            )
             ORDER BY cml.staff_approved_at DESC
         ");
         
-        $stmt->execute();
+        $stmt->execute(['statusFilter' => $statusFilter]);
         $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         $formattedAssignments = [];
         foreach ($assignments as $assignment) {
             $assignment = castMemberData($assignment);
+            
+            // Determine status dynamically based on expiration (Philippine Time)
+            $status = 'active';
+            $rateType = $assignment['rate_type'] ?? 'monthly';
+            // Use assigned_at (alias for staff_approved_at) or fallback to staff_approved_at or requested_at
+            $assignedAt = $assignment['assigned_at'] ?? $assignment['staff_approved_at'] ?? $assignment['requested_at'] ?? null;
+            
+            if ($rateType === 'per_session' && $assignedAt) {
+                // For per_session: expires at 9pm on the same day (Philippine Time)
+                try {
+                    $assignedDate = new DateTime($assignedAt, new DateTimeZone('Asia/Manila'));
+                    $expiresAt = clone $assignedDate;
+                    $expiresAt->setTime(21, 0, 0); // 9:00 PM
+                    
+                    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                    if ($now > $expiresAt) {
+                        $status = 'expired';
+                    }
+                } catch (Exception $e) {
+                    error_log("Error parsing date for per_session expiration check: " . $e->getMessage());
+                }
+            } elseif ($assignment['expires_at']) {
+                // For other types: use expires_at
+                try {
+                    $expiresAt = new DateTime($assignment['expires_at'], new DateTimeZone('Asia/Manila'));
+                    $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                    if ($expiresAt < $now) {
+                        $status = 'expired';
+                    }
+                } catch (Exception $e) {
+                    error_log("Error parsing expires_at date: " . $e->getMessage());
+                }
+            }
             
             $formattedAssignments[] = [
                 'id' => $assignment['assignment_id'],
@@ -359,7 +505,7 @@ function getAssignedMembers($pdo) {
                 'rateType' => $assignment['rate_type'] ?: 'monthly',
                 'remainingSessions' => (int)($assignment['remaining_sessions'] ?: 0),
                 'expiresAt' => $assignment['expires_at'],
-                'status' => 'active'
+                'status' => $status
             ];
         }
         
@@ -682,20 +828,44 @@ function approveRequestWithPayment($pdo) {
                     $hasCashierColumn = in_array('cashier_id', $salesColumns);
                     
                     if ($hasReceiptColumn && $hasChangeColumn && $hasCashierColumn) {
-                        // Full sales record with all fields - using correct column names from sales.php
-                        $salesStmt = $pdo->prepare("
-                            INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
-                            VALUES (?, ?, NOW(), 'Coaching', ?, 'confirmed', ?, ?, ?, ?)
-                        ");
-                        $salesStmt->execute([
-                            $requestDetails['member_id'], 
-                            $paymentAmount,  // total_amount
-                            $paymentMethod, 
-                            $receiptNumber, 
-                            $adminId,        // cashier_id
-                            $changeGiven,    // change_given
-                            $notes
-                        ]);
+                        // Check if reference_number column exists
+                        $hasReferenceColumn = in_array('reference_number', $salesColumns);
+                        
+                        // For digital/GCash payments, use reference_number instead of receipt_number
+                        // For cash payments, use receipt_number
+                        $isDigitalPayment = in_array(strtolower($paymentMethod), ['digital', 'gcash', 'card']);
+                        
+                        if ($isDigitalPayment && $hasReferenceColumn) {
+                            // Digital payment: put reference in reference_number, leave receipt_number as NULL
+                            $salesStmt = $pdo->prepare("
+                                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, reference_number, cashier_id, change_given, notes) 
+                                VALUES (?, ?, NOW(), 'Coaching', ?, 'confirmed', NULL, ?, ?, ?, ?)
+                            ");
+                            $salesStmt->execute([
+                                $requestDetails['member_id'], 
+                                $paymentAmount,  // total_amount
+                                $paymentMethod, 
+                                $receiptNumber,  // GCash reference number goes to reference_number
+                                $adminId,        // cashier_id
+                                $changeGiven,    // change_given
+                                $notes
+                            ]);
+                        } else {
+                            // Cash payment: use receipt_number as normal
+                            $salesStmt = $pdo->prepare("
+                                INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes) 
+                                VALUES (?, ?, NOW(), 'Coaching', ?, 'confirmed', ?, ?, ?, ?)
+                            ");
+                            $salesStmt->execute([
+                                $requestDetails['member_id'], 
+                                $paymentAmount,  // total_amount
+                                $paymentMethod, 
+                                $receiptNumber,  // Receipt number for cash
+                                $adminId,        // cashier_id
+                                $changeGiven,    // change_given
+                                $notes
+                            ]);
+                        }
                         $saleId = $pdo->lastInsertId();
                         
                         // Create sales_details entry to link coach assignment to sale
@@ -733,10 +903,21 @@ function approveRequestWithPayment($pdo) {
                         // Get the inserted ID to update with receipt and change info
                         $salesId = $pdo->lastInsertId();
                         
-                        // Update with receipt number and change if columns exist
+                        // Check if reference_number column exists
+                        $hasReferenceColumn = in_array('reference_number', $salesColumns);
+                        $isDigitalPayment = in_array(strtolower($paymentMethod), ['digital', 'gcash', 'card']);
+                        
+                        // Update with receipt number or reference number based on payment method
                         if ($hasReceiptColumn) {
-                            $updateStmt = $pdo->prepare("UPDATE sales SET receipt_number = ? WHERE id = ?");
-                            $updateStmt->execute([$receiptNumber, $salesId]);
+                            if ($isDigitalPayment && $hasReferenceColumn) {
+                                // Digital payment: put reference in reference_number, leave receipt_number as NULL
+                                $updateStmt = $pdo->prepare("UPDATE sales SET receipt_number = NULL, reference_number = ? WHERE id = ?");
+                                $updateStmt->execute([$receiptNumber, $salesId]);
+                            } else {
+                                // Cash payment: use receipt_number as normal
+                                $updateStmt = $pdo->prepare("UPDATE sales SET receipt_number = ? WHERE id = ?");
+                                $updateStmt->execute([$receiptNumber, $salesId]);
+                            }
                         }
                         
                         if ($hasChangeColumn) {
@@ -1570,6 +1751,18 @@ function assignCoach($pdo) {
             error_log("Could not add payment_received column: " . $e->getMessage());
         }
         
+        // Check if expires_at column is DATE type, if so change it to DATETIME to support time-based expiration
+        try {
+            $checkExpiresAt = $pdo->query("SHOW COLUMNS FROM coach_member_list WHERE Field = 'expires_at'");
+            $expiresAtColumn = $checkExpiresAt->fetch(PDO::FETCH_ASSOC);
+            if ($expiresAtColumn && strtoupper($expiresAtColumn['Type']) === 'DATE') {
+                $pdo->exec("ALTER TABLE coach_member_list MODIFY COLUMN expires_at DATETIME DEFAULT NULL");
+                error_log("Updated expires_at column from DATE to DATETIME to support time-based expiration");
+            }
+        } catch (Exception $e) {
+            error_log("Could not alter expires_at column: " . $e->getMessage());
+        }
+        
         // Check if member already has an active assignment with this coach
         $existingStmt = $pdo->prepare("
             SELECT id FROM coach_member_list
@@ -1578,7 +1771,7 @@ function assignCoach($pdo) {
                 AND coach_approval = 'approved'
                 AND staff_approval = 'approved'
                 AND (status = 'active' OR status IS NULL)
-                AND (expires_at IS NULL OR expires_at >= CURDATE())
+                AND (expires_at IS NULL OR expires_at >= NOW())
         ");
         $existingStmt->execute([$memberId, $coachId]);
         if ($existingStmt->fetch()) {
@@ -1607,7 +1800,7 @@ function assignCoach($pdo) {
                     AND coach_approval = 'approved'
                     AND staff_approval = 'approved'
                     AND (status = 'active' OR status IS NULL)
-                    AND (expires_at IS NULL OR expires_at >= CURDATE())
+                    AND (expires_at IS NULL OR expires_at >= NOW())
                     AND payment_received = 1
                 ORDER BY id DESC
                 LIMIT 1
@@ -1646,8 +1839,15 @@ function assignCoach($pdo) {
             $coachInfoStmt->execute([$coachId]);
             $coachInfo = $coachInfoStmt->fetch(PDO::FETCH_ASSOC);
             
-            // Calculate expiration date (30 days from now for monthly)
-            $expiresAt = date('Y-m-d', strtotime('+30 days'));
+            // Calculate expiration date/time based on rate type
+            if ($rateType === 'per_session') {
+                // For session assignments, expire at 9pm on the same day (Philippine Time)
+                $now = new DateTime('now', new DateTimeZone('Asia/Manila'));
+                $expiresAt = $now->format('Y-m-d') . ' 21:00:00'; // Today at 9:00 PM PH time
+            } else {
+                // For monthly/package, 30 days from now (Philippine Time)
+                $expiresAt = date('Y-m-d H:i:s', strtotime('+30 days'));
+            }
             $remainingSessions = 18; // Default sessions
             
             // Insert new coach assignment (payment_received = 0, will be set to 1 when payment is processed)
@@ -1757,7 +1957,7 @@ function getAvailableMembers($pdo) {
                 AND cml.coach_approval = 'approved' 
                 AND cml.staff_approval = 'approved'
                 AND (cml.status = 'active' OR cml.status IS NULL)
-                AND (cml.expires_at IS NULL OR cml.expires_at >= CURDATE())
+                AND (cml.expires_at IS NULL OR cml.expires_at >= NOW())
             WHERE (p.id = 1 OR p.id = 5)
                 AND u.user_type_id = 4
                 AND u.account_status = 'approved'

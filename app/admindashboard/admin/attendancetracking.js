@@ -359,69 +359,79 @@ const AttendanceTracking = ({ userId }) => {
 
   const loadFailedScans = async () => {
     try {
-    const stored = localStorage.getItem('failedQrScans')
-      console.log("🔍 Admin - Loading failed scans from localStorage:", stored ? JSON.parse(stored).length : 0, "items")
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.cnergy.site"
+      console.log("🔍 Admin - Fetching denied logs from database:", `${apiUrl}/attendance.php?action=denied_logs&limit=100`)
       
-    if (stored) {
-      let scans = JSON.parse(stored)
+      const response = await axios.get(`${apiUrl}/attendance.php?action=denied_logs&limit=100`, {
+        timeout: 10000 // 10 second timeout
+      })
+      
+      const dbLogs = response.data || []
+      console.log("📊 Admin - Database response:", dbLogs.length, "logs")
+      
+      if (Array.isArray(dbLogs)) {
+        // Convert database format to frontend format
+        const formattedLogs = dbLogs.map(log => ({
+          timestamp: log.timestamp || log.attempted_at,
+          type: log.type || log.denial_reason,
+          message: log.message || '',
+          memberName: log.memberName || log.user_name || 'Unknown',
+          entryMethod: log.entryMethod || log.entry_method || 'unknown',
+          qrData: null // Not stored in database
+        }))
         
-        // Ensure scans is an array
-        if (!Array.isArray(scans)) {
-          console.warn("⚠️ Admin - failedQrScans is not an array, resetting")
-          scans = []
-        }
+        // Resolve member names for entries that only have "Member ID: X"
+        const needsResolution = formattedLogs.filter(scan =>
+          scan.memberName && scan.memberName.startsWith("Member ID: ")
+        )
 
-      // Resolve member names for entries that only have "Member ID: X"
-      const needsResolution = scans.filter(scan =>
-        scan.memberName && scan.memberName.startsWith("Member ID: ")
-      )
+        if (needsResolution.length > 0) {
+          try {
+            const membersResponse = await axios.get(`${apiUrl}/attendance.php?action=members`)
+            const members = membersResponse.data || []
 
-      if (needsResolution.length > 0) {
-        try {
-          const membersResponse = await axios.get("https://api.cnergy.site/attendance.php?action=members")
-          const members = membersResponse.data || []
-
-          scans = scans.map(scan => {
-            if (scan.memberName && scan.memberName.startsWith("Member ID: ")) {
-              const memberId = parseInt(scan.memberName.replace("Member ID: ", ""))
-              const member = members.find(m => m.id === memberId)
-              if (member) {
-                const fullName = `${member.fname || ''} ${member.lname || ''}`.trim()
-                if (fullName) {
-                  // Also update the error message if it contains the member ID
-                  let updatedMessage = scan.message
-                  if (updatedMessage && updatedMessage.includes(`Member ID: ${memberId}`)) {
-                    updatedMessage = updatedMessage.replace(`Member ID: ${memberId}`, fullName)
+            const resolvedLogs = formattedLogs.map(scan => {
+              if (scan.memberName && scan.memberName.startsWith("Member ID: ")) {
+                const memberId = parseInt(scan.memberName.replace("Member ID: ", ""))
+                const member = members.find(m => m.id === memberId)
+                if (member) {
+                  const fullName = `${member.fname || ''} ${member.lname || ''}`.trim()
+                  if (fullName) {
+                    // Also update the error message if it contains the member ID
+                    let updatedMessage = scan.message
+                    if (updatedMessage && updatedMessage.includes(`Member ID: ${memberId}`)) {
+                      updatedMessage = updatedMessage.replace(`Member ID: ${memberId}`, fullName)
+                    }
+                    return { ...scan, memberName: fullName, message: updatedMessage }
                   }
-                  return { ...scan, memberName: fullName, message: updatedMessage }
                 }
               }
-            }
-            return scan
-          })
-
-          // Update localStorage with resolved names
-          localStorage.setItem('failedQrScans', JSON.stringify(scans))
-        } catch (err) {
-          console.error("Failed to resolve member names:", err)
+              return scan
+            })
+            
+            console.log("✅ Admin - Loaded", resolvedLogs.length, "denied logs from database")
+            setFailedScans(resolvedLogs)
+            return
+          } catch (err) {
+            console.error("Failed to resolve member names:", err)
+          }
         }
+        
+        console.log("✅ Admin - Loaded", formattedLogs.length, "denied logs from database")
+        setFailedScans(formattedLogs)
+      } else {
+        console.warn("⚠️ Admin - Invalid response format from database")
+        setFailedScans([])
       }
-
-      console.log("✅ Admin - Setting failed scans:", scans.length, "items")
-      setFailedScans(scans)
-    } else {
-      console.log("⚠️ Admin - No failed scans found in localStorage")
-      setFailedScans([])
-    }
     } catch (error) {
-      console.error("❌ Admin - Error loading failed scans:", error)
+      console.error("❌ Admin - Error loading denied logs from database:", error.message, error.response?.data)
       setFailedScans([])
     }
   }
 
   const clearFailedScans = () => {
-    localStorage.removeItem('failedQrScans')
-    setFailedScans([])
+    // No longer using localStorage - just reload from database
+    loadFailedScans()
   }
 
   const openFailedScansDialog = () => {
@@ -430,20 +440,12 @@ const AttendanceTracking = ({ userId }) => {
   }
 
   // Helper function to log denied attendance attempts
+  // Note: Denied attempts are now logged directly to database by the backend
+  // This function is kept for compatibility but no longer stores in localStorage
   const logDeniedAttempt = (memberName, errorType, errorMessage, entryMethod = "manual") => {
-    const deniedAttempt = {
-      timestamp: new Date().toISOString(),
-      type: errorType || "unknown",
-      message: errorMessage || "Access denied",
-      memberName: memberName || "Unknown",
-      entryMethod: entryMethod // "manual" or "qr"
-    }
-
-    // Get existing denied attempts from localStorage
-    const existingFailures = JSON.parse(localStorage.getItem('failedQrScans') || '[]')
-    existingFailures.unshift(deniedAttempt) // Add to beginning
-    // Store all denied attempts (no limit)
-    localStorage.setItem('failedQrScans', JSON.stringify(existingFailures))
+    // Backend automatically logs denied attempts to database
+    // No need to store in localStorage anymore
+    console.log("Denied attempt logged to database by backend:", { memberName, errorType, entryMethod })
   }
 
   // Helper function to show notifications
@@ -553,8 +555,8 @@ const AttendanceTracking = ({ userId }) => {
         // Fetch fresh data - API now returns correct checkout times
         await fetchData()
       } else {
-        // Get member name for logging
-        const memberName = response.data.member_name || `${member.fname} ${member.lname}`
+        // Get member name for logging - backend returns user_name
+        const memberName = response.data.user_name || response.data.member_name || `${member.fname} ${member.lname}`.trim()
         const errorType = response.data.type || "unknown"
         let errorMessage = response.data.message || "Failed to record attendance"
 
