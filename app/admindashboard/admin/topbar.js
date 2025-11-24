@@ -780,32 +780,40 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
               <p className="text-sm font-semibold text-gray-900 dark:text-white">{userData.firstName}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
             </div>
-            <div className="relative">
-              {userData.profilePhoto ? (
-                <img
-                  src={userData.profilePhoto}
-                  alt={userData.firstName}
-                  className="w-9 h-9 rounded-lg border-2 border-white dark:border-gray-900 object-cover"
-                  onError={(e) => {
-                    console.error('[Topbar] ❌ Failed to load profile image')
-                    console.error('[Topbar] Attempted URL:', userData.profilePhoto)
-                    e.target.style.display = 'none'
-                    // Show fallback instead
-                    const fallback = e.target.nextElementSibling
-                    if (fallback) fallback.style.display = 'flex'
-                  }}
-                  onLoad={() => {
-                    console.log('[Topbar] ✅ Profile image loaded successfully!')
-                    console.log('[Topbar] Image URL:', userData.profilePhoto)
-                  }}
-                />
-              ) : null}
-              <div 
-                className={`w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm border-2 border-white dark:border-gray-900 ${userData.profilePhoto ? 'hidden' : ''}`}
-              >
-                <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
-              </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
+            <div className="relative w-9 h-9">
+              {!userData.profilePhoto ? (
+                <div className="absolute inset-0 w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm border-2 border-white dark:border-gray-900">
+                  <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
+                </div>
+              ) : (
+                <>
+                  <div 
+                    className="absolute inset-0 w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm border-2 border-white dark:border-gray-900"
+                    id="profile-fallback"
+                  >
+                    <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
+                  </div>
+                  <img
+                    src={userData.profilePhoto}
+                    alt={userData.firstName}
+                    className="absolute inset-0 w-9 h-9 rounded-lg border-2 border-white dark:border-gray-900 object-cover z-10"
+                    onError={(e) => {
+                      console.error('[Topbar] ❌ Failed to load profile image')
+                      console.error('[Topbar] Attempted URL:', userData.profilePhoto)
+                      e.target.style.display = 'none'
+                      const fallback = document.getElementById('profile-fallback')
+                      if (fallback) fallback.style.display = 'flex'
+                    }}
+                    onLoad={(e) => {
+                      console.log('[Topbar] ✅ Profile image loaded successfully!')
+                      console.log('[Topbar] Image URL:', userData.profilePhoto)
+                      const fallback = document.getElementById('profile-fallback')
+                      if (fallback) fallback.style.display = 'none'
+                    }}
+                  />
+                </>
+              )}
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full z-20"></div>
             </div>
           </button>
         </DropdownMenuTrigger>
