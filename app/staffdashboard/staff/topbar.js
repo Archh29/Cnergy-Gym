@@ -104,14 +104,24 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
   }
 
   const fetchProfilePhoto = async (userIdToFetch) => {
-    if (!userIdToFetch) return null
+    // Get userId from parameter or fallback to sessionStorage
+    const currentUserId = userIdToFetch || userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+    
+    if (!currentUserId) {
+      console.log('[Topbar] No user ID available for fetching profile photo')
+      return null
+    }
 
     try {
-      const response = await fetch(`${SETTINGS_API_URL}?user_id=${userIdToFetch}`, {
+      console.log('[Topbar] Fetching profile photo for user ID:', currentUserId)
+      const response = await fetch(`${SETTINGS_API_URL}?user_id=${currentUserId}`, {
         credentials: "include"
       })
 
-      if (!response.ok) return null
+      if (!response.ok) {
+        console.log('[Topbar] Profile photo fetch failed:', response.status, response.statusText)
+        return null
+      }
 
       const text = await response.text()
       let data
@@ -122,6 +132,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
         if (jsonMatch) {
           data = JSON.parse(jsonMatch[0])
         } else {
+          console.log('[Topbar] Could not parse profile photo response')
           return null
         }
       }
@@ -136,9 +147,11 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
         } else {
           console.log('[Topbar] No profile_photo_url in user data')
         }
+      } else {
+        console.log('[Topbar] Profile photo fetch unsuccessful:', data)
       }
     } catch (error) {
-      console.error("Error fetching profile photo:", error)
+      console.error("[Topbar] Error fetching profile photo:", error)
     }
     return null
   }
@@ -149,12 +162,22 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
       fetchNotifications()
       fetchSupportTickets()
       
-      // Fetch profile photo
-      fetchProfilePhoto(userId).then(photoUrl => {
-        if (photoUrl) {
-          setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+      // Fetch profile photo immediately
+      const loadProfilePhoto = async () => {
+        const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+        if (currentUserId) {
+          console.log('[Topbar] Fetching profile photo for user:', currentUserId)
+          const photoUrl = await fetchProfilePhoto(currentUserId)
+          if (photoUrl) {
+            console.log('[Topbar] Setting profile photo:', photoUrl)
+            setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+          } else {
+            console.log('[Topbar] No profile photo found')
+          }
         }
-      })
+      }
+      
+      loadProfilePhoto()
 
       const interval = setInterval(() => {
         fetchNotifications()
@@ -162,11 +185,17 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
       }, 30000)
 
       // Listen for profile update events
-      const handleProfileUpdate = () => {
+      const handleProfileUpdate = async () => {
+        console.log('[Topbar] Profile updated event received, refreshing...')
         fetchUserData()
-        fetchProfilePhoto(userId).then(photoUrl => {
-          setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
-        })
+        const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+        if (currentUserId) {
+          const photoUrl = await fetchProfilePhoto(currentUserId)
+          if (photoUrl) {
+            console.log('[Topbar] Updated profile photo after save:', photoUrl)
+            setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+          }
+        }
       }
 
       window.addEventListener('profileUpdated', handleProfileUpdate)

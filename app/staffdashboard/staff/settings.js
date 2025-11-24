@@ -127,14 +127,15 @@ const Settings = ({ userId, open, onOpenChange }) => {
   }
 
   useEffect(() => {
-    if (open) {
-      fetchUserData()
-    } else {
-      // Reset state when dialog closes
-      setLoading(true)
+    if (open && userId) {
+      // Only fetch if we don't have user data or if user ID changed
+      const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+      if (currentUserId && (!user || user.id != currentUserId)) {
+        fetchUserData()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, userId])
 
   // Handle profile photo change
   const handleProfilePhotoChange = (e) => {
@@ -281,22 +282,30 @@ const Settings = ({ userId, open, onOpenChange }) => {
         })
         // Refresh user data with the updated info from response
         if (data.user) {
+          console.log('[Settings] Updating state with saved user data:', data.user)
           setUser(data.user)
           setFname(data.user.fname || "")
           setMname(data.user.mname || "")
           setLname(data.user.lname || "")
           setEmail(data.user.email || "")
-          setProfilePhotoPreview(normalizeProfilePhotoUrl(data.user.profile_photo_url))
+          const photoUrl = normalizeProfilePhotoUrl(data.user.profile_photo_url)
+          console.log('[Settings] Normalized photo URL:', photoUrl)
+          setProfilePhotoPreview(photoUrl)
+          // Clear the file input but keep the preview
+          setProfilePhotoFile(null)
         } else {
           // Fallback: refetch from API
+          console.log('[Settings] No user data in response, refetching...')
           await fetchUserData()
         }
-        setProfilePhotoFile(null)
         
-        // Dispatch event to notify topbar to refresh
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('profileUpdated'))
-        }
+        // Dispatch event to notify topbar to refresh - add a small delay to ensure DB is updated
+        setTimeout(() => {
+          if (typeof window !== 'undefined') {
+            console.log('[Settings] Dispatching profileUpdated event')
+            window.dispatchEvent(new CustomEvent('profileUpdated'))
+          }
+        }, 500)
       } else {
         throw new Error(data.error || "Failed to update profile")
       }
