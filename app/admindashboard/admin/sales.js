@@ -6594,6 +6594,12 @@ const Sales = ({ userId }) => {
                 if (isDayPassPlan) {
                   // Check if this is a Day Pass guest/walk-in sale (user without account)
                   if (isDayPassGuestSale(sale)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "day_pass") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+                    // If type filter is "guest" or "all", include this guest sale
+                    
                     // Filter by quick access filter
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
@@ -6656,6 +6662,12 @@ const Sales = ({ userId }) => {
 
                   // Check if this is a Day Pass subscription sale (user with account)
                   if (isDayPassSubscription(sale)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+                    // If type filter is "day_pass" or "all", include this subscription sale
+                    
                     // Filter by quick access filter
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
@@ -6730,7 +6742,13 @@ const Sales = ({ userId }) => {
                   )
 
                   if (isGymSessionGuestSale) {
-                    // Apply date filters (type filter will be applied in filteredSalesForStats)
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "subscription") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+                    // If type filter is "guest" or "all", include this guest sale
+                    
+                    // Apply date filters
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
@@ -6788,7 +6806,13 @@ const Sales = ({ userId }) => {
 
                   // Check if this is a Gym Session subscription sale
                   if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
-                    // Apply date filters (type filter will be applied in filteredSalesForStats)
+                    // Apply Gym Session type filter (Subscription vs Guest)
+                    if (subscriptionGymSessionTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+                    // If type filter is "subscription" or "all", include this subscription sale
+                    
+                    // Apply date filters
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
@@ -7155,6 +7179,12 @@ const Sales = ({ userId }) => {
                 if (isDayPassPlan) {
                   // Check if this is a Day Pass guest/walk-in sale (user without account)
                   if (isDayPassGuestSaleForStats(sale)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "day_pass") {
+                      return false // This is a guest sale, not a subscription sale
+                    }
+                    // If type filter is "guest" or "all", include this guest sale
+                    
                     // Apply date filters for guest sales
                     // Handle custom date first (highest priority)
                     if (subscriptionUseCustomDate && subscriptionCustomDate) {
@@ -7181,6 +7211,12 @@ const Sales = ({ userId }) => {
 
                   // Check if this is a Day Pass subscription sale (user with account)
                   if (isDayPassSubscriptionForFilter(sale, selectedPlanFilter)) {
+                    // Apply Day Pass type filter (Subscription vs Guest)
+                    if (subscriptionDayPassTypeFilter === "guest") {
+                      return false // This is a subscription sale, not a guest sale
+                    }
+                    // If type filter is "day_pass" or "all", include this subscription sale
+                    
                     // Apply date filters for subscription sales
                     // Handle custom date first (highest priority)
                     if (subscriptionUseCustomDate && subscriptionCustomDate) {

@@ -370,7 +370,55 @@ function getAssignedMembers($pdo) {
             error_log("Error updating expired assignments: " . $e->getMessage());
         }
         
-        $stmt = $pdo->prepare("
+        // Build WHERE clause based on status filter
+        // Validate statusFilter to prevent SQL injection
+        $validStatuses = ['active', 'expired', 'all'];
+        if (!in_array($statusFilter, $validStatuses)) {
+            $statusFilter = 'active';
+        }
+        
+        $whereClause = "WHERE cml.coach_approval = 'approved' AND cml.staff_approval = 'approved'";
+        
+        if ($statusFilter === 'active') {
+            $whereClause .= " AND (cml.status = 'active' OR cml.status IS NULL)
+                AND (
+                    -- For per_session: active if not past 9pm on creation day
+                    (cml.rate_type = 'per_session' 
+                     AND cml.staff_approved_at IS NOT NULL
+                     AND (
+                         DATE(cml.staff_approved_at) > CURDATE()
+                         OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) < '21:00:00')
+                     ))
+                    OR
+                    -- For other types: active if expires_at is NULL or >= NOW()
+                    (cml.rate_type != 'per_session' 
+                     AND (cml.expires_at IS NULL OR cml.expires_at >= NOW()))
+                )";
+        } elseif ($statusFilter === 'expired') {
+            $whereClause .= " AND (
+                cml.status = 'expired'
+                OR (
+                    (cml.status = 'active' OR cml.status IS NULL)
+                    AND (
+                        -- For per_session: expired if past 9pm on creation day
+                        (cml.rate_type = 'per_session' 
+                         AND cml.staff_approved_at IS NOT NULL
+                         AND (
+                             DATE(cml.staff_approved_at) < CURDATE()
+                             OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) >= '21:00:00')
+                         ))
+                        OR
+                        -- For other types: expired if expires_at < NOW()
+                        (cml.rate_type != 'per_session' 
+                         AND cml.expires_at IS NOT NULL 
+                         AND cml.expires_at < NOW())
+                    )
+                )
+            )";
+        }
+        // For 'all' status, no additional WHERE clause needed
+        
+        $sql = "
             SELECT 
                 cml.id as assignment_id,
                 cml.staff_approved_at as assigned_at,
@@ -400,53 +448,12 @@ function getAssignedMembers($pdo) {
             JOIN user m ON cml.member_id = m.id
             JOIN user c ON cml.coach_id = c.id
             LEFT JOIN coaches coach_info ON c.id = coach_info.user_id
-            WHERE cml.coach_approval = 'approved' 
-            AND cml.staff_approval = 'approved'
-            AND (
-                CASE 
-                    WHEN :statusFilter = 'active' THEN
-                        (cml.status = 'active' OR cml.status IS NULL)
-                        AND (
-                            -- For per_session: active if not past 9pm on creation day
-                            (cml.rate_type = 'per_session' 
-                             AND cml.staff_approved_at IS NOT NULL
-                             AND (
-                                 DATE(cml.staff_approved_at) > CURDATE()
-                                 OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) < '21:00:00')
-                             ))
-                            OR
-                            -- For other types: active if expires_at is NULL or >= NOW()
-                            (cml.rate_type != 'per_session' 
-                             AND (cml.expires_at IS NULL OR cml.expires_at >= NOW()))
-                        )
-                    WHEN :statusFilter = 'expired' THEN
-                        cml.status = 'expired'
-                        OR (
-                            (cml.status = 'active' OR cml.status IS NULL)
-                            AND (
-                                -- For per_session: expired if past 9pm on creation day
-                                (cml.rate_type = 'per_session' 
-                                 AND cml.staff_approved_at IS NOT NULL
-                                 AND (
-                                     DATE(cml.staff_approved_at) < CURDATE()
-                                     OR (DATE(cml.staff_approved_at) = CURDATE() AND TIME(NOW()) >= '21:00:00')
-                                 ))
-                                OR
-                                -- For other types: expired if expires_at < NOW()
-                                (cml.rate_type != 'per_session' 
-                                 AND cml.expires_at IS NOT NULL 
-                                 AND cml.expires_at < NOW())
-                            )
-                        )
-                    ELSE
-                        -- 'all' status - show all approved assignments
-                        1=1
-                END
-            )
+            " . $whereClause . "
             ORDER BY cml.staff_approved_at DESC
-        ");
+        ";
         
-        $stmt->execute(['statusFilter' => $statusFilter]);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute();
         $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         $formattedAssignments = [];

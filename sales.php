@@ -554,8 +554,38 @@ function getSalesData($pdo)
 	");
 
 	// Execute main query with params (already set above in $mainParams)
-	$stmt->execute($mainParams);
-	$salesData = $stmt->fetchAll();
+	try {
+		$stmt->execute($mainParams);
+		$salesData = $stmt->fetchAll();
+		
+		// Debug: Log coaching sales found
+		$coachingSalesCount = 0;
+		$coachingSalesWithoutCoach = 0;
+		foreach ($salesData as $row) {
+			if ($row['sale_type'] === 'Coaching') {
+				$coachingSalesCount++;
+				if ($coachingSalesCount <= 5) {
+					error_log("DEBUG sales_api: Coaching sale found - ID: " . $row['id'] . ", user_id: " . ($row['user_id'] ?? 'NULL') . ", coach_id: " . ($row['coach_id'] ?? 'NULL') . ", coach_name: " . ($row['coach_fullname'] ?? 'NULL') . ", sale_date: " . ($row['sale_date'] ?? 'NULL'));
+				}
+				if (empty($row['coach_id']) && empty($row['coach_fullname'])) {
+					$coachingSalesWithoutCoach++;
+				}
+			}
+		}
+		error_log("DEBUG sales_api: Total coaching sales found in query: " . $coachingSalesCount . ", Without coach info: " . $coachingSalesWithoutCoach);
+		
+		// Debug: Check if there are any coaching sales in the database at all
+		if ($coachingSalesCount == 0) {
+			$checkStmt = $pdo->query("SELECT COUNT(*) as cnt FROM sales WHERE sale_type = 'Coaching'");
+			$checkResult = $checkStmt->fetch();
+			error_log("DEBUG sales_api: Total coaching sales in database: " . ($checkResult['cnt'] ?? 0));
+		}
+	} catch (Exception $e) {
+		error_log("ERROR sales_api: Failed to execute main sales query: " . $e->getMessage());
+		error_log("ERROR sales_api: Query: " . $stmt->queryString);
+		error_log("ERROR sales_api: Params: " . json_encode($mainParams));
+		$salesData = [];
+	}
 
 	// Merge guest sales with main sales data
 	$salesData = array_merge($salesData, $guestSalesData);
@@ -698,7 +728,15 @@ function getSalesData($pdo)
 			}
 		} else {
 			// If coach info wasn't set in first row but exists in this row, update it
-			if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
+			// For coaching sales, prioritize getting coach info
+			if ($row['sale_type'] === 'Coaching') {
+				if (empty($salesGrouped[$saleId]['coach_id']) && !empty($row['coach_id'])) {
+					$salesGrouped[$saleId]['coach_id'] = (int) $row['coach_id'];
+				}
+				if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
+					$salesGrouped[$saleId]['coach_name'] = trim($row['coach_fullname']);
+				}
+			} else if (empty($salesGrouped[$saleId]['coach_name']) && !empty($row['coach_fullname'])) {
 				$salesGrouped[$saleId]['coach_name'] = trim($row['coach_fullname']);
 				$salesGrouped[$saleId]['coach_id'] = !empty($row['coach_id']) ? (int) $row['coach_id'] : null;
 			}
@@ -798,6 +836,21 @@ function getSalesData($pdo)
 				'guest_session_id' => $row['guest_session_id'] ?? null
 			];
 			$salesGrouped[$saleId]['sales_details'][] = $detail;
+		} else if ($row['sale_type'] === 'Coaching' && empty($salesGrouped[$saleId]['sales_details'])) {
+			// For coaching sales, create a sales_detail entry with coach information
+			$detail = [
+				'id' => $row['detail_id'] ?? null,
+				'quantity' => $row['quantity'] ?? 1,
+				'price' => (float) ($row['detail_price'] ?? $row['total_amount'] ?? 0)
+			];
+			// Add coach information if available
+			if (!empty($row['coach_id']) || !empty($row['coach_fullname'])) {
+				$detail['coach'] = [
+					'coach_id' => !empty($row['coach_id']) ? (int) $row['coach_id'] : null,
+					'coach_name' => !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null
+				];
+			}
+			$salesGrouped[$saleId]['sales_details'][] = $detail;
 		} else if ($row['detail_id']) {
 			$detail = [
 				'id' => $row['detail_id'],
@@ -842,7 +895,118 @@ function getSalesData($pdo)
 				$detail['guest_session_id'] = $row['guest_session_id'];
 			}
 
+			// For coaching sales, add coach information if detail doesn't have product/subscription/guest
+			if ($row['sale_type'] === 'Coaching' && empty($detail['product_id']) && empty($detail['subscription_id']) && empty($detail['guest_session_id'])) {
+				if (!empty($row['coach_id']) || !empty($row['coach_fullname'])) {
+					$detail['coach'] = [
+						'coach_id' => !empty($row['coach_id']) ? (int) $row['coach_id'] : null,
+						'coach_name' => !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null
+					];
+				}
+			}
+
 			$salesGrouped[$saleId]['sales_details'][] = $detail;
+		} else if (!$row['detail_id'] && $row['sale_type'] === 'Coaching' && empty($salesGrouped[$saleId]['sales_details'])) {
+			// Handle coaching sales with no sales_details rows (detail_id is NULL)
+			$detail = [
+				'id' => null,
+				'quantity' => 1,
+				'price' => (float) $row['total_amount']
+			];
+			// Add coach information if available
+			if (!empty($row['coach_id']) || !empty($row['coach_fullname'])) {
+				$detail['coach'] = [
+					'coach_id' => !empty($row['coach_id']) ? (int) $row['coach_id'] : null,
+					'coach_name' => !empty($row['coach_fullname']) ? trim($row['coach_fullname']) : null
+				];
+			}
+			$salesGrouped[$saleId]['sales_details'][] = $detail;
+		}
+	}
+
+	// Final pass: Ensure all coaching sales have coach info and details
+	foreach ($salesGrouped as $saleId => $sale) {
+		if ($sale['sale_type'] === 'Coaching') {
+			// If coach info is missing, try to fetch it directly from coach_member_list
+			// For coaching sales, we need to find the coach assignment that was active at the time of sale
+			if (empty($sale['coach_id']) && !empty($sale['user_id'])) {
+				try {
+					// First try: Find coach assignment that was active at the time of sale
+					// Don't filter by current status - we want the assignment that was active when the sale happened
+					$coachStmt = $pdo->prepare("
+						SELECT cml.coach_id,
+						       CONCAT_WS(' ', u_coach.fname, u_coach.mname, u_coach.lname) AS coach_fullname
+						FROM coach_member_list cml
+						LEFT JOIN user u_coach ON cml.coach_id = u_coach.id
+						WHERE cml.member_id = ?
+						  AND cml.coach_approval = 'approved'
+						  AND cml.staff_approval = 'approved'
+						  AND (
+						  	-- Assignment was approved before or on sale date
+						  	(cml.staff_approved_at IS NOT NULL AND DATE(cml.staff_approved_at) <= DATE(?))
+						  	OR (cml.requested_at IS NOT NULL AND DATE(cml.requested_at) <= DATE(?))
+						  )
+						  AND (
+						  	-- Assignment was still valid at sale date (not expired yet)
+						  	cml.expires_at IS NULL 
+						  	OR cml.expires_at >= DATE(?)
+						  	OR (cml.rate_type = 'per_session' AND DATE(cml.staff_approved_at) = DATE(?))
+						  )
+						ORDER BY 
+							CASE 
+								WHEN cml.staff_approved_at IS NOT NULL AND DATE(cml.staff_approved_at) <= DATE(?) THEN 0
+								WHEN cml.requested_at IS NOT NULL AND DATE(cml.requested_at) <= DATE(?) THEN 1
+								ELSE 2
+							END,
+							COALESCE(cml.staff_approved_at, cml.requested_at, '1970-01-01') DESC,
+							cml.id DESC
+						LIMIT 1
+					");
+					$saleDate = $sale['sale_date'];
+					$coachStmt->execute([$sale['user_id'], $saleDate, $saleDate, $saleDate, $saleDate, $saleDate, $saleDate]);
+					$coachInfo = $coachStmt->fetch();
+					
+					// If still no match, try without expiration check (just find any approved assignment for this member)
+					if (!$coachInfo || !$coachInfo['coach_id']) {
+						$coachStmt2 = $pdo->prepare("
+							SELECT cml.coach_id,
+							       CONCAT_WS(' ', u_coach.fname, u_coach.mname, u_coach.lname) AS coach_fullname
+							FROM coach_member_list cml
+							LEFT JOIN user u_coach ON cml.coach_id = u_coach.id
+							WHERE cml.member_id = ?
+							  AND cml.coach_approval = 'approved'
+							  AND cml.staff_approval = 'approved'
+							ORDER BY COALESCE(cml.staff_approved_at, cml.requested_at, '1970-01-01') DESC, cml.id DESC
+							LIMIT 1
+						");
+						$coachStmt2->execute([$sale['user_id']]);
+						$coachInfo = $coachStmt2->fetch();
+					}
+					
+					if ($coachInfo && $coachInfo['coach_id']) {
+						$salesGrouped[$saleId]['coach_id'] = (int) $coachInfo['coach_id'];
+						$salesGrouped[$saleId]['coach_name'] = trim($coachInfo['coach_fullname'] ?? '');
+					}
+				} catch (Exception $e) {
+					error_log("Error fetching coach info for coaching sale $saleId: " . $e->getMessage());
+				}
+			}
+			
+			// Ensure coaching sales have at least one detail entry
+			if (empty($sale['sales_details'])) {
+				$detail = [
+					'id' => null,
+					'quantity' => 1,
+					'price' => (float) $sale['total_amount']
+				];
+				if (!empty($sale['coach_id']) || !empty($sale['coach_name'])) {
+					$detail['coach'] = [
+						'coach_id' => $sale['coach_id'] ?? null,
+						'coach_name' => $sale['coach_name'] ?? null
+					];
+				}
+				$salesGrouped[$saleId]['sales_details'][] = $detail;
+			}
 		}
 	}
 
@@ -2221,37 +2385,103 @@ function editTransaction($pdo, $data)
 
 function getCoachSales($pdo)
 {
-	// Get all coaches info.
-	$stmt = $pdo->query("SELECT * FROM coaches");
+	// Get all coaches info with their user details
+	$stmt = $pdo->query("
+		SELECT c.*, 
+		       CONCAT_WS(' ', u.fname, u.mname, u.lname) AS coach_name
+		FROM coaches c
+		LEFT JOIN user u ON c.user_id = u.id
+		ORDER BY c.id
+	");
 	$coaches = $stmt->fetchAll();
 
+	// Get all coaching sales from sales table with coach info
+	$salesStmt = $pdo->query("
+		SELECT s.id AS sale_id,
+		       s.user_id,
+		       s.total_amount AS amount,
+		       s.sale_date,
+		       s.receipt_number,
+		       s.payment_method,
+		       CONCAT_WS(' ', u_member.fname, u_member.mname, u_member.lname) AS member_name,
+		       cml.coach_id,
+		       cml.rate_type,
+		       CONCAT_WS(' ', u_coach.fname, u_coach.mname, u_coach.lname) AS coach_name,
+		       c.id AS coach_table_id,
+		       c.user_id AS coach_user_id
+		FROM sales s
+		LEFT JOIN user u_member ON s.user_id = u_member.id
+		LEFT JOIN coach_member_list cml ON s.user_id = cml.member_id 
+			AND s.sale_type = 'Coaching'
+			AND cml.id = (
+				SELECT cml2.id
+				FROM coach_member_list cml2
+				WHERE cml2.member_id = s.user_id
+				ORDER BY 
+					CASE 
+						WHEN cml2.staff_approved_at IS NOT NULL AND DATE(cml2.staff_approved_at) <= DATE(s.sale_date) THEN 0
+						WHEN cml2.requested_at IS NOT NULL AND DATE(cml2.requested_at) <= DATE(s.sale_date) THEN 1
+						ELSE 2
+					END,
+					COALESCE(cml2.staff_approved_at, cml2.requested_at, '1970-01-01') DESC,
+					cml2.id DESC
+				LIMIT 1
+			)
+		LEFT JOIN coaches c ON cml.coach_id = c.user_id
+		LEFT JOIN user u_coach ON c.user_id = u_coach.id
+		WHERE s.sale_type = 'Coaching'
+		ORDER BY s.sale_date DESC
+	");
+	
+	$allSales = $salesStmt->fetchAll();
+	
+	// Group sales by coach
+	$coachSalesMap = [];
+	foreach ($allSales as $sale) {
+		$coachUserId = $sale['coach_user_id'] ?? null;
+		if (!$coachUserId) {
+			// If no coach assigned, skip or handle separately
+			continue;
+		}
+		
+		if (!isset($coachSalesMap[$coachUserId])) {
+			$coachSalesMap[$coachUserId] = [];
+		}
+		
+		// Format sale for frontend
+		$coachSalesMap[$coachUserId][] = [
+			'sale_id' => (int)$sale['sale_id'],
+			'item' => $sale['member_name'] ?? 'N/A', // Use member name as item
+			'amount' => floatval($sale['amount']),
+			'sale_date' => $sale['sale_date'],
+			'rate_type' => $sale['rate_type'] ?? 'monthly',
+			'receipt_number' => $sale['receipt_number'],
+			'payment_method' => $sale['payment_method'] ?? 'cash',
+			'member_name' => $sale['member_name'] ?? 'N/A',
+			'member_id' => (int)$sale['user_id']
+		];
+	}
+
+	// Build output array with coaches and their sales
 	$out = [];
 	foreach ($coaches as $coach) {
-		// core profile info for frontend
+		$coachUserId = $coach['user_id'];
+		
+		// Core profile info for frontend
 		$coachObj = [
 			'user_id' => $coach['user_id'],
 			'id' => $coach['id'],
-			'name' => trim(($coach['specialty'] ? $coach['specialty'] . ' ' : '') . $coach['id']), // or use join to users for real names
+			'name' => $coach['coach_name'] ?? trim(($coach['specialty'] ? $coach['specialty'] . ' ' : '') . $coach['id']),
 			'specialty' => $coach['specialty'],
-			'monthly_rate' => $coach['monthly_rate'],
-			'per_session_rate' => $coach['per_session_rate'],
-			'rating' => $coach['rating'],
-			'image_url' => $coach['image_url'],
-			// add more fields if frontend needs them
+			'monthly_rate' => floatval($coach['monthly_rate'] ?? 0),
+			'per_session_rate' => floatval($coach['per_session_rate'] ?? 0),
+			'rating' => floatval($coach['rating'] ?? 0),
+			'image_url' => $coach['image_url'] ?? '',
+			'sales' => $coachSalesMap[$coachUserId] ?? []
 		];
-		// Get sales for this coach (may be none)
-		$salesStmt = $pdo->prepare("SELECT sale_id, item, amount, sale_date, rate_type FROM coach_sales WHERE coach_user_id = ? ORDER BY sale_date DESC");
-		if ($salesStmt->execute([$coach['user_id']])) {
-			$rows = $salesStmt->fetchAll();
-			foreach ($rows as &$row) {
-				$row['amount'] = floatval($row['amount']);
-			}
-			$coachObj['sales'] = $rows;
-		} else {
-			$coachObj['sales'] = [];
-		}
 		$out[] = $coachObj;
 	}
+	
 	echo json_encode(['coaches' => $out], JSON_UNESCAPED_UNICODE);
 }
 ?>

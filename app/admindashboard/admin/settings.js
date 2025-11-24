@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { useToast } from "@/components/ui/use-toast"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Eye, EyeOff, User, Lock, Upload, Loader2, Camera } from "lucide-react"
 import axios from "axios"
 
 const API_URL = "https://api.cnergy.site/user_settings.php"
 
-const Settings = ({ userId }) => {
+const Settings = ({ userId, open, onOpenChange }) => {
   const { toast } = useToast()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -66,19 +67,43 @@ const Settings = ({ userId }) => {
 
   // Fetch user data
   const fetchUserData = async () => {
-    if (!userId) return
+    // Get userId from props or sessionStorage
+    const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+    
+    if (!currentUserId) {
+      toast({
+        title: "Error",
+        description: "User ID not found. Please log in again.",
+        variant: "destructive",
+      })
+      setLoading(false)
+      return
+    }
 
     try {
       setLoading(true)
-      const response = await fetch(`${API_URL}?user_id=${userId}`, {
+      const response = await fetch(`${API_URL}?user_id=${currentUserId}`, {
         credentials: "include"
       })
 
       if (!response.ok) {
-        throw new Error("Failed to fetch user data")
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const data = await response.json()
+      const text = await response.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseError) {
+        // Try to extract JSON from response if there's trailing text
+        const jsonMatch = text.match(/\{.*\}/)
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error("Invalid JSON response")
+        }
+      }
+
       if (data.success && data.user) {
         setUser(data.user)
         setFname(data.user.fname || "")
@@ -86,12 +111,14 @@ const Settings = ({ userId }) => {
         setLname(data.user.lname || "")
         setEmail(data.user.email || "")
         setProfilePhotoPreview(normalizeProfilePhotoUrl(data.user.profile_photo_url))
+      } else {
+        throw new Error(data.error || "Failed to fetch user data")
       }
     } catch (error) {
       console.error("Error fetching user data:", error)
       toast({
         title: "Error",
-        description: "Failed to load user data. Please refresh the page.",
+        description: error.message || "Failed to load user data. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -100,8 +127,14 @@ const Settings = ({ userId }) => {
   }
 
   useEffect(() => {
-    fetchUserData()
-  }, [userId])
+    if (open) {
+      fetchUserData()
+    } else {
+      // Reset state when dialog closes
+      setLoading(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   // Handle profile photo change
   const handleProfilePhotoChange = (e) => {
@@ -189,13 +222,13 @@ const Settings = ({ userId }) => {
         }
       }
 
-      // Update profile
+      // Update profile (email is readonly, don't send it)
       const updateData = {
         user_id: userId,
         fname: fname.trim(),
         mname: mname.trim(),
         lname: lname.trim(),
-        email: email.trim().toLowerCase(),
+        // Email is readonly - not included in update
       }
 
       if (profilePhotoUrl) {
@@ -352,22 +385,20 @@ const Settings = ({ userId }) => {
     return f + l || "U"
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">Manage your account settings and preferences</p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Settings</DialogTitle>
+          <DialogDescription>Manage your account settings and preferences</DialogDescription>
+        </DialogHeader>
+        
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+          </div>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2">
         {/* Profile Settings */}
         <Card>
           <CardHeader>
@@ -449,9 +480,12 @@ const Settings = ({ userId }) => {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                readOnly
+                disabled
+                className="bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
                 placeholder="email@example.com"
               />
+              <p className="text-xs text-gray-500 dark:text-gray-400">Email cannot be changed</p>
             </div>
 
             <Button
@@ -563,7 +597,7 @@ const Settings = ({ userId }) => {
             </div>
 
             <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md p-3">
-              <p className="text-xs text-gray-700 dark:text-gray-300">
+              <div className="text-xs text-gray-700 dark:text-gray-300">
                 <strong>Password Requirements:</strong>
                 <ul className="list-disc list-inside mt-1 space-y-1">
                   <li>At least 8 characters long</li>
@@ -571,7 +605,7 @@ const Settings = ({ userId }) => {
                   <li>At least one number</li>
                   <li>At least one special character</li>
                 </ul>
-              </p>
+              </div>
             </div>
 
             <Button
@@ -590,8 +624,10 @@ const Settings = ({ userId }) => {
             </Button>
           </CardContent>
         </Card>
-      </div>
-    </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

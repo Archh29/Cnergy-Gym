@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useToast } from "@/components/ui/use-toast"
 import {
@@ -23,7 +23,9 @@ import {
   MessageSquare,
   Headphones,
   ArrowRight,
+  Settings,
 } from "lucide-react"
+import SettingsDialog from "./settings"
 
 const API_URL = "https://api.cnergy.site/adminnotification.php"
 
@@ -35,6 +37,7 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
   const [userData, setUserData] = useState({ firstName: 'Admin', role: 'Administrator' })
   const [supportTickets, setSupportTickets] = useState([])
   const [pendingTicketsCount, setPendingTicketsCount] = useState(0)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { toast } = useToast()
 
@@ -610,19 +613,35 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* User Avatar */}
-      <div className="flex items-center gap-3">
-        <div className="text-right hidden sm:block">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">{userData.firstName}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
-        </div>
-        <div className="relative">
-          <div className="w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
-            <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
-          </div>
-          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
-        </div>
-      </div>
+      {/* User Avatar with Dropdown */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{userData.firstName}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
+            </div>
+            <div className="relative">
+              <div className="w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
+                <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "A"}</span>
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
+            </div>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuItem
+            onClick={() => setSettingsOpen(true)}
+            className="cursor-pointer"
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Settings
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Settings Dialog */}
+      <SettingsDialog userId={userId} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   )
 }

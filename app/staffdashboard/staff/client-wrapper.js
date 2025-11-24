@@ -17,7 +17,6 @@ import Promotions from "./promotions"
 import Merchandise from "./merchandise"
 import Sales from "./sales"
 import StaffChat from "./staff-chat"
-import Settings from "./settings"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 
 export default function StaffDashboardClient() {
@@ -197,8 +196,6 @@ export default function StaffDashboardClient() {
       case "Sales":
       case "Product Checkout":
         return <Sales userId={userId} />
-      case "Settings":
-        return <Settings userId={userId} />
       default:
         return <ViewMembers userId={userId} />
     }
