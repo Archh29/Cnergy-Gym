@@ -26,31 +26,155 @@ import {
   Settings,
 } from "lucide-react"
 import SettingsDialog from "./settings"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
 const API_URL = "https://api.cnergy.site/adminnotification.php"
+const SETTINGS_API_URL = "https://api.cnergy.site/user_settings.php"
 
 const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateToSection }) => {
   const [notifications, setNotifications] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
-  const [userData, setUserData] = useState({ firstName: 'Staff', role: 'Staff Member' })
+  const [userData, setUserData] = useState({ firstName: 'Staff', role: 'Staff Member', profilePhoto: null })
   const [supportTickets, setSupportTickets] = useState([])
   const [pendingTicketsCount, setPendingTicketsCount] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { toast } = useToast()
 
+  // Helper function to normalize profile photo URLs
+  const normalizeProfilePhotoUrl = (url) => {
+    if (!url || typeof url !== 'string') {
+      console.log('[Topbar] No profile photo URL provided')
+      return null
+    }
+
+    try {
+      console.log('[Topbar] Normalizing profile photo URL:', url)
+      
+      // If it's already a full URL with serve_image.php, return as is
+      if (url.includes('serve_image.php')) {
+        console.log('[Topbar] Already a serve_image.php URL, returning as is')
+        return url
+      }
+
+      // If it's already a full HTTP/HTTPS URL, return as is
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        console.log('[Topbar] Already a full URL, returning as is')
+        return url
+      }
+
+      // If it's a relative path (uploads/profile/... or uploads%2Fprofile%2F...)
+      if (url.startsWith('uploads/') || url.startsWith('uploads%2F')) {
+        // Normalize the path - replace / with %2F
+        const normalizedPath = url.replace(/\//g, '%2F')
+        const finalUrl = `https://api.cnergy.site/serve_image.php?path=${normalizedPath}`
+        console.log('[Topbar] Normalized URL:', finalUrl)
+        return finalUrl
+      }
+
+      // If it's just a filename, assume it's in uploads/profile/
+      if (url.match(/^[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|gif|webp)$/i)) {
+        const encodedPath = `uploads%2Fprofile%2F${encodeURIComponent(url)}`
+        const finalUrl = `https://api.cnergy.site/serve_image.php?path=${encodedPath}`
+        console.log('[Topbar] Constructed URL from filename:', finalUrl)
+        return finalUrl
+      }
+
+      // Handle paths that might not start with uploads/ (edge case)
+      if (url.includes('profile_')) {
+        // Try to construct the proper path
+        let path = url
+        if (!path.startsWith('uploads/')) {
+          path = `uploads/profile/${url}`
+        }
+        const normalizedPath = path.replace(/\//g, '%2F')
+        const finalUrl = `https://api.cnergy.site/serve_image.php?path=${normalizedPath}`
+        console.log('[Topbar] Constructed URL from partial path:', finalUrl)
+        return finalUrl
+      }
+
+      console.log('[Topbar] Could not normalize URL, returning null')
+      return null
+    } catch (error) {
+      console.error("[Topbar] Error normalizing profile photo URL:", error)
+      return null
+    }
+  }
+
+  const fetchProfilePhoto = async (userIdToFetch) => {
+    if (!userIdToFetch) return null
+
+    try {
+      const response = await fetch(`${SETTINGS_API_URL}?user_id=${userIdToFetch}`, {
+        credentials: "include"
+      })
+
+      if (!response.ok) return null
+
+      const text = await response.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseError) {
+        const jsonMatch = text.match(/\{.*\}/)
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0])
+        } else {
+          return null
+        }
+      }
+
+      if (data.success && data.user) {
+        console.log('[Topbar] User data received:', data.user)
+        if (data.user.profile_photo_url) {
+          console.log('[Topbar] Profile photo URL from API:', data.user.profile_photo_url)
+          const normalizedUrl = normalizeProfilePhotoUrl(data.user.profile_photo_url)
+          console.log('[Topbar] Normalized profile photo URL:', normalizedUrl)
+          return normalizedUrl
+        } else {
+          console.log('[Topbar] No profile_photo_url in user data')
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching profile photo:", error)
+    }
+    return null
+  }
+
   useEffect(() => {
     if (userId) {
       fetchUserData()
       fetchNotifications()
       fetchSupportTickets()
+      
+      // Fetch profile photo
+      fetchProfilePhoto(userId).then(photoUrl => {
+        if (photoUrl) {
+          setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+        }
+      })
+
       const interval = setInterval(() => {
         fetchNotifications()
         fetchSupportTickets()
       }, 30000)
-      return () => clearInterval(interval)
+
+      // Listen for profile update events
+      const handleProfileUpdate = () => {
+        fetchUserData()
+        fetchProfilePhoto(userId).then(photoUrl => {
+          setUserData(prev => ({ ...prev, profilePhoto: photoUrl }))
+        })
+      }
+
+      window.addEventListener('profileUpdated', handleProfileUpdate)
+
+      return () => {
+        clearInterval(interval)
+        window.removeEventListener('profileUpdated', handleProfileUpdate)
+      }
     }
   }, [userId])
 
@@ -622,9 +746,16 @@ const Topbar = ({ searchQuery, setSearchQuery, userRole, userId = 6, onNavigateT
               <p className="text-xs text-gray-500 dark:text-gray-400">{userData.role}</p>
             </div>
             <div className="relative">
-              <div className="w-9 h-9 bg-gray-800 dark:bg-gray-700 rounded-lg flex items-center justify-center shadow-sm">
-                <span className="text-white font-semibold text-sm">{userData.firstName?.charAt(0) || "S"}</span>
-              </div>
+              <Avatar className="w-9 h-9 rounded-lg border-2 border-white dark:border-gray-900">
+                <AvatarImage 
+                  src={userData.profilePhoto} 
+                  alt={userData.firstName}
+                  className="object-cover"
+                />
+                <AvatarFallback className="bg-gray-800 dark:bg-gray-700 text-white font-semibold text-sm rounded-lg">
+                  {userData.firstName?.charAt(0) || "S"}
+                </AvatarFallback>
+              </Avatar>
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
             </div>
           </button>

@@ -176,9 +176,16 @@ const Settings = ({ userId, open, onOpenChange }) => {
 
   // Upload profile photo
   const uploadProfilePhoto = async (file) => {
+    // Get userId from props or sessionStorage
+    const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+    
+    if (!currentUserId) {
+      throw new Error("User ID not found")
+    }
+
     const formData = new FormData()
     formData.append("profile_photo", file)
-    formData.append("user_id", userId)
+    formData.append("user_id", currentUserId)
 
     try {
       const response = await axios.post(API_URL, formData, {
@@ -200,7 +207,17 @@ const Settings = ({ userId, open, onOpenChange }) => {
 
   // Handle save profile
   const handleSaveProfile = async () => {
-    if (!userId) return
+    // Get userId from props or sessionStorage
+    const currentUserId = userId || (typeof window !== 'undefined' ? sessionStorage.getItem('user_id') : null)
+    
+    if (!currentUserId) {
+      toast({
+        title: "Error",
+        description: "User ID not found. Please log in again.",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       setSaving(true)
@@ -224,7 +241,7 @@ const Settings = ({ userId, open, onOpenChange }) => {
 
       // Update profile (email is readonly, don't send it)
       const updateData = {
-        user_id: userId,
+        user_id: currentUserId,
         fname: fname.trim(),
         mname: mname.trim(),
         lname: lname.trim(),
@@ -244,15 +261,42 @@ const Settings = ({ userId, open, onOpenChange }) => {
         body: JSON.stringify(updateData),
       })
 
-      const data = await response.json()
+      const text = await response.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseError) {
+        const jsonMatch = text.match(/\{.*\}/)
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[0])
+        } else {
+          throw new Error("Invalid JSON response")
+        }
+      }
 
       if (response.ok && data.success) {
         toast({
           title: "Success",
           description: "Profile updated successfully",
         })
-        await fetchUserData()
+        // Refresh user data with the updated info from response
+        if (data.user) {
+          setUser(data.user)
+          setFname(data.user.fname || "")
+          setMname(data.user.mname || "")
+          setLname(data.user.lname || "")
+          setEmail(data.user.email || "")
+          setProfilePhotoPreview(normalizeProfilePhotoUrl(data.user.profile_photo_url))
+        } else {
+          // Fallback: refetch from API
+          await fetchUserData()
+        }
         setProfilePhotoFile(null)
+        
+        // Dispatch event to notify topbar to refresh
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('profileUpdated'))
+        }
       } else {
         throw new Error(data.error || "Failed to update profile")
       }
