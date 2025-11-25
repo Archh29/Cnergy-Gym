@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Bar, BarChart, Line, LineChart, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
 import { format } from "date-fns"
 import { Users, CreditCard, AlertTriangle, Calendar, TrendingUp, TrendingDown, DollarSign, Package, Activity } from "lucide-react"
 
@@ -92,26 +95,36 @@ const GymDashboard = () => {
     upcomingExpirations: { value: 0, trend: 0, isPositive: true },
     attendanceToday: { value: 0, trend: 0, isPositive: true },
   })
-  const [timePeriod, setTimePeriod] = useState("today")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retryCount, setRetryCount] = useState(0)
 
-  const fetchDashboardData = useCallback(async (period = timePeriod, isRetry = false) => {
+  const fetchDashboardData = useCallback(async (isRetry = false) => {
     setLoading(true)
     setError(null)
 
     try {
-      // For "today" period, send Philippine timezone date to ensure accuracy
+      // Determine period based on date range or default to "today"
+      let period = "today"
+      if (startDate && endDate) {
+        period = "custom"
+      } else if (!startDate && !endDate) {
+        period = "today"
+      }
+      
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
 
       if (period === "today") {
         const todayPH = getTodayInPHTime()
         apiUrl += `&ph_date=${todayPH}`
         console.log("Using Philippine time for today:", todayPH)
+      } else if (period === "custom" && startDate && endDate) {
+        apiUrl += `&start_date=${startDate}&end_date=${endDate}`
       }
 
-      console.log("Fetching data for period:", period, "URL:", apiUrl)
+      console.log("Fetching data for date range:", { startDate, endDate }, "URL:", apiUrl)
 
       const response = await axios.get(apiUrl, {
         timeout: 10000 // 10 second timeout
@@ -122,38 +135,61 @@ const GymDashboard = () => {
       if (response.data.success) {
         const stats = response.data.summaryStats
         
-        // Fetch today's sales separately to calculate accurately using Philippine time (same as sales page)
-        if (period === "today") {
-          try {
-            // Get today's date in Philippine time
+        // Fetch sales and filter by date range
+        try {
+          // Fetch all sales (we'll filter client-side based on date range)
+          const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
+            timeout: 10000
+          })
+          const allSalesData = salesResponse.data.sales || []
+          
+          // Filter sales by date range
+          let filteredSales = allSalesData
+          if (startDate || endDate) {
+            filteredSales = allSalesData.filter(sale => {
+              const saleDate = new Date(sale.sale_date)
+              saleDate.setHours(0, 0, 0, 0)
+
+              let matchesStart = true
+              let matchesEnd = true
+
+              if (startDate) {
+                const filterStartDate = new Date(startDate)
+                filterStartDate.setHours(0, 0, 0, 0)
+                matchesStart = saleDate >= filterStartDate
+              }
+
+              if (endDate) {
+                const filterEndDate = new Date(endDate)
+                filterEndDate.setHours(0, 0, 0, 0)
+                matchesEnd = saleDate <= filterEndDate
+              }
+
+              return matchesStart && matchesEnd
+            })
+          } else {
+            // Default to today if no date range is set
             const phTime = getPhilippineTime()
             phTime.setHours(0, 0, 0, 0)
             const todayStr = format(phTime, "yyyy-MM-dd")
-            
-            // Fetch all sales (we'll filter client-side like the sales page does)
-            const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
-              timeout: 10000
+            filteredSales = allSalesData.filter(sale => {
+              const saleDate = new Date(sale.sale_date)
+              saleDate.setHours(0, 0, 0, 0)
+              const saleDateStr = format(saleDate, "yyyy-MM-dd")
+              return saleDateStr === todayStr
             })
-            const allSalesData = salesResponse.data.sales || []
-            
-            // Calculate today's sales using Philippine time (same logic as sales page)
-            const accurateTodaySales = allSalesData
-              .filter(sale => {
-                const saleDate = new Date(sale.sale_date)
-                saleDate.setHours(0, 0, 0, 0)
-                const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                return saleDateStr === todayStr
-              })
-              .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-            
-            // Update salesToday with accurate value calculated using Philippine time
-            stats.salesToday.value = accurateTodaySales
-            setAllSales(allSalesData)
-            console.log("Today's sales (PH Time):", accurateTodaySales, "Date:", todayStr)
-          } catch (salesError) {
-            console.error("Error fetching today's sales:", salesError)
-            // Keep the API value if sales fetch fails
           }
+          
+          // Calculate sales total
+          const salesTotal = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+          
+          // Update salesToday with calculated value
+          stats.salesToday.value = salesTotal
+          setAllSales(allSalesData)
+          console.log("Sales (filtered by date range):", salesTotal, "Date Range:", { startDate, endDate })
+        } catch (salesError) {
+          console.error("Error fetching sales:", salesError)
+          // Keep the API value if sales fetch fails
         }
         
         // Fetch active subscriptions and clients using the same logic as monitoring subscription page
@@ -292,9 +328,15 @@ const GymDashboard = () => {
         setSummaryStats(stats)
         setMembershipData(response.data.membershipData || [])
         
-        // Filter revenue data for "today" period to only include today's data in Philippine timezone
+        // Filter revenue data by date range
         let filteredRevenueData = response.data.revenueData || []
-        if (period === "today") {
+        if (startDate || endDate) {
+          // Filter revenue data based on date range if provided
+          // The revenue data structure may vary, so we'll filter if it has date information
+          // For now, we'll use the data as-is and let the chart display it
+          // This can be enhanced if revenue data items have date fields
+        } else {
+          // Default to today if no date range is set
           const phToday = getPhilippineTime()
           phToday.setHours(0, 0, 0, 0)
           const todayStr = format(phToday, "yyyy-MM-dd")
@@ -352,28 +394,24 @@ const GymDashboard = () => {
       if (!isRetry && retryCount < 3) {
         setTimeout(() => {
           setRetryCount(prev => prev + 1)
-          fetchDashboardData(period, true)
+          fetchDashboardData(true)
         }, 2000 * (retryCount + 1)) // Exponential backoff
       }
     } finally {
       setLoading(false)
     }
-  }, [timePeriod, retryCount])
+  }, [startDate, endDate, retryCount])
 
   const handleRetry = () => {
     setRetryCount(0)
-    fetchDashboardData(timePeriod)
+    fetchDashboardData()
   }
 
   useEffect(() => {
-    console.log("useEffect triggered - Period:", timePeriod)
-    fetchDashboardData(timePeriod)
+    console.log("useEffect triggered - Date Range:", { startDate, endDate })
+    fetchDashboardData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timePeriod])
-
-  const handleTimePeriodChange = (value) => {
-    setTimePeriod(value)
-  }
+  }, [startDate, endDate])
 
   // Custom formatters
   const formatCurrency = (value) => {
@@ -417,8 +455,8 @@ const GymDashboard = () => {
 
       // If it's a time format (HH:MM), convert to Philippine timezone first, then to 12-hour format with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-        // For "today" period, convert UTC time to Philippine time
-        const formattedTime = timePeriod === "today" 
+        // For "today" period (when no date range is set), convert UTC time to Philippine time
+        const formattedTime = (!startDate && !endDate)
           ? convertTimeToPH(item.name)
           : (() => {
               // For other periods, just format as 12-hour
@@ -476,21 +514,45 @@ const GymDashboard = () => {
                 Key metrics and performance insights
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Date Range Filter */}
+              <Label htmlFor="start-date-filter" className="flex items-center gap-2 whitespace-nowrap">
                 <Calendar className="h-4 w-4 text-gray-600" />
-                <Select value={timePeriod} onValueChange={handleTimePeriodChange}>
-                  <SelectTrigger className="w-[140px] border-0 focus:ring-0">
-                    <SelectValue placeholder="Period" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="month">This Month</SelectItem>
-                    <SelectItem value="year">This Year</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                Start Date:
+              </Label>
+              <Input
+                type="date"
+                id="start-date-filter"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-40 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                max={endDate || undefined}
+              />
+              <Label htmlFor="end-date-filter" className="flex items-center gap-2 whitespace-nowrap">
+                <Calendar className="h-4 w-4 text-gray-600" />
+                End Date:
+              </Label>
+              <Input
+                type="date"
+                id="end-date-filter"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-40 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                min={startDate || undefined}
+              />
+              {(startDate || endDate) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStartDate("")
+                    setEndDate("")
+                  }}
+                  className="h-10 px-3 text-xs"
+                >
+                  Clear
+                </Button>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -536,13 +598,11 @@ const GymDashboard = () => {
                 <Card 
                   className="border border-green-300 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
-                    const today = getTodayInPHTime()
                     localStorage.setItem('adminNavTarget', 'Sales')
                     localStorage.setItem('adminNavParams', JSON.stringify({ 
                       openModal: 'totalSales',
-                      filter: timePeriod === 'today' ? 'today' : timePeriod === 'week' ? 'thisWeek' : timePeriod === 'month' ? 'thisMonth' : 'thisYear',
-                      customDate: timePeriod === 'today' ? today : undefined,
-                      useCustomDate: timePeriod === 'today'
+                      startDate: startDate || undefined,
+                      endDate: endDate || undefined
                     }))
                     window.dispatchEvent(new CustomEvent('adminNavigate', { detail: { section: 'Sales' } }))
                   }}
@@ -556,10 +616,11 @@ const GymDashboard = () => {
                   <CardContent>
                     <div className="text-2xl font-bold text-green-700 mb-1">₱{Number(summaryStats.salesToday.value || 0).toLocaleString('en-US')}</div>
                     <p className="text-xs text-gray-600">
-                      {timePeriod === "today" ? "Today's revenue" :
-                        timePeriod === "week" ? "This week's revenue" :
-                          timePeriod === "month" ? "This month's revenue" :
-                            "This year's revenue"}
+                      {startDate || endDate ? 
+                        (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd, yyyy")}` :
+                         startDate ? `From ${format(new Date(startDate), "MMM dd, yyyy")}` :
+                         `Until ${format(new Date(endDate), "MMM dd, yyyy")}`) :
+                        "Today's revenue"}
                     </p>
                   </CardContent>
                 </Card>
@@ -641,10 +702,11 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-              {timePeriod === "today" ? "Today's" :
-                timePeriod === "week" ? "Weekly" :
-                  timePeriod === "month" ? "Monthly" :
-                    "Yearly"} Client Growth
+              {startDate || endDate ? 
+                (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
+                 startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
+                 `Until ${format(new Date(endDate), "MMM dd")}`) :
+                "Today's"} Client Growth
             </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Client growth trend</CardDescription>
               </div>
@@ -716,10 +778,11 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-              {timePeriod === "today" ? "Today's" :
-                timePeriod === "week" ? "Weekly" :
-                  timePeriod === "month" ? "Monthly" :
-                    "Yearly"} Revenue
+              {startDate || endDate ? 
+                (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
+                 startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
+                 `Until ${format(new Date(endDate), "MMM dd")}`) :
+                "Today's"} Revenue
             </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Revenue performance</CardDescription>
               </div>

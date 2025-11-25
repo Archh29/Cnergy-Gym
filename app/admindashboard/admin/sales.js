@@ -101,10 +101,8 @@ const Sales = ({ userId }) => {
   const [inventoryItemsPerPage] = useState(20) // 20 entries per page for Product Inventory
 
   // Calendar states
-  const [customDate, setCustomDate] = useState(null)
-  const [useCustomDate, setUseCustomDate] = useState(false)
-  const [monthFilter, setMonthFilter] = useState("")
-  const [yearFilter, setYearFilter] = useState("")
+  const [startDate, setStartDate] = useState(null)
+  const [endDate, setEndDate] = useState(null)
 
   // Cart for multiple products
   const [cart, setCart] = useState([])
@@ -156,10 +154,8 @@ const Sales = ({ userId }) => {
   const [selectedCoachFilter, setSelectedCoachFilter] = useState("all")
   const [memberAssignments, setMemberAssignments] = useState({}) // Map of member_id -> assignment details
   const [coachingStatusFilter, setCoachingStatusFilter] = useState("all") // all, active, or expired
-  const [coachingMonthFilter, setCoachingMonthFilter] = useState("all")
-  const [coachingYearFilter, setCoachingYearFilter] = useState("all")
-  const [coachingCustomDate, setCoachingCustomDate] = useState(null)
-  const [coachingUseCustomDate, setCoachingUseCustomDate] = useState(false)
+  const [coachingStartDate, setCoachingStartDate] = useState(null)
+  const [coachingEndDate, setCoachingEndDate] = useState(null)
   const [coachingServiceTypeFilter, setCoachingServiceTypeFilter] = useState("all") // all, session, monthly
   const [coachingSalesQuickFilter, setCoachingSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [coachingSalesSearchQuery, setCoachingSalesSearchQuery] = useState("")
@@ -171,10 +167,8 @@ const Sales = ({ userId }) => {
   const [totalSalesDialogOpen, setTotalSalesDialogOpen] = useState(false)
   const [totalSalesSearchQuery, setTotalSalesSearchQuery] = useState("")
   const [totalSalesTypeFilter, setTotalSalesTypeFilter] = useState("all")
-  const [totalSalesMonthFilter, setTotalSalesMonthFilter] = useState("all")
-  const [totalSalesYearFilter, setTotalSalesYearFilter] = useState("all")
-  const [totalSalesCustomDate, setTotalSalesCustomDate] = useState(null)
-  const [totalSalesUseCustomDate, setTotalSalesUseCustomDate] = useState(false)
+  const [totalSalesStartDate, setTotalSalesStartDate] = useState(null)
+  const [totalSalesEndDate, setTotalSalesEndDate] = useState(null)
   const [totalSalesQuickFilter, setTotalSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [totalSalesCurrentPage, setTotalSalesCurrentPage] = useState(1)
   const [totalSalesItemsPerPage] = useState(10)
@@ -194,10 +188,8 @@ const Sales = ({ userId }) => {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("all")
   const [selectedProductFilter, setSelectedProductFilter] = useState("all")
   const [productSalesSearchQuery, setProductSalesSearchQuery] = useState("")
-  const [productSalesMonthFilter, setProductSalesMonthFilter] = useState("all")
-  const [productSalesYearFilter, setProductSalesYearFilter] = useState("all")
-  const [productSalesCustomDate, setProductSalesCustomDate] = useState(null)
-  const [productSalesUseCustomDate, setProductSalesUseCustomDate] = useState(false)
+  const [productSalesStartDate, setProductSalesStartDate] = useState(null)
+  const [productSalesEndDate, setProductSalesEndDate] = useState(null)
   const [productSalesQuickFilter, setProductSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [productSalesCurrentPage, setProductSalesCurrentPage] = useState(1)
   const [productSalesItemsPerPage] = useState(10)
@@ -208,10 +200,8 @@ const Sales = ({ userId }) => {
   const [selectedPlanFilter, setSelectedPlanFilter] = useState("all")
   const [subscriptionDetails, setSubscriptionDetails] = useState({}) // Map of sale_id -> subscription details
   const [subscriptionStatusFilter, setSubscriptionStatusFilter] = useState("all") // all, active, or expired
-  const [subscriptionMonthFilter, setSubscriptionMonthFilter] = useState("all")
-  const [subscriptionYearFilter, setSubscriptionYearFilter] = useState("all")
-  const [subscriptionCustomDate, setSubscriptionCustomDate] = useState(null)
-  const [subscriptionUseCustomDate, setSubscriptionUseCustomDate] = useState(false)
+  const [subscriptionStartDate, setSubscriptionStartDate] = useState(null)
+  const [subscriptionEndDate, setSubscriptionEndDate] = useState(null)
   const [subscriptionSalesQuickFilter, setSubscriptionSalesQuickFilter] = useState("today") // "all", "today", "thisWeek", "thisMonth"
   const [subscriptionSalesSearchQuery, setSubscriptionSalesSearchQuery] = useState("")
   const [subscriptionDayPassTypeFilter, setSubscriptionDayPassTypeFilter] = useState("all") // all, day_pass, guest - filters Day Pass vs Guest type
@@ -257,8 +247,9 @@ const Sales = ({ userId }) => {
         if (params.openModal === 'totalSales') {
           // Set today's date filter
           if (params.useCustomDate && params.customDate) {
-            setTotalSalesCustomDate(new Date(params.customDate))
-            setTotalSalesUseCustomDate(true)
+            const customDate = new Date(params.customDate)
+            setTotalSalesStartDate(customDate)
+            setTotalSalesEndDate(customDate)
           }
           // Set quick filter to today
           setTotalSalesQuickFilter("today")
@@ -282,22 +273,21 @@ const Sales = ({ userId }) => {
       setTotalSalesQuickFilter("today")
       // Set today's date in Philippine time
       const todayPH = getTodayInPHTime()
-      setTotalSalesCustomDate(new Date(todayPH + "T00:00:00"))
-      setTotalSalesUseCustomDate(true)
-      setTotalSalesMonthFilter("all")
-      setTotalSalesYearFilter("all")
+      const todayDate = new Date(todayPH + "T00:00:00")
+      setTotalSalesStartDate(todayDate)
+      setTotalSalesEndDate(todayDate)
     }
   }, [totalSalesDialogOpen])
 
   // Reload analytics when filter changes
   useEffect(() => {
     loadAnalytics()
-  }, [analyticsFilter, saleTypeFilter, monthFilter, yearFilter, useCustomDate, customDate])
+  }, [analyticsFilter, saleTypeFilter, startDate, endDate])
 
   // Reload sales when filters change
   useEffect(() => {
     loadSales()
-  }, [saleTypeFilter, dateFilter, monthFilter, yearFilter, useCustomDate, customDate])
+  }, [saleTypeFilter, dateFilter, startDate, endDate])
 
   // Load coaches when coaching sales dialog opens
   useEffect(() => {
@@ -306,10 +296,9 @@ const Sales = ({ userId }) => {
       // Set default to "today" when dialog opens
       setCoachingSalesQuickFilter("today")
       const todayPH = getTodayInPHTime()
-      setCoachingCustomDate(new Date(todayPH + "T00:00:00"))
-      setCoachingUseCustomDate(true)
-      setCoachingMonthFilter("all")
-      setCoachingYearFilter("all")
+      const todayDate = new Date(todayPH + "T00:00:00")
+      setCoachingStartDate(todayDate)
+      setCoachingEndDate(todayDate)
     }
   }, [coachingSalesDialogOpen])
 
@@ -326,22 +315,20 @@ const Sales = ({ userId }) => {
   // Reset to first page when filters change
   useEffect(() => {
     setCoachingCurrentPage(1)
-  }, [selectedCoachFilter, coachingMonthFilter, coachingYearFilter, coachingServiceTypeFilter, coachingSalesQuickFilter, coachingSalesSearchQuery])
+  }, [selectedCoachFilter, coachingStartDate, coachingEndDate, coachingServiceTypeFilter, coachingSalesQuickFilter, coachingSalesSearchQuery])
 
   // Reset to first page when total sales dialog filters change
   useEffect(() => {
     setTotalSalesCurrentPage(1)
-  }, [totalSalesTypeFilter, totalSalesMonthFilter, totalSalesYearFilter, totalSalesUseCustomDate, totalSalesCustomDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, dayPassTypeFilter, gymSessionTypeFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter, totalSalesQuickFilter])
+  }, [totalSalesTypeFilter, totalSalesStartDate, totalSalesEndDate, totalSalesSearchQuery, totalSalesSubscriptionTypeFilter, dayPassMethodFilter, dayPassTypeFilter, gymSessionTypeFilter, totalSalesCategoryFilter, totalSalesProductFilter, totalSalesCoachFilter, totalSalesServiceTypeFilter, totalSalesQuickFilter])
 
   // Reset filters when total sales dialog closes
   useEffect(() => {
     if (!totalSalesDialogOpen) {
       setTotalSalesSearchQuery("")
       setTotalSalesTypeFilter("all")
-      setTotalSalesMonthFilter("all")
-      setTotalSalesYearFilter("all")
-      setTotalSalesCustomDate(null)
-      setTotalSalesUseCustomDate(false)
+      setTotalSalesStartDate(null)
+      setTotalSalesEndDate(null)
       setTotalSalesCurrentPage(1)
       setTotalSalesSubscriptionTypeFilter("all")
       setDayPassMethodFilter("all")
@@ -407,7 +394,7 @@ const Sales = ({ userId }) => {
   // Reset to first page when product sales dialog filters change
   useEffect(() => {
     setProductSalesCurrentPage(1)
-  }, [selectedCategoryFilter, selectedProductFilter, productSalesMonthFilter, productSalesYearFilter, productSalesUseCustomDate, productSalesCustomDate, productSalesSearchQuery, productSalesQuickFilter])
+  }, [selectedCategoryFilter, selectedProductFilter, productSalesStartDate, productSalesEndDate, productSalesSearchQuery, productSalesQuickFilter])
 
   // Reset filters when product sales dialog closes
   useEffect(() => {
@@ -415,10 +402,8 @@ const Sales = ({ userId }) => {
       setSelectedCategoryFilter("all")
       setSelectedProductFilter("all")
       setProductSalesSearchQuery("")
-      setProductSalesMonthFilter("all")
-      setProductSalesYearFilter("all")
-      setProductSalesCustomDate(null)
-      setProductSalesUseCustomDate(false)
+      setProductSalesStartDate(null)
+      setProductSalesEndDate(null)
       setProductSalesCurrentPage(1)
       setProductSalesQuickFilter("today")
     }
@@ -437,10 +422,9 @@ const Sales = ({ userId }) => {
       setSubscriptionSalesQuickFilter("today")
       // Set today's date in Philippine time
       const todayPH = getTodayInPHTime()
-      setSubscriptionCustomDate(new Date(todayPH + "T00:00:00"))
-      setSubscriptionUseCustomDate(true)
-      setSubscriptionMonthFilter("all")
-      setSubscriptionYearFilter("all")
+      const todayDate = new Date(todayPH + "T00:00:00")
+      setSubscriptionStartDate(todayDate)
+      setSubscriptionEndDate(todayDate)
     }
   }, [subscriptionSalesDialogOpen])
 
@@ -465,7 +449,7 @@ const Sales = ({ userId }) => {
   // Reset to first page when subscription filters change
   useEffect(() => {
     setSubscriptionCurrentPage(1)
-  }, [selectedPlanFilter, subscriptionMonthFilter, subscriptionYearFilter, subscriptionDayPassTypeFilter, subscriptionGymSessionTypeFilter])
+  }, [selectedPlanFilter, subscriptionStartDate, subscriptionEndDate, subscriptionDayPassTypeFilter, subscriptionGymSessionTypeFilter])
 
   // Reset gym session type filter when plan changes away from Gym Session
   useEffect(() => {
@@ -908,14 +892,11 @@ const Sales = ({ userId }) => {
       if (dateFilter !== "all") {
         params.append("date_filter", dateFilter)
       }
-      if (monthFilter && monthFilter !== "all") {
-        params.append("month", monthFilter)
+      if (startDate) {
+        params.append("start_date", format(startDate, "yyyy-MM-dd"))
       }
-      if (yearFilter && yearFilter !== "all") {
-        params.append("year", yearFilter)
-      }
-      if (useCustomDate && customDate) {
-        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+      if (endDate) {
+        params.append("end_date", format(endDate, "yyyy-MM-dd"))
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=sales&${params.toString()}`, {
@@ -965,9 +946,14 @@ const Sales = ({ userId }) => {
       const params = new URLSearchParams()
 
       // Handle custom date first (highest priority)
-      if (useCustomDate && customDate) {
-        params.append("period", "custom")
-        params.append("custom_date", format(customDate, "yyyy-MM-dd"))
+      // Use date range if set, otherwise use period filter
+      if (startDate || endDate) {
+        if (startDate) {
+          params.append("start_date", format(startDate, "yyyy-MM-dd"))
+        }
+        if (endDate) {
+          params.append("end_date", format(endDate, "yyyy-MM-dd"))
+        }
       } else {
         params.append("period", analyticsFilter)
       }
@@ -979,13 +965,6 @@ const Sales = ({ userId }) => {
           backendSaleType = "Guest" // Backend uses "Guest" for day pass
         }
         params.append("sale_type", backendSaleType)
-      }
-
-      if (monthFilter && monthFilter !== "all") {
-        params.append("month", monthFilter)
-      }
-      if (yearFilter && yearFilter !== "all") {
-        params.append("year", yearFilter)
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`, {
@@ -1849,87 +1828,80 @@ const Sales = ({ userId }) => {
               <CardTitle className="text-xl font-bold text-gray-900">Sales Overview</CardTitle>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              <Label htmlFor="analytics-filter" className="text-sm font-medium text-gray-700">Period:</Label>
-              <Select value={analyticsFilter} onValueChange={setAnalyticsFilter}>
-                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                  <SelectItem value="month">This Month</SelectItem>
-                  <SelectItem value="year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Date Range Picker */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                  <Input
+                    type="date"
+                    value={startDate ? format(startDate, "yyyy-MM-dd") : ""}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
 
-              {/* Month Filter */}
-              <Label htmlFor="month-filter" className="text-sm font-medium text-gray-700">Month:</Label>
-              <Select value={monthFilter} onValueChange={setMonthFilter}>
-                <SelectTrigger className="w-36 bg-white border-gray-300 shadow-sm">
-                  <SelectValue placeholder="Month" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  <SelectItem value="1">January</SelectItem>
-                  <SelectItem value="2">February</SelectItem>
-                  <SelectItem value="3">March</SelectItem>
-                  <SelectItem value="4">April</SelectItem>
-                  <SelectItem value="5">May</SelectItem>
-                  <SelectItem value="6">June</SelectItem>
-                  <SelectItem value="7">July</SelectItem>
-                  <SelectItem value="8">August</SelectItem>
-                  <SelectItem value="9">September</SelectItem>
-                  <SelectItem value="10">October</SelectItem>
-                  <SelectItem value="11">November</SelectItem>
-                  <SelectItem value="12">December</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Year Filter */}
-              <Label htmlFor="year-filter" className="text-sm font-medium text-gray-700">Year:</Label>
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-28 bg-white border-gray-300 shadow-sm">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  <SelectItem value="2024">2024</SelectItem>
-                  <SelectItem value="2023">2023</SelectItem>
-                  <SelectItem value="2022">2022</SelectItem>
-                  <SelectItem value="2021">2021</SelectItem>
-                  <SelectItem value="2020">2020</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Custom Date Picker */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={useCustomDate ? "default" : "outline"}
-                    className={cn(
-                      "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
-                      useCustomDate
-                        ? "bg-blue-500 hover:bg-blue-600 text-white border-blue-500 shadow-md"
-                        : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={customDate}
-                    onSelect={(date) => {
-                      setCustomDate(date)
-                      setUseCustomDate(true)
-                      setAnalyticsFilter("custom")
+                        if (date.getTime() <= today.getTime()) {
+                          setStartDate(date)
+                          // If end date is set and is before start date, clear it
+                          if (endDate && date > endDate) {
+                            setEndDate(null)
+                          }
+                        }
+                      } else {
+                        setStartDate(null)
+                      }
                     }}
-                    className="rounded-md border"
+                    className="h-10 text-sm w-[140px] border-gray-300"
+                    placeholder="Start date"
                   />
-                </PopoverContent>
-              </Popover>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                  <Input
+                    type="date"
+                    value={endDate ? format(endDate, "yyyy-MM-dd") : ""}
+                    min={startDate ? format(startDate, "yyyy-MM-dd") : undefined}
+                    max={format(new Date(), "yyyy-MM-dd")}
+                    onChange={(e) => {
+                      const selectedDate = e.target.value
+                      if (selectedDate) {
+                        const date = new Date(selectedDate + "T00:00:00")
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+
+                        if (date.getTime() <= today.getTime()) {
+                          // If start date is set and selected date is before it, don't update
+                          if (startDate && date < startDate) {
+                            return
+                          }
+                          setEndDate(date)
+                        }
+                      } else {
+                        setEndDate(null)
+                      }
+                    }}
+                    className="h-10 text-sm w-[140px] border-gray-300"
+                    placeholder="End date"
+                  />
+                </div>
+                {(startDate || endDate) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      setStartDate(null)
+                      setEndDate(null)
+                    }}
+                    className="h-10 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    ✕
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -1944,20 +1916,7 @@ const Sales = ({ userId }) => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
-                  // Calculate today's sales only
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
-                  const todayStr = format(today, "yyyy-MM-dd")
-
-                  return sales
-                    .filter(sale => {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      return saleDateStr === todayStr
-                    })
-                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-                })())}</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.totalSales || 0)}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">All sales combined</p>
                 <Button
                   variant="outline"
@@ -2003,27 +1962,7 @@ const Sales = ({ userId }) => {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency((() => {
-                  // Calculate subscription sales from sales data (includes both Subscription and Guest sales)
-                  // This matches the calculation in the subscription sales details dialog - filtered to today
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
-                  const todayStr = format(today, "yyyy-MM-dd")
-
-                  const subscriptionSalesTotal = sales
-                    .filter(sale => {
-                      // Include both Subscription and Guest sales
-                      const isSubscriptionOrGuest = sale.sale_type === 'Subscription' || sale.sale_type === 'Guest'
-                      if (!isSubscriptionOrGuest) return false
-
-                      // Filter to today's sales only
-                      const saleDate = new Date(sale.sale_date)
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      return saleDateStr === todayStr
-                    })
-                    .reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-                  return subscriptionSalesTotal
-                })())}</div>
+                <div className="text-3xl font-bold text-gray-900 mb-1.5">{formatCurrency(analytics.totalSubscriptionSales || 0)}</div>
                 <p className="text-xs text-gray-600 font-medium mb-4">Subscription revenue</p>
                 <Button
                   variant="outline"
@@ -2421,89 +2360,79 @@ const Sales = ({ userId }) => {
                       </Select>
                     </div>
                   )}
+                  {/* Date Range Picker */}
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="month-filter" className="text-sm font-semibold text-gray-700">Month:</Label>
-                    <Select value={monthFilter} onValueChange={setMonthFilter}>
-                      <SelectTrigger className="w-36 h-10 border-2 border-gray-300 focus:border-purple-500">
-                        <SelectValue placeholder="Month" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        <SelectItem value="1">January</SelectItem>
-                        <SelectItem value="2">February</SelectItem>
-                        <SelectItem value="3">March</SelectItem>
-                        <SelectItem value="4">April</SelectItem>
-                        <SelectItem value="5">May</SelectItem>
-                        <SelectItem value="6">June</SelectItem>
-                        <SelectItem value="7">July</SelectItem>
-                        <SelectItem value="8">August</SelectItem>
-                        <SelectItem value="9">September</SelectItem>
-                        <SelectItem value="10">October</SelectItem>
-                        <SelectItem value="11">November</SelectItem>
-                        <SelectItem value="12">December</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="year-filter" className="text-sm font-semibold text-gray-700">Year:</Label>
-                    <Select value={yearFilter} onValueChange={setYearFilter}>
-                      <SelectTrigger className="w-28 h-10 border-2 border-gray-300 focus:border-purple-500">
-                        <SelectValue placeholder="Year" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Years</SelectItem>
-                        {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant={useCustomDate ? "default" : "outline"}
-                        className={cn(
-                          "w-[220px] justify-start text-left font-medium h-10 border-2 transition-all duration-200",
-                          useCustomDate
-                            ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 shadow-md"
-                            : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customDate ? format(customDate, "MMM dd, yyyy") : "Pick specific date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customDate}
-                        onSelect={(date) => {
-                          setCustomDate(date)
-                          setUseCustomDate(!!date)
-                          if (date) {
-                            setMonthFilter("all")
-                            setYearFilter("all")
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                      <Input
+                        type="date"
+                        value={startDate ? format(startDate, "yyyy-MM-dd") : ""}
+                        max={format(new Date(), "yyyy-MM-dd")}
+                        onChange={(e) => {
+                          const selectedDate = e.target.value
+                          if (selectedDate) {
+                            const date = new Date(selectedDate + "T00:00:00")
+                            const today = new Date()
+                            today.setHours(0, 0, 0, 0)
+
+                            if (date.getTime() <= today.getTime()) {
+                              setStartDate(date)
+                              // If end date is set and is before start date, clear it
+                              if (endDate && date > endDate) {
+                                setEndDate(null)
+                              }
+                            }
+                          } else {
+                            setStartDate(null)
                           }
                         }}
-                        initialFocus
+                        className="h-10 text-sm w-[140px] border-gray-300"
+                        placeholder="Start date"
                       />
-                    </PopoverContent>
-                  </Popover>
-                  {useCustomDate && customDate && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setCustomDate(null)
-                        setUseCustomDate(false)
-                      }}
-                      className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
-                    >
-                      ✕ Clear Date
-                    </Button>
-                  )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                      <Input
+                        type="date"
+                        value={endDate ? format(endDate, "yyyy-MM-dd") : ""}
+                        min={startDate ? format(startDate, "yyyy-MM-dd") : undefined}
+                        max={format(new Date(), "yyyy-MM-dd")}
+                        onChange={(e) => {
+                          const selectedDate = e.target.value
+                          if (selectedDate) {
+                            const date = new Date(selectedDate + "T00:00:00")
+                            const today = new Date()
+                            today.setHours(0, 0, 0, 0)
+
+                            if (date.getTime() <= today.getTime()) {
+                              // If start date is set and selected date is before it, don't update
+                              if (startDate && date < startDate) {
+                                return
+                              }
+                              setEndDate(date)
+                            }
+                          } else {
+                            setEndDate(null)
+                          }
+                        }}
+                        className="h-10 text-sm w-[140px] border-gray-300"
+                        placeholder="End date"
+                      />
+                    </div>
+                    {(startDate || endDate) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setStartDate(null)
+                          setEndDate(null)
+                        }}
+                        className="h-10 px-3 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
+                      >
+                        ✕ Clear
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -3704,10 +3633,8 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setCoachingSalesQuickFilter("all")
-                  setCoachingUseCustomDate(false)
-                  setCoachingCustomDate(null)
-                  setCoachingMonthFilter("all")
-                  setCoachingYearFilter("all")
+                  setCoachingStartDate(null)
+                  setCoachingEndDate(null)
                 }}
                 className={`h-8 text-xs ${coachingSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -3719,10 +3646,9 @@ const Sales = ({ userId }) => {
                 onClick={() => {
                   setCoachingSalesQuickFilter("today")
                   const todayPH = getTodayInPHTime()
-                  setCoachingCustomDate(new Date(todayPH + "T00:00:00"))
-                  setCoachingUseCustomDate(true)
-                  setCoachingMonthFilter("all")
-                  setCoachingYearFilter("all")
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  setCoachingStartDate(todayDate)
+                  setCoachingEndDate(todayDate)
                 }}
                 className={`h-8 text-xs ${coachingSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -3733,10 +3659,18 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setCoachingSalesQuickFilter("thisWeek")
-                  setCoachingUseCustomDate(false)
-                  setCoachingCustomDate(null)
-                  setCoachingMonthFilter("all")
-                  setCoachingYearFilter("all")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+                  setCoachingStartDate(startOfWeek)
+                  setCoachingEndDate(endOfWeek)
                 }}
                 className={`h-8 text-xs ${coachingSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -3749,10 +3683,12 @@ const Sales = ({ userId }) => {
                   setCoachingSalesQuickFilter("thisMonth")
                   const now = new Date()
                   const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  setCoachingMonthFilter((phTime.getMonth() + 1).toString())
-                  setCoachingYearFilter(phTime.getFullYear().toString())
-                  setCoachingUseCustomDate(false)
-                  setCoachingCustomDate(null)
+                  const startOfMonth = new Date(phTime.getFullYear(), phTime.getMonth(), 1)
+                  startOfMonth.setHours(0, 0, 0, 0)
+                  const endOfMonth = new Date(phTime.getFullYear(), phTime.getMonth() + 1, 0)
+                  endOfMonth.setHours(23, 59, 59, 999)
+                  setCoachingStartDate(startOfMonth)
+                  setCoachingEndDate(endOfMonth)
                 }}
                 className={`h-8 text-xs ${coachingSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -3823,99 +3759,75 @@ const Sales = ({ userId }) => {
                   </Select>
                 </div>
 
+                {/* Date Range Picker */}
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="coaching-month-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Month:</Label>
-                  <Select value={coachingMonthFilter} onValueChange={(value) => {
-                    setCoachingMonthFilter(value)
-                    if (value !== "all") {
-                      setCoachingCustomDate(null)
-                      setCoachingUseCustomDate(false)
-                      setCoachingSalesQuickFilter("all")
-                    }
-                  }}>
-                    <SelectTrigger className={`w-36 h-9 text-sm border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`} disabled={coachingSalesQuickFilter !== "all" || coachingUseCustomDate}>
-                      <SelectValue placeholder="All Months" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Months</SelectItem>
-                      <SelectItem value="1">January</SelectItem>
-                      <SelectItem value="2">February</SelectItem>
-                      <SelectItem value="3">March</SelectItem>
-                      <SelectItem value="4">April</SelectItem>
-                      <SelectItem value="5">May</SelectItem>
-                      <SelectItem value="6">June</SelectItem>
-                      <SelectItem value="7">July</SelectItem>
-                      <SelectItem value="8">August</SelectItem>
-                      <SelectItem value="9">September</SelectItem>
-                      <SelectItem value="10">October</SelectItem>
-                      <SelectItem value="11">November</SelectItem>
-                      <SelectItem value="12">December</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                    <Input
+                      type="date"
+                      value={coachingStartDate ? format(coachingStartDate, "yyyy-MM-dd") : ""}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
 
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="coaching-year-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Year:</Label>
-                  <Select value={coachingYearFilter} onValueChange={(value) => {
-                    setCoachingYearFilter(value)
-                    if (value !== "all") {
-                      setCoachingCustomDate(null)
-                      setCoachingUseCustomDate(false)
-                      setCoachingSalesQuickFilter("all")
-                    }
-                  }}>
-                    <SelectTrigger className={`w-28 h-9 text-sm border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`} disabled={coachingSalesQuickFilter !== "all" || coachingUseCustomDate}>
-                      <SelectValue placeholder="All Years" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Years</SelectItem>
-                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                        <SelectItem key={year} value={year.toString()}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="coaching-date-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap">Date:</Label>
-                  <Input
-                    id="coaching-date-filter"
-                    type="date"
-                    value={coachingCustomDate ? format(coachingCustomDate, "yyyy-MM-dd") : ""}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                    onChange={(e) => {
-                      const selectedDate = e.target.value
-                      if (selectedDate) {
-                        const date = new Date(selectedDate + "T00:00:00")
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
-
-                        if (date.getTime() <= today.getTime()) {
-                          setCoachingCustomDate(date)
-                          setCoachingUseCustomDate(true)
-                          setCoachingMonthFilter("all")
-                          setCoachingYearFilter("all")
-                          setCoachingSalesQuickFilter("all")
+                          if (date.getTime() <= today.getTime()) {
+                            setCoachingStartDate(date)
+                            setCoachingSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                            // If end date is set and is before start date, clear it
+                            if (coachingEndDate && date > coachingEndDate) {
+                              setCoachingEndDate(null)
+                            }
+                          }
+                        } else {
+                          setCoachingStartDate(null)
                         }
-                      } else {
-                        setCoachingCustomDate(null)
-                        setCoachingUseCustomDate(false)
-                      }
-                    }}
-                    disabled={coachingSalesQuickFilter !== "all"}
-                    className={`h-9 text-sm w-[140px] border-gray-300 ${coachingSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
-                    placeholder="Select date"
-                  />
-                  {coachingUseCustomDate && coachingCustomDate && coachingSalesQuickFilter === "all" && (
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="Start date"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                    <Input
+                      type="date"
+                      value={coachingEndDate ? format(coachingEndDate, "yyyy-MM-dd") : ""}
+                      min={coachingStartDate ? format(coachingStartDate, "yyyy-MM-dd") : undefined}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+
+                          if (date.getTime() <= today.getTime()) {
+                            // If start date is set and selected date is before it, don't update
+                            if (coachingStartDate && date < coachingStartDate) {
+                              return
+                            }
+                            setCoachingEndDate(date)
+                            setCoachingSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                          }
+                        } else {
+                          setCoachingEndDate(null)
+                        }
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="End date"
+                    />
+                  </div>
+                  {(coachingStartDate || coachingEndDate) && (
                     <Button
                       variant="ghost"
                       size="sm"
                       type="button"
                       onClick={() => {
-                        setCoachingCustomDate(null)
-                        setCoachingUseCustomDate(false)
+                        setCoachingStartDate(null)
+                        setCoachingEndDate(null)
                       }}
                       className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
@@ -3937,56 +3849,21 @@ const Sales = ({ userId }) => {
                 if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
 
                 // Apply same date filters as the main filter
-                if (coachingSalesQuickFilter === "today") {
+                // Filter by date range (works for all quick filters and custom range)
+                if (coachingStartDate || coachingEndDate) {
                   const saleDate = new Date(sale.sale_date)
                   saleDate.setHours(0, 0, 0, 0)
-                  const todayPH = getTodayInPHTime()
-                  const todayDate = new Date(todayPH + "T00:00:00")
-                  todayDate.setHours(0, 0, 0, 0)
-                  const saleDateStr = saleDate.toISOString().split('T')[0]
-                  const todayStr = todayDate.toISOString().split('T')[0]
-                  if (saleDateStr !== todayStr) return false
-                } else if (coachingSalesQuickFilter === "thisWeek") {
-                  const now = new Date()
-                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  const today = new Date(phTime)
-                  today.setHours(0, 0, 0, 0)
-                  const dayOfWeek = today.getDay()
-                  const startOfWeek = new Date(today)
-                  startOfWeek.setDate(today.getDate() - dayOfWeek)
-                  const endOfWeek = new Date(startOfWeek)
-                  endOfWeek.setDate(startOfWeek.getDate() + 6)
-                  endOfWeek.setHours(23, 59, 59, 999)
-                  const saleDate = new Date(sale.sale_date)
-                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                } else if (coachingSalesQuickFilter === "thisMonth") {
-                  const now = new Date()
-                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth()
-                  const saleYear = saleDate.getFullYear()
-                  const currentMonth = phTime.getMonth()
-                  const currentYear = phTime.getFullYear()
-                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                } else if (coachingSalesQuickFilter === "all") {
-                  if (coachingUseCustomDate && coachingCustomDate) {
-                    const saleDate = new Date(sale.sale_date)
-                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
-                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                    if (saleDateStr !== customDateStr) return false
-                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
-                  } else if (coachingMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== coachingMonthFilter) return false
-                  } else if (coachingYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== coachingYearFilter) return false
+
+                  if (coachingStartDate) {
+                    const startDate = new Date(coachingStartDate)
+                    startDate.setHours(0, 0, 0, 0)
+                    if (saleDate < startDate) return false
+                  }
+
+                  if (coachingEndDate) {
+                    const endDate = new Date(coachingEndDate)
+                    endDate.setHours(23, 59, 59, 999)
+                    if (saleDate > endDate) return false
                   }
                 }
 
@@ -4101,27 +3978,22 @@ const Sales = ({ userId }) => {
                   const currentYear = phTime.getFullYear()
                   if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                 } else if (coachingSalesQuickFilter === "all") {
-                  // "All" - no date filtering, but still respect month/year/custom date if set manually
-                  // Handle custom date first (highest priority)
-                  if (coachingUseCustomDate && coachingCustomDate) {
+                  // Filter by date range
+                  if (coachingStartDate || coachingEndDate) {
                     const saleDate = new Date(sale.sale_date)
-                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
-                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                    if (saleDateStr !== customDateStr) return false
-                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
-                    // Specific month and year
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
-                  } else if (coachingMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== coachingMonthFilter) return false
-                  } else if (coachingYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== coachingYearFilter) return false
+                    saleDate.setHours(0, 0, 0, 0)
+
+                    if (coachingStartDate) {
+                      const startDate = new Date(coachingStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
+                    }
+
+                    if (coachingEndDate) {
+                      const endDate = new Date(coachingEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
+                    }
                   }
                 }
 
@@ -4286,29 +4158,22 @@ const Sales = ({ userId }) => {
                   const currentYear = phTime.getFullYear()
                   if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                 } else if (coachingSalesQuickFilter === "all") {
-                  // "All" - no date filtering, but still respect month/year/custom date if set manually
-                  // Handle custom date first (highest priority)
-                  if (coachingUseCustomDate && coachingCustomDate) {
+                  // Filter by date range
+                  if (coachingStartDate || coachingEndDate) {
                     const saleDate = new Date(sale.sale_date)
-                    const customDateStr = format(coachingCustomDate, "yyyy-MM-dd")
-                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                    if (saleDateStr !== customDateStr) return false
-                  } else if (coachingMonthFilter !== "all" && coachingYearFilter !== "all") {
-                    // Specific month and year
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleMonth.toString() !== coachingMonthFilter || saleYear !== coachingYearFilter) return false
-                  } else if (coachingMonthFilter !== "all") {
-                    // Filter by month if not "all"
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1 // getMonth() returns 0-11
-                    if (saleMonth.toString() !== coachingMonthFilter) return false
-                  } else if (coachingYearFilter !== "all") {
-                    // Filter by year if not "all"
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== coachingYearFilter) return false
+                    saleDate.setHours(0, 0, 0, 0)
+
+                    if (coachingStartDate) {
+                      const startDate = new Date(coachingStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
+                    }
+
+                    if (coachingEndDate) {
+                      const endDate = new Date(coachingEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
+                    }
                   }
                 }
 
@@ -4538,10 +4403,8 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setTotalSalesQuickFilter("all")
-                  setTotalSalesUseCustomDate(false)
-                  setTotalSalesCustomDate(null)
-                  setTotalSalesMonthFilter("all")
-                  setTotalSalesYearFilter("all")
+                  setTotalSalesStartDate(null)
+                  setTotalSalesEndDate(null)
                 }}
                 className={`h-8 text-xs ${totalSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -4553,10 +4416,9 @@ const Sales = ({ userId }) => {
                 onClick={() => {
                   setTotalSalesQuickFilter("today")
                   const todayPH = getTodayInPHTime()
-                  setTotalSalesCustomDate(new Date(todayPH + "T00:00:00"))
-                  setTotalSalesUseCustomDate(true)
-                  setTotalSalesMonthFilter("all")
-                  setTotalSalesYearFilter("all")
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  setTotalSalesStartDate(todayDate)
+                  setTotalSalesEndDate(todayDate)
                 }}
                 className={`h-8 text-xs ${totalSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -4567,10 +4429,18 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setTotalSalesQuickFilter("thisWeek")
-                  setTotalSalesUseCustomDate(false)
-                  setTotalSalesCustomDate(null)
-                  setTotalSalesMonthFilter("all")
-                  setTotalSalesYearFilter("all")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+                  setTotalSalesStartDate(startOfWeek)
+                  setTotalSalesEndDate(endOfWeek)
                 }}
                 className={`h-8 text-xs ${totalSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -4583,10 +4453,12 @@ const Sales = ({ userId }) => {
                   setTotalSalesQuickFilter("thisMonth")
                   const now = new Date()
                   const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  setTotalSalesMonthFilter((phTime.getMonth() + 1).toString())
-                  setTotalSalesYearFilter(phTime.getFullYear().toString())
-                  setTotalSalesUseCustomDate(false)
-                  setTotalSalesCustomDate(null)
+                  const startOfMonth = new Date(phTime.getFullYear(), phTime.getMonth(), 1)
+                  startOfMonth.setHours(0, 0, 0, 0)
+                  const endOfMonth = new Date(phTime.getFullYear(), phTime.getMonth() + 1, 0)
+                  endOfMonth.setHours(23, 59, 59, 999)
+                  setTotalSalesStartDate(startOfMonth)
+                  setTotalSalesEndDate(endOfMonth)
                 }}
                 className={`h-8 text-xs ${totalSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -4791,85 +4663,75 @@ const Sales = ({ userId }) => {
                   </Select>
                 )}
 
-                <Select
-                  value={totalSalesMonthFilter}
-                  onValueChange={setTotalSalesMonthFilter}
-                  disabled={totalSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[130px] h-9 text-sm ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={totalSalesYearFilter}
-                  onValueChange={setTotalSalesYearFilter}
-                  disabled={totalSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[100px] h-9 text-sm ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Years" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Years</SelectItem>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
+                {/* Date Range Picker */}
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    value={totalSalesCustomDate ? format(totalSalesCustomDate, "yyyy-MM-dd") : ""}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                    onChange={(e) => {
-                      const selectedDate = e.target.value
-                      if (selectedDate) {
-                        const date = new Date(selectedDate + "T00:00:00")
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                    <Input
+                      type="date"
+                      value={totalSalesStartDate ? format(totalSalesStartDate, "yyyy-MM-dd") : ""}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
 
-                        if (date.getTime() <= today.getTime()) {
-                          setTotalSalesCustomDate(date)
-                          setTotalSalesUseCustomDate(true)
-                          setTotalSalesMonthFilter("all")
-                          setTotalSalesYearFilter("all")
-                          setTotalSalesQuickFilter("all") // Switch to "all" when custom date is selected
+                          if (date.getTime() <= today.getTime()) {
+                            setTotalSalesStartDate(date)
+                            setTotalSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                            // If end date is set and is before start date, clear it
+                            if (totalSalesEndDate && date > totalSalesEndDate) {
+                              setTotalSalesEndDate(null)
+                            }
+                          }
+                        } else {
+                          setTotalSalesStartDate(null)
                         }
-                      } else {
-                        setTotalSalesCustomDate(null)
-                        setTotalSalesUseCustomDate(false)
-                      }
-                    }}
-                    disabled={totalSalesQuickFilter !== "all"}
-                    className={`h-9 text-sm w-[140px] border-gray-300 ${totalSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
-                    placeholder="Select date"
-                  />
-                  {totalSalesUseCustomDate && totalSalesCustomDate && totalSalesQuickFilter === "all" && (
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="Start date"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                    <Input
+                      type="date"
+                      value={totalSalesEndDate ? format(totalSalesEndDate, "yyyy-MM-dd") : ""}
+                      min={totalSalesStartDate ? format(totalSalesStartDate, "yyyy-MM-dd") : undefined}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+
+                          if (date.getTime() <= today.getTime()) {
+                            // If start date is set and selected date is before it, don't update
+                            if (totalSalesStartDate && date < totalSalesStartDate) {
+                              return
+                            }
+                            setTotalSalesEndDate(date)
+                            setTotalSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                          }
+                        } else {
+                          setTotalSalesEndDate(null)
+                        }
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="End date"
+                    />
+                  </div>
+                  {(totalSalesStartDate || totalSalesEndDate) && (
                     <Button
                       variant="ghost"
                       size="sm"
                       type="button"
                       onClick={() => {
-                        setTotalSalesCustomDate(null)
-                        setTotalSalesUseCustomDate(false)
+                        setTotalSalesStartDate(null)
+                        setTotalSalesEndDate(null)
                       }}
                       className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
@@ -5175,64 +5037,21 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Filter by quick access filter
-                if (totalSalesQuickFilter === "today") {
+                // Filter by date range (works for all quick filters and custom range)
+                if (totalSalesStartDate || totalSalesEndDate) {
                   const saleDate = new Date(sale.sale_date)
                   saleDate.setHours(0, 0, 0, 0)
-                  const todayPH = getTodayInPHTime()
-                  const todayDate = new Date(todayPH + "T00:00:00")
-                  todayDate.setHours(0, 0, 0, 0)
-                  const saleDateStr = saleDate.toISOString().split('T')[0]
-                  const todayStr = todayDate.toISOString().split('T')[0]
-                  if (saleDateStr !== todayStr) return false
-                } else if (totalSalesQuickFilter === "thisWeek") {
-                  const now = new Date()
-                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  const today = new Date(phTime)
-                  today.setHours(0, 0, 0, 0)
-                  const dayOfWeek = today.getDay()
-                  const startOfWeek = new Date(today)
-                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                  const endOfWeek = new Date(startOfWeek)
-                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                  endOfWeek.setHours(23, 59, 59, 999)
 
-                  const saleDate = new Date(sale.sale_date)
-                  if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                } else if (totalSalesQuickFilter === "thisMonth") {
-                  const now = new Date()
-                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth()
-                  const saleYear = saleDate.getFullYear()
-                  const currentMonth = phTime.getMonth()
-                  const currentYear = phTime.getFullYear()
-                  if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                } else if (totalSalesQuickFilter === "all") {
-                  // "All" - no date filtering, but still respect month/year/custom date if set manually
-                  // Filter by month
-                  if (totalSalesMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== totalSalesMonthFilter) return false
+                  if (totalSalesStartDate) {
+                    const startDate = new Date(totalSalesStartDate)
+                    startDate.setHours(0, 0, 0, 0)
+                    if (saleDate < startDate) return false
                   }
 
-                  // Filter by year
-                  if (totalSalesYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== totalSalesYearFilter) return false
-                  }
-
-                  // Filter by custom date
-                  if (totalSalesUseCustomDate && totalSalesCustomDate) {
-                    const saleDate = new Date(sale.sale_date)
-                    saleDate.setHours(0, 0, 0, 0)
-                    const customDate = new Date(totalSalesCustomDate)
-                    customDate.setHours(0, 0, 0, 0)
-                    const saleDateStr = saleDate.toISOString().split('T')[0]
-                    const customDateStr = customDate.toISOString().split('T')[0]
-                    if (saleDateStr !== customDateStr) return false
+                  if (totalSalesEndDate) {
+                    const endDate = new Date(totalSalesEndDate)
+                    endDate.setHours(23, 59, 59, 999)
+                    if (saleDate > endDate) return false
                   }
                 }
 
@@ -5645,29 +5464,22 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Filter by month
-                if (totalSalesMonthFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== totalSalesMonthFilter) return false
-                }
-
-                // Filter by year
-                if (totalSalesYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== totalSalesYearFilter) return false
-                }
-
-                // Filter by custom date
-                if (totalSalesUseCustomDate && totalSalesCustomDate) {
+                // Filter by date range
+                if (totalSalesStartDate || totalSalesEndDate) {
                   const saleDate = new Date(sale.sale_date)
                   saleDate.setHours(0, 0, 0, 0)
-                  const customDate = new Date(totalSalesCustomDate)
-                  customDate.setHours(0, 0, 0, 0)
-                  const saleDateStr = saleDate.toISOString().split('T')[0]
-                  const customDateStr = customDate.toISOString().split('T')[0]
-                  if (saleDateStr !== customDateStr) return false
+
+                  if (totalSalesStartDate) {
+                    const startDate = new Date(totalSalesStartDate)
+                    startDate.setHours(0, 0, 0, 0)
+                    if (saleDate < startDate) return false
+                  }
+
+                  if (totalSalesEndDate) {
+                    const endDate = new Date(totalSalesEndDate)
+                    endDate.setHours(23, 59, 59, 999)
+                    if (saleDate > endDate) return false
+                  }
                 }
 
                 return matchesSearch && matchesSaleType
@@ -5896,10 +5708,8 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setSubscriptionSalesQuickFilter("all")
-                  setSubscriptionUseCustomDate(false)
-                  setSubscriptionCustomDate(null)
-                  setSubscriptionMonthFilter("all")
-                  setSubscriptionYearFilter("all")
+                  setSubscriptionStartDate(null)
+                  setSubscriptionEndDate(null)
                 }}
                 className={`h-8 text-xs ${subscriptionSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -5911,10 +5721,9 @@ const Sales = ({ userId }) => {
                 onClick={() => {
                   setSubscriptionSalesQuickFilter("today")
                   const todayPH = getTodayInPHTime()
-                  setSubscriptionCustomDate(new Date(todayPH + "T00:00:00"))
-                  setSubscriptionUseCustomDate(true)
-                  setSubscriptionMonthFilter("all")
-                  setSubscriptionYearFilter("all")
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  setSubscriptionStartDate(todayDate)
+                  setSubscriptionEndDate(todayDate)
                 }}
                 className={`h-8 text-xs ${subscriptionSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -5925,10 +5734,18 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setSubscriptionSalesQuickFilter("thisWeek")
-                  setSubscriptionUseCustomDate(false)
-                  setSubscriptionCustomDate(null)
-                  setSubscriptionMonthFilter("all")
-                  setSubscriptionYearFilter("all")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+                  setSubscriptionStartDate(startOfWeek)
+                  setSubscriptionEndDate(endOfWeek)
                 }}
                 className={`h-8 text-xs ${subscriptionSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -5941,10 +5758,12 @@ const Sales = ({ userId }) => {
                   setSubscriptionSalesQuickFilter("thisMonth")
                   const now = new Date()
                   const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  setSubscriptionMonthFilter((phTime.getMonth() + 1).toString())
-                  setSubscriptionYearFilter(phTime.getFullYear().toString())
-                  setSubscriptionUseCustomDate(false)
-                  setSubscriptionCustomDate(null)
+                  const startOfMonth = new Date(phTime.getFullYear(), phTime.getMonth(), 1)
+                  startOfMonth.setHours(0, 0, 0, 0)
+                  const endOfMonth = new Date(phTime.getFullYear(), phTime.getMonth() + 1, 0)
+                  endOfMonth.setHours(23, 59, 59, 999)
+                  setSubscriptionStartDate(startOfMonth)
+                  setSubscriptionEndDate(endOfMonth)
                 }}
                 className={`h-8 text-xs ${subscriptionSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -6062,97 +5881,75 @@ const Sales = ({ userId }) => {
                   ) : null
                 })()}
 
-                <Select
-                  value={subscriptionMonthFilter}
-                  onValueChange={(value) => {
-                    setSubscriptionMonthFilter(value)
-                    if (value !== "all") {
-                      setSubscriptionCustomDate(null)
-                      setSubscriptionUseCustomDate(false)
-                    }
-                  }}
-                  disabled={subscriptionSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[130px] h-9 text-sm ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={subscriptionYearFilter}
-                  onValueChange={(value) => {
-                    setSubscriptionYearFilter(value)
-                    if (value !== "all") {
-                      setSubscriptionCustomDate(null)
-                      setSubscriptionUseCustomDate(false)
-                    }
-                  }}
-                  disabled={subscriptionSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[100px] h-9 text-sm ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Years" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Years</SelectItem>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
+                {/* Date Range Picker */}
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    value={subscriptionCustomDate ? format(subscriptionCustomDate, "yyyy-MM-dd") : ""}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                    onChange={(e) => {
-                      const selectedDate = e.target.value
-                      if (selectedDate) {
-                        const date = new Date(selectedDate + "T00:00:00")
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                    <Input
+                      type="date"
+                      value={subscriptionStartDate ? format(subscriptionStartDate, "yyyy-MM-dd") : ""}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
 
-                        if (date.getTime() <= today.getTime()) {
-                          setSubscriptionCustomDate(date)
-                          setSubscriptionUseCustomDate(true)
-                          setSubscriptionMonthFilter("all")
-                          setSubscriptionYearFilter("all")
-                          setSubscriptionSalesQuickFilter("all") // Switch to "all" when custom date is selected
+                          if (date.getTime() <= today.getTime()) {
+                            setSubscriptionStartDate(date)
+                            setSubscriptionSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                            // If end date is set and is before start date, clear it
+                            if (subscriptionEndDate && date > subscriptionEndDate) {
+                              setSubscriptionEndDate(null)
+                            }
+                          }
+                        } else {
+                          setSubscriptionStartDate(null)
                         }
-                      } else {
-                        setSubscriptionCustomDate(null)
-                        setSubscriptionUseCustomDate(false)
-                      }
-                    }}
-                    disabled={subscriptionSalesQuickFilter !== "all"}
-                    className={`h-9 text-sm w-[140px] border-gray-300 ${subscriptionSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
-                    placeholder="Select date"
-                  />
-                  {subscriptionUseCustomDate && subscriptionCustomDate && subscriptionSalesQuickFilter === "all" && (
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="Start date"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                    <Input
+                      type="date"
+                      value={subscriptionEndDate ? format(subscriptionEndDate, "yyyy-MM-dd") : ""}
+                      min={subscriptionStartDate ? format(subscriptionStartDate, "yyyy-MM-dd") : undefined}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+
+                          if (date.getTime() <= today.getTime()) {
+                            // If start date is set and selected date is before it, don't update
+                            if (subscriptionStartDate && date < subscriptionStartDate) {
+                              return
+                            }
+                            setSubscriptionEndDate(date)
+                            setSubscriptionSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                          }
+                        } else {
+                          setSubscriptionEndDate(null)
+                        }
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="End date"
+                    />
+                  </div>
+                  {(subscriptionStartDate || subscriptionEndDate) && (
                     <Button
                       variant="ghost"
                       size="sm"
                       type="button"
                       onClick={() => {
-                        setSubscriptionCustomDate(null)
-                        setSubscriptionUseCustomDate(false)
+                        setSubscriptionStartDate(null)
+                        setSubscriptionEndDate(null)
                       }}
                       className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
@@ -6215,59 +6012,21 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
 
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6283,59 +6042,21 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
 
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6367,59 +6088,21 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
 
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6433,59 +6116,21 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
 
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6558,24 +6203,22 @@ const Sales = ({ userId }) => {
                   if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                 } else if (subscriptionSalesQuickFilter === "all") {
                   // "All" - no date filtering, but still respect month/year/custom date if set manually
-                  if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                  // Filter by date range
+                  if (subscriptionStartDate || subscriptionEndDate) {
                     const saleDate = new Date(sale.sale_date)
-                    const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                    if (saleDateStr !== customDateStr) return false
-                  } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                  } else if (subscriptionMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                  } else if (subscriptionYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== subscriptionYearFilter) return false
+                    saleDate.setHours(0, 0, 0, 0)
+
+                    if (subscriptionStartDate) {
+                      const startDate = new Date(subscriptionStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
+                    }
+
+                    if (subscriptionEndDate) {
+                      const endDate = new Date(subscriptionEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
+                    }
                   }
                 }
 
@@ -6674,60 +6317,22 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
                     // If type filter is "guest" or "all", include this guest sale
-                    
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6742,60 +6347,22 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
                     // If type filter is "day_pass" or "all", include this subscription sale
-                    
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
 
@@ -6822,7 +6389,7 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
                     // If type filter is "guest" or "all", include this guest sale
-                    
+
                     // Apply date filters
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
@@ -6856,24 +6423,22 @@ const Sales = ({ userId }) => {
                       const currentYear = phTime.getFullYear()
                       if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                     } else if (subscriptionSalesQuickFilter === "all") {
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      // Filter by date range
+                      if (subscriptionStartDate || subscriptionEndDate) {
                         const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                        saleDate.setHours(0, 0, 0, 0)
+
+                        if (subscriptionStartDate) {
+                          const startDate = new Date(subscriptionStartDate)
+                          startDate.setHours(0, 0, 0, 0)
+                          if (saleDate < startDate) return false
+                        }
+
+                        if (subscriptionEndDate) {
+                          const endDate = new Date(subscriptionEndDate)
+                          endDate.setHours(23, 59, 59, 999)
+                          if (saleDate > endDate) return false
+                        }
                       }
                     }
                     return true
@@ -6886,7 +6451,7 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
                     // If type filter is "subscription" or "all", include this subscription sale
-                    
+
                     // Apply date filters
                     if (subscriptionSalesQuickFilter === "today") {
                       const saleDate = new Date(sale.sale_date)
@@ -6920,24 +6485,22 @@ const Sales = ({ userId }) => {
                       const currentYear = phTime.getFullYear()
                       if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                     } else if (subscriptionSalesQuickFilter === "all") {
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      // Filter by date range
+                      if (subscriptionStartDate || subscriptionEndDate) {
                         const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                        saleDate.setHours(0, 0, 0, 0)
+
+                        if (subscriptionStartDate) {
+                          const startDate = new Date(subscriptionStartDate)
+                          startDate.setHours(0, 0, 0, 0)
+                          if (saleDate < startDate) return false
+                        }
+
+                        if (subscriptionEndDate) {
+                          const endDate = new Date(subscriptionEndDate)
+                          endDate.setHours(23, 59, 59, 999)
+                          if (saleDate > endDate) return false
+                        }
                       }
                     }
                     return true
@@ -6951,118 +6514,42 @@ const Sales = ({ userId }) => {
                 if (selectedPlanFilter === "all") {
                   // Include subscription sales
                   if (sale.sale_type === 'Subscription') {
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
                     return true
                   }
                   // Include guest sales (Guest Walk In) in "All Plans"
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
-                    // Filter by quick access filter
-                    if (subscriptionSalesQuickFilter === "today") {
+                    // Filter by date range (works for all quick filters and custom range)
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
                       saleDate.setHours(0, 0, 0, 0)
-                      const todayPH = getTodayInPHTime()
-                      const todayDate = new Date(todayPH + "T00:00:00")
-                      todayDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const todayStr = todayDate.toISOString().split('T')[0]
-                      if (saleDateStr !== todayStr) return false
-                    } else if (subscriptionSalesQuickFilter === "thisWeek") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const today = new Date(phTime)
-                      today.setHours(0, 0, 0, 0)
-                      const dayOfWeek = today.getDay()
-                      const startOfWeek = new Date(today)
-                      startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                      const endOfWeek = new Date(startOfWeek)
-                      endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                      endOfWeek.setHours(23, 59, 59, 999)
 
-                      const saleDate = new Date(sale.sale_date)
-                      if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                    } else if (subscriptionSalesQuickFilter === "thisMonth") {
-                      const now = new Date()
-                      const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth()
-                      const saleYear = saleDate.getFullYear()
-                      const currentMonth = phTime.getMonth()
-                      const currentYear = phTime.getFullYear()
-                      if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                    } else if (subscriptionSalesQuickFilter === "all") {
-                      // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
                       }
                     }
                     return true // Guest sale included in "All Plans"
@@ -7129,24 +6616,22 @@ const Sales = ({ userId }) => {
                   if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                 } else if (subscriptionSalesQuickFilter === "all") {
                   // "All" - no date filtering, but still respect month/year/custom date if set manually
-                  if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                  // Filter by date range
+                  if (subscriptionStartDate || subscriptionEndDate) {
                     const saleDate = new Date(sale.sale_date)
-                    const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                    const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                    if (saleDateStr !== customDateStr) return false
-                  } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                  } else if (subscriptionMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                  } else if (subscriptionYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== subscriptionYearFilter) return false
+                    saleDate.setHours(0, 0, 0, 0)
+
+                    if (subscriptionStartDate) {
+                      const startDate = new Date(subscriptionStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
+                    }
+
+                    if (subscriptionEndDate) {
+                      const endDate = new Date(subscriptionEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
+                    }
                   }
                 }
 
@@ -7259,27 +6744,25 @@ const Sales = ({ userId }) => {
                       return false // This is a guest sale, not a subscription sale
                     }
                     // If type filter is "guest" or "all", include this guest sale
-                    
+
                     // Apply date filters for guest sales
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
                     return true
                   }
@@ -7291,27 +6774,25 @@ const Sales = ({ userId }) => {
                       return false // This is a subscription sale, not a guest sale
                     }
                     // If type filter is "day_pass" or "all", include this subscription sale
-                    
+
                     // Apply date filters for subscription sales
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
                     return true
                   }
@@ -7376,24 +6857,22 @@ const Sales = ({ userId }) => {
                       if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                     } else if (subscriptionSalesQuickFilter === "all") {
                       // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      // Filter by date range
+                      if (subscriptionStartDate || subscriptionEndDate) {
                         const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                        saleDate.setHours(0, 0, 0, 0)
+
+                        if (subscriptionStartDate) {
+                          const startDate = new Date(subscriptionStartDate)
+                          startDate.setHours(0, 0, 0, 0)
+                          if (saleDate < startDate) return false
+                        }
+
+                        if (subscriptionEndDate) {
+                          const endDate = new Date(subscriptionEndDate)
+                          endDate.setHours(23, 59, 59, 999)
+                          if (saleDate > endDate) return false
+                        }
                       }
                     }
                     return true
@@ -7442,24 +6921,22 @@ const Sales = ({ userId }) => {
                       if (saleMonth !== currentMonth || saleYear !== currentYear) return false
                     } else if (subscriptionSalesQuickFilter === "all") {
                       // "All" - no date filtering, but still respect month/year/custom date if set manually
-                      if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                      // Filter by date range
+                      if (subscriptionStartDate || subscriptionEndDate) {
                         const saleDate = new Date(sale.sale_date)
-                        const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                        const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                        if (saleDateStr !== customDateStr) return false
-                      } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                      } else if (subscriptionMonthFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleMonth = saleDate.getMonth() + 1
-                        if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                      } else if (subscriptionYearFilter !== "all") {
-                        const saleDate = new Date(sale.sale_date)
-                        const saleYear = saleDate.getFullYear().toString()
-                        if (saleYear !== subscriptionYearFilter) return false
+                        saleDate.setHours(0, 0, 0, 0)
+
+                        if (subscriptionStartDate) {
+                          const startDate = new Date(subscriptionStartDate)
+                          startDate.setHours(0, 0, 0, 0)
+                          if (saleDate < startDate) return false
+                        }
+
+                        if (subscriptionEndDate) {
+                          const endDate = new Date(subscriptionEndDate)
+                          endDate.setHours(23, 59, 59, 999)
+                          if (saleDate > endDate) return false
+                        }
                       }
                     }
                     return true
@@ -7493,24 +6970,22 @@ const Sales = ({ userId }) => {
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
                     // Apply date filters for guest sales
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
                     return true // Guest sale included in "All Plans"
                   } else {
@@ -7542,25 +7017,22 @@ const Sales = ({ userId }) => {
                 }
 
                 // Apply date filters for subscription sales
-                // Handle custom date first (highest priority)
-                if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                // Filter by date range
+                if (subscriptionStartDate || subscriptionEndDate) {
                   const saleDate = new Date(sale.sale_date)
-                  const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                  const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                  if (saleDateStr !== customDateStr) return false
-                } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                } else if (subscriptionMonthFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                } else if (subscriptionYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== subscriptionYearFilter) return false
+                  saleDate.setHours(0, 0, 0, 0)
+
+                  if (subscriptionStartDate) {
+                    const startDate = new Date(subscriptionStartDate)
+                    startDate.setHours(0, 0, 0, 0)
+                    if (saleDate < startDate) return false
+                  }
+
+                  if (subscriptionEndDate) {
+                    const endDate = new Date(subscriptionEndDate)
+                    endDate.setHours(23, 59, 59, 999)
+                    if (saleDate > endDate) return false
+                  }
                 }
 
                 return true
@@ -7798,24 +7270,22 @@ const Sales = ({ userId }) => {
                     }
 
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
 
                     // Status filter removed - show all sales
@@ -7830,24 +7300,22 @@ const Sales = ({ userId }) => {
                     }
 
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
 
                     // Status filter removed - show all sales
@@ -7868,24 +7336,22 @@ const Sales = ({ userId }) => {
                     }
 
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
 
                     return true
@@ -7899,24 +7365,22 @@ const Sales = ({ userId }) => {
                     }
 
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
 
                     return true
@@ -7936,24 +7400,22 @@ const Sales = ({ userId }) => {
                   else if (sale.sale_type === 'Guest' || sale.guest_name) {
                     // Apply date filters for guest sales
                     // Handle custom date first (highest priority)
-                    if (subscriptionUseCustomDate && subscriptionCustomDate) {
+                    // Filter by date range
+                    if (subscriptionStartDate || subscriptionEndDate) {
                       const saleDate = new Date(sale.sale_date)
-                      const customDateStr = format(subscriptionCustomDate, "yyyy-MM-dd")
-                      const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                      if (saleDateStr !== customDateStr) return false
-                    } else if (subscriptionMonthFilter !== "all" && subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleMonth.toString() !== subscriptionMonthFilter || saleYear !== subscriptionYearFilter) return false
-                    } else if (subscriptionMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                    } else if (subscriptionYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== subscriptionYearFilter) return false
+                      saleDate.setHours(0, 0, 0, 0)
+
+                      if (subscriptionStartDate) {
+                        const startDate = new Date(subscriptionStartDate)
+                        startDate.setHours(0, 0, 0, 0)
+                        if (saleDate < startDate) return false
+                      }
+
+                      if (subscriptionEndDate) {
+                        const endDate = new Date(subscriptionEndDate)
+                        endDate.setHours(23, 59, 59, 999)
+                        if (saleDate > endDate) return false
+                      }
                     }
                     return true // Guest sale included in "All Plans"
                   } else {
@@ -7984,18 +7446,22 @@ const Sales = ({ userId }) => {
                   }
                 }
 
-                // Filter by month if not "all"
-                if (subscriptionMonthFilter !== "all") {
+                // Filter by date range
+                if (subscriptionStartDate || subscriptionEndDate) {
                   const saleDate = new Date(sale.sale_date)
-                  const saleMonth = saleDate.getMonth() + 1
-                  if (saleMonth.toString() !== subscriptionMonthFilter) return false
-                }
+                  saleDate.setHours(0, 0, 0, 0)
 
-                // Filter by year if not "all"
-                if (subscriptionYearFilter !== "all") {
-                  const saleDate = new Date(sale.sale_date)
-                  const saleYear = saleDate.getFullYear().toString()
-                  if (saleYear !== subscriptionYearFilter) return false
+                  if (subscriptionStartDate) {
+                    const startDate = new Date(subscriptionStartDate)
+                    startDate.setHours(0, 0, 0, 0)
+                    if (saleDate < startDate) return false
+                  }
+
+                  if (subscriptionEndDate) {
+                    const endDate = new Date(subscriptionEndDate)
+                    endDate.setHours(23, 59, 59, 999)
+                    if (saleDate > endDate) return false
+                  }
                 }
 
                 // Status filter removed - show all sales
@@ -8221,10 +7687,8 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setProductSalesQuickFilter("all")
-                  setProductSalesUseCustomDate(false)
-                  setProductSalesCustomDate(null)
-                  setProductSalesMonthFilter("all")
-                  setProductSalesYearFilter("all")
+                  setProductSalesStartDate(null)
+                  setProductSalesEndDate(null)
                 }}
                 className={`h-8 text-xs ${productSalesQuickFilter === "all" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -8236,10 +7700,9 @@ const Sales = ({ userId }) => {
                 onClick={() => {
                   setProductSalesQuickFilter("today")
                   const todayPH = getTodayInPHTime()
-                  setProductSalesCustomDate(new Date(todayPH + "T00:00:00"))
-                  setProductSalesUseCustomDate(true)
-                  setProductSalesMonthFilter("all")
-                  setProductSalesYearFilter("all")
+                  const todayDate = new Date(todayPH + "T00:00:00")
+                  setProductSalesStartDate(todayDate)
+                  setProductSalesEndDate(todayDate)
                 }}
                 className={`h-8 text-xs ${productSalesQuickFilter === "today" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -8250,10 +7713,18 @@ const Sales = ({ userId }) => {
                 size="sm"
                 onClick={() => {
                   setProductSalesQuickFilter("thisWeek")
-                  setProductSalesUseCustomDate(false)
-                  setProductSalesCustomDate(null)
-                  setProductSalesMonthFilter("all")
-                  setProductSalesYearFilter("all")
+                  const now = new Date()
+                  const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                  const today = new Date(phTime)
+                  today.setHours(0, 0, 0, 0)
+                  const dayOfWeek = today.getDay()
+                  const startOfWeek = new Date(today)
+                  startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                  const endOfWeek = new Date(startOfWeek)
+                  endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                  endOfWeek.setHours(23, 59, 59, 999)
+                  setProductSalesStartDate(startOfWeek)
+                  setProductSalesEndDate(endOfWeek)
                 }}
                 className={`h-8 text-xs ${productSalesQuickFilter === "thisWeek" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -8266,10 +7737,12 @@ const Sales = ({ userId }) => {
                   setProductSalesQuickFilter("thisMonth")
                   const now = new Date()
                   const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                  setProductSalesMonthFilter((phTime.getMonth() + 1).toString())
-                  setProductSalesYearFilter(phTime.getFullYear().toString())
-                  setProductSalesUseCustomDate(false)
-                  setProductSalesCustomDate(null)
+                  const startOfMonth = new Date(phTime.getFullYear(), phTime.getMonth(), 1)
+                  startOfMonth.setHours(0, 0, 0, 0)
+                  const endOfMonth = new Date(phTime.getFullYear(), phTime.getMonth() + 1, 0)
+                  endOfMonth.setHours(23, 59, 59, 999)
+                  setProductSalesStartDate(startOfMonth)
+                  setProductSalesEndDate(endOfMonth)
                 }}
                 className={`h-8 text-xs ${productSalesQuickFilter === "thisMonth" ? "bg-blue-600 text-white hover:bg-blue-700" : ""}`}
               >
@@ -8323,85 +7796,75 @@ const Sales = ({ userId }) => {
                   </SelectContent>
                 </Select>
 
-                <Select
-                  value={productSalesMonthFilter}
-                  onValueChange={setProductSalesMonthFilter}
-                  disabled={productSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[130px] h-9 text-sm ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    <SelectItem value="1">January</SelectItem>
-                    <SelectItem value="2">February</SelectItem>
-                    <SelectItem value="3">March</SelectItem>
-                    <SelectItem value="4">April</SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
-                    <SelectItem value="8">August</SelectItem>
-                    <SelectItem value="9">September</SelectItem>
-                    <SelectItem value="10">October</SelectItem>
-                    <SelectItem value="11">November</SelectItem>
-                    <SelectItem value="12">December</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={productSalesYearFilter}
-                  onValueChange={setProductSalesYearFilter}
-                  disabled={productSalesQuickFilter !== "all"}
-                >
-                  <SelectTrigger className={`w-[100px] h-9 text-sm ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <SelectValue placeholder="All Years" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Years</SelectItem>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
+                {/* Date Range Picker */}
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    value={productSalesCustomDate ? format(productSalesCustomDate, "yyyy-MM-dd") : ""}
-                    max={format(new Date(), "yyyy-MM-dd")}
-                    onChange={(e) => {
-                      const selectedDate = e.target.value
-                      if (selectedDate) {
-                        const date = new Date(selectedDate + "T00:00:00")
-                        const today = new Date()
-                        today.setHours(0, 0, 0, 0)
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">Start Date:</Label>
+                    <Input
+                      type="date"
+                      value={productSalesStartDate ? format(productSalesStartDate, "yyyy-MM-dd") : ""}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
 
-                        if (date.getTime() <= today.getTime()) {
-                          setProductSalesCustomDate(date)
-                          setProductSalesUseCustomDate(true)
-                          setProductSalesMonthFilter("all")
-                          setProductSalesYearFilter("all")
-                          setProductSalesQuickFilter("all") // Switch to "all" when custom date is selected
+                          if (date.getTime() <= today.getTime()) {
+                            setProductSalesStartDate(date)
+                            setProductSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                            // If end date is set and is before start date, clear it
+                            if (productSalesEndDate && date > productSalesEndDate) {
+                              setProductSalesEndDate(null)
+                            }
+                          }
+                        } else {
+                          setProductSalesStartDate(null)
                         }
-                      } else {
-                        setProductSalesCustomDate(null)
-                        setProductSalesUseCustomDate(false)
-                      }
-                    }}
-                    disabled={productSalesQuickFilter !== "all"}
-                    className={`h-9 text-sm w-[140px] border-gray-300 ${productSalesQuickFilter !== "all" ? "opacity-50 cursor-not-allowed" : ""}`}
-                    placeholder="Select date"
-                  />
-                  {productSalesUseCustomDate && productSalesCustomDate && productSalesQuickFilter === "all" && (
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="Start date"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm text-gray-600 whitespace-nowrap">End Date:</Label>
+                    <Input
+                      type="date"
+                      value={productSalesEndDate ? format(productSalesEndDate, "yyyy-MM-dd") : ""}
+                      min={productSalesStartDate ? format(productSalesStartDate, "yyyy-MM-dd") : undefined}
+                      max={format(new Date(), "yyyy-MM-dd")}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value
+                        if (selectedDate) {
+                          const date = new Date(selectedDate + "T00:00:00")
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+
+                          if (date.getTime() <= today.getTime()) {
+                            // If start date is set and selected date is before it, don't update
+                            if (productSalesStartDate && date < productSalesStartDate) {
+                              return
+                            }
+                            setProductSalesEndDate(date)
+                            setProductSalesQuickFilter("all") // Switch to "all" when custom date range is selected
+                          }
+                        } else {
+                          setProductSalesEndDate(null)
+                        }
+                      }}
+                      className="h-9 text-sm w-[140px] border-gray-300"
+                      placeholder="End date"
+                    />
+                  </div>
+                  {(productSalesStartDate || productSalesEndDate) && (
                     <Button
                       variant="ghost"
                       size="sm"
                       type="button"
                       onClick={() => {
-                        setProductSalesCustomDate(null)
-                        setProductSalesUseCustomDate(false)
+                        setProductSalesStartDate(null)
+                        setProductSalesEndDate(null)
                       }}
                       className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
                     >
@@ -8453,64 +7916,21 @@ const Sales = ({ userId }) => {
                     if (!hasProductMatch) return false
                   }
 
-                  // Filter by quick access filter
-                  if (productSalesQuickFilter === "today") {
+                  // Filter by date range (works for all quick filters and custom range)
+                  if (productSalesStartDate || productSalesEndDate) {
                     const saleDate = new Date(sale.sale_date)
                     saleDate.setHours(0, 0, 0, 0)
-                    const todayPH = getTodayInPHTime()
-                    const todayDate = new Date(todayPH + "T00:00:00")
-                    todayDate.setHours(0, 0, 0, 0)
-                    const saleDateStr = saleDate.toISOString().split('T')[0]
-                    const todayStr = todayDate.toISOString().split('T')[0]
-                    if (saleDateStr !== todayStr) return false
-                  } else if (productSalesQuickFilter === "thisWeek") {
-                    const now = new Date()
-                    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                    const today = new Date(phTime)
-                    today.setHours(0, 0, 0, 0)
-                    const dayOfWeek = today.getDay()
-                    const startOfWeek = new Date(today)
-                    startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
-                    const endOfWeek = new Date(startOfWeek)
-                    endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
-                    endOfWeek.setHours(23, 59, 59, 999)
 
-                    const saleDate = new Date(sale.sale_date)
-                    if (saleDate < startOfWeek || saleDate > endOfWeek) return false
-                  } else if (productSalesQuickFilter === "thisMonth") {
-                    const now = new Date()
-                    const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth()
-                    const saleYear = saleDate.getFullYear()
-                    const currentMonth = phTime.getMonth()
-                    const currentYear = phTime.getFullYear()
-                    if (saleMonth !== currentMonth || saleYear !== currentYear) return false
-                  } else if (productSalesQuickFilter === "all") {
-                    // "All" - no date filtering, but still respect month/year/custom date if set manually
-                    // Filter by month
-                    if (productSalesMonthFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleMonth = saleDate.getMonth() + 1
-                      if (saleMonth.toString() !== productSalesMonthFilter) return false
+                    if (productSalesStartDate) {
+                      const startDate = new Date(productSalesStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
                     }
 
-                    // Filter by year
-                    if (productSalesYearFilter !== "all") {
-                      const saleDate = new Date(sale.sale_date)
-                      const saleYear = saleDate.getFullYear().toString()
-                      if (saleYear !== productSalesYearFilter) return false
-                    }
-
-                    // Filter by custom date
-                    if (productSalesUseCustomDate && productSalesCustomDate) {
-                      const saleDate = new Date(sale.sale_date)
-                      saleDate.setHours(0, 0, 0, 0)
-                      const customDate = new Date(productSalesCustomDate)
-                      customDate.setHours(0, 0, 0, 0)
-                      const saleDateStr = saleDate.toISOString().split('T')[0]
-                      const customDateStr = customDate.toISOString().split('T')[0]
-                      if (saleDateStr !== customDateStr) return false
+                    if (productSalesEndDate) {
+                      const endDate = new Date(productSalesEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
                     }
                   }
 
@@ -8622,29 +8042,22 @@ const Sales = ({ userId }) => {
                     if (!hasProductMatch) return false
                   }
 
-                  // Filter by month
-                  if (productSalesMonthFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleMonth = saleDate.getMonth() + 1
-                    if (saleMonth.toString() !== productSalesMonthFilter) return false
-                  }
-
-                  // Filter by year
-                  if (productSalesYearFilter !== "all") {
-                    const saleDate = new Date(sale.sale_date)
-                    const saleYear = saleDate.getFullYear().toString()
-                    if (saleYear !== productSalesYearFilter) return false
-                  }
-
-                  // Filter by custom date
-                  if (productSalesUseCustomDate && productSalesCustomDate) {
+                  // Filter by date range
+                  if (productSalesStartDate || productSalesEndDate) {
                     const saleDate = new Date(sale.sale_date)
                     saleDate.setHours(0, 0, 0, 0)
-                    const customDate = new Date(productSalesCustomDate)
-                    customDate.setHours(0, 0, 0, 0)
-                    const saleDateStr = saleDate.toISOString().split('T')[0]
-                    const customDateStr = customDate.toISOString().split('T')[0]
-                    if (saleDateStr !== customDateStr) return false
+
+                    if (productSalesStartDate) {
+                      const startDate = new Date(productSalesStartDate)
+                      startDate.setHours(0, 0, 0, 0)
+                      if (saleDate < startDate) return false
+                    }
+
+                    if (productSalesEndDate) {
+                      const endDate = new Date(productSalesEndDate)
+                      endDate.setHours(23, 59, 59, 999)
+                      if (saleDate > endDate) return false
+                    }
                   }
 
                   return matchesSearch
