@@ -29,6 +29,7 @@ import {
   UserPlus,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/components/ui/use-toast"
 
 const API_BASE_URL = "https://api.cnergy.site/admin_coach.php"
 const COACH_API_URL = "https://api.cnergy.site/addcoach.php"
@@ -72,6 +73,7 @@ const CoachAssignments = ({ userId }) => {
     total_coaches: 0,
     total_members: 0,
   })
+  const { toast } = useToast()
 
   const fetchAssignedMembers = async (status = 'active') => {
     try {
@@ -166,6 +168,8 @@ const CoachAssignments = ({ userId }) => {
         }
       }
 
+      const memberName = selectedMember?.fullName || selectedMember?.name || `member #${memberId}`
+      const coachName = selectedCoach?.name || `Coach #${selectedCoachId}`
       await Promise.all([fetchAssignedMembers(), fetchDashboardStats(), fetchAvailableMembers()])
       setAssignModalOpen(false)
       setSelectedMember(null)
@@ -177,6 +181,10 @@ const CoachAssignments = ({ userId }) => {
       setAmountReceived("")
       setReferenceNumber("")
       setCurrentPage(1)
+      toast({
+        title: "Coach assignment confirmed",
+        description: `${coachName} is now coaching ${memberName}.`,
+      })
     } catch (err) {
       console.error("Error assigning coach:", err)
       setError("Failed to assign coach: " + (err.response?.data?.message || err.message))
