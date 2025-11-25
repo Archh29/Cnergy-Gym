@@ -253,6 +253,18 @@ const ViewMembers = ({ userId }) => {
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
   const { toast } = useToast()
+  const showClientToast = (title, description) =>
+    toast({
+      title,
+      description,
+      duration: 5000,
+    })
+  const showClientErrorToast = (description) =>
+    toast({
+      title: "Error",
+      description,
+      variant: "destructive",
+    })
   
   // Discount management states
   const [memberDiscounts, setMemberDiscounts] = useState({}) // { userId: [{ discount_type, is_active, ... }] }
@@ -429,6 +441,7 @@ const ViewMembers = ({ userId }) => {
     { value: "rejected", label: "Expired", color: "bg-red-50 text-red-700 border-red-200" },
     { value: "deactivated", label: "Deactivated", color: "bg-gray-50 text-gray-700 border-gray-200" },
   ]
+  const getStatusLabel = (status) => statusOptions.find((s) => s.value === status)?.label || status
 
   const validateEmail = async (email, excludeId = null) => {
     try {
@@ -457,11 +470,7 @@ const ViewMembers = ({ userId }) => {
       setFilteredMembers(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error("Error fetching members:", error)
-      toast({
-        title: "Error",
-        description: "Failed to fetch members. Please check your connection and try again.",
-        variant: "destructive",
-      })
+      showClientErrorToast("Unable to load the client list. Please check your connection and try again.")
       setMembers([])
       setFilteredMembers([])
     } finally {
@@ -550,21 +559,16 @@ const ViewMembers = ({ userId }) => {
       
       const result = await response.json()
       if (result.success) {
-        toast({
-          title: "Success",
-          description: `Tagged ${discountDialogMember.fname} ${discountDialogMember.lname} as ${discountType === 'student' ? 'Student' : 'Senior (55+)'}`,
-        })
+        const clientName = formatName(`${discountDialogMember.fname} ${discountDialogMember.mname || ''} ${discountDialogMember.lname}`).trim()
+        const discountLabel = discountType === "student" ? "Student" : "Senior (55+)"
+        showClientToast("Discount applied", `${clientName} now has the ${discountLabel} discount.`)
         await fetchMemberDiscounts(discountDialogMember.id)
         await fetchAllMemberDiscounts() // Refresh all discounts
       } else {
         throw new Error(result.error || 'Failed to add discount')
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to add discount tag",
-        variant: "destructive",
-      })
+      showClientErrorToast(error.message || "Failed to add the discount tag")
     } finally {
       setDiscountLoading(false)
     }
@@ -588,21 +592,14 @@ const ViewMembers = ({ userId }) => {
       
       const result = await response.json()
       if (result.success) {
-        toast({
-          title: "Success",
-          description: "Discount tag removed successfully",
-        })
+        showClientToast("Discount removed", "The discount tag has been removed successfully.")
         await fetchMemberDiscounts(discountDialogMember.id)
         await fetchAllMemberDiscounts() // Refresh all discounts
       } else {
         throw new Error(result.error || 'Failed to remove discount')
       }
     } catch (error) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to remove discount tag",
-        variant: "destructive",
-      })
+      showClientErrorToast(error.message || "Failed to remove the discount tag")
     } finally {
       setDiscountLoading(false)
     }
@@ -1042,21 +1039,14 @@ const ViewMembers = ({ userId }) => {
         setSelectedMember(null)
         
         // Improved toast messages based on status
-        toast({
-          title: "Status Updated",
-          description: `${clientName}'s account status has been updated to ${status}.`,
-          duration: 5000,
-        })
+        const statusLabel = getStatusLabel(status)
+        showClientToast("Status updated", `${clientName}'s account is now ${statusLabel}.`)
       } else {
         throw new Error(result.message || "Failed to update account status")
       }
     } catch (error) {
       console.error("Error updating account status:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update account status. Please try again.",
-        variant: "destructive",
-      })
+      showClientErrorToast("Failed to update the account status. Please try again.")
     }
     setIsLoading(false)
   }
@@ -2000,18 +1990,17 @@ const ViewMembers = ({ userId }) => {
         const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()
         
         const planCount = subscriptionForm.selected_plan_ids.length
+        const planLabel = planCount === 1 ? "subscription" : "subscriptions"
         if (pendingClientData.isApprovalFlow) {
-          toast({
-            title: "Account Approved & Subscription Assigned",
-            description: `${fullName}'s account has been approved and ${planCount} ${planCount === 1 ? 'subscription' : 'subscriptions'} assigned successfully!`,
-            duration: 5000,
-          })
+          showClientToast(
+            "Account approved",
+            `${fullName}'s account is approved and ${planCount} ${planLabel} assigned successfully.`,
+          )
         } else {
-          toast({
-            title: "Success",
-            description: `${fullName} has been created and ${planCount} ${planCount === 1 ? 'subscription' : 'subscriptions'} assigned successfully!`,
-            duration: 5000,
-          })
+          showClientToast(
+            "Client setup complete",
+            `${fullName} has been created and ${planCount} ${planLabel} assigned successfully.`,
+          )
         }
         
         // Close modal and reset everything
@@ -2044,11 +2033,7 @@ const ViewMembers = ({ userId }) => {
       }
     } catch (error) {
       console.error("Error creating account and subscription:", error)
-      toast({
-        title: "Error",
-        description: error.response?.data?.error || error.message || "Failed to create account and subscription. Please try again.",
-        variant: "destructive",
-      })
+      showClientErrorToast(error.response?.data?.error || error.message || "Failed to create the account and subscriptions. Please try again.")
     } finally {
       setSubscriptionLoading(false)
     }
@@ -2135,20 +2120,13 @@ const ViewMembers = ({ userId }) => {
         setFilteredMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
         setIsEditDialogOpen(false)
         setSelectedMember(null)
-        toast({
-          title: "Success",
-          description: "Client updated successfully!",
-        })
+        showClientToast("Client updated", "Client profile has been updated successfully.")
       } else {
         throw new Error(result.error || result.message || "Failed to update client")
       }
     } catch (error) {
       console.error("Error updating member:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update client. Please try again.",
-        variant: "destructive",
-      })
+      showClientErrorToast(error.message || "Failed to update the client. Please try again.")
     }
     setIsLoading(false)
   }
@@ -4521,10 +4499,8 @@ const ViewMembers = ({ userId }) => {
                   variant="outline"
                   onClick={() => {
                     if (pendingClientData?.isApprovalFlow) {
-                      // If in approval flow, go back to verification dialog
                       setIsAddDialogOpen(false)
                       setShowSubscriptionAssignment(false)
-                      // Reopen verification dialog with the same member
                       const memberId = pendingClientData.memberId
                       const member = members.find(m => m.id === memberId)
                       if (member) {
@@ -4532,12 +4508,27 @@ const ViewMembers = ({ userId }) => {
                         setIsVerificationDialogOpen(true)
                       }
                       setPendingClientData(null)
-                    } else {
-                      // Regular cancel - close everything
-                      setIsAddDialogOpen(false)
-                      setShowSubscriptionAssignment(false)
-                      setPendingClientData(null)
+                      setPlanQuantities({})
+                      setSubscriptionForm({
+                        plan_id: "",
+                        start_date: new Date().toISOString().split("T")[0],
+                        discount_type: "none",
+                        amount_paid: "",
+                        payment_method: "cash",
+                        amount_received: "",
+                        notes: ""
+                      })
+                      return
                     }
+
+                    if (showSubscriptionAssignment) {
+                      setShowSubscriptionAssignment(false)
+                      return
+                    }
+
+                    setIsAddDialogOpen(false)
+                    setShowSubscriptionAssignment(false)
+                    setPendingClientData(null)
                     setSubscriptionForm({
                       plan_id: "",
                       start_date: new Date().toISOString().split("T")[0],
@@ -4548,13 +4539,11 @@ const ViewMembers = ({ userId }) => {
                       notes: ""
                     })
                     setPlanQuantities({})
-                    if (!pendingClientData?.isApprovalFlow) {
-                      form.reset()
-                    }
+                    form.reset()
                   }}
                   className="h-11 px-6"
                 >
-                  {pendingClientData?.isApprovalFlow ? "Back" : "Cancel"}
+                  {showSubscriptionAssignment ? "Back" : "Cancel"}
                 </Button>
                 <Button
                   type="button"
