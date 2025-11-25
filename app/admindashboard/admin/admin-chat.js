@@ -649,82 +649,50 @@ const AdminChat = ({ userId: propUserId }) => {
     }
 
     // Format message time (Philippine time)
+    const parsePHDate = (timestamp) => {
+        if (!timestamp) return null
+        let normalized = typeof timestamp === "string" ? timestamp.trim() : timestamp
+        if (typeof normalized === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
+            normalized = normalized.replace(" ", "T") + "+08:00"
+        }
+        if (typeof normalized === "string" && !normalized.endsWith("Z") && !normalized.includes("+")) {
+            normalized = normalized + "+08:00"
+        }
+        const date = new Date(normalized)
+        return isNaN(date.getTime()) ? null : date
+    }
+
     const formatMessageTime = (timestamp) => {
-        console.log("🔍 [formatMessageTime] Input timestamp:", timestamp)
-        if (!timestamp) {
-            console.log("🔍 [formatMessageTime] No timestamp, returning empty")
-            return ""
+        const date = parsePHDate(timestamp)
+        if (!date) return ""
+
+        const manilaNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+        const todayStr = manilaNow.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
+        const yesterday = new Date(manilaNow)
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayStr = yesterday.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
+        const messageDateStr = date.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
+
+        const timeString = date.toLocaleTimeString("en-US", {
+            timeZone: "Asia/Manila",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+        })
+
+        if (messageDateStr === todayStr) {
+            return timeString
         }
-        try {
-            // Parse the timestamp - PHP datetime strings like "2025-11-25 15:47:09" are treated as local time
-            // We need to treat them as if they're already in Philippine time, or parse them correctly
-            let date
-            
-            // If the timestamp is in PHP datetime format (YYYY-MM-DD HH:MM:SS)
-            if (typeof timestamp === 'string' && timestamp.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-                // Treat as Philippine time by appending timezone info
-                // PHP datetime without timezone is typically server time (which should be PH time)
-                date = new Date(timestamp + '+08:00') // Explicitly set to Philippine time (+08:00)
-            } else {
-                date = new Date(timestamp)
-            }
-            
-            console.log("🔍 [formatMessageTime] Parsed Date object:", date)
-            console.log("🔍 [formatMessageTime] Date UTC string:", date.toUTCString())
-            console.log("🔍 [formatMessageTime] Date ISO string:", date.toISOString())
-            
-            if (isNaN(date.getTime())) {
-                console.log("🔍 [formatMessageTime] Invalid date")
-                return ""
-            }
-            
-            // Format time in Philippine timezone
-            const phTimeString = date.toLocaleString("en-US", {
-                timeZone: "Asia/Manila",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false
-            })
-            
-            const phDateString = date.toLocaleString("en-US", {
-                timeZone: "Asia/Manila",
-                month: "short",
-                day: "numeric"
-            })
-            
-            // Get dates in Philippine timezone for comparison
-            const now = new Date()
-            const todayPHStr = now.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
-            const yesterdayPH = new Date(now)
-            yesterdayPH.setDate(yesterdayPH.getDate() - 1)
-            const yesterdayPHStr = yesterdayPH.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
-            
-            const msgPHStr = date.toLocaleDateString("en-US", { timeZone: "Asia/Manila" })
-            
-            console.log("🔍 [formatMessageTime] Message date (PH):", msgPHStr)
-            console.log("🔍 [formatMessageTime] Today (PH):", todayPHStr)
-            console.log("🔍 [formatMessageTime] Yesterday (PH):", yesterdayPHStr)
-            console.log("🔍 [formatMessageTime] Philippine time:", phTimeString)
-            console.log("🔍 [formatMessageTime] Philippine date:", phDateString)
-            
-            // Compare date strings (more reliable than comparing Date objects)
-            if (msgPHStr === todayPHStr) {
-                const result = phTimeString
-                console.log("🔍 [formatMessageTime] Today result:", result)
-                return result
-            } else if (msgPHStr === yesterdayPHStr) {
-                const result = "Yesterday " + phTimeString
-                console.log("🔍 [formatMessageTime] Yesterday result:", result)
-                return result
-            } else {
-                const result = phDateString + ", " + phTimeString
-                console.log("🔍 [formatMessageTime] Other date result:", result)
-                return result
-            }
-        } catch (error) {
-            console.error("🔍 [formatMessageTime] Error:", error)
-            return ""
+        if (messageDateStr === yesterdayStr) {
+            return `Yesterday ${timeString}`
         }
+
+        const dateString = date.toLocaleDateString("en-US", {
+            timeZone: "Asia/Manila",
+            month: "short",
+            day: "numeric",
+        })
+        return `${dateString} ${timeString}`
     }
 
 

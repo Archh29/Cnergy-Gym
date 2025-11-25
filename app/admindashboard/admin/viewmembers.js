@@ -265,6 +265,8 @@ const ViewMembers = ({ userId }) => {
       description,
       variant: "destructive",
     })
+  const isCardActive = (status, view = "active") => statusFilter === status && currentView === view
+  const isAllCardActive = statusFilter === "all" && currentView === "active"
   
   // Discount management states
   const [memberDiscounts, setMemberDiscounts] = useState({}) // { userId: [{ discount_type, is_active, ... }] }
@@ -2332,6 +2334,7 @@ const ViewMembers = ({ userId }) => {
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className={`absolute inset-x-0 top-0 h-1 ${isAllCardActive ? "bg-primary" : "bg-transparent"}`}></div>
                 <div className="absolute top-0 right-0 w-20 h-20 bg-gray-200 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
                   <Users className="h-4 w-4 text-white" />
@@ -2352,6 +2355,7 @@ const ViewMembers = ({ userId }) => {
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className={`absolute inset-x-0 top-0 h-1 ${isCardActive("pending") ? "bg-primary" : "bg-transparent"}`}></div>
                 <div className="absolute top-0 right-0 w-20 h-20 bg-orange-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
                   <Clock className="h-4 w-4 text-orange-700" />
@@ -2372,6 +2376,7 @@ const ViewMembers = ({ userId }) => {
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className={`absolute inset-x-0 top-0 h-1 ${isCardActive("approved") ? "bg-primary" : "bg-transparent"}`}></div>
                 <div className="absolute top-0 right-0 w-20 h-20 bg-green-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-green-100 to-green-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
                   <CheckCircle className="h-4 w-4 text-green-700" />
@@ -2392,6 +2397,7 @@ const ViewMembers = ({ userId }) => {
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className={`absolute inset-x-0 top-0 h-1 ${isCardActive("rejected") ? "bg-primary" : "bg-transparent"}`}></div>
                 <div className="absolute top-0 right-0 w-20 h-20 bg-red-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-red-100 to-red-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
                   <XCircle className="h-4 w-4 text-red-700" />
@@ -2412,6 +2418,7 @@ const ViewMembers = ({ userId }) => {
               }}
             >
               <CardContent className="flex flex-col items-center justify-center p-4 relative">
+                <div className={`absolute inset-x-0 top-0 h-1 ${isCardActive("deactivated", "archive") ? "bg-primary" : "bg-transparent"}`}></div>
                 <div className="absolute top-0 right-0 w-20 h-20 bg-slate-100 rounded-full -mr-10 -mt-10 opacity-20 group-hover:opacity-30 transition-opacity"></div>
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 mb-2 shadow-sm group-hover:scale-105 transition-transform relative z-10">
                   <PowerOff className="h-4 w-4 text-slate-700" />
