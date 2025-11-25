@@ -84,7 +84,6 @@ const AdminChat = ({ userId: propUserId }) => {
     const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false)
     const messagesEndRef = useRef(null)
     const messageInputRef = useRef(null)
-    const inProgressOverridesRef = useRef(new Set())
     const { toast } = useToast()
 
     // Sync userId from prop when it changes, and periodically check sessionStorage
@@ -172,21 +171,11 @@ const AdminChat = ({ userId: propUserId }) => {
                 const dateB = new Date(b.created_at || b.last_message_at || 0)
                 return dateB - dateA
             })
-
-            const normalizedTickets = sortedData.map(ticket => {
-                if (ticket.status === 'resolved') {
-                    inProgressOverridesRef.current.delete(ticket.id)
-                    return ticket
-                }
-                if (inProgressOverridesRef.current.has(ticket.id)) {
-                    return { ...ticket, status: 'in_progress' }
-                }
-                return ticket
-            })
-            setSupportTickets(normalizedTickets)
+            
+            setSupportTickets(sortedData)
             
             // Count only in_progress tickets (excluding pending and resolved)
-            const activeTickets = normalizedTickets.filter(
+            const activeTickets = sortedData.filter(
                 ticket => ticket.status === 'in_progress'
             ).length
             setTicketCount(activeTickets)
@@ -262,6 +251,44 @@ const AdminChat = ({ userId: propUserId }) => {
         }
     }
 
+    const updateTicketStatus = async (ticketId, status) => {
+        if (!ticketId || !status) return
+
+        try {
+            const response = await fetch(SUPPORT_API_URL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                },
+                body: JSON.stringify({
+                    action: "update_status",
+                    ticket_id: ticketId,
+                    status,
+                    admin_id: userId,
+                }),
+            })
+
+            if (!response.ok) {
+                const errorText = await response.text()
+                console.error(`🔍 [updateTicketStatus] failed to set ${status}:`, response.status, errorText)
+                return
+            }
+
+            const data = await response.json()
+            if (data.success) {
+                setSupportTickets(prev =>
+                    prev.map(t => (t.id === ticketId ? { ...t, status } : t))
+                )
+                if (selectedTicket?.id === ticketId) {
+                    setSelectedTicket(prev => prev ? { ...prev, status } : prev)
+                }
+            }
+        } catch (error) {
+            console.error("🔍 [updateTicketStatus] error:", error)
+        }
+    }
+
     // Send message
     const sendMessage = async () => {
         if (!messageInput.trim() || !userId || isSending) {
@@ -312,14 +339,12 @@ const AdminChat = ({ userId: propUserId }) => {
                 console.log("Send message response data:", data)
 
                 if (data.success) {
+                    // Mark ticket as in_progress since reply was sent
+                    await updateTicketStatus(selectedTicket.id, "in_progress")
                     // Refresh messages
                     await fetchTicketMessages(selectedTicket.id)
                     // Refresh tickets list
                     await fetchSupportTickets()
-                    toast({
-                        title: "Success",
-                        description: "Message sent successfully.",
-                    })
                 } else {
                     throw new Error(data.error || data.message || "Failed to send message")
                 }
@@ -380,7 +405,6 @@ const AdminChat = ({ userId: propUserId }) => {
 
             if (data.success) {
                 setSelectedTicket({ ...selectedTicket, status: "resolved" })
-                inProgressOverridesRef.current.delete(selectedTicket.id)
                 await fetchSupportTickets()
                 setIsResolveDialogOpen(false)
                 // Switch to resolved tab
@@ -389,8 +413,9 @@ const AdminChat = ({ userId: propUserId }) => {
                 setViewMode("user-tickets")
                 setSelectedTicket(null)
                 toast({
-                    title: "Success",
-                    description: "Ticket has been resolved successfully.",
+                    title: "Ticket resolved",
+                    description: "Conversation moved to the Resolved tab.",
+                    duration: 4000,
                 })
             } else {
                 throw new Error(data.error || data.message || "Failed to resolve ticket")
@@ -421,58 +446,8 @@ const AdminChat = ({ userId: propUserId }) => {
         console.log("🔍 [handleTicketSelect] Ticket ID:", ticket.id)
         console.log("🔍 [handleTicketSelect] Ticket status:", ticket.status)
         
-        // Create a copy of the ticket to update
-        let updatedTicket = { ...ticket }
-        
-        // Auto-set ticket to "in_progress" if it's not already resolved
-        if (ticket.status !== "resolved" && ticket.status !== "in_progress" && userId) {
-            console.log("🔍 [handleTicketSelect] Auto-setting ticket to in_progress")
-            // Immediately update the status locally so UI responds right away
-            updatedTicket.status = "in_progress"
-            inProgressOverridesRef.current.add(ticket.id)
-            
-            // Update the ticket in the tickets list immediately so it shows in_progress right away
-            setSupportTickets(prevTickets => 
-                prevTickets.map(t => 
-                    t.id === ticket.id ? { ...t, status: "in_progress" } : t
-                )
-            )
-            
-            // Update status in backend immediately and wait for response
-            try {
-                const requestBody = {
-                    action: "update_status",
-                    ticket_id: ticket.id,
-                    status: "in_progress",
-                    admin_id: userId,
-                }
-                
-                const response = await fetch(SUPPORT_API_URL, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    body: JSON.stringify(requestBody),
-                })
-                
-                if (response.ok) {
-                    const data = await response.json()
-                    if (data.success) {
-                        console.log("🔍 [handleTicketSelect] Successfully set ticket to in_progress in backend")
-                        // Update the ticket list to reflect the new status from backend
-                        await fetchSupportTickets()
-                        // Update the selected ticket to ensure it has the correct status
-                        updatedTicket.status = "in_progress"
-                    }
-                }
-            } catch (error) {
-                console.error("🔍 [handleTicketSelect] Error auto-setting status:", error)
-            }
-        }
-        
-        // Update state with the (possibly updated) ticket immediately
-        setSelectedTicket(updatedTicket)
+        // Update state with the ticket
+        setSelectedTicket(ticket)
         setViewMode("conversation")
         setMessages([])
         setMessageInput("")
@@ -878,20 +853,20 @@ const AdminChat = ({ userId: propUserId }) => {
                                     </Button>
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
-                                            {selectedTicket?.subject}
-                                        </p>
+                                                {selectedTicket?.subject}
+                                            </p>
                                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                                            {selectedTicket?.user_name || selectedTicket?.user_email || 'Unknown User'}
-                                        </p>
-                                    </div>
+                                                {selectedTicket?.user_name || selectedTicket?.user_email || 'Unknown User'}
+                                            </p>
+                                        </div>
                                 </div>
                                 {selectedTicket && (
                                     <div className="flex items-center justify-between gap-2 mt-2">
                                         <div className="flex items-center gap-2">
                                             {getStatusBadge(selectedTicket.status)}
                                             <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                {selectedTicket.ticket_number}
-                                            </span>
+                                            {selectedTicket.ticket_number}
+                                        </span>
                                         </div>
                                         {selectedTicket.status === 'in_progress' && (
                                             <Button
@@ -1024,39 +999,39 @@ const AdminChat = ({ userId: propUserId }) => {
 
                             {/* Message Input - Show for all non-resolved tickets */}
                             {selectedTicket && selectedTicket.status !== 'resolved' ? (
-                                <div className="p-4 border-t border-gray-200 bg-gradient-to-br from-gray-50 to-white flex-shrink-0">
-                                    <div className="flex gap-3 items-end">
-                                        <div className="flex-1">
-                                            <Input
-                                                ref={messageInputRef}
-                                                value={messageInput}
-                                                onChange={(e) => setMessageInput(e.target.value)}
-                                                onKeyPress={handleKeyPress}
-                                                placeholder="Type your message..."
-                                                className="w-full text-sm border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200 rounded-lg px-4 py-2.5 bg-white"
-                                                disabled={isSending}
-                                            />
-                                        </div>
-                                        <Button
-                                            onClick={sendMessage}
-                                            disabled={!messageInput.trim() || isSending || !selectedTicket}
-                                            size="default"
-                                            className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-xl px-5 py-2.5 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {isSending ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                                                    Sending...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Send className="w-4 h-4 mr-2" />
-                                                    Send
-                                                </>
-                                            )}
-                                        </Button>
+                            <div className="p-4 border-t border-gray-200 bg-gradient-to-br from-gray-50 to-white flex-shrink-0">
+                                <div className="flex gap-3 items-end">
+                                    <div className="flex-1">
+                                        <Input
+                                            ref={messageInputRef}
+                                            value={messageInput}
+                                            onChange={(e) => setMessageInput(e.target.value)}
+                                            onKeyPress={handleKeyPress}
+                                            placeholder="Type your message..."
+                                            className="w-full text-sm border-2 border-gray-300 focus:border-orange-500 focus:ring-2 focus:ring-orange-200 rounded-lg px-4 py-2.5 bg-white"
+                                            disabled={isSending}
+                                        />
                                     </div>
+                                    <Button
+                                        onClick={sendMessage}
+                                        disabled={!messageInput.trim() || isSending || !selectedTicket}
+                                        size="default"
+                                        className="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-lg hover:shadow-xl px-5 py-2.5 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isSending ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                                Sending...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Send className="w-4 h-4 mr-2" />
+                                                Send
+                                            </>
+                                        )}
+                                    </Button>
                                 </div>
+                            </div>
                             ) : selectedTicket && selectedTicket.status === 'resolved' ? (
                                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                                     <div className="text-center text-sm text-gray-500 dark:text-gray-400 py-2">
@@ -1113,7 +1088,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                                         ? "No in-progress tickets"
                                                         : activeTab === "resolved"
                                                             ? "No resolved tickets"
-                                                            : "Support tickets will appear here"}
+                                                : "Support tickets will appear here"}
                                         </p>
                                     </div>
                                 ) : (
@@ -1171,7 +1146,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={handleBack}
+                                    onClick={handleBack}
                                         className="h-8 w-8 p-0 hover:bg-gray-200 rounded-lg flex-shrink-0"
                                     >
                                         <ArrowLeft className="w-4 h-4 text-gray-600" />

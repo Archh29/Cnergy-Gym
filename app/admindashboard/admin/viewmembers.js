@@ -2506,17 +2506,17 @@ const ViewMembers = ({ userId }) => {
               />
             </div>
             {currentView !== "active" && (
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="rejected">Expired</SelectItem>
-                </SelectContent>
-              </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-48 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Expired</SelectItem>
+              </SelectContent>
+            </Select>
             )}
             {currentView === "archive" && (
               <Select value={deactivationReasonFilter} onValueChange={setDeactivationReasonFilter}>

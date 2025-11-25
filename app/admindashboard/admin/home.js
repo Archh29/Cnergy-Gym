@@ -133,11 +133,11 @@ const GymDashboard = () => {
         let filteredSales = []
         try {
           // Fetch all sales (we'll filter client-side based on date range)
-          const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
-            timeout: 10000
-          })
-          const allSalesData = salesResponse.data.sales || []
-          
+            const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
+              timeout: 10000
+            })
+            const allSalesData = salesResponse.data.sales || []
+            
           // Filter sales by date range
           if (startDate || endDate) {
             filteredSales = allSalesData.filter(sale => {
@@ -167,23 +167,23 @@ const GymDashboard = () => {
             phTime.setHours(0, 0, 0, 0)
             const todayStr = format(phTime, "yyyy-MM-dd")
             filteredSales = allSalesData.filter(sale => {
-              const saleDate = new Date(sale.sale_date)
-              saleDate.setHours(0, 0, 0, 0)
-              const saleDateStr = format(saleDate, "yyyy-MM-dd")
-              return saleDateStr === todayStr
-            })
+                const saleDate = new Date(sale.sale_date)
+                saleDate.setHours(0, 0, 0, 0)
+                const saleDateStr = format(saleDate, "yyyy-MM-dd")
+                return saleDateStr === todayStr
+              })
           }
           
           // Calculate sales total
           const salesTotal = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-          
+            
           // Update salesToday with calculated value
           stats.salesToday.value = salesTotal
-          setAllSales(allSalesData)
+            setAllSales(allSalesData)
           console.log("Sales (filtered by date range):", salesTotal, "Date Range:", { startDate, endDate })
-        } catch (salesError) {
+          } catch (salesError) {
           console.error("Error fetching sales:", salesError)
-          // Keep the API value if sales fetch fails
+            // Keep the API value if sales fetch fails
         }
         
         // Fetch active subscriptions and clients using the same logic as monitoring subscription page

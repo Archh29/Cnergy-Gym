@@ -84,11 +84,11 @@ const Sales = ({ userId }) => {
 
   // Filter states
   const [analyticsFilter, setAnalyticsFilter] = useState("today")
-  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Day Pass
+  const [saleTypeFilter, setSaleTypeFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Session
   const [dateFilter, setDateFilter] = useState("all")
   const [categoryFilter, setCategoryFilter] = useState("all")
-  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Day Pass
-  const [allSalesDayPassMethodFilter, setAllSalesDayPassMethodFilter] = useState("all") // all, with_account, without_account
+  const [unifiedSalesFilter, setUnifiedSalesFilter] = useState("all") // all, Product, Subscription, Coach Assignment, Session
+  const [allSalesSessionMethodFilter, setAllSalesSessionMethodFilter] = useState("all") // all, with_account, without_account
 
   // Product Inventory filter states
   const [productSearchQuery, setProductSearchQuery] = useState("")
@@ -283,7 +283,7 @@ const Sales = ({ userId }) => {
   // Reload analytics when filter changes
   useEffect(() => {
     loadAnalytics()
-  }, [analyticsFilter, saleTypeFilter, startDate, endDate])
+  }, [analyticsFilter, startDate, endDate])
 
   // Reload sales when filters change
   useEffect(() => {
@@ -385,10 +385,10 @@ const Sales = ({ userId }) => {
     }
   }, [totalSalesTypeFilter, totalSalesSubscriptionTypeFilter, totalSalesSubscriptionPlans])
 
-  // Reset day pass method filter when sale type filter changes away from Day Pass in All Sales tab
+  // Reset session method filter when sale type filter changes away from Session in All Sales tab
   useEffect(() => {
-    if (saleTypeFilter !== "Day Pass") {
-      setAllSalesDayPassMethodFilter("all")
+    if (saleTypeFilter !== "Session") {
+      setAllSalesSessionMethodFilter("all")
     }
   }, [saleTypeFilter])
 
@@ -894,10 +894,10 @@ const Sales = ({ userId }) => {
   const loadSales = async () => {
     try {
       const params = new URLSearchParams()
-      if (saleTypeFilter !== "all") {
+      if (saleTypeFilter !== "all" && saleTypeFilter !== "Coach Assignment") {
         // Map filter values to backend expected values
         let backendSaleType = saleTypeFilter
-        if (saleTypeFilter === "Day Pass") {
+        if (saleTypeFilter === "Session") {
           backendSaleType = "Guest" // Backend uses "Guest" for day pass
         }
         params.append("sale_type", backendSaleType)
@@ -969,15 +969,6 @@ const Sales = ({ userId }) => {
         }
       } else {
         params.append("period", analyticsFilter)
-      }
-
-      if (saleTypeFilter !== "all") {
-        // Map filter values to backend expected values
-        let backendSaleType = saleTypeFilter
-        if (saleTypeFilter === "Day Pass") {
-          backendSaleType = "Guest" // Backend uses "Guest" for day pass
-        }
-        params.append("sale_type", backendSaleType)
       }
 
       const response = await axios.get(`${API_BASE_URL}?action=analytics&${params.toString()}`, {
@@ -1741,19 +1732,19 @@ const Sales = ({ userId }) => {
     // Filter by sale type (this should already be handled by the API, but keeping as backup)
     let matchesSaleType = true
     if (saleTypeFilter !== "all") {
-      if (saleTypeFilter === "Day Pass") {
-        // Day Pass sales: combine all types - 'Walk-in', 'Walkin', 'Guest', or 'Day Pass'
-        const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
-        if (!isDayPass) {
+      if (saleTypeFilter === "Session") {
+        // Session sales: combine all walk-ins, guests, and day passes
+        const isSessionSale = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+        if (!isSessionSale) {
           matchesSaleType = false
         } else {
-          // Additional filter for day pass method
-          if (allSalesDayPassMethodFilter !== "all") {
-            if (allSalesDayPassMethodFilter === "with_account") {
-              // Day pass with account - has user_id
+          // Additional filter for session method
+          if (allSalesSessionMethodFilter !== "all") {
+            if (allSalesSessionMethodFilter === "with_account") {
+              // Session with account - has user_id
               matchesSaleType = sale.user_id !== null && sale.user_id !== undefined
-            } else if (allSalesDayPassMethodFilter === "without_account") {
-              // Day pass without account - no user_id
+            } else if (allSalesSessionMethodFilter === "without_account") {
+              // Session without account - no user_id
               matchesSaleType = sale.user_id === null || sale.user_id === undefined
             }
           }
@@ -1788,7 +1779,7 @@ const Sales = ({ userId }) => {
   // Reset pagination when filters change
   useEffect(() => {
     setAllSalesCurrentPage(1)
-  }, [searchQuery, saleTypeFilter, allSalesDayPassMethodFilter, dateFilter])
+  }, [searchQuery, saleTypeFilter, allSalesSessionMethodFilter, dateFilter])
 
   useEffect(() => {
     setInventoryCurrentPage(1)
@@ -2352,16 +2343,16 @@ const Sales = ({ userId }) => {
                         <SelectItem value="Product">Product</SelectItem>
                         <SelectItem value="Subscription">Subscription</SelectItem>
                         <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
-                        <SelectItem value="Day Pass">Day Pass</SelectItem>
+                        <SelectItem value="Session">Session</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  {/* Day Pass Method Filter - Only show when Day Pass is selected in All Sales tab */}
-                  {saleTypeFilter === "Day Pass" && (
+                  {/* Session Method Filter - Only show when Session is selected in All Sales tab */}
+                  {saleTypeFilter === "Session" && (
                     <div className="flex items-center gap-2">
-                      <Label htmlFor="day-pass-method-filter" className="text-sm font-semibold text-gray-700">Method:</Label>
-                      <Select value={allSalesDayPassMethodFilter} onValueChange={setAllSalesDayPassMethodFilter}>
+                      <Label htmlFor="session-method-filter" className="text-sm font-semibold text-gray-700">Method:</Label>
+                      <Select value={allSalesSessionMethodFilter} onValueChange={setAllSalesSessionMethodFilter}>
                         <SelectTrigger className="w-[180px] h-10 border-2 border-gray-300 focus:border-purple-500">
                           <SelectValue placeholder="All Methods" />
                         </SelectTrigger>
@@ -3773,7 +3764,7 @@ const Sales = ({ userId }) => {
                       // Create print window
                       const printWindow = window.open('', '_blank')
                       const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
-                      
+
                       printWindow.document.write(`
                         <!DOCTYPE html>
                         <html>
@@ -3929,27 +3920,27 @@ const Sales = ({ userId }) => {
                                     </td>
                                   </tr>
                                 ` : filteredSales.map((sale, index) => {
-                                  const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
-                                  const serviceType = assignmentDetails 
-                                    ? (assignmentDetails.rateType === 'per_session' || assignmentDetails.rateType === 'session' || assignmentDetails.assignmentType === 'session' ? 'Session' : 'Monthly')
-                                    : 'Session'
-                                  const customerName = formatName(sale.user_name) || 'N/A'
-                                  const coachName = sale.coach_name ? formatName(sale.coach_name) : 'N/A'
-                                  const paymentMethod = formatPaymentMethod(sale.payment_method)
-                                  const receiptNumber = (() => {
-                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
-                                    if (sale.reference_number) {
-                                      return sale.reference_number
-                                    }
-                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                      return sale.reference_number || sale.gcash_reference || sale.receipt_number || "N/A"
-                                    }
-                                    return sale.receipt_number || "N/A"
-                                  })()
-                                  const saleDateDisplay = formatDateOnly(sale.sale_date)
-                                  const saleAmount = sale.total_amount || 0
-                                  
-                                  return `
+                        const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                        const serviceType = assignmentDetails
+                          ? (assignmentDetails.rateType === 'per_session' || assignmentDetails.rateType === 'session' || assignmentDetails.assignmentType === 'session' ? 'Session' : 'Monthly')
+                          : 'Session'
+                        const customerName = formatName(sale.user_name) || 'N/A'
+                        const coachName = sale.coach_name ? formatName(sale.coach_name) : 'N/A'
+                        const paymentMethod = formatPaymentMethod(sale.payment_method)
+                        const receiptNumber = (() => {
+                          const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                          if (sale.reference_number) {
+                            return sale.reference_number
+                          }
+                          if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                            return sale.reference_number || sale.gcash_reference || sale.receipt_number || "N/A"
+                          }
+                          return sale.receipt_number || "N/A"
+                        })()
+                        const saleDateDisplay = formatDateOnly(sale.sale_date)
+                        const saleAmount = sale.total_amount || 0
+
+                        return `
                                     <tr>
                                       <td style="text-align: center;">${index + 1}</td>
                                       <td>${saleDateDisplay}</td>
@@ -3961,7 +3952,7 @@ const Sales = ({ userId }) => {
                                       <td class="text-right" style="font-weight: 600;">${formatCurrency(saleAmount)}</td>
                                     </tr>
                                   `
-                                }).join('')}
+                      }).join('')}
                               </tbody>
                               <tfoot>
                                 <tr style="background-color: #f9fafb; font-weight: bold;">
@@ -3983,7 +3974,7 @@ const Sales = ({ userId }) => {
                           </body>
                         </html>
                       `)
-                      
+
                       printWindow.document.close()
                       setTimeout(() => {
                         printWindow.print()
@@ -4770,147 +4761,147 @@ const Sales = ({ userId }) => {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                    // Create a helper function to get filtered sales (same logic as the table)
-                    const getFilteredSales = () => {
-                      return sales.filter((sale) => {
-                      // Filter by search query
-                      const matchesSearch = totalSalesSearchQuery === "" ||
-                        sale.sale_type?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
-                        sale.plan_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
-                        sale.user_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
-                        sale.guest_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
-                        sale.coach_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
-                        (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
-                          (detail.product && detail.product.name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase())) ||
-                          (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()))
-                        ))
+                      // Create a helper function to get filtered sales (same logic as the table)
+                      const getFilteredSales = () => {
+                        return sales.filter((sale) => {
+                          // Filter by search query
+                          const matchesSearch = totalSalesSearchQuery === "" ||
+                            sale.sale_type?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                            sale.plan_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                            sale.user_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                            sale.guest_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                            sale.coach_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                            (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
+                              (detail.product && detail.product.name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase())) ||
+                              (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()))
+                            ))
 
-                      // Filter by sale type - simplified version of the full filtering logic
-                      let matchesSaleType = true
-                      if (totalSalesTypeFilter !== "all") {
-                        if (totalSalesTypeFilter === "Product") {
-                          const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
-                          const isProductSale = sale.sale_type === 'Product'
-                          if (!hasProducts && !isProductSale) {
-                            matchesSaleType = false
-                          } else {
-                            if (totalSalesCategoryFilter !== "all") {
-                              const hasCategoryMatch = sale.sales_details?.some(detail => {
-                                if (!detail.product_id) return false
-                                const product = detail.product || products.find(p => p.id === detail.product_id)
-                                return product?.category === totalSalesCategoryFilter
-                              })
-                              if (!hasCategoryMatch) matchesSaleType = false
-                            }
-                            if (totalSalesProductFilter !== "all" && matchesSaleType) {
-                              const hasProductMatch = sale.sales_details?.some(detail =>
-                                detail.product_id && detail.product_id.toString() === totalSalesProductFilter
-                              )
-                              if (!hasProductMatch) matchesSaleType = false
-                            }
-                          }
-                        } else if (totalSalesTypeFilter === "Subscription") {
-                          if (sale.sale_type === 'Product') {
-                            matchesSaleType = false
-                          } else if (sale.sale_type === 'Subscription') {
-                            if (totalSalesSubscriptionTypeFilter !== "all") {
-                              const salePlanId = sale.plan_id?.toString()
-                              const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
-                              if (salePlanId !== selectedPlanId) {
-                                const matchesInDetails = sale.sales_details && Array.isArray(sale.sales_details) &&
-                                  sale.sales_details.some(detail =>
-                                    detail.subscription?.plan_id?.toString() === selectedPlanId
+                          // Filter by sale type - simplified version of the full filtering logic
+                          let matchesSaleType = true
+                          if (totalSalesTypeFilter !== "all") {
+                            if (totalSalesTypeFilter === "Product") {
+                              const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                              const isProductSale = sale.sale_type === 'Product'
+                              if (!hasProducts && !isProductSale) {
+                                matchesSaleType = false
+                              } else {
+                                if (totalSalesCategoryFilter !== "all") {
+                                  const hasCategoryMatch = sale.sales_details?.some(detail => {
+                                    if (!detail.product_id) return false
+                                    const product = detail.product || products.find(p => p.id === detail.product_id)
+                                    return product?.category === totalSalesCategoryFilter
+                                  })
+                                  if (!hasCategoryMatch) matchesSaleType = false
+                                }
+                                if (totalSalesProductFilter !== "all" && matchesSaleType) {
+                                  const hasProductMatch = sale.sales_details?.some(detail =>
+                                    detail.product_id && detail.product_id.toString() === totalSalesProductFilter
                                   )
-                                if (!matchesInDetails) matchesSaleType = false
+                                  if (!hasProductMatch) matchesSaleType = false
+                                }
                               }
-                            }
-                          } else {
-                            matchesSaleType = false
-                          }
-                        } else if (totalSalesTypeFilter === "Coach Assignment") {
-                          const isCoachingSale = sale.sale_type === 'Coach Assignment' ||
-                            sale.sale_type === 'Coaching' ||
-                            sale.sale_type === 'Coach'
-                          if (!isCoachingSale) {
-                            matchesSaleType = false
-                          } else {
-                            if (totalSalesCoachFilter !== "all") {
-                              if (!sale.coach_id || sale.coach_id.toString() !== totalSalesCoachFilter) {
+                            } else if (totalSalesTypeFilter === "Subscription") {
+                              if (sale.sale_type === 'Product') {
+                                matchesSaleType = false
+                              } else if (sale.sale_type === 'Subscription') {
+                                if (totalSalesSubscriptionTypeFilter !== "all") {
+                                  const salePlanId = sale.plan_id?.toString()
+                                  const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+                                  if (salePlanId !== selectedPlanId) {
+                                    const matchesInDetails = sale.sales_details && Array.isArray(sale.sales_details) &&
+                                      sale.sales_details.some(detail =>
+                                        detail.subscription?.plan_id?.toString() === selectedPlanId
+                                      )
+                                    if (!matchesInDetails) matchesSaleType = false
+                                  }
+                                }
+                              } else {
                                 matchesSaleType = false
                               }
-                            }
-                            if (totalSalesServiceTypeFilter !== "all" && matchesSaleType) {
-                              const serviceType = sale.service_type || sale.coaching_type || ''
-                              const normalizedServiceType = serviceType.toLowerCase().includes('session') ? 'session' :
-                                serviceType.toLowerCase().includes('monthly') ? 'monthly' : ''
-                              if (normalizedServiceType !== totalSalesServiceTypeFilter) {
+                            } else if (totalSalesTypeFilter === "Coach Assignment") {
+                              const isCoachingSale = sale.sale_type === 'Coach Assignment' ||
+                                sale.sale_type === 'Coaching' ||
+                                sale.sale_type === 'Coach'
+                              if (!isCoachingSale) {
                                 matchesSaleType = false
+                              } else {
+                                if (totalSalesCoachFilter !== "all") {
+                                  if (!sale.coach_id || sale.coach_id.toString() !== totalSalesCoachFilter) {
+                                    matchesSaleType = false
+                                  }
+                                }
+                                if (totalSalesServiceTypeFilter !== "all" && matchesSaleType) {
+                                  const serviceType = sale.service_type || sale.coaching_type || ''
+                                  const normalizedServiceType = serviceType.toLowerCase().includes('session') ? 'session' :
+                                    serviceType.toLowerCase().includes('monthly') ? 'monthly' : ''
+                                  if (normalizedServiceType !== totalSalesServiceTypeFilter) {
+                                    matchesSaleType = false
+                                  }
+                                }
                               }
+                            } else {
+                              matchesSaleType = sale.sale_type === totalSalesTypeFilter
                             }
                           }
-                        } else {
-                          matchesSaleType = sale.sale_type === totalSalesTypeFilter
-                        }
+
+                          // Filter by date range
+                          if (totalSalesStartDate || totalSalesEndDate) {
+                            const saleDate = new Date(sale.sale_date)
+                            saleDate.setHours(0, 0, 0, 0)
+
+                            if (totalSalesStartDate) {
+                              const startDate = new Date(totalSalesStartDate)
+                              startDate.setHours(0, 0, 0, 0)
+                              if (saleDate < startDate) return false
+                            }
+
+                            if (totalSalesEndDate) {
+                              const endDate = new Date(totalSalesEndDate)
+                              endDate.setHours(23, 59, 59, 999)
+                              if (saleDate > endDate) return false
+                            }
+                          }
+
+                          return matchesSearch && matchesSaleType
+                        })
                       }
 
-                      // Filter by date range
-                      if (totalSalesStartDate || totalSalesEndDate) {
-                        const saleDate = new Date(sale.sale_date)
-                        saleDate.setHours(0, 0, 0, 0)
+                      // Get filtered sales using the helper function
+                      const filteredSales = getFilteredSales()
 
-                        if (totalSalesStartDate) {
-                          const startDate = new Date(totalSalesStartDate)
-                          startDate.setHours(0, 0, 0, 0)
-                          if (saleDate < startDate) return false
-                        }
+                      // Calculate totals
+                      const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const productSales = filteredSales.filter(s => s.sale_type === 'Product')
+                      const subscriptionSales = filteredSales.filter(s => s.sale_type === 'Subscription')
+                      const coachingSales = filteredSales.filter(s =>
+                        s.sale_type === 'Coaching' || s.sale_type === 'Coach Assignment' || s.sale_type === 'Coach'
+                      )
 
-                        if (totalSalesEndDate) {
-                          const endDate = new Date(totalSalesEndDate)
-                          endDate.setHours(23, 59, 59, 999)
-                          if (saleDate > endDate) return false
-                        }
+                      const productTotal = productSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+                      // Get date range text
+                      let dateRangeText = "All Sales"
+                      if (totalSalesQuickFilter === "today") {
+                        dateRangeText = "Today's Sales"
+                      } else if (totalSalesQuickFilter === "thisWeek") {
+                        dateRangeText = "This Week's Sales"
+                      } else if (totalSalesQuickFilter === "thisMonth") {
+                        dateRangeText = "This Month's Sales"
+                      } else if (totalSalesStartDate && totalSalesEndDate) {
+                        dateRangeText = `${format(totalSalesStartDate, "MMM dd, yyyy")} - ${format(totalSalesEndDate, "MMM dd, yyyy")}`
+                      } else if (totalSalesStartDate) {
+                        dateRangeText = `From ${format(totalSalesStartDate, "MMM dd, yyyy")}`
+                      } else if (totalSalesEndDate) {
+                        dateRangeText = `Until ${format(totalSalesEndDate, "MMM dd, yyyy")}`
                       }
 
-                        return matchesSearch && matchesSaleType
-                      })
-                    }
+                      // Create print window
+                      const printWindow = window.open('', '_blank')
+                      const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
 
-                    // Get filtered sales using the helper function
-                    const filteredSales = getFilteredSales()
-
-                    // Calculate totals
-                    const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-                    const productSales = filteredSales.filter(s => s.sale_type === 'Product')
-                    const subscriptionSales = filteredSales.filter(s => s.sale_type === 'Subscription')
-                    const coachingSales = filteredSales.filter(s =>
-                      s.sale_type === 'Coaching' || s.sale_type === 'Coach Assignment' || s.sale_type === 'Coach'
-                    )
-
-                    const productTotal = productSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-                    const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-                    const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-
-                    // Get date range text
-                    let dateRangeText = "All Sales"
-                    if (totalSalesQuickFilter === "today") {
-                      dateRangeText = "Today's Sales"
-                    } else if (totalSalesQuickFilter === "thisWeek") {
-                      dateRangeText = "This Week's Sales"
-                    } else if (totalSalesQuickFilter === "thisMonth") {
-                      dateRangeText = "This Month's Sales"
-                    } else if (totalSalesStartDate && totalSalesEndDate) {
-                      dateRangeText = `${format(totalSalesStartDate, "MMM dd, yyyy")} - ${format(totalSalesEndDate, "MMM dd, yyyy")}`
-                    } else if (totalSalesStartDate) {
-                      dateRangeText = `From ${format(totalSalesStartDate, "MMM dd, yyyy")}`
-                    } else if (totalSalesEndDate) {
-                      dateRangeText = `Until ${format(totalSalesEndDate, "MMM dd, yyyy")}`
-                    }
-
-                    // Create print window
-                    const printWindow = window.open('', '_blank')
-                    const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
-                    
-                    printWindow.document.write(`
+                      printWindow.document.write(`
                       <!DOCTYPE html>
                       <html>
                         <head>
@@ -5057,59 +5048,59 @@ const Sales = ({ userId }) => {
                                   </td>
                                 </tr>
                               ` : filteredSales.map((sale, index) => {
-                                // Helper function to get product name (simplified version)
-                                const getProductNameForPrint = (detail, sale) => {
-                                  if (detail?.product?.name) {
-                                    return detail.product.name
-                                  }
-                                  if (detail?.subscription?.plan_name) {
-                                    return detail.subscription.plan_name
-                                  }
-                                  if (sale?.plan_name) {
-                                    return sale.plan_name
-                                  }
-                                  if (sale?.sale_type === "Product" && detail?.product_id) {
-                                    const product = products.find(p => p.id === detail.product_id)
-                                    return product ? product.name : "N/A"
-                                  }
-                                  return sale?.sale_type || "N/A"
-                                }
+                        // Helper function to get product name (simplified version)
+                        const getProductNameForPrint = (detail, sale) => {
+                          if (detail?.product?.name) {
+                            return detail.product.name
+                          }
+                          if (detail?.subscription?.plan_name) {
+                            return detail.subscription.plan_name
+                          }
+                          if (sale?.plan_name) {
+                            return sale.plan_name
+                          }
+                          if (sale?.sale_type === "Product" && detail?.product_id) {
+                            const product = products.find(p => p.id === detail.product_id)
+                            return product ? product.name : "N/A"
+                          }
+                          return sale?.sale_type || "N/A"
+                        }
 
-                                const getSaleItems = () => {
-                                  if (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0) {
-                                    return sale.sales_details.map(detail => {
-                                      const quantity = detail.quantity || sale.quantity || 1
-                                      const name = getProductNameForPrint(detail, sale)
-                                      return quantity > 1 ? `${name} (${quantity}x)` : name
-                                    }).join(", ")
-                                  }
-                                  return getProductNameForPrint({}, sale)
-                                }
+                        const getSaleItems = () => {
+                          if (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0) {
+                            return sale.sales_details.map(detail => {
+                              const quantity = detail.quantity || sale.quantity || 1
+                              const name = getProductNameForPrint(detail, sale)
+                              return quantity > 1 ? `${name} (${quantity}x)` : name
+                            }).join(", ")
+                          }
+                          return getProductNameForPrint({}, sale)
+                        }
 
-                                const customerName = sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach"
-                                  ? (formatName(sale.user_name) || "N/A")
-                                  : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin"
-                                    ? (formatName(sale.guest_name || sale.user_name) || "Guest")
-                                    : "N/A"
+                        const customerName = sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach"
+                          ? (formatName(sale.user_name) || "N/A")
+                          : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin"
+                            ? (formatName(sale.guest_name || sale.user_name) || "Guest")
+                            : "N/A"
 
-                                const saleType = (() => {
-                                  const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
-                                  if (isDayPass) {
-                                    return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
-                                  }
-                                  return sale.sale_type || 'N/A'
-                                })()
+                        const saleType = (() => {
+                          const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+                          if (isDayPass) {
+                            return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                          }
+                          return sale.sale_type || 'N/A'
+                        })()
 
-                                const paymentMethod = formatPaymentMethod(sale.payment_method)
-                                const receiptNumber = (() => {
-                                  const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
-                                  if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                    return sale.reference_number || sale.receipt_number || "N/A"
-                                  }
-                                  return sale.receipt_number || "N/A"
-                                })()
+                        const paymentMethod = formatPaymentMethod(sale.payment_method)
+                        const receiptNumber = (() => {
+                          const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                          if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                            return sale.reference_number || sale.receipt_number || "N/A"
+                          }
+                          return sale.receipt_number || "N/A"
+                        })()
 
-                                return `
+                        return `
                                   <tr>
                                     <td>${index + 1}</td>
                                     <td>${getSaleItems()}</td>
@@ -5121,7 +5112,7 @@ const Sales = ({ userId }) => {
                                     <td class="text-right">${formatCurrency(sale.total_amount)}</td>
                                   </tr>
                                 `
-                              }).join('')}
+                      }).join('')}
                             </tbody>
                             <tfoot>
                               <tr>
@@ -5137,19 +5128,19 @@ const Sales = ({ userId }) => {
                         </body>
                       </html>
                     `)
-                    
-                    printWindow.document.close()
-                    setTimeout(() => {
-                      printWindow.print()
-                    }, 250)
-                  }}
-                  className="h-9 px-3 text-sm"
-                >
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
-                </Button>
-                  </div>
+
+                      printWindow.document.close()
+                      setTimeout(() => {
+                        printWindow.print()
+                      }, 250)
+                    }}
+                    className="h-9 px-3 text-sm"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </Button>
                 </div>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -6886,7 +6877,7 @@ const Sales = ({ userId }) => {
                       // Create print window
                       const printWindow = window.open('', '_blank')
                       const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
-                      
+
                       printWindow.document.write(`
                         <!DOCTYPE html>
                         <html>
@@ -7025,59 +7016,59 @@ const Sales = ({ userId }) => {
                                     </td>
                                   </tr>
                                 ` : filteredSales.map((sale, index) => {
-                                  // Get plan name - check multiple sources
-                                  let planName = sale.plan_name || "N/A"
-                                  if (planName === "N/A" && sale.sales_details && Array.isArray(sale.sales_details)) {
-                                    const subscriptionDetail = sale.sales_details.find(d => d.subscription?.plan_name)
-                                    if (subscriptionDetail?.subscription?.plan_name) {
-                                      planName = subscriptionDetail.subscription.plan_name
-                                    }
-                                  }
-                                  
-                                  // Get customer name
-                                  const customerName = sale.user_name
-                                    ? (formatName(sale.user_name) || "N/A")
-                                    : (formatName(sale.guest_name) || "Guest")
-                                  
-                                  // Determine sale type
-                                  const saleType = (() => {
-                                    const planNameLower = planName.toLowerCase()
-                                    const isDayPass = planNameLower.includes('day pass') ||
-                                      planNameLower.includes('daypass') ||
-                                      planNameLower.includes('walk-in') ||
-                                      planNameLower.includes('walkin') ||
-                                      planNameLower.includes('guest')
-                                    
-                                    if (isDayPass) {
-                                      return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
-                                    }
-                                    
-                                    const isGymSession = planNameLower.includes('gym session') ||
-                                      planNameLower.includes('gymsession')
-                                    
-                                    if (isGymSession) {
-                                      return sale.user_id !== null && sale.user_id !== undefined ? 'Subscription' : 'Guest'
-                                    }
-                                    
-                                    return sale.sale_type === 'Subscription' ? 'Subscription' : (sale.guest_name ? 'Guest' : 'Subscription')
-                                  })()
-                                  
-                                  const paymentMethod = formatPaymentMethod(sale.payment_method)
-                                  
-                                  // Get receipt number based on payment method
-                                  const receiptNumber = (() => {
-                                    const paymentMethodLower = (sale.payment_method || 'cash').toLowerCase()
-                                    if (paymentMethodLower === 'gcash' || paymentMethodLower === 'digital') {
-                                      return sale.reference_number || sale.receipt_number || "N/A"
-                                    }
-                                    return sale.receipt_number || "N/A"
-                                  })()
-                                  
-                                  // Format date for display
-                                  const saleDateDisplay = formatDate(sale.sale_date)
-                                  const saleAmount = sale.total_amount || 0
-                                  
-                                  return `
+                        // Get plan name - check multiple sources
+                        let planName = sale.plan_name || "N/A"
+                        if (planName === "N/A" && sale.sales_details && Array.isArray(sale.sales_details)) {
+                          const subscriptionDetail = sale.sales_details.find(d => d.subscription?.plan_name)
+                          if (subscriptionDetail?.subscription?.plan_name) {
+                            planName = subscriptionDetail.subscription.plan_name
+                          }
+                        }
+
+                        // Get customer name
+                        const customerName = sale.user_name
+                          ? (formatName(sale.user_name) || "N/A")
+                          : (formatName(sale.guest_name) || "Guest")
+
+                        // Determine sale type
+                        const saleType = (() => {
+                          const planNameLower = planName.toLowerCase()
+                          const isDayPass = planNameLower.includes('day pass') ||
+                            planNameLower.includes('daypass') ||
+                            planNameLower.includes('walk-in') ||
+                            planNameLower.includes('walkin') ||
+                            planNameLower.includes('guest')
+
+                          if (isDayPass) {
+                            return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                          }
+
+                          const isGymSession = planNameLower.includes('gym session') ||
+                            planNameLower.includes('gymsession')
+
+                          if (isGymSession) {
+                            return sale.user_id !== null && sale.user_id !== undefined ? 'Subscription' : 'Guest'
+                          }
+
+                          return sale.sale_type === 'Subscription' ? 'Subscription' : (sale.guest_name ? 'Guest' : 'Subscription')
+                        })()
+
+                        const paymentMethod = formatPaymentMethod(sale.payment_method)
+
+                        // Get receipt number based on payment method
+                        const receiptNumber = (() => {
+                          const paymentMethodLower = (sale.payment_method || 'cash').toLowerCase()
+                          if (paymentMethodLower === 'gcash' || paymentMethodLower === 'digital') {
+                            return sale.reference_number || sale.receipt_number || "N/A"
+                          }
+                          return sale.receipt_number || "N/A"
+                        })()
+
+                        // Format date for display
+                        const saleDateDisplay = formatDate(sale.sale_date)
+                        const saleAmount = sale.total_amount || 0
+
+                        return `
                                     <tr>
                                       <td style="text-align: center;">${index + 1}</td>
                                       <td style="font-weight: 500;">${planName}</td>
@@ -7089,7 +7080,7 @@ const Sales = ({ userId }) => {
                                       <td class="text-right" style="font-weight: 600;">${formatCurrency(saleAmount)}</td>
                                     </tr>
                                   `
-                                }).join('')}
+                      }).join('')}
                               </tbody>
                               <tfoot>
                                 <tr style="background-color: #f9fafb; font-weight: bold;">
@@ -7111,7 +7102,7 @@ const Sales = ({ userId }) => {
                           </body>
                         </html>
                       `)
-                      
+
                       printWindow.document.close()
                       setTimeout(() => {
                         printWindow.print()
@@ -9206,7 +9197,7 @@ const Sales = ({ userId }) => {
                       // Create print window
                       const printWindow = window.open('', '_blank')
                       const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
-                      
+
                       printWindow.document.write(`
                         <!DOCTYPE html>
                         <html>
@@ -9349,44 +9340,44 @@ const Sales = ({ userId }) => {
                                     </td>
                                   </tr>
                                 ` : filteredSales.flatMap((sale, saleIndex) => {
-                                  // Flatten sales details into individual rows
-                                  const productDetails = sale.sales_details?.filter(d => d.product_id) || []
-                                  
-                                  if (productDetails.length === 0) {
-                                    // If no sales_details, show the sale as a single row
-                                    return [{
-                                      productName: sale.sale_type || "Product",
-                                      quantity: sale.quantity || 1,
-                                      sale: sale,
-                                      index: saleIndex
-                                    }]
-                                  }
-                                  
-                                  return productDetails.map((detail, detailIndex) => ({
-                                    productName: detail.product?.name || products.find(p => p.id === detail.product_id)?.name || "Unknown Product",
-                                    quantity: detail.quantity || sale.quantity || 1,
-                                    sale: sale,
-                                    index: saleIndex * 1000 + detailIndex // Unique index for flattened rows
-                                  }))
-                                }).map((item, index) => {
-                                  const customerName = item.sale.sale_type === "Product"
-                                    ? (formatName(item.sale.user_name) || formatName(item.sale.guest_name) || "Guest")
-                                    : (formatName(item.sale.user_name) || "N/A")
-                                  
-                                  const paymentMethod = formatPaymentMethod(item.sale.payment_method)
-                                  const receiptNumber = (() => {
-                                    const paymentMethod = (item.sale.payment_method || 'cash').toLowerCase()
-                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
-                                      return item.sale.reference_number || item.sale.receipt_number || "N/A"
-                                    }
-                                    return item.sale.receipt_number || "N/A"
-                                  })()
-                                  
-                                  const product = products.find(p => p.id === item.sale.sales_details?.find(d => d.product_id === p.id)?.product_id)
-                                  const unitPrice = product?.price || (item.sale.total_amount / item.quantity) || 0
-                                  const lineTotal = unitPrice * item.quantity
-                                  
-                                  return `
+                        // Flatten sales details into individual rows
+                        const productDetails = sale.sales_details?.filter(d => d.product_id) || []
+
+                        if (productDetails.length === 0) {
+                          // If no sales_details, show the sale as a single row
+                          return [{
+                            productName: sale.sale_type || "Product",
+                            quantity: sale.quantity || 1,
+                            sale: sale,
+                            index: saleIndex
+                          }]
+                        }
+
+                        return productDetails.map((detail, detailIndex) => ({
+                          productName: detail.product?.name || products.find(p => p.id === detail.product_id)?.name || "Unknown Product",
+                          quantity: detail.quantity || sale.quantity || 1,
+                          sale: sale,
+                          index: saleIndex * 1000 + detailIndex // Unique index for flattened rows
+                        }))
+                      }).map((item, index) => {
+                        const customerName = item.sale.sale_type === "Product"
+                          ? (formatName(item.sale.user_name) || formatName(item.sale.guest_name) || "Guest")
+                          : (formatName(item.sale.user_name) || "N/A")
+
+                        const paymentMethod = formatPaymentMethod(item.sale.payment_method)
+                        const receiptNumber = (() => {
+                          const paymentMethod = (item.sale.payment_method || 'cash').toLowerCase()
+                          if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                            return item.sale.reference_number || item.sale.receipt_number || "N/A"
+                          }
+                          return item.sale.receipt_number || "N/A"
+                        })()
+
+                        const product = products.find(p => p.id === item.sale.sales_details?.find(d => d.product_id === p.id)?.product_id)
+                        const unitPrice = product?.price || (item.sale.total_amount / item.quantity) || 0
+                        const lineTotal = unitPrice * item.quantity
+
+                        return `
                                     <tr>
                                       <td>${index + 1}</td>
                                       <td>${item.productName}</td>
@@ -9398,7 +9389,7 @@ const Sales = ({ userId }) => {
                                       <td class="text-right">${formatCurrency(lineTotal)}</td>
                                     </tr>
                                   `
-                                }).join('')}
+                      }).join('')}
                               </tbody>
                               <tfoot>
                                 <tr>
@@ -9414,7 +9405,7 @@ const Sales = ({ userId }) => {
                           </body>
                         </html>
                       `)
-                      
+
                       printWindow.document.close()
                       setTimeout(() => {
                         printWindow.print()

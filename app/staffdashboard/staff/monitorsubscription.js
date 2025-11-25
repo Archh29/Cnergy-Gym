@@ -1592,7 +1592,7 @@ const SubscriptionMonitor = ({ userId }) => {
     
     // If no date filters are set, show all subscriptions
     if (!startDate && !endDate) return true
-    
+
     const subscriptionDate = new Date(subscription.start_date)
     subscriptionDate.setHours(0, 0, 0, 0) // Normalize to start of day
     
