@@ -1096,8 +1096,8 @@ const ViewCoach = () => {
               <Button
                 onClick={() => setCurrentView(currentView === "active" ? "archive" : "active")}
                 className={`h-10 px-4 font-medium transition-all ${currentView === "active"
-                    ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm"
-                    : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
+                  ? "bg-white text-gray-900 border-2 border-gray-200 hover:bg-gray-50 shadow-sm"
+                  : "bg-gray-100 text-gray-700 border-2 border-gray-200 hover:bg-gray-200"
                   }`}
               >
                 {currentView === "active" ? "Active Coach" : "Deactivated"}

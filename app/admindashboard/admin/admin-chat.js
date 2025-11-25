@@ -46,6 +46,16 @@ import {
 
 const SUPPORT_API_URL = "https://api.cnergy.site/support_tickets.php"
 
+const TICKET_TOAST_STYLE = {
+    position: "fixed",
+    top: "1rem",
+    right: "1rem",
+    bottom: "auto",
+    left: "auto",
+    minWidth: "280px",
+    zIndex: 9999,
+}
+
 const AdminChat = ({ userId: propUserId }) => {
     // Try to get userId from prop, sessionStorage, or state
     const [userId, setUserId] = useState(() => {
@@ -416,6 +426,7 @@ const AdminChat = ({ userId: propUserId }) => {
                     title: "Ticket resolved",
                     description: "Conversation moved to the Resolved tab.",
                     duration: 4000,
+                    style: TICKET_TOAST_STYLE,
                 })
             } else {
                 throw new Error(data.error || data.message || "Failed to resolve ticket")
