@@ -89,19 +89,10 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      // Determine period based on date range or default to "today"
+      // Always use "today" period for API - we'll filter data client-side based on date range
+      // The API doesn't support custom date ranges, so we fetch all data and filter on frontend
       let period = "today"
-      if (startDate && endDate) {
-        period = "custom"
-      } else if (!startDate && !endDate) {
-        period = "today"
-      }
-      
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
-      
-      if (period === "custom" && startDate && endDate) {
-        apiUrl += `&start_date=${startDate}&end_date=${endDate}`
-      }
 
       console.log("Fetching data for date range:", { startDate, endDate }, "URL:", apiUrl)
 

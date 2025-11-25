@@ -69,6 +69,7 @@ import {
   Receipt,
   Ticket,
   FileText,
+  Printer,
 } from "lucide-react"
 
 // API Configuration
@@ -395,6 +396,18 @@ const Sales = ({ userId }) => {
   useEffect(() => {
     setProductSalesCurrentPage(1)
   }, [selectedCategoryFilter, selectedProductFilter, productSalesStartDate, productSalesEndDate, productSalesSearchQuery, productSalesQuickFilter])
+
+  // Reset quick filter to "today" when product sales modal opens
+  useEffect(() => {
+    if (productSalesDialogOpen) {
+      setProductSalesQuickFilter("today")
+      // Set today's date in Philippine time
+      const todayPH = getTodayInPHTime()
+      const todayDate = new Date(todayPH + "T00:00:00")
+      setProductSalesStartDate(todayDate)
+      setProductSalesEndDate(todayDate)
+    }
+  }, [productSalesDialogOpen])
 
   // Reset filters when product sales dialog closes
   useEffect(() => {
@@ -3607,11 +3620,380 @@ const Sales = ({ userId }) => {
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
                   <User className="h-5 w-5 text-gray-700" />
                 </div>
-                <div>
-                  <DialogTitle className="text-xl font-bold text-gray-900">Coaching Sales Details</DialogTitle>
-                  <DialogDescription className="text-sm text-gray-600 mt-0.5">
-                    View all coaching sales by coach with detailed transaction information
-                  </DialogDescription>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <DialogTitle className="text-xl font-bold text-gray-900">Coaching Sales Details</DialogTitle>
+                    <DialogDescription className="text-sm text-gray-600 mt-0.5">
+                      View all coaching sales by coach with detailed transaction information
+                    </DialogDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Get filtered coaching sales for printing - use EXACT same logic as the table
+                      const filteredSales = sales.filter((sale) => {
+                        // Filter by coaching sales
+                        const isCoachingSale = sale.sale_type === 'Coaching' ||
+                          sale.sale_type === 'Coach Assignment' ||
+                          sale.sale_type === 'Coach'
+
+                        if (!isCoachingSale) return false
+
+                        // Filter by search query
+                        const matchesSearch = coachingSalesSearchQuery === "" ||
+                          sale.user_name?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                          sale.coach_name?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                          sale.receipt_number?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase()) ||
+                          sale.payment_method?.toLowerCase().includes(coachingSalesSearchQuery.toLowerCase())
+
+                        if (!matchesSearch) return false
+
+                        // Filter by selected coach if not "all"
+                        if (selectedCoachFilter !== "all") {
+                          if (!sale.coach_id || sale.coach_id.toString() !== selectedCoachFilter) return false
+                        }
+
+                        // Filter by quick access filter
+                        if (coachingSalesQuickFilter === "today") {
+                          const saleDate = new Date(sale.sale_date)
+                          saleDate.setHours(0, 0, 0, 0)
+                          const todayPH = getTodayInPHTime()
+                          const todayDate = new Date(todayPH + "T00:00:00")
+                          todayDate.setHours(0, 0, 0, 0)
+                          const saleDateStr = saleDate.toISOString().split('T')[0]
+                          const todayStr = todayDate.toISOString().split('T')[0]
+                          if (saleDateStr !== todayStr) return false
+                        } else if (coachingSalesQuickFilter === "thisWeek") {
+                          const now = new Date()
+                          const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                          const today = new Date(phTime)
+                          today.setHours(0, 0, 0, 0)
+                          const dayOfWeek = today.getDay()
+                          const startOfWeek = new Date(today)
+                          startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                          const endOfWeek = new Date(startOfWeek)
+                          endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                          endOfWeek.setHours(23, 59, 59, 999)
+                          const saleDate = new Date(sale.sale_date)
+                          if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                        } else if (coachingSalesQuickFilter === "thisMonth") {
+                          const now = new Date()
+                          const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                          const saleDate = new Date(sale.sale_date)
+                          const saleMonth = saleDate.getMonth()
+                          const saleYear = saleDate.getFullYear()
+                          const currentMonth = phTime.getMonth()
+                          const currentYear = phTime.getFullYear()
+                          if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                        } else if (coachingSalesQuickFilter === "all") {
+                          // Filter by date range
+                          if (coachingStartDate || coachingEndDate) {
+                            const saleDate = new Date(sale.sale_date)
+                            saleDate.setHours(0, 0, 0, 0)
+
+                            if (coachingStartDate) {
+                              const startDate = new Date(coachingStartDate)
+                              startDate.setHours(0, 0, 0, 0)
+                              if (saleDate < startDate) return false
+                            }
+
+                            if (coachingEndDate) {
+                              const endDate = new Date(coachingEndDate)
+                              endDate.setHours(23, 59, 59, 999)
+                              if (saleDate > endDate) return false
+                            }
+                          }
+                        }
+
+                        const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+
+                        // If no assignment details, it's likely a session sale
+                        if (!assignmentDetails) {
+                          // If service type filter is set to "session", include it
+                          if (coachingServiceTypeFilter === "session") return true
+                          // If service type filter is set to "monthly", exclude it
+                          if (coachingServiceTypeFilter === "monthly") return false
+                          // If filter is "all", include it
+                          return true
+                        }
+
+                        // Filter out package sales and N/A entries (broken data)
+                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                        const normalizedServiceType = serviceType === 'per_session' || serviceType === 'session' ? 'session' :
+                          serviceType === 'package' ? 'package' : 'monthly'
+
+                        // Exclude package sales
+                        if (normalizedServiceType === 'package') return false
+
+                        // For monthly sales, require assignment details with endDate
+                        if (normalizedServiceType === 'monthly' && !assignmentDetails?.endDate) return false
+
+                        if (coachingServiceTypeFilter !== "all") {
+                          if (normalizedServiceType !== coachingServiceTypeFilter) return false
+                        }
+
+                        return true
+                      })
+
+                      // Calculate totals
+                      const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const sessionSales = filteredSales.filter(sale => {
+                        const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                        if (!assignmentDetails) return true
+                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                        return serviceType === 'per_session' || serviceType === 'session'
+                      })
+                      const monthlySales = filteredSales.filter(sale => {
+                        const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                        if (!assignmentDetails) return false
+                        const serviceType = assignmentDetails?.rateType || assignmentDetails?.assignmentType || 'monthly'
+                        const normalizedType = serviceType === 'per_session' || serviceType === 'session' ? 'session' : 'monthly'
+                        return normalizedType === 'monthly'
+                      })
+                      const sessionTotal = sessionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const monthlyTotal = monthlySales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+                      // Get date range text
+                      let dateRangeText = "All Coaching Sales"
+                      if (coachingSalesQuickFilter === "today") {
+                        dateRangeText = "Today's Coaching Sales"
+                      } else if (coachingSalesQuickFilter === "thisWeek") {
+                        dateRangeText = "This Week's Coaching Sales"
+                      } else if (coachingSalesQuickFilter === "thisMonth") {
+                        dateRangeText = "This Month's Coaching Sales"
+                      } else if (coachingStartDate && coachingEndDate) {
+                        dateRangeText = `${format(coachingStartDate, "MMM dd, yyyy")} - ${format(coachingEndDate, "MMM dd, yyyy")}`
+                      } else if (coachingStartDate) {
+                        dateRangeText = `From ${format(coachingStartDate, "MMM dd, yyyy")}`
+                      } else if (coachingEndDate) {
+                        dateRangeText = `Until ${format(coachingEndDate, "MMM dd, yyyy")}`
+                      }
+
+                      // Create print window
+                      const printWindow = window.open('', '_blank')
+                      const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
+                      
+                      printWindow.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                          <head>
+                            <title>Coaching Sales Report - ${dateRangeText}</title>
+                            <style>
+                              @media print {
+                                @page {
+                                  size: A4 landscape;
+                                  margin: 1cm;
+                                }
+                                body {
+                                  margin: 0;
+                                  padding: 0;
+                                }
+                              }
+                              body {
+                                font-family: Arial, sans-serif;
+                                padding: 20px;
+                                font-size: 12px;
+                              }
+                              .header {
+                                text-align: center;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #000;
+                                padding-bottom: 10px;
+                              }
+                              .header h1 {
+                                margin: 0;
+                                font-size: 24px;
+                                font-weight: bold;
+                              }
+                              .header h2 {
+                                margin: 5px 0;
+                                font-size: 18px;
+                                font-weight: normal;
+                              }
+                              .header p {
+                                font-size: 13px;
+                                font-weight: 600;
+                                margin-top: 8px;
+                                color: #333;
+                              }
+                              .header .date {
+                                font-size: 11px;
+                                margin-top: 4px;
+                                color: #666;
+                              }
+                              .summary {
+                                display: grid;
+                                grid-template-columns: repeat(3, 1fr);
+                                gap: 15px;
+                                margin-bottom: 20px;
+                                padding: 15px;
+                                background: #f5f5f5;
+                                border-radius: 5px;
+                              }
+                              .summary-card {
+                                text-align: center;
+                                padding: 10px;
+                                background: white;
+                                border-radius: 5px;
+                                border: 1px solid #ddd;
+                              }
+                              .summary-card h3 {
+                                margin: 0 0 5px 0;
+                                font-size: 11px;
+                                color: #666;
+                                text-transform: uppercase;
+                              }
+                              .summary-card p {
+                                margin: 0;
+                                font-size: 18px;
+                                font-weight: bold;
+                                color: #000;
+                              }
+                              table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-top: 10px;
+                              }
+                              th, td {
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                                text-align: left;
+                              }
+                              th {
+                                background-color: #f2f2f2;
+                                font-weight: bold;
+                                font-size: 11px;
+                                text-transform: uppercase;
+                              }
+                              td {
+                                font-size: 11px;
+                              }
+                              .text-right {
+                                text-align: right;
+                              }
+                              .footer {
+                                margin-top: 20px;
+                                padding-top: 10px;
+                                border-top: 1px solid #ddd;
+                                text-align: center;
+                                font-size: 10px;
+                                color: #666;
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="header">
+                              <h1>CNERGY GYM</h1>
+                              <h2>Coaching Sales Report</h2>
+                              <p>${dateRangeText}</p>
+                              <p class="date">Generated: ${printDate}</p>
+                            </div>
+                            
+                            <div class="summary">
+                              <div class="summary-card">
+                                <h3>Total Revenue</h3>
+                                <p>${formatCurrency(totalSales)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px; font-weight: normal;">${filteredSales.length} transaction${filteredSales.length !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div class="summary-card">
+                                <h3>Session Sales</h3>
+                                <p>${formatCurrency(sessionTotal)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px; font-weight: normal;">${sessionSales.length} sale${sessionSales.length !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div class="summary-card">
+                                <h3>Monthly Sales</h3>
+                                <p>${formatCurrency(monthlyTotal)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px; font-weight: normal;">${monthlySales.length} sale${monthlySales.length !== 1 ? 's' : ''}</p>
+                              </div>
+                            </div>
+
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th style="width: 40px;">#</th>
+                                  <th>Transaction Date</th>
+                                  <th>Customer Name</th>
+                                  <th style="width: 100px;">Service Type</th>
+                                  <th>Coach Name</th>
+                                  <th style="width: 100px;">Payment Method</th>
+                                  <th style="width: 120px;">Receipt Number</th>
+                                  <th class="text-right" style="width: 110px;">Amount (₱)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${filteredSales.length === 0 ? `
+                                  <tr>
+                                    <td colspan="8" style="text-align: center; padding: 30px; font-style: italic; color: #999;">
+                                      No coaching sales found matching the selected filters.
+                                    </td>
+                                  </tr>
+                                ` : filteredSales.map((sale, index) => {
+                                  const assignmentDetails = getMemberAssignmentDetails(sale.user_id, sale.coach_id)
+                                  const serviceType = assignmentDetails 
+                                    ? (assignmentDetails.rateType === 'per_session' || assignmentDetails.rateType === 'session' || assignmentDetails.assignmentType === 'session' ? 'Session' : 'Monthly')
+                                    : 'Session'
+                                  const customerName = formatName(sale.user_name) || 'N/A'
+                                  const coachName = sale.coach_name ? formatName(sale.coach_name) : 'N/A'
+                                  const paymentMethod = formatPaymentMethod(sale.payment_method)
+                                  const receiptNumber = (() => {
+                                    const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                    if (sale.reference_number) {
+                                      return sale.reference_number
+                                    }
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return sale.reference_number || sale.gcash_reference || sale.receipt_number || "N/A"
+                                    }
+                                    return sale.receipt_number || "N/A"
+                                  })()
+                                  const saleDateDisplay = formatDateOnly(sale.sale_date)
+                                  const saleAmount = sale.total_amount || 0
+                                  
+                                  return `
+                                    <tr>
+                                      <td style="text-align: center;">${index + 1}</td>
+                                      <td>${saleDateDisplay}</td>
+                                      <td>${customerName}</td>
+                                      <td>${serviceType}</td>
+                                      <td>${coachName}</td>
+                                      <td>${paymentMethod}</td>
+                                      <td style="font-family: monospace; font-size: 10px;">${receiptNumber}</td>
+                                      <td class="text-right" style="font-weight: 600;">${formatCurrency(saleAmount)}</td>
+                                    </tr>
+                                  `
+                                }).join('')}
+                              </tbody>
+                              <tfoot>
+                                <tr style="background-color: #f9fafb; font-weight: bold;">
+                                  <td colspan="7" style="text-align: right; padding: 12px 8px; font-size: 12px; border-top: 2px solid #000;">TOTAL REVENUE:</td>
+                                  <td class="text-right" style="padding: 12px 8px; font-size: 13px; border-top: 2px solid #000;">${formatCurrency(totalSales)}</td>
+                                </tr>
+                                <tr>
+                                  <td colspan="8" style="text-align: center; padding: 8px; font-size: 10px; color: #666; border-top: 1px solid #ddd;">
+                                    Total Transactions: ${filteredSales.length} | Session: ${formatCurrency(sessionTotal)} | Monthly: ${formatCurrency(monthlyTotal)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+
+                            <div class="footer">
+                              <p style="margin: 0;">This is a computer-generated report from CNERGY GYM Sales Management System.</p>
+                              <p style="margin: 5px 0 0 0; font-size: 9px;">For inquiries, please contact the administration office.</p>
+                            </div>
+                          </body>
+                        </html>
+                      `)
+                      
+                      printWindow.document.close()
+                      setTimeout(() => {
+                        printWindow.print()
+                      }, 250)
+                    }}
+                    className="h-9 px-3 text-sm"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </Button>
                 </div>
               </div>
               <Button
@@ -4377,13 +4759,397 @@ const Sales = ({ userId }) => {
                 <div className="p-2 rounded-lg bg-blue-50/40">
                   <Receipt className="h-5 w-5 text-gray-600" />
                 </div>
-                <div>
-                  <DialogTitle className="text-xl font-bold text-gray-900">All Sales Details</DialogTitle>
-                  <DialogDescription className="text-sm text-gray-600 mt-1">
-                    Comprehensive view of all sales
-                  </DialogDescription>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <DialogTitle className="text-xl font-bold text-gray-900">All Sales Details</DialogTitle>
+                    <DialogDescription className="text-sm text-gray-600 mt-1">
+                      Comprehensive view of all sales
+                    </DialogDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                    // Create a helper function to get filtered sales (same logic as the table)
+                    const getFilteredSales = () => {
+                      return sales.filter((sale) => {
+                      // Filter by search query
+                      const matchesSearch = totalSalesSearchQuery === "" ||
+                        sale.sale_type?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                        sale.plan_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                        sale.user_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                        sale.guest_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                        sale.coach_name?.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()) ||
+                        (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.some(detail =>
+                          (detail.product && detail.product.name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase())) ||
+                          (detail.subscription?.plan_name && detail.subscription.plan_name.toLowerCase().includes(totalSalesSearchQuery.toLowerCase()))
+                        ))
+
+                      // Filter by sale type - simplified version of the full filtering logic
+                      let matchesSaleType = true
+                      if (totalSalesTypeFilter !== "all") {
+                        if (totalSalesTypeFilter === "Product") {
+                          const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                          const isProductSale = sale.sale_type === 'Product'
+                          if (!hasProducts && !isProductSale) {
+                            matchesSaleType = false
+                          } else {
+                            if (totalSalesCategoryFilter !== "all") {
+                              const hasCategoryMatch = sale.sales_details?.some(detail => {
+                                if (!detail.product_id) return false
+                                const product = detail.product || products.find(p => p.id === detail.product_id)
+                                return product?.category === totalSalesCategoryFilter
+                              })
+                              if (!hasCategoryMatch) matchesSaleType = false
+                            }
+                            if (totalSalesProductFilter !== "all" && matchesSaleType) {
+                              const hasProductMatch = sale.sales_details?.some(detail =>
+                                detail.product_id && detail.product_id.toString() === totalSalesProductFilter
+                              )
+                              if (!hasProductMatch) matchesSaleType = false
+                            }
+                          }
+                        } else if (totalSalesTypeFilter === "Subscription") {
+                          if (sale.sale_type === 'Product') {
+                            matchesSaleType = false
+                          } else if (sale.sale_type === 'Subscription') {
+                            if (totalSalesSubscriptionTypeFilter !== "all") {
+                              const salePlanId = sale.plan_id?.toString()
+                              const selectedPlanId = totalSalesSubscriptionTypeFilter.toString()
+                              if (salePlanId !== selectedPlanId) {
+                                const matchesInDetails = sale.sales_details && Array.isArray(sale.sales_details) &&
+                                  sale.sales_details.some(detail =>
+                                    detail.subscription?.plan_id?.toString() === selectedPlanId
+                                  )
+                                if (!matchesInDetails) matchesSaleType = false
+                              }
+                            }
+                          } else {
+                            matchesSaleType = false
+                          }
+                        } else if (totalSalesTypeFilter === "Coach Assignment") {
+                          const isCoachingSale = sale.sale_type === 'Coach Assignment' ||
+                            sale.sale_type === 'Coaching' ||
+                            sale.sale_type === 'Coach'
+                          if (!isCoachingSale) {
+                            matchesSaleType = false
+                          } else {
+                            if (totalSalesCoachFilter !== "all") {
+                              if (!sale.coach_id || sale.coach_id.toString() !== totalSalesCoachFilter) {
+                                matchesSaleType = false
+                              }
+                            }
+                            if (totalSalesServiceTypeFilter !== "all" && matchesSaleType) {
+                              const serviceType = sale.service_type || sale.coaching_type || ''
+                              const normalizedServiceType = serviceType.toLowerCase().includes('session') ? 'session' :
+                                serviceType.toLowerCase().includes('monthly') ? 'monthly' : ''
+                              if (normalizedServiceType !== totalSalesServiceTypeFilter) {
+                                matchesSaleType = false
+                              }
+                            }
+                          }
+                        } else {
+                          matchesSaleType = sale.sale_type === totalSalesTypeFilter
+                        }
+                      }
+
+                      // Filter by date range
+                      if (totalSalesStartDate || totalSalesEndDate) {
+                        const saleDate = new Date(sale.sale_date)
+                        saleDate.setHours(0, 0, 0, 0)
+
+                        if (totalSalesStartDate) {
+                          const startDate = new Date(totalSalesStartDate)
+                          startDate.setHours(0, 0, 0, 0)
+                          if (saleDate < startDate) return false
+                        }
+
+                        if (totalSalesEndDate) {
+                          const endDate = new Date(totalSalesEndDate)
+                          endDate.setHours(23, 59, 59, 999)
+                          if (saleDate > endDate) return false
+                        }
+                      }
+
+                        return matchesSearch && matchesSaleType
+                      })
+                    }
+
+                    // Get filtered sales using the helper function
+                    const filteredSales = getFilteredSales()
+
+                    // Calculate totals
+                    const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                    const productSales = filteredSales.filter(s => s.sale_type === 'Product')
+                    const subscriptionSales = filteredSales.filter(s => s.sale_type === 'Subscription')
+                    const coachingSales = filteredSales.filter(s =>
+                      s.sale_type === 'Coaching' || s.sale_type === 'Coach Assignment' || s.sale_type === 'Coach'
+                    )
+
+                    const productTotal = productSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                    const subscriptionTotal = subscriptionSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                    const coachingTotal = coachingSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+                    // Get date range text
+                    let dateRangeText = "All Sales"
+                    if (totalSalesQuickFilter === "today") {
+                      dateRangeText = "Today's Sales"
+                    } else if (totalSalesQuickFilter === "thisWeek") {
+                      dateRangeText = "This Week's Sales"
+                    } else if (totalSalesQuickFilter === "thisMonth") {
+                      dateRangeText = "This Month's Sales"
+                    } else if (totalSalesStartDate && totalSalesEndDate) {
+                      dateRangeText = `${format(totalSalesStartDate, "MMM dd, yyyy")} - ${format(totalSalesEndDate, "MMM dd, yyyy")}`
+                    } else if (totalSalesStartDate) {
+                      dateRangeText = `From ${format(totalSalesStartDate, "MMM dd, yyyy")}`
+                    } else if (totalSalesEndDate) {
+                      dateRangeText = `Until ${format(totalSalesEndDate, "MMM dd, yyyy")}`
+                    }
+
+                    // Create print window
+                    const printWindow = window.open('', '_blank')
+                    const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
+                    
+                    printWindow.document.write(`
+                      <!DOCTYPE html>
+                      <html>
+                        <head>
+                          <title>Sales Report - ${dateRangeText}</title>
+                          <style>
+                            @media print {
+                              @page {
+                                size: A4 landscape;
+                                margin: 1cm;
+                              }
+                              body {
+                                margin: 0;
+                                padding: 0;
+                              }
+                            }
+                            body {
+                              font-family: Arial, sans-serif;
+                              padding: 20px;
+                              font-size: 12px;
+                            }
+                            .header {
+                              text-align: center;
+                              margin-bottom: 20px;
+                              border-bottom: 2px solid #000;
+                              padding-bottom: 10px;
+                            }
+                            .header h1 {
+                              margin: 0;
+                              font-size: 24px;
+                              font-weight: bold;
+                            }
+                            .header p {
+                              margin: 5px 0;
+                              color: #666;
+                            }
+                            .summary {
+                              display: grid;
+                              grid-template-columns: repeat(4, 1fr);
+                              gap: 15px;
+                              margin-bottom: 20px;
+                              padding: 15px;
+                              background: #f5f5f5;
+                              border-radius: 5px;
+                            }
+                            .summary-card {
+                              text-align: center;
+                              padding: 10px;
+                              background: white;
+                              border-radius: 5px;
+                              border: 1px solid #ddd;
+                            }
+                            .summary-card h3 {
+                              margin: 0 0 5px 0;
+                              font-size: 11px;
+                              color: #666;
+                              text-transform: uppercase;
+                            }
+                            .summary-card p {
+                              margin: 0;
+                              font-size: 18px;
+                              font-weight: bold;
+                              color: #000;
+                            }
+                            table {
+                              width: 100%;
+                              border-collapse: collapse;
+                              margin-top: 10px;
+                            }
+                            th, td {
+                              border: 1px solid #ddd;
+                              padding: 8px;
+                              text-align: left;
+                            }
+                            th {
+                              background-color: #f2f2f2;
+                              font-weight: bold;
+                              font-size: 11px;
+                              text-transform: uppercase;
+                            }
+                            td {
+                              font-size: 11px;
+                            }
+                            .text-right {
+                              text-align: right;
+                            }
+                            .footer {
+                              margin-top: 20px;
+                              padding-top: 10px;
+                              border-top: 1px solid #ddd;
+                              text-align: center;
+                              font-size: 10px;
+                              color: #666;
+                            }
+                          </style>
+                        </head>
+                        <body>
+                          <div class="header">
+                            <h1>CNERGY GYM - SALES REPORT</h1>
+                            <p>${dateRangeText}</p>
+                            <p>Generated on ${printDate}</p>
+                          </div>
+                          
+                          <div class="summary">
+                            <div class="summary-card">
+                              <h3>Total Sales</h3>
+                              <p>${formatCurrency(totalSales)}</p>
+                              <p style="font-size: 10px; color: #666; margin-top: 3px;">${filteredSales.length} transaction${filteredSales.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="summary-card">
+                              <h3>Product Sales</h3>
+                              <p>${formatCurrency(productTotal)}</p>
+                              <p style="font-size: 10px; color: #666; margin-top: 3px;">${productSales.length} sale${productSales.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="summary-card">
+                              <h3>Subscription Sales</h3>
+                              <p>${formatCurrency(subscriptionTotal)}</p>
+                              <p style="font-size: 10px; color: #666; margin-top: 3px;">${subscriptionSales.length} sale${subscriptionSales.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div class="summary-card">
+                              <h3>Coaching Sales</h3>
+                              <p>${formatCurrency(coachingTotal)}</p>
+                              <p style="font-size: 10px; color: #666; margin-top: 3px;">${coachingSales.length} sale${coachingSales.length !== 1 ? 's' : ''}</p>
+                            </div>
+                          </div>
+
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>#</th>
+                                <th>Plan/Product</th>
+                                <th>Customer</th>
+                                <th>Type</th>
+                                <th>Payment</th>
+                                <th>Receipt</th>
+                                <th>Date</th>
+                                <th class="text-right">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${filteredSales.length === 0 ? `
+                                <tr>
+                                  <td colspan="8" style="text-align: center; padding: 20px;">
+                                    No sales found matching the selected filters.
+                                  </td>
+                                </tr>
+                              ` : filteredSales.map((sale, index) => {
+                                // Helper function to get product name (simplified version)
+                                const getProductNameForPrint = (detail, sale) => {
+                                  if (detail?.product?.name) {
+                                    return detail.product.name
+                                  }
+                                  if (detail?.subscription?.plan_name) {
+                                    return detail.subscription.plan_name
+                                  }
+                                  if (sale?.plan_name) {
+                                    return sale.plan_name
+                                  }
+                                  if (sale?.sale_type === "Product" && detail?.product_id) {
+                                    const product = products.find(p => p.id === detail.product_id)
+                                    return product ? product.name : "N/A"
+                                  }
+                                  return sale?.sale_type || "N/A"
+                                }
+
+                                const getSaleItems = () => {
+                                  if (sale.sales_details && Array.isArray(sale.sales_details) && sale.sales_details.length > 0) {
+                                    return sale.sales_details.map(detail => {
+                                      const quantity = detail.quantity || sale.quantity || 1
+                                      const name = getProductNameForPrint(detail, sale)
+                                      return quantity > 1 ? `${name} (${quantity}x)` : name
+                                    }).join(", ")
+                                  }
+                                  return getProductNameForPrint({}, sale)
+                                }
+
+                                const customerName = sale.sale_type === "Subscription" || sale.sale_type === "Coach Assignment" || sale.sale_type === "Coaching" || sale.sale_type === "Coach"
+                                  ? (formatName(sale.user_name) || "N/A")
+                                  : sale.sale_type === "Guest" || sale.sale_type === "Day Pass" || sale.sale_type === "Walk-in" || sale.sale_type === "Walkin"
+                                    ? (formatName(sale.guest_name || sale.user_name) || "Guest")
+                                    : "N/A"
+
+                                const saleType = (() => {
+                                  const isDayPass = sale.sale_type === 'Walk-in' || sale.sale_type === 'Walkin' || sale.sale_type === 'Guest' || sale.sale_type === 'Day Pass'
+                                  if (isDayPass) {
+                                    return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                                  }
+                                  return sale.sale_type || 'N/A'
+                                })()
+
+                                const paymentMethod = formatPaymentMethod(sale.payment_method)
+                                const receiptNumber = (() => {
+                                  const paymentMethod = (sale.payment_method || 'cash').toLowerCase()
+                                  if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                    return sale.reference_number || sale.receipt_number || "N/A"
+                                  }
+                                  return sale.receipt_number || "N/A"
+                                })()
+
+                                return `
+                                  <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${getSaleItems()}</td>
+                                    <td>${customerName}</td>
+                                    <td>${saleType}</td>
+                                    <td>${paymentMethod}</td>
+                                    <td>${receiptNumber}</td>
+                                    <td>${formatDate(sale.sale_date)}</td>
+                                    <td class="text-right">${formatCurrency(sale.total_amount)}</td>
+                                  </tr>
+                                `
+                              }).join('')}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <th colspan="7" style="text-align: right;">Total:</th>
+                                <th class="text-right">${formatCurrency(totalSales)}</th>
+                              </tr>
+                            </tfoot>
+                          </table>
+
+                          <div class="footer">
+                            <p>This is a computer-generated report. CNERGY GYM Sales Management System.</p>
+                          </div>
+                        </body>
+                      </html>
+                    `)
+                    
+                    printWindow.document.close()
+                    setTimeout(() => {
+                      printWindow.print()
+                    }, 250)
+                  }}
+                  className="h-9 px-3 text-sm"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print
+                </Button>
+                  </div>
                 </div>
-              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -5682,11 +6448,680 @@ const Sales = ({ userId }) => {
                 <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200">
                   <TrendingUp className="h-5 w-5 text-gray-700" />
                 </div>
-                <div>
-                  <DialogTitle className="text-xl font-bold text-gray-900">Subscription Sales Details</DialogTitle>
-                  <DialogDescription className="text-sm text-gray-600 mt-0.5">
-                    View all subscription revenue with detailed transaction information
-                  </DialogDescription>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <DialogTitle className="text-xl font-bold text-gray-900">Subscription Sales Details</DialogTitle>
+                    <DialogDescription className="text-sm text-gray-600 mt-0.5">
+                      View all subscription revenue with detailed transaction information
+                    </DialogDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Use the EXACT same two-step filtering logic as the modal uses for totals
+                      // First, replicate the helper functions needed
+                      const isDayPassPlanForStats = (selectedPlanFilter) => {
+                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                        return selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('day pass') ||
+                          selectedPlan.name.toLowerCase().includes('daypass') ||
+                          selectedPlan.name.toLowerCase().includes('gym session') ||
+                          selectedPlan.name.toLowerCase().includes('gymsession') ||
+                          selectedPlan.id === 6 ||
+                          selectedPlan.name.toLowerCase().includes('walk-in') ||
+                          selectedPlan.name.toLowerCase().includes('walkin') ||
+                          selectedPlan.name.toLowerCase().includes('guest') ||
+                          (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                          selectedPlan.name.toLowerCase() === 'day pass'
+                        )
+                      }
+
+                      const isDayPassGuestSaleForStats = (sale) => {
+                        return sale.sale_type === 'Walk-in' ||
+                          sale.sale_type === 'Walkin' ||
+                          sale.sale_type === 'Guest' ||
+                          sale.sale_type === 'Day Pass' ||
+                          sale.guest_name ||
+                          (sale.plan_name && (
+                            sale.plan_name.toLowerCase().includes('guest walk in') ||
+                            sale.plan_name.toLowerCase().includes('guest walk-in') ||
+                            sale.plan_name.toLowerCase().includes('walk in') ||
+                            sale.plan_name.toLowerCase().includes('walk-in')
+                          )) ||
+                          (sale.plan_id === 6 && sale.sale_type === 'Guest')
+                      }
+
+                      const isDayPassSubscriptionForFilter = (sale, selectedPlanFilter) => {
+                        if (sale.sale_type !== 'Subscription') return false
+                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                        if (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) return true
+                        if (sale.plan_name) {
+                          const planNameLower = sale.plan_name.toLowerCase()
+                          if (planNameLower.includes('day pass') || planNameLower.includes('daypass') ||
+                            planNameLower.includes('walk-in') || planNameLower.includes('walkin')) return true
+                        }
+                        const subscriptionDetail = getSubscriptionDetails(sale.id)
+                        if (subscriptionDetail?.planName) {
+                          const planNameLower = subscriptionDetail.planName.toLowerCase()
+                          if (planNameLower.includes('day pass') || planNameLower.includes('daypass') ||
+                            planNameLower.includes('walk-in') || planNameLower.includes('walkin')) return true
+                        }
+                        if (sale.plan_id) {
+                          const plan = subscriptionPlans.find(p => p.id.toString() === sale.plan_id.toString())
+                          if (plan && plan.duration_days && plan.duration_days > 0 &&
+                            (!plan.duration_months || plan.duration_months === 0)) return true
+                        }
+                        return false
+                      }
+
+                      // Step 1: Create allSalesForCounts (matches modal logic exactly - includes guest sales for "All Plans")
+                      const allSalesForCounts = sales.filter((sale) => {
+
+                        // Check if selected plan is "Day Pass" or "Gym Session"
+                        const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                        const isDayPassPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('day pass') ||
+                          selectedPlan.name.toLowerCase().includes('daypass') ||
+                          selectedPlan.name.toLowerCase().includes('walk-in') ||
+                          selectedPlan.name.toLowerCase().includes('walkin') ||
+                          selectedPlan.name.toLowerCase().includes('guest') ||
+                          (selectedPlan.duration_days && selectedPlan.duration_days > 0 && selectedPlan.duration_months === 0) ||
+                          selectedPlan.name.toLowerCase() === 'day pass'
+                        ) && !(
+                          selectedPlan.name.toLowerCase().includes('gym session') ||
+                          selectedPlan.name.toLowerCase().includes('gymsession')
+                        )
+                        const isGymSessionPlan = selectedPlan && (
+                          selectedPlan.name.toLowerCase().includes('gym session') ||
+                          selectedPlan.name.toLowerCase().includes('gymsession')
+                        ) && !isDayPassPlan
+
+                        // If Day Pass plan is selected, include ALL Day Pass/Walk-in/Guest sales
+                        if (isDayPassPlan) {
+                          // Check if this is a Guest/Walk-in/Day Pass sale
+                          const isGuestSale = sale.sale_type === 'Guest' ||
+                            sale.sale_type === 'Walk-in' ||
+                            sale.sale_type === 'Walkin' ||
+                            sale.sale_type === 'Day Pass' ||
+                            sale.guest_name
+
+                          if (isGuestSale) {
+                            // Apply Day Pass type filter (Subscription vs Guest)
+                            if (subscriptionDayPassTypeFilter === "day_pass") {
+                              return false // This is a guest sale, not a subscription sale
+                            }
+
+                            // Filter by date range (works for all quick filters and custom range)
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+
+                            // Status filter removed - show all sales
+                            return true
+                          }
+
+                          // Also check if this is a subscription sale with Day Pass plan_id
+                          if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                            // This is a subscription sale with Day Pass plan
+                            // Apply Day Pass type filter (Subscription vs Guest)
+                            if (subscriptionDayPassTypeFilter === "guest") {
+                              return false // This is a subscription sale, not a guest sale
+                            }
+
+                            // Filter by date range (works for all quick filters and custom range)
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+
+                            // Status filter removed - show all sales
+                            return true
+                          }
+
+                          // If Day Pass plan is selected but this sale doesn't match, exclude it
+                          return false
+                        }
+
+                        // If Gym Session plan is selected, handle Gym Session sales
+                        if (isGymSessionPlan) {
+                          // Exclude product sales explicitly
+                          if (sale.sale_type === 'Product') {
+                            return false
+                          }
+
+                          // Check if this is a Gym Session guest sale
+                          const isGymSessionGuestSale = (sale.sale_type === 'Guest' || sale.guest_name) && (
+                            sale.plan_name?.toLowerCase().includes('gym session') ||
+                            sale.plan_name?.toLowerCase().includes('gymsession') ||
+                            (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)
+                          )
+
+                          if (isGymSessionGuestSale) {
+                            // Apply Gym Session type filter (Subscription vs Guest)
+                            if (subscriptionGymSessionTypeFilter === "subscription") {
+                              return false // This is a guest sale, not a subscription sale
+                            }
+
+                            // Filter by date range (works for all quick filters and custom range)
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+
+                            return true
+                          }
+
+                          // Check if this is a Gym Session subscription sale
+                          if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                            // Apply Gym Session type filter (Subscription vs Guest)
+                            if (subscriptionGymSessionTypeFilter === "guest") {
+                              return false // This is a subscription sale, not a guest sale
+                            }
+
+                            // Filter by date range (works for all quick filters and custom range)
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+
+                            return true
+                          }
+
+                          // If Gym Session plan is selected but this sale doesn't match, exclude it
+                          return false
+                        }
+
+                        // Exclude product sales for subscription sales modal
+                        if (sale.sale_type === 'Product') {
+                          return false
+                        }
+
+                        // For "All Plans", include both subscription sales and guest sales
+                        if (selectedPlanFilter === "all") {
+                          // Include subscription sales
+                          if (sale.sale_type === 'Subscription') {
+                            // Filter by date range (works for all quick filters and custom range)
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+                            return true
+                          }
+                          // Include guest sales (Guest Walk In) in "All Plans"
+                          else if (sale.sale_type === 'Guest' || sale.guest_name) {
+                            // Filter by date range
+                            if (subscriptionStartDate || subscriptionEndDate) {
+                              const saleDate = new Date(sale.sale_date)
+                              saleDate.setHours(0, 0, 0, 0)
+                              if (subscriptionStartDate) {
+                                const startDate = new Date(subscriptionStartDate)
+                                startDate.setHours(0, 0, 0, 0)
+                                if (saleDate < startDate) return false
+                              }
+                              if (subscriptionEndDate) {
+                                const endDate = new Date(subscriptionEndDate)
+                                endDate.setHours(23, 59, 59, 999)
+                                if (saleDate > endDate) return false
+                              }
+                            }
+                            return true // Guest sale included in "All Plans"
+                          } else {
+                            return false
+                          }
+                        }
+
+                        // For other plans (not "all" and not Day Pass/Gym Session), only show subscription sales
+                        const isSubscriptionSale = sale.sale_type === 'Subscription'
+                        if (!isSubscriptionSale) return false
+
+                        // Filter by selected plan if not "all"
+                        if (selectedPlanFilter !== "all") {
+                          // First try to match by plan_id from sale object
+                          const salePlanId = sale.plan_id?.toString()
+                          if (salePlanId === selectedPlanFilter) {
+                            // Matches, continue
+                          } else {
+                            // Try to match by plan name from sale object
+                            const salePlanName = sale.plan_name
+                            if (selectedPlan && salePlanName === selectedPlan.name) {
+                              // Matches by name, continue
+                            } else {
+                              // No match, exclude this sale
+                              return false
+                            }
+                          }
+                        }
+
+                        // Filter by quick access filter
+                        if (subscriptionSalesQuickFilter === "today") {
+                          const saleDate = new Date(sale.sale_date)
+                          saleDate.setHours(0, 0, 0, 0)
+                          const todayPH = getTodayInPHTime()
+                          const todayDate = new Date(todayPH + "T00:00:00")
+                          todayDate.setHours(0, 0, 0, 0)
+                          const saleDateStr = saleDate.toISOString().split('T')[0]
+                          const todayStr = todayDate.toISOString().split('T')[0]
+                          if (saleDateStr !== todayStr) return false
+                        } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                          const now = new Date()
+                          const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                          const today = new Date(phTime)
+                          today.setHours(0, 0, 0, 0)
+                          const dayOfWeek = today.getDay()
+                          const startOfWeek = new Date(today)
+                          startOfWeek.setDate(today.getDate() - dayOfWeek) // Sunday
+                          const endOfWeek = new Date(startOfWeek)
+                          endOfWeek.setDate(startOfWeek.getDate() + 6) // Saturday
+                          endOfWeek.setHours(23, 59, 59, 999)
+
+                          const saleDate = new Date(sale.sale_date)
+                          if (saleDate < startOfWeek || saleDate > endOfWeek) return false
+                        } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                          const now = new Date()
+                          const phTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }))
+                          const saleDate = new Date(sale.sale_date)
+                          const saleMonth = saleDate.getMonth()
+                          const saleYear = saleDate.getFullYear()
+                          const currentMonth = phTime.getMonth()
+                          const currentYear = phTime.getFullYear()
+                          if (saleMonth !== currentMonth || saleYear !== currentYear) return false
+                        } else if (subscriptionSalesQuickFilter === "all") {
+                          // "All" - no date filtering, but still respect month/year/custom date if set manually
+                          // Filter by date range
+                          if (subscriptionStartDate || subscriptionEndDate) {
+                            const saleDate = new Date(sale.sale_date)
+                            saleDate.setHours(0, 0, 0, 0)
+
+                            if (subscriptionStartDate) {
+                              const startDate = new Date(subscriptionStartDate)
+                              startDate.setHours(0, 0, 0, 0)
+                              if (saleDate < startDate) return false
+                            }
+
+                            if (subscriptionEndDate) {
+                              const endDate = new Date(subscriptionEndDate)
+                              endDate.setHours(23, 59, 59, 999)
+                              if (saleDate > endDate) return false
+                            }
+                          }
+                        }
+
+                        return true
+                      })
+
+                      // Step 2: Create filteredSalesForStats from allSalesForCounts (matches modal logic exactly)
+                      const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanFilter)
+                      const isDayPassPlan = isDayPassPlanForStats(selectedPlanFilter)
+                      const isGymSessionPlan = selectedPlan && (
+                        selectedPlan.name.toLowerCase().includes('gym session') ||
+                        selectedPlan.name.toLowerCase().includes('gymsession')
+                      ) && !isDayPassPlan
+
+                      const filteredSalesForStats = allSalesForCounts.filter((sale) => {
+                        // Apply the same filtering logic as the modal's filteredSalesForStats
+                        if (isDayPassPlan) {
+                          if (isDayPassGuestSaleForStats(sale)) {
+                            if (subscriptionDayPassTypeFilter === "day_pass") return false
+                            // Date filtering already done in allSalesForCounts
+                            return true
+                          }
+                          if (isDayPassSubscriptionForFilter(sale, selectedPlanFilter)) {
+                            if (subscriptionDayPassTypeFilter === "guest") return false
+                            return true
+                          }
+                          return false
+                        }
+
+                        if (isGymSessionPlan) {
+                          if (sale.sale_type === 'Product') return false
+                          const isGymSessionGuestSale = (sale.sale_type === 'Guest' || sale.guest_name) && (
+                            sale.plan_name?.toLowerCase().includes('gym session') ||
+                            sale.plan_name?.toLowerCase().includes('gymsession') ||
+                            (sale.plan_id && sale.plan_id.toString() === selectedPlanFilter)
+                          )
+                          if (isGymSessionGuestSale) {
+                            if (subscriptionGymSessionTypeFilter === "subscription") return false
+                            return true
+                          }
+                          if (sale.sale_type === 'Subscription' && sale.plan_id && sale.plan_id.toString() === selectedPlanFilter) {
+                            if (subscriptionGymSessionTypeFilter === "guest") return false
+                            return true
+                          }
+                          return false
+                        }
+
+                        // For "All Plans" or other plans - already filtered in allSalesForCounts
+                        return true
+                      })
+
+                      // Step 3: Apply search query filter to match what table shows
+                      const filteredSales = filteredSalesForStats.filter((sale) => {
+                        return subscriptionSalesSearchQuery === "" ||
+                          sale.user_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                          sale.guest_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                          sale.receipt_number?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                          sale.plan_name?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase()) ||
+                          sale.payment_method?.toLowerCase().includes(subscriptionSalesSearchQuery.toLowerCase())
+                      })
+
+                      // Calculate totals - use filteredSales which matches both modal total logic AND search filter
+                      const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+
+                      // Get date range text
+                      let dateRangeText = "All Subscription Sales"
+                      if (subscriptionSalesQuickFilter === "today") {
+                        dateRangeText = "Today's Subscription Sales"
+                      } else if (subscriptionSalesQuickFilter === "thisWeek") {
+                        dateRangeText = "This Week's Subscription Sales"
+                      } else if (subscriptionSalesQuickFilter === "thisMonth") {
+                        dateRangeText = "This Month's Subscription Sales"
+                      } else if (subscriptionStartDate && subscriptionEndDate) {
+                        dateRangeText = `${format(subscriptionStartDate, "MMM dd, yyyy")} - ${format(subscriptionEndDate, "MMM dd, yyyy")}`
+                      } else if (subscriptionStartDate) {
+                        dateRangeText = `From ${format(subscriptionStartDate, "MMM dd, yyyy")}`
+                      } else if (subscriptionEndDate) {
+                        dateRangeText = `Until ${format(subscriptionEndDate, "MMM dd, yyyy")}`
+                      }
+
+                      // Create print window
+                      const printWindow = window.open('', '_blank')
+                      const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
+                      
+                      printWindow.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                          <head>
+                            <title>Subscription Sales Report - ${dateRangeText}</title>
+                            <style>
+                              @media print {
+                                @page {
+                                  size: A4 landscape;
+                                  margin: 1cm;
+                                }
+                                body {
+                                  margin: 0;
+                                  padding: 0;
+                                }
+                              }
+                              body {
+                                font-family: Arial, sans-serif;
+                                padding: 20px;
+                                font-size: 12px;
+                              }
+                              .header {
+                                text-align: center;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #000;
+                                padding-bottom: 10px;
+                              }
+                              .header h1 {
+                                margin: 0;
+                                font-size: 24px;
+                                font-weight: bold;
+                              }
+                              .header p {
+                                margin: 5px 0;
+                                color: #666;
+                              }
+                              .summary {
+                                display: grid;
+                                grid-template-columns: repeat(2, 1fr);
+                                gap: 15px;
+                                margin-bottom: 20px;
+                                padding: 15px;
+                                background: #f5f5f5;
+                                border-radius: 5px;
+                              }
+                              .summary-card {
+                                text-align: center;
+                                padding: 10px;
+                                background: white;
+                                border-radius: 5px;
+                                border: 1px solid #ddd;
+                              }
+                              .summary-card h3 {
+                                margin: 0 0 5px 0;
+                                font-size: 11px;
+                                color: #666;
+                                text-transform: uppercase;
+                              }
+                              .summary-card p {
+                                margin: 0;
+                                font-size: 18px;
+                                font-weight: bold;
+                                color: #000;
+                              }
+                              table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-top: 10px;
+                              }
+                              th, td {
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                                text-align: left;
+                              }
+                              th {
+                                background-color: #f2f2f2;
+                                font-weight: bold;
+                                font-size: 11px;
+                                text-transform: uppercase;
+                              }
+                              td {
+                                font-size: 11px;
+                              }
+                              .text-right {
+                                text-align: right;
+                              }
+                              .footer {
+                                margin-top: 20px;
+                                padding-top: 10px;
+                                border-top: 1px solid #ddd;
+                                text-align: center;
+                                font-size: 10px;
+                                color: #666;
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="header">
+                              <h1>CNERGY GYM</h1>
+                              <h2 style="margin: 5px 0; font-size: 18px; font-weight: normal;">Subscription Sales Report</h2>
+                              <p style="font-size: 13px; font-weight: 600; margin-top: 8px;">${dateRangeText}</p>
+                              <p style="font-size: 11px; margin-top: 4px;">Generated: ${printDate}</p>
+                            </div>
+                            
+                            <div class="summary">
+                              <div class="summary-card">
+                                <h3>Total Revenue</h3>
+                                <p>${formatCurrency(totalSales)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px; font-weight: normal;">${filteredSales.length} transaction${filteredSales.length !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div class="summary-card">
+                                <h3>Average Transaction</h3>
+                                <p>${formatCurrency(filteredSales.length > 0 ? totalSales / filteredSales.length : 0)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px; font-weight: normal;">per transaction</p>
+                              </div>
+                            </div>
+
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th style="width: 40px;">#</th>
+                                  <th>Subscription Plan</th>
+                                  <th>Customer Name</th>
+                                  <th style="width: 100px;">Sale Type</th>
+                                  <th style="width: 100px;">Payment Method</th>
+                                  <th style="width: 120px;">Receipt Number</th>
+                                  <th style="width: 140px;">Transaction Date</th>
+                                  <th class="text-right" style="width: 110px;">Amount (₱)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${filteredSales.length === 0 ? `
+                                  <tr>
+                                    <td colspan="8" style="text-align: center; padding: 30px; font-style: italic; color: #999;">
+                                      No subscription sales found matching the selected filters.
+                                    </td>
+                                  </tr>
+                                ` : filteredSales.map((sale, index) => {
+                                  // Get plan name - check multiple sources
+                                  let planName = sale.plan_name || "N/A"
+                                  if (planName === "N/A" && sale.sales_details && Array.isArray(sale.sales_details)) {
+                                    const subscriptionDetail = sale.sales_details.find(d => d.subscription?.plan_name)
+                                    if (subscriptionDetail?.subscription?.plan_name) {
+                                      planName = subscriptionDetail.subscription.plan_name
+                                    }
+                                  }
+                                  
+                                  // Get customer name
+                                  const customerName = sale.user_name
+                                    ? (formatName(sale.user_name) || "N/A")
+                                    : (formatName(sale.guest_name) || "Guest")
+                                  
+                                  // Determine sale type
+                                  const saleType = (() => {
+                                    const planNameLower = planName.toLowerCase()
+                                    const isDayPass = planNameLower.includes('day pass') ||
+                                      planNameLower.includes('daypass') ||
+                                      planNameLower.includes('walk-in') ||
+                                      planNameLower.includes('walkin') ||
+                                      planNameLower.includes('guest')
+                                    
+                                    if (isDayPass) {
+                                      return sale.user_id !== null && sale.user_id !== undefined ? 'Day Pass' : 'Guest'
+                                    }
+                                    
+                                    const isGymSession = planNameLower.includes('gym session') ||
+                                      planNameLower.includes('gymsession')
+                                    
+                                    if (isGymSession) {
+                                      return sale.user_id !== null && sale.user_id !== undefined ? 'Subscription' : 'Guest'
+                                    }
+                                    
+                                    return sale.sale_type === 'Subscription' ? 'Subscription' : (sale.guest_name ? 'Guest' : 'Subscription')
+                                  })()
+                                  
+                                  const paymentMethod = formatPaymentMethod(sale.payment_method)
+                                  
+                                  // Get receipt number based on payment method
+                                  const receiptNumber = (() => {
+                                    const paymentMethodLower = (sale.payment_method || 'cash').toLowerCase()
+                                    if (paymentMethodLower === 'gcash' || paymentMethodLower === 'digital') {
+                                      return sale.reference_number || sale.receipt_number || "N/A"
+                                    }
+                                    return sale.receipt_number || "N/A"
+                                  })()
+                                  
+                                  // Format date for display
+                                  const saleDateDisplay = formatDate(sale.sale_date)
+                                  const saleAmount = sale.total_amount || 0
+                                  
+                                  return `
+                                    <tr>
+                                      <td style="text-align: center;">${index + 1}</td>
+                                      <td style="font-weight: 500;">${planName}</td>
+                                      <td>${customerName}</td>
+                                      <td>${saleType}</td>
+                                      <td>${paymentMethod}</td>
+                                      <td style="font-family: monospace; font-size: 10px;">${receiptNumber}</td>
+                                      <td>${saleDateDisplay}</td>
+                                      <td class="text-right" style="font-weight: 600;">${formatCurrency(saleAmount)}</td>
+                                    </tr>
+                                  `
+                                }).join('')}
+                              </tbody>
+                              <tfoot>
+                                <tr style="background-color: #f9fafb; font-weight: bold;">
+                                  <td colspan="7" style="text-align: right; padding: 12px 8px; font-size: 12px; border-top: 2px solid #000;">TOTAL REVENUE:</td>
+                                  <td class="text-right" style="padding: 12px 8px; font-size: 13px; border-top: 2px solid #000;">${formatCurrency(totalSales)}</td>
+                                </tr>
+                                <tr>
+                                  <td colspan="8" style="text-align: center; padding: 8px; font-size: 10px; color: #666; border-top: 1px solid #ddd;">
+                                    Total Transactions: ${filteredSales.length} | Average: ${formatCurrency(filteredSales.length > 0 ? totalSales / filteredSales.length : 0)}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
+
+                            <div class="footer">
+                              <p style="margin: 0;">This is a computer-generated report from CNERGY GYM Sales Management System.</p>
+                              <p style="margin: 5px 0 0 0; font-size: 9px;">For inquiries, please contact the administration office.</p>
+                            </div>
+                          </body>
+                        </html>
+                      `)
+                      
+                      printWindow.document.close()
+                      setTimeout(() => {
+                        printWindow.print()
+                      }, 250)
+                    }}
+                    className="h-9 px-3 text-sm"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </Button>
                 </div>
               </div>
               <Button
@@ -7660,11 +9095,336 @@ const Sales = ({ userId }) => {
                 <div className="p-2.5 rounded-lg bg-gray-100">
                   <ShoppingCart className="h-5 w-5 text-gray-700" />
                 </div>
-                <div>
-                  <DialogTitle className="text-xl font-bold text-gray-900">Product Sales Details</DialogTitle>
-                  <DialogDescription className="text-sm text-gray-600 mt-1">
-                    Comprehensive view of all product sales and transactions
-                  </DialogDescription>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <DialogTitle className="text-xl font-bold text-gray-900">Product Sales Details</DialogTitle>
+                    <DialogDescription className="text-sm text-gray-600 mt-1">
+                      Comprehensive view of all product sales and transactions
+                    </DialogDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Create a helper function to get filtered product sales (same logic as the table)
+                      const getFilteredProductSales = () => {
+                        return sales.filter((sale) => {
+                          // Filter by product sales - sales that have product items OR sale_type is Product
+                          const hasProducts = sale.sales_details && sale.sales_details.some(detail => detail.product_id)
+                          const isProductSale = sale.sale_type === 'Product'
+
+                          if (!hasProducts && !isProductSale) return false
+
+                          // Filter by search query
+                          const matchesSearch = productSalesSearchQuery === "" ||
+                            sale.user_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                            sale.guest_name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                            sale.receipt_number?.toLowerCase().includes(productSalesSearchQuery.toLowerCase()) ||
+                            sale.sales_details?.some(detail => {
+                              if (!detail.product_id) return false
+                              const product = detail.product || products.find(p => p.id === detail.product_id)
+                              return product?.name?.toLowerCase().includes(productSalesSearchQuery.toLowerCase())
+                            })
+
+                          // Filter by category if selected
+                          if (selectedCategoryFilter !== "all") {
+                            const hasCategoryMatch = sale.sales_details?.some(detail => {
+                              if (!detail.product_id) return false
+                              const product = detail.product || products.find(p => p.id === detail.product_id)
+                              return product?.category === selectedCategoryFilter
+                            })
+                            if (!hasCategoryMatch) return false
+                          }
+
+                          // Filter by product if selected
+                          if (selectedProductFilter !== "all") {
+                            const hasProductMatch = sale.sales_details?.some(detail =>
+                              detail.product_id && detail.product_id.toString() === selectedProductFilter
+                            )
+                            if (!hasProductMatch) return false
+                          }
+
+                          // Filter by date range
+                          if (productSalesStartDate || productSalesEndDate) {
+                            const saleDate = new Date(sale.sale_date)
+                            saleDate.setHours(0, 0, 0, 0)
+
+                            if (productSalesStartDate) {
+                              const startDate = new Date(productSalesStartDate)
+                              startDate.setHours(0, 0, 0, 0)
+                              if (saleDate < startDate) return false
+                            }
+
+                            if (productSalesEndDate) {
+                              const endDate = new Date(productSalesEndDate)
+                              endDate.setHours(23, 59, 59, 999)
+                              if (saleDate > endDate) return false
+                            }
+                          }
+
+                          return matchesSearch
+                        })
+                      }
+
+                      // Get filtered sales using the helper function
+                      const filteredSales = getFilteredProductSales()
+
+                      // Calculate totals
+                      const totalSales = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
+                      const totalItems = filteredSales.reduce((sum, sale) => {
+                        if (!sale.sales_details || !Array.isArray(sale.sales_details)) return sum
+                        const items = sale.sales_details
+                          .filter(d => d.product_id)
+                          .reduce((s, d) => s + (parseInt(d.quantity) || 1), 0)
+                        return sum + items
+                      }, 0)
+                      const uniqueProducts = new Set()
+                      filteredSales.forEach(sale => {
+                        sale.sales_details?.forEach(detail => {
+                          if (detail.product_id) {
+                            uniqueProducts.add(detail.product_id)
+                          }
+                        })
+                      })
+
+                      // Get date range text
+                      let dateRangeText = "All Product Sales"
+                      if (productSalesQuickFilter === "today") {
+                        dateRangeText = "Today's Product Sales"
+                      } else if (productSalesQuickFilter === "thisWeek") {
+                        dateRangeText = "This Week's Product Sales"
+                      } else if (productSalesQuickFilter === "thisMonth") {
+                        dateRangeText = "This Month's Product Sales"
+                      } else if (productSalesStartDate && productSalesEndDate) {
+                        dateRangeText = `${format(productSalesStartDate, "MMM dd, yyyy")} - ${format(productSalesEndDate, "MMM dd, yyyy")}`
+                      } else if (productSalesStartDate) {
+                        dateRangeText = `From ${format(productSalesStartDate, "MMM dd, yyyy")}`
+                      } else if (productSalesEndDate) {
+                        dateRangeText = `Until ${format(productSalesEndDate, "MMM dd, yyyy")}`
+                      }
+
+                      // Create print window
+                      const printWindow = window.open('', '_blank')
+                      const printDate = format(new Date(), "MMM dd, yyyy 'at' hh:mm a")
+                      
+                      printWindow.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                          <head>
+                            <title>Product Sales Report - ${dateRangeText}</title>
+                            <style>
+                              @media print {
+                                @page {
+                                  size: A4 landscape;
+                                  margin: 1cm;
+                                }
+                                body {
+                                  margin: 0;
+                                  padding: 0;
+                                }
+                              }
+                              body {
+                                font-family: Arial, sans-serif;
+                                padding: 20px;
+                                font-size: 12px;
+                              }
+                              .header {
+                                text-align: center;
+                                margin-bottom: 20px;
+                                border-bottom: 2px solid #000;
+                                padding-bottom: 10px;
+                              }
+                              .header h1 {
+                                margin: 0;
+                                font-size: 24px;
+                                font-weight: bold;
+                              }
+                              .header p {
+                                margin: 5px 0;
+                                color: #666;
+                              }
+                              .summary {
+                                display: grid;
+                                grid-template-columns: repeat(3, 1fr);
+                                gap: 15px;
+                                margin-bottom: 20px;
+                                padding: 15px;
+                                background: #f5f5f5;
+                                border-radius: 5px;
+                              }
+                              .summary-card {
+                                text-align: center;
+                                padding: 10px;
+                                background: white;
+                                border-radius: 5px;
+                                border: 1px solid #ddd;
+                              }
+                              .summary-card h3 {
+                                margin: 0 0 5px 0;
+                                font-size: 11px;
+                                color: #666;
+                                text-transform: uppercase;
+                              }
+                              .summary-card p {
+                                margin: 0;
+                                font-size: 18px;
+                                font-weight: bold;
+                                color: #000;
+                              }
+                              table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                margin-top: 10px;
+                              }
+                              th, td {
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                                text-align: left;
+                              }
+                              th {
+                                background-color: #f2f2f2;
+                                font-weight: bold;
+                                font-size: 11px;
+                                text-transform: uppercase;
+                              }
+                              td {
+                                font-size: 11px;
+                              }
+                              .text-right {
+                                text-align: right;
+                              }
+                              .footer {
+                                margin-top: 20px;
+                                padding-top: 10px;
+                                border-top: 1px solid #ddd;
+                                text-align: center;
+                                font-size: 10px;
+                                color: #666;
+                              }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="header">
+                              <h1>CNERGY GYM - PRODUCT SALES REPORT</h1>
+                              <p>${dateRangeText}</p>
+                              <p>Generated on ${printDate}</p>
+                            </div>
+                            
+                            <div class="summary">
+                              <div class="summary-card">
+                                <h3>Total Sales</h3>
+                                <p>${formatCurrency(totalSales)}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px;">${filteredSales.length} transaction${filteredSales.length !== 1 ? 's' : ''}</p>
+                              </div>
+                              <div class="summary-card">
+                                <h3>Items Sold</h3>
+                                <p>${totalItems.toLocaleString()}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px;">total items</p>
+                              </div>
+                              <div class="summary-card">
+                                <h3>Unique Products</h3>
+                                <p>${uniqueProducts.size}</p>
+                                <p style="font-size: 10px; color: #666; margin-top: 3px;">products sold</p>
+                              </div>
+                            </div>
+
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Product</th>
+                                  <th>Quantity</th>
+                                  <th>Customer</th>
+                                  <th>Payment</th>
+                                  <th>Receipt</th>
+                                  <th>Date</th>
+                                  <th class="text-right">Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${filteredSales.length === 0 ? `
+                                  <tr>
+                                    <td colspan="8" style="text-align: center; padding: 20px;">
+                                      No product sales found matching the selected filters.
+                                    </td>
+                                  </tr>
+                                ` : filteredSales.flatMap((sale, saleIndex) => {
+                                  // Flatten sales details into individual rows
+                                  const productDetails = sale.sales_details?.filter(d => d.product_id) || []
+                                  
+                                  if (productDetails.length === 0) {
+                                    // If no sales_details, show the sale as a single row
+                                    return [{
+                                      productName: sale.sale_type || "Product",
+                                      quantity: sale.quantity || 1,
+                                      sale: sale,
+                                      index: saleIndex
+                                    }]
+                                  }
+                                  
+                                  return productDetails.map((detail, detailIndex) => ({
+                                    productName: detail.product?.name || products.find(p => p.id === detail.product_id)?.name || "Unknown Product",
+                                    quantity: detail.quantity || sale.quantity || 1,
+                                    sale: sale,
+                                    index: saleIndex * 1000 + detailIndex // Unique index for flattened rows
+                                  }))
+                                }).map((item, index) => {
+                                  const customerName = item.sale.sale_type === "Product"
+                                    ? (formatName(item.sale.user_name) || formatName(item.sale.guest_name) || "Guest")
+                                    : (formatName(item.sale.user_name) || "N/A")
+                                  
+                                  const paymentMethod = formatPaymentMethod(item.sale.payment_method)
+                                  const receiptNumber = (() => {
+                                    const paymentMethod = (item.sale.payment_method || 'cash').toLowerCase()
+                                    if (paymentMethod === 'gcash' || paymentMethod === 'digital') {
+                                      return item.sale.reference_number || item.sale.receipt_number || "N/A"
+                                    }
+                                    return item.sale.receipt_number || "N/A"
+                                  })()
+                                  
+                                  const product = products.find(p => p.id === item.sale.sales_details?.find(d => d.product_id === p.id)?.product_id)
+                                  const unitPrice = product?.price || (item.sale.total_amount / item.quantity) || 0
+                                  const lineTotal = unitPrice * item.quantity
+                                  
+                                  return `
+                                    <tr>
+                                      <td>${index + 1}</td>
+                                      <td>${item.productName}</td>
+                                      <td>${item.quantity}</td>
+                                      <td>${customerName}</td>
+                                      <td>${paymentMethod}</td>
+                                      <td>${receiptNumber}</td>
+                                      <td>${formatDate(item.sale.sale_date)}</td>
+                                      <td class="text-right">${formatCurrency(lineTotal)}</td>
+                                    </tr>
+                                  `
+                                }).join('')}
+                              </tbody>
+                              <tfoot>
+                                <tr>
+                                  <th colspan="7" style="text-align: right;">Total:</th>
+                                  <th class="text-right">${formatCurrency(totalSales)}</th>
+                                </tr>
+                              </tfoot>
+                            </table>
+
+                            <div class="footer">
+                              <p>This is a computer-generated report. CNERGY GYM Sales Management System.</p>
+                            </div>
+                          </body>
+                        </html>
+                      `)
+                      
+                      printWindow.document.close()
+                      setTimeout(() => {
+                        printWindow.print()
+                      }, 250)
+                    }}
+                    className="h-9 px-3 text-sm"
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </Button>
                 </div>
               </div>
               <Button

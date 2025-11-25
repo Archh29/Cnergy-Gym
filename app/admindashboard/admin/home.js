@@ -106,22 +106,15 @@ const GymDashboard = () => {
     setError(null)
 
     try {
-      // Determine period based on date range or default to "today"
+      // Always use "today" period for API - we'll filter data client-side based on date range
+      // The API doesn't support custom date ranges, so we fetch all data and filter on frontend
       let period = "today"
-      if (startDate && endDate) {
-        period = "custom"
-      } else if (!startDate && !endDate) {
-        period = "today"
-      }
-      
       let apiUrl = `https://api.cnergy.site/admindashboard.php?period=${period}`
 
       if (period === "today") {
         const todayPH = getTodayInPHTime()
         apiUrl += `&ph_date=${todayPH}`
         console.log("Using Philippine time for today:", todayPH)
-      } else if (period === "custom" && startDate && endDate) {
-        apiUrl += `&start_date=${startDate}&end_date=${endDate}`
       }
 
       console.log("Fetching data for date range:", { startDate, endDate }, "URL:", apiUrl)
@@ -134,8 +127,10 @@ const GymDashboard = () => {
 
       if (response.data.success) {
         const stats = response.data.summaryStats
+        let allClientsData = [] // Store clients data for generating membership chart
         
         // Fetch sales and filter by date range
+        let filteredSales = []
         try {
           // Fetch all sales (we'll filter client-side based on date range)
           const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
@@ -144,7 +139,6 @@ const GymDashboard = () => {
           const allSalesData = salesResponse.data.sales || []
           
           // Filter sales by date range
-          let filteredSales = allSalesData
           if (startDate || endDate) {
             filteredSales = allSalesData.filter(sale => {
               const saleDate = new Date(sale.sale_date)
@@ -247,6 +241,7 @@ const GymDashboard = () => {
             })
             // member_management.php returns users with user_type_id = 4 (clients/members only)
             const allClients = Array.isArray(clientsResponse.data) ? clientsResponse.data : []
+            allClientsData = allClients // Store for generating membership chart
             // Filter to only approved clients (same as View Clients page)
             const approvedClients = allClients.filter((m) => m.account_status === "approved")
             const clientsCount = approvedClients.length
@@ -326,15 +321,136 @@ const GymDashboard = () => {
         }
         
         setSummaryStats(stats)
-        setMembershipData(response.data.membershipData || [])
+        
+        // Handle membership data based on date range
+        let filteredMembershipData = response.data.membershipData || []
+        if ((startDate || endDate) && allClientsData.length > 0) {
+          // Generate client growth data from member created_at dates
+          try {
+            // Filter clients by created_at date within the selected range (only approved clients for growth)
+            const approvedClients = allClientsData.filter((m) => m.account_status === "approved")
+            const filteredClients = approvedClients.filter(client => {
+              if (!client.created_at) return false
+              
+              const createdDate = new Date(client.created_at)
+              createdDate.setHours(0, 0, 0, 0)
+
+              let matchesStart = true
+              let matchesEnd = true
+
+              if (startDate) {
+                const filterStartDate = new Date(startDate)
+                filterStartDate.setHours(0, 0, 0, 0)
+                matchesStart = createdDate >= filterStartDate
+              }
+
+              if (endDate) {
+                const filterEndDate = new Date(endDate)
+                filterEndDate.setHours(0, 0, 0, 0)
+                matchesEnd = createdDate <= filterEndDate
+              }
+
+              return matchesStart && matchesEnd
+            })
+            
+            // Group clients by day and count how many were created each day
+            const clientsByDate = {}
+            
+            filteredClients.forEach(client => {
+              if (!client.created_at) return
+              
+              const createdDate = new Date(client.created_at)
+              const dateKey = format(createdDate, "yyyy-MM-dd")
+              const displayKey = format(createdDate, "MMM dd")
+              
+              if (!clientsByDate[dateKey]) {
+                clientsByDate[dateKey] = {
+                  name: displayKey,
+                  date: dateKey,
+                  count: 0
+                }
+              }
+              
+              clientsByDate[dateKey].count += 1
+            })
+            
+            // Convert to array, sort by date, and calculate cumulative total
+            const sortedDates = Object.values(clientsByDate)
+              .sort((a, b) => new Date(a.date) - new Date(b.date))
+            
+            // Calculate base count (clients created before the start date)
+            let baseCount = 0
+            if (startDate) {
+              const filterStartDate = new Date(startDate)
+              filterStartDate.setHours(0, 0, 0, 0)
+              baseCount = approvedClients.filter(client => {
+                if (!client.created_at) return false
+                const createdDate = new Date(client.created_at)
+                createdDate.setHours(0, 0, 0, 0)
+                return createdDate < filterStartDate
+              }).length
+            }
+            
+            let cumulativeCount = baseCount
+            filteredMembershipData = sortedDates.map(item => {
+              cumulativeCount += item.count
+              return {
+                name: item.name,
+                members: cumulativeCount
+              }
+            })
+            
+            console.log("Generated membership data from filtered clients:", filteredMembershipData.length, "days")
+          } catch (membershipError) {
+            console.error("Error generating membership data from clients:", membershipError)
+            filteredMembershipData = []
+          }
+        } else {
+          // Use API data when no date range is set
+          filteredMembershipData = response.data.membershipData || []
+        }
+        
+        setMembershipData(filteredMembershipData)
         
         // Filter revenue data by date range
         let filteredRevenueData = response.data.revenueData || []
-        if (startDate || endDate) {
-          // Filter revenue data based on date range if provided
-          // The revenue data structure may vary, so we'll filter if it has date information
-          // For now, we'll use the data as-is and let the chart display it
-          // This can be enhanced if revenue data items have date fields
+        if ((startDate || endDate) && filteredSales.length > 0) {
+          // Generate revenue chart data from filtered sales
+          try {
+            // Group sales by day for the chart
+            const revenueByDate = {}
+            
+            filteredSales.forEach(sale => {
+              if (!sale.sale_date || !sale.total_amount) return
+              
+              const saleDate = new Date(sale.sale_date)
+              const dateKey = format(saleDate, "yyyy-MM-dd")
+              const displayKey = format(saleDate, "MMM dd")
+              
+              if (!revenueByDate[dateKey]) {
+                revenueByDate[dateKey] = {
+                  name: displayKey,
+                  date: dateKey,
+                  revenue: 0
+                }
+              }
+              
+              revenueByDate[dateKey].revenue += parseFloat(sale.total_amount) || 0
+            })
+            
+            // Convert to array and sort by date
+            filteredRevenueData = Object.values(revenueByDate)
+              .sort((a, b) => new Date(a.date) - new Date(b.date))
+              .map(item => ({
+                name: item.name,
+                revenue: item.revenue
+              }))
+            
+            console.log("Generated revenue data from filtered sales:", filteredRevenueData.length, "days")
+          } catch (revenueError) {
+            console.error("Error generating revenue data from sales:", revenueError)
+            filteredRevenueData = []
+          }
         } else {
           // Default to today if no date range is set
           const phToday = getPhilippineTime()
