@@ -176,7 +176,7 @@ function getAllSubscriptions($pdo)
 
     $stmt = $pdo->query("
             SELECT s.id, s.start_date, s.end_date, s.discounted_price, s.amount_paid,
-                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
+                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url, u.system_photo_url, u.system_photo_url,
                    p.id as plan_id, p.plan_name, p.price, p.duration_months, p.duration_days,
                    st.id as status_id, st.status_name,
                    {$createdAtSelect} as created_at,
@@ -618,7 +618,7 @@ function getPendingSubscriptions($pdo)
 
     $stmt = $pdo->prepare("
             SELECT s.id as subscription_id, s.start_date, s.end_date,
-                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
+                   u.id as user_id, u.fname, u.mname, u.lname, u.email, u.profile_photo_url, u.system_photo_url, u.system_photo_url,
                    p.id as plan_id, p.plan_name, p.price, p.duration_months,
                    st.id as status_id, st.status_name,
                    {$createdAtSelect} as created_at
@@ -987,7 +987,7 @@ function getSubscriptionById($pdo, $id)
     // Regular subscription lookup
     $stmt = $pdo->prepare("
             SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, s.amount_paid, s.discounted_price,
-                   u.fname, u.mname, u.lname, u.email, u.profile_photo_url,
+                   u.fname, u.mname, u.lname, u.email, u.profile_photo_url, u.system_photo_url, u.system_photo_url,
                    p.plan_name, p.price, p.duration_months,
                    st.status_name
             FROM subscription s
@@ -1556,7 +1556,7 @@ function createManualSubscription($pdo, $data)
 
     try {
         // Verify user exists and is a customer
-        $userStmt = $pdo->prepare("SELECT id, fname, lname, email, user_type_id, account_status, profile_photo_url FROM user WHERE id = ?");
+        $userStmt = $pdo->prepare("SELECT id, fname, lname, email, user_type_id, account_status, profile_photo_url, system_photo_url FROM user WHERE id = ?");
         $userStmt->execute([$user_id]);
         $user = $userStmt->fetch();
 
@@ -2040,86 +2040,6 @@ function createManualSubscription($pdo, $data)
             }
         }
 
-        // Create automatic attendance for Day Pass/Gym Session subscriptions
-        // Check if this is a Day Pass plan (plan_id = 6 or plan_name contains 'Day Pass', 'Walk In', or 'Gym Session')
-        if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
-            try {
-                // Check if attendance table has subscription_id column
-                $checkAttendanceColumns = $pdo->query("SHOW COLUMNS FROM attendance");
-                $attendanceColumns = $checkAttendanceColumns->fetchAll(PDO::FETCH_COLUMN);
-                $hasSubscriptionId = in_array('subscription_id', $attendanceColumns);
-
-                // Use Philippines timezone for check-in time
-                $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-                $checkInTime = $phTime->format('Y-m-d H:i:s');
-
-                if ($hasSubscriptionId) {
-                    // Insert attendance with subscription_id reference
-                    $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in, subscription_id) VALUES (?, ?, ?)");
-                    $attendanceStmt->execute([$user_id, $checkInTime, $subscription_id]);
-                } else {
-                    // Insert attendance without subscription_id (for older schema)
-                    $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in) VALUES (?, ?)");
-                    $attendanceStmt->execute([$user_id, $checkInTime]);
-                }
-
-                error_log("Successfully created automatic attendance for Day Pass subscription: User ID: $user_id, Subscription ID: $subscription_id");
-            } catch (Exception $e) {
-                // Log the error but don't fail the entire transaction
-                error_log("Failed to create automatic attendance for Day Pass subscription: " . $e->getMessage());
-            }
-        }
-
-        // Create automatic attendance for Monthly Access subscriptions (Premium, Standard, and Package)
-        // Plan ID 2 = Premium Monthly (Member Plan Monthly)
-        // Plan ID 3 = Standard Monthly (Non-Member Plan Monthly)
-        // Plan ID 5 = Gym Membership + 1 Month Package (includes monthly access)
-        if ($plan_id == 2 || $plan_id == 3 || $plan_id == 5) {
-            try {
-                // Check if user already has attendance for today (prevent duplicates)
-                $todayDate = date('Y-m-d');
-                $existingAttendanceStmt = $pdo->prepare("
-                    SELECT id 
-                    FROM attendance 
-                    WHERE user_id = ? 
-                    AND DATE(check_in) = ?
-                    LIMIT 1
-                ");
-                $existingAttendanceStmt->execute([$user_id, $todayDate]);
-                $existingAttendance = $existingAttendanceStmt->fetch();
-
-                // Only create attendance if user doesn't already have one for today
-                if (!$existingAttendance) {
-                    // Check if attendance table has subscription_id column
-                    $checkAttendanceColumns = $pdo->query("SHOW COLUMNS FROM attendance");
-                    $attendanceColumns = $checkAttendanceColumns->fetchAll(PDO::FETCH_COLUMN);
-                    $hasSubscriptionId = in_array('subscription_id', $attendanceColumns);
-
-                    // Use Philippines timezone for check-in time
-                    $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-                    $checkInTime = $phTime->format('Y-m-d H:i:s');
-
-                    if ($hasSubscriptionId) {
-                        // Insert attendance with subscription_id reference
-                        $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in, subscription_id) VALUES (?, ?, ?)");
-                        $attendanceStmt->execute([$user_id, $checkInTime, $subscription_id]);
-                    } else {
-                        // Insert attendance without subscription_id (for older schema)
-                        $attendanceStmt = $pdo->prepare("INSERT INTO attendance (user_id, check_in) VALUES (?, ?)");
-                        $attendanceStmt->execute([$user_id, $checkInTime]);
-                    }
-
-                    $planName = $plan_id == 2 ? 'Premium Monthly' : ($plan_id == 3 ? 'Standard Monthly' : 'Gym Membership + Monthly Access Package');
-                    error_log("Successfully created automatic attendance for Monthly Access subscription: User ID: $user_id, Subscription ID: $subscription_id, Plan: $planName");
-                } else {
-                    error_log("User ID: $user_id already has attendance for today, skipping automatic attendance creation");
-                }
-            } catch (Exception $e) {
-                // Log the error but don't fail the entire transaction
-                error_log("Failed to create automatic attendance for Monthly Access subscription: " . $e->getMessage());
-            }
-        }
-
         // Log activity using centralized logger
         $staffId = $data['staff_id'] ?? null;
         error_log("DEBUG: Received staff_id: " . ($staffId ?? 'NULL') . " from request data");
@@ -2212,7 +2132,7 @@ function approveSubscription($pdo, $data)
     try {
         $checkStmt = $pdo->prepare("
                 SELECT s.id, s.user_id, s.plan_id, s.start_date, s.end_date, st.status_name,
-                       u.fname, u.lname, u.email, u.profile_photo_url,
+                       u.fname, u.lname, u.email, u.profile_photo_url, u.system_photo_url,
                        p.plan_name, p.price, p.duration_months, p.duration_days
                 FROM subscription s
                 JOIN subscription_status st ON s.status_id = st.id

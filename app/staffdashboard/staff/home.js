@@ -162,12 +162,21 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), convert to 12-hour format with AM/PM
+      // If it's a time format (HH:MM), convert from UTC to Philippine time (UTC+8) and format to 12-hour with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
         const [hours, minutes] = item.name.split(':').map(Number)
-        const period = hours >= 12 ? 'PM' : 'AM'
-        const hour12 = hours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
-        const formattedTime = `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+        // Convert UTC to Philippine time (UTC+8)
+        let phHours = hours + 8
+        let phMinutes = minutes
+
+        // Handle day rollover
+        if (phHours >= 24) {
+          phHours = phHours - 24
+        }
+
+        const period = phHours >= 12 ? 'PM' : 'AM'
+        const hour12 = phHours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
+        const formattedTime = `${hour12}:${phMinutes.toString().padStart(2, '0')} ${period}`
         return { ...item, displayName: formattedTime }
       }
 

@@ -54,7 +54,8 @@ $allowedDirectories = [
     'uploads/promotions/',
     'uploads/avatars/',  // Allow profile photos (avatars)
     'uploads/profile/',  // Allow profile photos (profile directory)
-    'uploads/consents/'  // Allow parent consent documents
+    'uploads/consents/',  // Allow parent consent documents
+    'uploads/system_photos/'  // Allow system photos (face tracking / identification)
 ];
 $isAllowed = false;
 

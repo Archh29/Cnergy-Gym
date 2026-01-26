@@ -1846,17 +1846,11 @@ const Sales = ({ userId }) => {
                         const date = new Date(selectedDate + "T00:00:00")
                         const today = new Date()
                         today.setHours(0, 0, 0, 0)
-
                         if (date.getTime() <= today.getTime()) {
                           setStartDate(date)
-                          // If end date is set and is before start date, clear it
-                          if (endDate && date > endDate) {
-                            setEndDate(null)
-                          }
+                          if (endDate && date > endDate) setEndDate(null)
                         }
-                      } else {
-                        setStartDate(null)
-                      }
+                      } else setStartDate(null)
                     }}
                     className="h-10 text-sm w-[140px] border-gray-300"
                     placeholder="Start date"
@@ -1875,17 +1869,11 @@ const Sales = ({ userId }) => {
                         const date = new Date(selectedDate + "T00:00:00")
                         const today = new Date()
                         today.setHours(0, 0, 0, 0)
-
                         if (date.getTime() <= today.getTime()) {
-                          // If start date is set and selected date is before it, don't update
-                          if (startDate && date < startDate) {
-                            return
-                          }
+                          if (startDate && date < startDate) return
                           setEndDate(date)
                         }
-                      } else {
-                        setEndDate(null)
-                      }
+                      } else setEndDate(null)
                     }}
                     className="h-10 text-sm w-[140px] border-gray-300"
                     placeholder="End date"
@@ -2378,17 +2366,11 @@ const Sales = ({ userId }) => {
                             const date = new Date(selectedDate + "T00:00:00")
                             const today = new Date()
                             today.setHours(0, 0, 0, 0)
-
                             if (date.getTime() <= today.getTime()) {
                               setStartDate(date)
-                              // If end date is set and is before start date, clear it
-                              if (endDate && date > endDate) {
-                                setEndDate(null)
-                              }
+                              if (endDate && date > endDate) setEndDate(null)
                             }
-                          } else {
-                            setStartDate(null)
-                          }
+                          } else setStartDate(null)
                         }}
                         className="h-10 text-sm w-[140px] border-gray-300"
                         placeholder="Start date"
@@ -2407,17 +2389,11 @@ const Sales = ({ userId }) => {
                             const date = new Date(selectedDate + "T00:00:00")
                             const today = new Date()
                             today.setHours(0, 0, 0, 0)
-
                             if (date.getTime() <= today.getTime()) {
-                              // If start date is set and selected date is before it, don't update
-                              if (startDate && date < startDate) {
-                                return
-                              }
+                              if (startDate && date < startDate) return
                               setEndDate(date)
                             }
-                          } else {
-                            setEndDate(null)
-                          }
+                          } else setEndDate(null)
                         }}
                         className="h-10 text-sm w-[140px] border-gray-300"
                         placeholder="End date"

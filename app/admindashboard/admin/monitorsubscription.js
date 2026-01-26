@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
+const MEMBER_API_URL = "https://api.cnergy.site/member_management.php"
 
 const SubscriptionMonitor = ({ userId }) => {
   // Helper function to normalize profile photo URLs
@@ -212,7 +213,7 @@ const SubscriptionMonitor = ({ userId }) => {
   // Fetch all sales for a user
   const fetchAllUserSales = async (userId) => {
     if (!userId) return []
-    
+
     try {
       const response = await axios.get(`${API_URL}?action=get-user-sales&user_id=${userId}`)
       if (response.data && response.data.success) {
@@ -230,12 +231,12 @@ const SubscriptionMonitor = ({ userId }) => {
   // Fetch all subscription history for a user (all plans)
   const fetchAllUserSubscriptionHistory = async (userId) => {
     if (!userId) return []
-    
+
     try {
       // Get all unique plan IDs for this user from current subscriptions
       const userSubscriptions = viewDetailsModal.subscriptions || []
       const uniquePlanIds = [...new Set(userSubscriptions.map(sub => sub.plan_id).filter(Boolean))]
-      
+
       // Fetch history for each plan
       const allHistory = []
       for (const planId of uniquePlanIds) {
@@ -249,14 +250,14 @@ const SubscriptionMonitor = ({ userId }) => {
           console.error(`Error fetching subscription history for user ${userId}, plan ${planId}:`, error)
         }
       }
-      
+
       // Sort by start_date descending (most recent first)
       allHistory.sort((a, b) => {
         const dateA = new Date(a.start_date || 0)
         const dateB = new Date(b.start_date || 0)
         return dateB - dateA
       })
-      
+
       setAllUserSubscriptionHistory(allHistory)
       return allHistory
     } catch (error) {
@@ -270,7 +271,7 @@ const SubscriptionMonitor = ({ userId }) => {
     fetchSubscriptionPlans()
     fetchAvailableUsers()
     fetchGymSessionPlan()
-    
+
     // Check for navigation parameters from home page
     const navParams = localStorage.getItem('adminNavParams')
     if (navParams) {
@@ -288,10 +289,59 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }, [])
 
+  // Open Subscription Details modal for a user (from toast click)
+  const openSubscriptionDetailsForUserId = async (uid) => {
+    if (!uid) return
+    const id = typeof uid === 'string' ? parseInt(uid, 10) : uid
+    if (!id) return
+    try {
+      const [userRes, subsRes] = await Promise.all([
+        axios.get(`${MEMBER_API_URL}?id=${id}`),
+        axios.get(`${API_URL}?user_id=${id}`)
+      ])
+      const member = userRes.data && !userRes.data.error ? userRes.data : null
+      const subs = Array.isArray(subsRes.data?.subscriptions) ? subsRes.data.subscriptions : []
+      if (!member) return
+      const user = {
+        id: member.id,
+        user_id: member.id,
+        fname: member.fname,
+        mname: member.mname,
+        lname: member.lname,
+        email: member.email,
+        system_photo_url: member.system_photo_url || null,
+        is_guest_session: false
+      }
+      setViewDetailsModal({ open: true, user, subscriptions: subs })
+    } catch (e) {
+      console.error('Error opening subscription details for user:', id, e)
+    } finally {
+      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) {}
+    }
+  }
+
+  // Check sessionStorage on mount (navigate from toast → Monitor Subscriptions)
+  useEffect(() => {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('openSubscriptionDetailsUserId') : null
+    if (!raw) return
+    sessionStorage.removeItem('openSubscriptionDetailsUserId')
+    openSubscriptionDetailsForUserId(raw)
+  }, [])
+
+  // Listen for toast click when already on Monitor Subscriptions
+  useEffect(() => {
+    const handler = (e) => {
+      const uid = e.detail?.userId ?? sessionStorage.getItem('openSubscriptionDetailsUserId')
+      if (uid) openSubscriptionDetailsForUserId(uid)
+    }
+    window.addEventListener('open-subscription-details-for-user', handler)
+    return () => window.removeEventListener('open-subscription-details-for-user', handler)
+  }, [])
+
   // Fetch guest session sales
   const fetchGuestSessionSales = async (guestSessionId) => {
     if (!guestSessionId) return []
-    
+
     try {
       const response = await axios.get(`${API_URL}?action=get-guest-sales&guest_session_id=${guestSessionId}`)
       if (response.data && response.data.success) {
@@ -335,9 +385,9 @@ const SubscriptionMonitor = ({ userId }) => {
       const response = await axios.get(`${API_URL}?action=plans`)
       if (response.data.success && response.data.plans) {
         // Find Gym Session, Day Pass, or Walk In plan
-        const gymPlan = response.data.plans.find(plan => 
-          plan.plan_name?.toLowerCase() === 'gym session' || 
-          plan.plan_name?.toLowerCase() === 'day pass' || 
+        const gymPlan = response.data.plans.find(plan =>
+          plan.plan_name?.toLowerCase() === 'gym session' ||
+          plan.plan_name?.toLowerCase() === 'day pass' ||
           plan.plan_name?.toLowerCase() === 'walk in' ||
           plan.id === 6
         )
@@ -413,29 +463,29 @@ const SubscriptionMonitor = ({ userId }) => {
           // This ensures guest sessions and subscriptions are sorted by actual creation time
           const dateA = new Date(a.created_at || a.start_date || '1970-01-01').getTime()
           const dateB = new Date(b.created_at || b.start_date || '1970-01-01').getTime()
-          
+
           if (dateB !== dateA) {
             return dateB - dateA
           }
-          
+
           // Secondary sort: by ID descending (higher ID = newer)
           // Extract numeric ID (handle guest_ prefix and guest_session_id)
           let idA = 0
           let idB = 0
-          
+
           // For guest sessions, use guest_session_id (the actual database ID)
           if (a.is_guest_session || a.subscription_type === 'guest') {
             idA = a.guest_session_id ? parseInt(a.guest_session_id) : (a.id && typeof a.id === 'string' && a.id.startsWith('guest_') ? parseInt(a.id.replace('guest_', '')) : 0)
           } else {
             idA = isNaN(parseInt(a.id)) ? parseInt(a.id?.toString().replace('guest_', '') || '0') : parseInt(a.id)
           }
-          
+
           if (b.is_guest_session || b.subscription_type === 'guest') {
             idB = b.guest_session_id ? parseInt(b.guest_session_id) : (b.id && typeof b.id === 'string' && b.id.startsWith('guest_') ? parseInt(b.id.replace('guest_', '')) : 0)
           } else {
             idB = isNaN(parseInt(b.id)) ? parseInt(b.id?.toString().replace('guest_', '') || '0') : parseInt(b.id)
           }
-          
+
           return idB - idA
         })
         setSubscriptions(sortedSubscriptions)
@@ -776,12 +826,12 @@ const SubscriptionMonitor = ({ userId }) => {
         if (isNaN(planId) || planId <= 0) {
           throw new Error(`Invalid plan ID: ${planIdStr}`)
         }
-        
+
         const quantity = planQuantities[planIdStr] || 1
         if (quantity <= 0) {
           throw new Error(`Invalid quantity for plan ${planIdStr}: ${quantity}`)
         }
-        
+
         // Calculate price for this specific plan
         const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
         if (!plan) {
@@ -791,17 +841,17 @@ const SubscriptionMonitor = ({ userId }) => {
         if (isNaN(planPrice) || planPrice <= 0) {
           throw new Error(`Invalid price for plan ${planIdStr}: ${planPrice}`)
         }
-        
+
         // Apply discount if applicable
         let discountType = subscriptionForm.discount_type || "none"
         if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
           discountType = userActiveDiscount
           planPrice = calculateDiscountedPrice(planPrice, discountType)
         }
-        
+
         const planTotalPrice = planPrice * quantity
         totalExpectedAmount += planTotalPrice
-        
+
         return {
           planId,
           planIdStr,
@@ -810,26 +860,26 @@ const SubscriptionMonitor = ({ userId }) => {
           discountType
         }
       })
-      
+
       // Distribute payment proportionally across subscriptions
       const subscriptionPromises = planDataArray.map(async (planData, index) => {
         const { planId, planIdStr, quantity, planTotalPrice, discountType } = planData
-        
+
         // Generate unique receipt number for each subscription
         // Add seconds, milliseconds, and index to ensure uniqueness
         const seconds = String(now.getSeconds()).padStart(2, '0');
         const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
         const uniqueReceiptNumber = `${baseReceiptNumber}${seconds}${milliseconds}${String(index + 1).padStart(2, '0')}`;
-        
+
         // Calculate proportional amount received for this plan
         let amountReceivedForPlan = planTotalPrice
         let changeForPlan = 0
-        
+
         if (paymentMethod === 'cash') {
           // Distribute amount_received proportionally
           const proportion = planTotalPrice / totalExpectedAmount
           amountReceivedForPlan = receivedAmount * proportion
-          
+
           // Apply all change to the first subscription
           if (index === 0) {
             changeForPlan = change
@@ -840,12 +890,12 @@ const SubscriptionMonitor = ({ userId }) => {
           // For GCash, amount received equals amount paid (no change)
           amountReceivedForPlan = planTotalPrice
         }
-        
+
         // Validate required fields before creating request
         if (!subscriptionForm.user_id || !subscriptionForm.start_date) {
           throw new Error(`Missing required fields: user_id=${subscriptionForm.user_id}, start_date=${subscriptionForm.start_date}`)
         }
-        
+
         // Ensure all values are properly set (not null/undefined)
         const requestData = {
           user_id: String(subscriptionForm.user_id || '').trim(),
@@ -864,7 +914,7 @@ const SubscriptionMonitor = ({ userId }) => {
           transaction_status: "confirmed",
           discount_type: String(discountType || "none")
         };
-        
+
         // Double-check required fields are not empty
         if (!requestData.user_id || requestData.user_id === '') {
           throw new Error(`user_id is required but got: "${subscriptionForm.user_id}"`)
@@ -880,7 +930,7 @@ const SubscriptionMonitor = ({ userId }) => {
         }
 
         console.log(`Creating subscription ${index + 1}/${planDataArray.length}:`, JSON.stringify(requestData, null, 2));
-        
+
         // Validate all required fields are present and not empty
         const requiredFields = ['user_id', 'plan_id', 'start_date', 'amount_paid'];
         const missingFields = requiredFields.filter(field => !requestData[field] || requestData[field] === '');
@@ -888,7 +938,7 @@ const SubscriptionMonitor = ({ userId }) => {
           console.error(`Missing required fields for subscription ${index + 1}:`, missingFields);
           throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
         }
-        
+
         return axios.post(`${API_URL}?action=create_manual`, requestData).catch(error => {
           console.error(`=== Error creating subscription ${index + 1} ===`);
           console.error("Status:", error?.response?.status);
@@ -907,18 +957,18 @@ const SubscriptionMonitor = ({ userId }) => {
       });
 
       console.log("Creating multiple subscriptions:", planDataArray.length);
-      
+
       const responses = await Promise.allSettled(subscriptionPromises);
-      
+
       // Check for any failures
       const failures = responses.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && (!r.value?.data || !r.value.data.success)));
-      
+
       if (failures.length > 0) {
         console.error("Subscription creation failures:", failures);
         const errorMessages = failures.map((f, idx) => {
           let errorMsg = "Unknown error";
           let errorDetails = null;
-          
+
           if (f.status === 'rejected') {
             const error = f.reason;
             errorDetails = {
@@ -928,13 +978,13 @@ const SubscriptionMonitor = ({ userId }) => {
               status: error?.response?.status,
               statusText: error?.response?.statusText
             };
-            
-            errorMsg = error?.response?.data?.error || 
-                      error?.response?.data?.message || 
-                      error?.message || 
-                      (error?.response?.status ? `HTTP ${error.response.status}: ${error.response.statusText || 'Bad Request'}` : '') ||
-                      "Unknown error";
-            
+
+            errorMsg = error?.response?.data?.error ||
+              error?.response?.data?.message ||
+              error?.message ||
+              (error?.response?.status ? `HTTP ${error.response.status}: ${error.response.statusText || 'Bad Request'}` : '') ||
+              "Unknown error";
+
             // Log detailed error information
             console.error(`=== Subscription ${idx + 1} Failed ===`);
             console.error("Error Message:", errorMsg);
@@ -956,9 +1006,9 @@ const SubscriptionMonitor = ({ userId }) => {
               response: f.value?.data,
               success: f.value?.data?.success
             };
-            
+
             errorMsg = f.value?.data?.error || f.value?.data?.message || "API returned error";
-            
+
             console.error(`Subscription ${idx + 1} failed (API error):`, {
               error: errorMsg,
               errorDetails: errorDetails,
@@ -970,13 +1020,13 @@ const SubscriptionMonitor = ({ userId }) => {
         });
         throw new Error(`Failed to create ${failures.length} subscription(s): ${errorMessages.join(", ")}`);
       }
-      
+
       // All succeeded
       const allSuccess = true;
-      
+
       // Extract successful responses
       const successfulResponses = responses.filter(r => r.status === 'fulfilled' && r.value?.data?.success);
-      
+
       if (successfulResponses.length === 0) {
         throw new Error("All subscription creation requests failed");
       }
@@ -1214,7 +1264,7 @@ const SubscriptionMonitor = ({ userId }) => {
     setSubscriptionForm(prev => {
       const currentPlans = prev.selected_plan_ids || []
       const isSelected = currentPlans.includes(planIdStr)
-      
+
       let newPlans
       if (isSelected) {
         // Remove plan
@@ -1234,7 +1284,7 @@ const SubscriptionMonitor = ({ userId }) => {
           [planIdStr]: 1
         }))
       }
-      
+
       // Calculate total price for all selected plans
       let totalPrice = 0
       newPlans.forEach(selectedPlanId => {
@@ -1242,7 +1292,7 @@ const SubscriptionMonitor = ({ userId }) => {
         if (plan) {
           const basePrice = parseFloat(plan.price || 0)
           const quantity = planQuantities[selectedPlanId] || (selectedPlanId === planIdStr ? 1 : (planQuantities[selectedPlanId] || 1))
-          
+
           let pricePerUnit = basePrice
           // Apply discount if applicable
           let discountType = prev.discount_type || "none"
@@ -1250,11 +1300,11 @@ const SubscriptionMonitor = ({ userId }) => {
             discountType = userActiveDiscount
             pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
           }
-          
+
           totalPrice += pricePerUnit * quantity
         }
       })
-      
+
       return {
         ...prev,
         selected_plan_ids: newPlans,
@@ -1262,17 +1312,17 @@ const SubscriptionMonitor = ({ userId }) => {
       }
     })
   }
-  
+
   // Handle quantity change for a specific plan
   const handleQuantityChange = (planId, value) => {
     const quantity = Math.max(1, parseInt(value) || 1)
     const planIdStr = planId.toString()
-    
+
     setPlanQuantities(prev => ({
       ...prev,
       [planIdStr]: quantity
     }))
-    
+
     // Recalculate total price
     setSubscriptionForm(prev => {
       let totalPrice = 0
@@ -1281,7 +1331,7 @@ const SubscriptionMonitor = ({ userId }) => {
         if (plan) {
           const basePrice = parseFloat(plan.price || 0)
           const qty = selectedPlanId === planIdStr ? quantity : (planQuantities[selectedPlanId] || 1)
-          
+
           let pricePerUnit = basePrice
           // Apply discount if applicable
           let discountType = prev.discount_type || "none"
@@ -1289,11 +1339,11 @@ const SubscriptionMonitor = ({ userId }) => {
             discountType = userActiveDiscount
             pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
           }
-          
+
           totalPrice += pricePerUnit * qty
         }
       })
-      
+
       return {
         ...prev,
         amount_paid: totalPrice.toFixed(2)
@@ -1347,10 +1397,10 @@ const SubscriptionMonitor = ({ userId }) => {
           setSelectedUserInfo(null)
           setUserSearchQuery("")
         }
-        
+
         // Fetch user's active discount
         await fetchUserDiscount(userId)
-        
+
         // Fetch available plans for the user
         await fetchAvailablePlansForUser(userId)
       } else {
@@ -1541,7 +1591,7 @@ const SubscriptionMonitor = ({ userId }) => {
       const hoursAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60))
       const minutesAgo = Math.floor(Math.abs(diffTime) / (1000 * 60))
       const daysAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
-      
+
       // If expired less than 1 hour ago, show minutes
       if (hoursAgo < 1) {
         return { type: 'expired_minutes', minutes: minutesAgo }
@@ -1589,43 +1639,43 @@ const SubscriptionMonitor = ({ userId }) => {
   // Helper function to check if subscription matches date range filter
   const matchesDateRangeFilter = (subscription) => {
     if (!subscription.start_date) return true
-    
+
     // If no date filters are set, show all subscriptions
     if (!startDate && !endDate) return true
-    
+
     const subscriptionDate = new Date(subscription.start_date)
     subscriptionDate.setHours(0, 0, 0, 0) // Normalize to start of day
-    
+
     let matchesStart = true
     let matchesEnd = true
-    
+
     // Check start date filter
     if (startDate) {
       const filterStartDate = new Date(startDate)
       filterStartDate.setHours(0, 0, 0, 0)
       matchesStart = subscriptionDate >= filterStartDate
     }
-    
+
     // Check end date filter
     if (endDate) {
       const filterEndDate = new Date(endDate)
       filterEndDate.setHours(0, 0, 0, 0)
       matchesEnd = subscriptionDate <= filterEndDate
     }
-    
+
     return matchesStart && matchesEnd
   }
 
   // Group subscriptions by user_id
   const groupSubscriptionsByUser = (subscriptionList) => {
     const grouped = {}
-    
+
     subscriptionList.forEach((subscription) => {
       // For guest sessions, use guest_name as the key (they don't have user_id)
       const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
         ? `guest_${subscription.guest_name || subscription.id}`
         : subscription.user_id || `unknown_${subscription.id}`
-      
+
       if (!grouped[key]) {
         grouped[key] = {
           user_id: subscription.user_id,
@@ -1633,6 +1683,7 @@ const SubscriptionMonitor = ({ userId }) => {
           mname: subscription.mname,
           lname: subscription.lname,
           email: subscription.email,
+          system_photo_url: subscription.system_photo_url || null,
           guest_name: subscription.guest_name,
           is_guest_session: subscription.is_guest_session,
           subscription_type: subscription.subscription_type,
@@ -1650,29 +1701,29 @@ const SubscriptionMonitor = ({ userId }) => {
           grouped[key].guest_session_id = subscription.guest_session_id
         }
       }
-      
+
       grouped[key].subscriptions.push(subscription)
     })
-    
+
     // Convert to array and calculate totals
     const userArray = Object.values(grouped).map((user) => {
       // Calculate total paid across all subscriptions
       const totalPaid = user.subscriptions.reduce((sum, sub) => {
         return sum + (parseFloat(sub.total_paid) || 0)
       }, 0)
-      
+
       // Get the earliest start date and latest end date
       const startDates = user.subscriptions.map(s => new Date(s.start_date)).filter(d => !isNaN(d))
       const endDates = user.subscriptions.map(s => new Date(s.end_date)).filter(d => !isNaN(d))
-      
+
       const earliestStart = startDates.length > 0 ? new Date(Math.min(...startDates)) : null
       const latestEnd = endDates.length > 0 ? new Date(Math.max(...endDates)) : null
-      
+
       // Get the newest created_at and subscription ID for sorting
       // Use created_at as primary sort since guest sessions and subscriptions have different ID ranges
       let newestCreatedAt = null
       let newestSubscriptionId = 0
-      
+
       user.subscriptions.forEach(sub => {
         // Track newest created_at (primary sort)
         const createdAt = sub.created_at || sub.start_date
@@ -1682,7 +1733,7 @@ const SubscriptionMonitor = ({ userId }) => {
             newestCreatedAt = date
           }
         }
-        
+
         // Extract numeric ID (handle guest_ prefix and guest_session_id) for secondary sort
         let id = 0
         if (sub.is_guest_session || sub.subscription_type === 'guest') {
@@ -1699,12 +1750,12 @@ const SubscriptionMonitor = ({ userId }) => {
           // For regular subscriptions, use the subscription ID
           id = isNaN(parseInt(sub.id)) ? parseInt(sub.id?.toString().replace('guest_', '') || '0') : parseInt(sub.id)
         }
-        
+
         if (id > newestSubscriptionId) {
           newestSubscriptionId = id
         }
       })
-      
+
       return {
         ...user,
         total_paid: totalPaid,
@@ -1715,23 +1766,23 @@ const SubscriptionMonitor = ({ userId }) => {
         newest_subscription_id: newestSubscriptionId // Secondary sort
       }
     })
-    
+
     // Sort by newest created_at descending (newest accounts first)
     // This ensures guest sessions and subscriptions are sorted by actual creation time
     userArray.sort((a, b) => {
       // Primary sort: by created_at (newest first)
       const dateA = a.newest_created_at || 0
       const dateB = b.newest_created_at || 0
-      
+
       if (dateB !== dateA) {
         return dateB - dateA
       }
-      
+
       // Secondary sort: by subscription ID (higher ID = newer)
       // Guest sessions use guest_session_id, regular subscriptions use subscription id
       return b.newest_subscription_id - a.newest_subscription_id
     })
-    
+
     return userArray
   }
 
@@ -1742,7 +1793,7 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
-      
+
       // Apply subscription type filter
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1776,7 +1827,7 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
-      
+
       // Apply subscription type filter
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1792,7 +1843,7 @@ const SubscriptionMonitor = ({ userId }) => {
       const endDate = new Date(s.end_date)
       // Check if subscription is already expired (end_date is in the past)
       if (endDate < now) return false
-      
+
       endDate.setHours(0, 0, 0, 0)
       return (s.display_status === "Active" || s.status_name === "approved") &&
         endDate >= today &&
@@ -1808,7 +1859,7 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
-      
+
       // Apply subscription type filter
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1832,7 +1883,7 @@ const SubscriptionMonitor = ({ userId }) => {
       // Apply plan filter
       const matchesPlan = planFilter === "all" || s.plan_name === planFilter
       if (!matchesPlan) return false
-      
+
       // Apply subscription type filter
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1846,10 +1897,10 @@ const SubscriptionMonitor = ({ userId }) => {
       if (!matchesDateRangeFilter(s)) return false
 
       // Check if subscription is cancelled
-      return s.status_name?.toLowerCase() === "cancelled" || 
-             s.display_status?.toLowerCase() === "cancelled" ||
-             s.status_name?.toLowerCase() === "canceled" ||
-             s.display_status?.toLowerCase() === "canceled"
+      return s.status_name?.toLowerCase() === "cancelled" ||
+        s.display_status?.toLowerCase() === "cancelled" ||
+        s.status_name?.toLowerCase() === "canceled" ||
+        s.display_status?.toLowerCase() === "canceled"
     })
   }
 
@@ -1869,7 +1920,7 @@ const SubscriptionMonitor = ({ userId }) => {
 
       const matchesStatus = statusFilter === "all" || subscription.status_name === statusFilter
       const matchesPlan = planFilter === "all" || subscription.plan_name === planFilter
-      
+
       // Subscription type filter (Guest Session vs Regular)
       let matchesType = true
       if (subscriptionTypeFilter === "guest") {
@@ -1885,24 +1936,24 @@ const SubscriptionMonitor = ({ userId }) => {
       if (subscription.start_date) {
         const subscriptionDate = new Date(subscription.start_date)
         subscriptionDate.setHours(0, 0, 0, 0) // Normalize to start of day
-        
+
         let matchesStart = true
         let matchesEnd = true
-        
+
         // Check start date filter
         if (startDate) {
           const filterStartDate = new Date(startDate)
           filterStartDate.setHours(0, 0, 0, 0)
           matchesStart = subscriptionDate >= filterStartDate
         }
-        
+
         // Check end date filter
         if (endDate) {
           const filterEndDate = new Date(endDate)
           filterEndDate.setHours(0, 0, 0, 0)
           matchesEnd = subscriptionDate <= filterEndDate
         }
-        
+
         matchesDateRange = matchesStart && matchesEnd
       }
 
@@ -1922,7 +1973,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       // Check if subscription is expired (end_date is in the past)
       const endDate = new Date(s.end_date)
       if (endDate < now) return false
@@ -1942,14 +1993,14 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       const endDate = new Date(s.end_date)
       // Check if subscription is already expired (end_date is in the past)
       if (endDate < now) return false
-      
+
       endDate.setHours(0, 0, 0, 0)
-      return endDate >= today && endDate <= sevenDaysFromNow && 
-             (s.display_status === "Active" || s.status_name === "approved")
+      return endDate >= today && endDate <= sevenDaysFromNow &&
+        (s.display_status === "Active" || s.status_name === "approved")
     })
   }
 
@@ -1958,7 +2009,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       const endDate = new Date(s.end_date)
       return endDate < now && (s.display_status === "Active" || s.status_name === "approved")
     })
@@ -1968,7 +2019,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       return s.status_name === "cancelled" || s.display_status === "Cancelled"
     })
   }
@@ -2000,43 +2051,43 @@ const SubscriptionMonitor = ({ userId }) => {
   // Get analytics - filtered by plan and subscription type if filters are set
   const getFilteredSubscriptionsByPlan = () => {
     let filtered = subscriptions || []
-    
+
     // Apply plan filter
     if (planFilter !== "all") {
       filtered = filtered.filter((s) => s.plan_name === planFilter)
     }
-    
+
     // Apply subscription type filter
     if (subscriptionTypeFilter === "guest") {
       filtered = filtered.filter((s) => s.is_guest_session === true || s.subscription_type === 'guest')
     } else if (subscriptionTypeFilter === "regular") {
       filtered = filtered.filter((s) => s.is_guest_session !== true && s.subscription_type !== 'guest')
     }
-    
+
     // Apply date range filter
     filtered = filtered.filter((s) => matchesDateRangeFilter(s))
-    
+
     return filtered
   }
 
   const getFilteredPendingByPlan = () => {
     let filtered = pendingSubscriptions || []
-    
+
     // Apply plan filter
     if (planFilter !== "all") {
       filtered = filtered.filter((s) => s.plan_name === planFilter)
     }
-    
+
     // Apply subscription type filter
     if (subscriptionTypeFilter === "guest") {
       filtered = filtered.filter((s) => s.is_guest_session === true || s.subscription_type === 'guest')
     } else if (subscriptionTypeFilter === "regular") {
       filtered = filtered.filter((s) => s.is_guest_session !== true && s.subscription_type !== 'guest')
     }
-    
+
     // Apply date range filter
     filtered = filtered.filter((s) => matchesDateRangeFilter(s))
-    
+
     return filtered
   }
 
@@ -2051,7 +2102,7 @@ const SubscriptionMonitor = ({ userId }) => {
   const groupedExpiring = groupSubscriptionsByUser(getAllExpiringSoonSubscriptions())
   const groupedExpired = groupSubscriptionsByUser(getAllExpiredSubscriptions())
   const groupedCancelled = groupSubscriptionsByUser(getAllCancelledSubscriptions())
-  
+
   const analytics = {
     total: groupedAllSubscriptions.length,
     pending: filteredPendingByPlan?.length || 0,
@@ -2078,7 +2129,7 @@ const SubscriptionMonitor = ({ userId }) => {
     <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-        <Card 
+        <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("active")}
         >
@@ -2096,7 +2147,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card 
+        <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-orange-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("upcoming")}
         >
@@ -2114,7 +2165,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card 
+        <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-red-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("expired")}
         >
@@ -2132,7 +2183,7 @@ const SubscriptionMonitor = ({ userId }) => {
             </div>
           </CardContent>
         </Card>
-        <Card 
+        <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-gray-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("cancelled")}
         >
@@ -2290,7 +2341,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
@@ -2321,7 +2372,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      max={endDate || undefined}
+                      max={endDate || new Date().toISOString().slice(0, 10)}
                     />
                     <Label htmlFor="end-date-filter" className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-slate-600" />
@@ -2376,68 +2427,68 @@ const SubscriptionMonitor = ({ userId }) => {
                         </TableHeader>
                         <TableBody>
                           {activePagination.paginated.map((user) => {
-                              // Get the primary subscription (most recent or active)
-                              const primarySub = user.subscriptions[0]
-                              const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
-                              const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
-                              
-                              return (
-                                <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
-                                  <TableCell>
-                                    <div className="flex items-center gap-3">
-                                      <Avatar className="h-10 w-10">
-                                        <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
-                                        <AvatarFallback>
-                                          {primarySub ? getAvatarInitials(primarySub) : 'U'}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div>
-                                        <div className="font-medium flex items-center gap-2">
-                                          {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
-                                          {user.is_guest_session && (
-                                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                              Guest
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <div className="text-sm text-muted-foreground">
-                                          {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
-                                        </div>
+                            // Get the primary subscription (most recent or active)
+                            const primarySub = user.subscriptions[0]
+                            const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
+                            const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
+
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.system_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
                                       </div>
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-right pr-0">
-                                    {primarySub && (
-                                      <div className="flex justify-end">
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right pr-0">
+                                  {primarySub && (
+                                    <div className="flex justify-end">
                                       <Badge
                                         className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
                                       >
                                         {getStatusIcon(primarySub.status_name)}
                                         {primarySub.display_status || primarySub.status_name}
                                       </Badge>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-right pl-1">
-                                    <div className="flex justify-end">
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
                                     <Button
-                                        variant="default"
+                                      variant="default"
                                       size="sm"
                                       onClick={() => setViewDetailsModal({
                                         open: true,
                                         user: user,
                                         subscriptions: user.subscriptions
                                       })}
-                                        className="h-9 px-4 text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                      className="h-9 px-4 text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
                                     >
-                                        <Eye className="h-4 w-4" />
-                                        View Details
+                                      <Eye className="h-4 w-4" />
+                                      View Details
                                     </Button>
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -2512,7 +2563,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
@@ -2543,7 +2594,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      max={endDate || undefined}
+                      max={endDate || new Date().toISOString().slice(0, 10)}
                     />
                     <Label htmlFor="upcoming-end-date-filter" className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-slate-600" />
@@ -2601,7 +2652,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             const primarySub = user.subscriptions[0]
                             const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
                             const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
-                            
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
@@ -2629,32 +2680,32 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <TableCell className="text-right pr-0">
                                   {primarySub && (
                                     <div className="flex justify-end">
-                                    <Badge
+                                      <Badge
                                         className="bg-orange-100 text-orange-800 border-orange-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
-                                    >
-                                      <AlertTriangle className="h-3 w-3" />
-                                      {primarySub.display_status || primarySub.status_name}
-                                    </Badge>
+                                      >
+                                        <AlertTriangle className="h-3 w-3" />
+                                        {primarySub.display_status || primarySub.status_name}
+                                      </Badge>
                                     </div>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right pl-1">
                                   <div className="flex justify-end">
-                                  <Button
+                                    <Button
                                       variant="default"
-                                    size="sm"
-                                    onClick={() => {
-                                      setViewDetailsModal({
-                                        open: true,
-                                        user: user,
-                                        subscriptions: user.subscriptions
-                                      })
-                                    }}
-                                    className="h-9 px-4 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    View Details
-                                  </Button>
+                                      size="sm"
+                                      onClick={() => {
+                                        setViewDetailsModal({
+                                          open: true,
+                                          user: user,
+                                          subscriptions: user.subscriptions
+                                        })
+                                      }}
+                                      className="h-9 px-4 text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      View Details
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -2734,7 +2785,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
@@ -2765,7 +2816,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      max={endDate || undefined}
+                      max={endDate || new Date().toISOString().slice(0, 10)}
                     />
                     <Label htmlFor="expired-end-date-filter" className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-slate-600" />
@@ -2823,7 +2874,7 @@ const SubscriptionMonitor = ({ userId }) => {
                             const primarySub = user.subscriptions[0]
                             const timeRemaining = primarySub ? calculateTimeRemaining(primarySub.end_date) : null
                             const daysLeft = primarySub ? calculateDaysLeft(primarySub.end_date) : null
-                            
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
@@ -2848,35 +2899,35 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                  <TableCell className="text-right pr-0">
+                                <TableCell className="text-right pr-0">
                                   {primarySub && (
-                                      <div className="flex justify-end">
-                                    <Badge
-                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
-                                    >
-                                      {getStatusIcon(primarySub.status_name)}
-                                      {primarySub.display_status || primarySub.status_name}
-                                    </Badge>
+                                    <div className="flex justify-end">
+                                      <Badge
+                                        className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
+                                      >
+                                        {getStatusIcon(primarySub.status_name)}
+                                        {primarySub.display_status || primarySub.status_name}
+                                      </Badge>
                                     </div>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right pl-1">
                                   <div className="flex justify-end">
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => {
-                                      setViewDetailsModal({
-                                        open: true,
-                                        user: user,
-                                        subscriptions: user.subscriptions
-                                      })
-                                    }}
-                                    className="h-9 px-4 text-sm font-medium bg-red-600 hover:bg-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    View Details
-                                  </Button>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => {
+                                        setViewDetailsModal({
+                                          open: true,
+                                          user: user,
+                                          subscriptions: user.subscriptions
+                                        })
+                                      }}
+                                      className="h-9 px-4 text-sm font-medium bg-red-600 hover:bg-red-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      View Details
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -2956,7 +3007,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     {/* Only show Type filter when Gym Session/Day Pass is selected */}
                     {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
                       <>
@@ -2987,7 +3038,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      max={endDate || undefined}
+                      max={endDate || new Date().toISOString().slice(0, 10)}
                     />
                     <Label htmlFor="cancelled-end-date-filter" className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-slate-600" />
@@ -3043,7 +3094,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         <TableBody>
                           {cancelledPagination.paginated.map((user) => {
                             const primarySub = user.subscriptions[0]
-                            
+
                             return (
                               <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
                                 <TableCell>
@@ -3068,35 +3119,35 @@ const SubscriptionMonitor = ({ userId }) => {
                                     </div>
                                   </div>
                                 </TableCell>
-                                  <TableCell className="text-right pr-0">
+                                <TableCell className="text-right pr-0">
                                   {primarySub && (
-                                      <div className="flex justify-end">
-                                    <Badge
-                                      className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
-                                    >
-                                      {getStatusIcon(primarySub.status_name)}
-                                      {primarySub.display_status || primarySub.status_name}
-                                    </Badge>
+                                    <div className="flex justify-end">
+                                      <Badge
+                                        className="bg-gray-100 text-gray-800 border-gray-200 flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium"
+                                      >
+                                        {getStatusIcon(primarySub.status_name)}
+                                        {primarySub.display_status || primarySub.status_name}
+                                      </Badge>
                                     </div>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right pl-1">
                                   <div className="flex justify-end">
-                                  <Button
-                                    variant="default"
-                                    size="sm"
-                                    onClick={() => {
-                                      setViewDetailsModal({
-                                        open: true,
-                                        user: user,
-                                        subscriptions: user.subscriptions
-                                      })
-                                    }}
-                                    className="h-9 px-4 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    View Details
-                                  </Button>
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => {
+                                        setViewDetailsModal({
+                                          open: true,
+                                          user: user,
+                                          subscriptions: user.subscriptions
+                                        })
+                                      }}
+                                      className="h-9 px-4 text-sm font-medium bg-gray-600 hover:bg-gray-700 text-white shadow-sm hover:shadow-md transition-all duration-200 flex items-center gap-2"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      View Details
+                                    </Button>
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -3210,8 +3261,8 @@ const SubscriptionMonitor = ({ userId }) => {
                     </div>
                     {showUserDropdown && (
                       <>
-                        <div 
-                          className="fixed inset-0 z-10" 
+                        <div
+                          className="fixed inset-0 z-10"
                           onClick={() => setShowUserDropdown(false)}
                         />
                         <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
@@ -3222,7 +3273,7 @@ const SubscriptionMonitor = ({ userId }) => {
                               const email = (user.email || '').toLowerCase()
                               return fullName.includes(searchLower) || email.includes(searchLower)
                             })
-                            
+
                             if (filteredUsers.length === 0) {
                               return (
                                 <div className="p-3 text-sm text-gray-500 text-center">
@@ -3230,7 +3281,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 </div>
                               )
                             }
-                            
+
                             return filteredUsers.map((user) => (
                               <div
                                 key={user.id}
@@ -3277,15 +3328,14 @@ const SubscriptionMonitor = ({ userId }) => {
                       const isSelected = subscriptionForm.selected_plan_ids?.includes(planIdStr) || false
                       const quantity = planQuantities[planIdStr] || 1
                       const isActivePlan = userActiveSubscriptions.some(sub => parseInt(sub.plan_id) === parseInt(plan.id))
-                      
+
                       return (
-                        <div 
+                        <div
                           key={plan.id}
-                          className={`p-3 rounded-lg border-2 transition-all ${
-                            isSelected 
-                              ? 'border-blue-400 bg-blue-50' 
+                          className={`p-3 rounded-lg border-2 transition-all ${isSelected
+                              ? 'border-blue-400 bg-blue-50'
                               : 'border-gray-200 hover:border-gray-300'
-                          } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={(e) => {
                             // Don't trigger if clicking on input field (quantity)
                             if (e.target.type === 'number' || e.target.tagName === 'INPUT') {
@@ -3416,15 +3466,14 @@ const SubscriptionMonitor = ({ userId }) => {
                         const endDate = new Date(sub.end_date)
                         const isExpiringSoon = endDate <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
                         const isSelectedPlan = subscriptionForm.selected_plan_ids?.some(pid => parseInt(pid) === parseInt(sub.plan_id))
-                        
+
                         return (
-                          <div 
+                          <div
                             key={index}
-                            className={`p-3 rounded-md border ${
-                              isSelectedPlan 
-                                ? 'bg-blue-50 border-blue-300' 
+                            className={`p-3 rounded-md border ${isSelectedPlan
+                                ? 'bg-blue-50 border-blue-300'
                                 : 'bg-white border-green-200'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
@@ -3462,11 +3511,10 @@ const SubscriptionMonitor = ({ userId }) => {
             {selectedUserInfo && userActiveDiscount && (
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-center gap-2">
-                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${
-                    userActiveDiscount === 'student' 
-                      ? 'bg-blue-100 text-blue-700 border border-blue-300' 
+                  <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${userActiveDiscount === 'student'
+                      ? 'bg-blue-100 text-blue-700 border border-blue-300'
                       : 'bg-purple-100 text-purple-700 border border-purple-300'
-                  }`}>
+                    }`}>
                     {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
                   </div>
                   <span className="text-sm text-gray-600">
@@ -3489,7 +3537,7 @@ const SubscriptionMonitor = ({ userId }) => {
                     const planPrice = parseFloat(selectedPlan?.price || 0)
                     const quantity = planQuantities[planIdStr] || 1
                     const planId = parseInt(planIdStr)
-                    
+
                     // Apply discount if applicable
                     let pricePerUnit = planPrice
                     let discount = 0
@@ -3501,7 +3549,7 @@ const SubscriptionMonitor = ({ userId }) => {
                         pricePerUnit = calculateDiscountedPrice(planPrice, userActiveDiscount)
                       }
                     }
-                    
+
                     const originalTotal = planPrice * quantity
                     const discountedTotal = pricePerUnit * quantity
 
@@ -3789,22 +3837,20 @@ const SubscriptionMonitor = ({ userId }) => {
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "cash", amount_received: prev.payment_method === "cash" ? prev.amount_received : "" }))}
-                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${
-                    guestSessionForm.payment_method === "cash"
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "cash"
                       ? "border-gray-900 bg-gray-900 text-white shadow-md"
                       : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
-                  }`}
+                    }`}
                 >
                   Cash
                 </button>
                 <button
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
-                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${
-                    guestSessionForm.payment_method === "digital"
+                  className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "digital"
                       ? "border-gray-900 bg-gray-900 text-white shadow-md"
                       : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
-                  }`}
+                    }`}
                 >
                   GCash
                 </button>
@@ -3852,8 +3898,8 @@ const SubscriptionMonitor = ({ userId }) => {
           </div>
 
           <DialogFooter className="gap-3 mt-6">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsCreateGuestSessionDialogOpen(false)}
               className="border-gray-300 hover:bg-gray-50"
             >
@@ -3905,10 +3951,10 @@ const SubscriptionMonitor = ({ userId }) => {
                       <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.reference_number}</span>
                     </div>
                   ) : (
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    <span className="text-xs font-medium text-gray-500">Receipt #</span>
-                    <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
-                  </div>
+                    <div className="flex items-center justify-center gap-2 mt-2">
+                      <span className="text-xs font-medium text-gray-500">Receipt #</span>
+                      <span className="text-sm font-bold text-gray-900 font-mono">{lastGuestTransaction.receipt_number || "N/A"}</span>
+                    </div>
                   )}
                   <p className="text-xs text-gray-500">
                     {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} • {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
@@ -3988,31 +4034,58 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="space-y-3">
               <DialogTitle className="text-xl font-semibold text-gray-900">Subscription Details</DialogTitle>
               {viewDetailsModal.user && (
-                <div className="space-y-0.5">
-                  <p className="text-base font-medium text-gray-900">
-                    {viewDetailsModal.user.is_guest_session 
-                      ? viewDetailsModal.user.guest_name 
-                      : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
-                  </p>
-                  {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
-                    <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
-                  )}
-                  {viewDetailsModal.user.is_guest_session && (
-                    (viewDetailsModal.user.session_code || 
-                     (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
-                      <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
-                        Session Code: <span className="text-gray-900">
-                          {viewDetailsModal.user.session_code || 
-                           (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
-                        </span>
-                      </p>
-                    )
-                  )}
+                <div className="flex items-start gap-4">
+                  {!viewDetailsModal.user.is_guest_session && (() => {
+                    const photoUrl = viewDetailsModal.user.system_photo_url || viewDetailsModal.subscriptions?.[0]?.system_photo_url || viewDetailsModal.user.profile_photo_url || viewDetailsModal.subscriptions?.[0]?.profile_photo_url
+                    const normalizedUrl = photoUrl ? normalizeProfilePhotoUrl(photoUrl) : null
+                    if (normalizedUrl) {
+                      return (
+                        <div className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-100">
+                          <a href={normalizedUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer hover:opacity-90 transition-opacity" title="View full size">
+                            <img
+                              src={normalizedUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </a>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+                  {!viewDetailsModal.user.is_guest_session && !(viewDetailsModal.user.system_photo_url || viewDetailsModal.subscriptions?.[0]?.system_photo_url || viewDetailsModal.user.profile_photo_url || viewDetailsModal.subscriptions?.[0]?.profile_photo_url) ? (
+                    <div className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-gray-200 bg-gray-100 flex items-center justify-center">
+                      <span className="text-lg font-semibold text-gray-400">
+                        {viewDetailsModal.user.fname?.[0] || viewDetailsModal.user.lname?.[0] || '?'}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <p className="text-base font-medium text-gray-900">
+                      {viewDetailsModal.user.is_guest_session
+                        ? viewDetailsModal.user.guest_name
+                        : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
+                    </p>
+                    {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
+                      <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
+                    )}
+                    {viewDetailsModal.user.is_guest_session && (
+                      (viewDetailsModal.user.session_code ||
+                        (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
+                        <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
+                          Session Code: <span className="text-gray-900">
+                            {viewDetailsModal.user.session_code ||
+                              (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
+                          </span>
+                        </p>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </DialogHeader>
-          
+
           <div className="space-y-6 mt-6 px-0">
             {viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 ? (
               <div>
@@ -4035,128 +4108,128 @@ const SubscriptionMonitor = ({ userId }) => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                    {viewDetailsModal.subscriptions.map((subscription) => {
-                      const timeRemaining = calculateTimeRemaining(subscription.end_date)
-                      const daysLeft = calculateDaysLeft(subscription.end_date)
-                      const planNameLower = subscription.plan_name?.toLowerCase() || ''
-                      const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
-                      const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
-                      
-                      return (
-                        <React.Fragment key={subscription.id}>
-                          <TableRow>
-                            <TableCell className="font-medium">{subscription.plan_name}</TableCell>
-                            <TableCell>
-                              <Badge
-                                className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
-                              >
-                                {getStatusIcon(subscription.status_name)}
-                                {subscription.display_status || subscription.status_name}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{formatDate(subscription.start_date)}</TableCell>
-                            <TableCell>{formatDate(subscription.end_date)}</TableCell>
-                            <TableCell>
-                              {timeRemaining ? (() => {
-                                if (timeRemaining.type === 'expired_minutes') {
-                                  return (
-                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                      {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'expired_hours') {
-                                  return (
-                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                      {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'expired') {
-                                  return (
-                                    <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
-                                    </Badge>
-                                  )
-                                }
-                                if (isWalkIn || isDay1Session) {
-                                  if (timeRemaining.type === 'minutes') {
+                      {viewDetailsModal.subscriptions.map((subscription) => {
+                        const timeRemaining = calculateTimeRemaining(subscription.end_date)
+                        const daysLeft = calculateDaysLeft(subscription.end_date)
+                        const planNameLower = subscription.plan_name?.toLowerCase() || ''
+                        const isDay1Session = planNameLower.includes('day 1') || planNameLower.includes('day1')
+                        const isWalkIn = planNameLower === 'walk in' || subscription.plan_id === 6
+
+                        return (
+                          <React.Fragment key={subscription.id}>
+                            <TableRow>
+                              <TableCell className="font-medium">{subscription.plan_name}</TableCell>
+                              <TableCell>
+                                <Badge
+                                  className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
+                                >
+                                  {getStatusIcon(subscription.status_name)}
+                                  {subscription.display_status || subscription.status_name}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{formatDate(subscription.start_date)}</TableCell>
+                              <TableCell>{formatDate(subscription.end_date)}</TableCell>
+                              <TableCell>
+                                {timeRemaining ? (() => {
+                                  if (timeRemaining.type === 'expired_minutes') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'expired_hours') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'expired') {
+                                    return (
+                                      <Badge className="bg-red-100 text-red-700 border-red-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} ago
+                                      </Badge>
+                                    )
+                                  }
+                                  if (isWalkIn || isDay1Session) {
+                                    if (timeRemaining.type === 'minutes') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
+                                    if (timeRemaining.type === 'hours') {
+                                      return (
+                                        <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                          {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
+                                        </Badge>
+                                      )
+                                    }
                                     return (
                                       <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                        {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'minutes') {
+                                    return (
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                         {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
                                       </Badge>
                                     )
                                   }
                                   if (timeRemaining.type === 'hours') {
                                     return (
-                                      <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
+                                      <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
                                         {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
                                       </Badge>
                                     )
                                   }
-                                  return (
-                                    <Badge className="bg-green-100 text-green-700 border-green-300 font-medium">
-                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'minutes') {
-                                  return (
-                                    <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                      {timeRemaining.minutes} minute{timeRemaining.minutes === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'hours') {
-                                  return (
-                                    <Badge className="bg-orange-100 text-orange-700 border-orange-300 font-medium">
-                                      {timeRemaining.hours} hour{timeRemaining.hours === 1 ? '' : 's'} left
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'years_months') {
-                                  const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
-                                  const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
-                                  return (
-                                    <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                    'bg-green-100 text-green-700 border-green-300'
-                                    }`}>
-                                      {yearText}{monthText} left
-                                    </Badge>
-                                  )
-                                }
-                                if (timeRemaining.type === 'months_days') {
-                                  const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
-                                  const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                  if (timeRemaining.type === 'years_months') {
+                                    const yearText = timeRemaining.years === 1 ? '1 year' : `${timeRemaining.years} years`
+                                    const monthText = timeRemaining.months === 0 ? '' : timeRemaining.months === 1 ? ' and 1 month' : ` and ${timeRemaining.months} months`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {yearText}{monthText} left
+                                      </Badge>
+                                    )
+                                  }
+                                  if (timeRemaining.type === 'months_days') {
+                                    const monthText = timeRemaining.months === 1 ? '1 month' : `${timeRemaining.months} months`
+                                    const daysText = timeRemaining.days === 0 ? '' : timeRemaining.days === 1 ? ' and 1 day' : ` and ${timeRemaining.days} days`
+                                    return (
+                                      <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
+                                        'bg-green-100 text-green-700 border-green-300'
+                                        }`}>
+                                        {monthText}{daysText} left
+                                      </Badge>
+                                    )
+                                  }
                                   return (
                                     <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
                                       'bg-green-100 text-green-700 border-green-300'
                                       }`}>
-                                      {monthText}{daysText} left
+                                      {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
                                     </Badge>
                                   )
-                                }
-                                return (
-                                  <Badge className={`font-medium ${daysLeft <= 7 ? 'bg-orange-100 text-orange-700 border-orange-300' :
-                                    'bg-green-100 text-green-700 border-green-300'
-                                    }`}>
-                                    {timeRemaining.days} day{timeRemaining.days === 1 ? '' : 's'} left
-                                  </Badge>
-                                )
-                              })() : <span className="text-slate-500">N/A</span>}
-                            </TableCell>
-                            {viewDetailsModal.user?.is_guest_session && (
-                              <TableCell>
-                                <span className="text-sm font-mono font-semibold text-gray-900">
-                                  {subscription.session_code || 'N/A'}
-                                </span>
+                                })() : <span className="text-slate-500">N/A</span>}
                               </TableCell>
-                            )}
-                          </TableRow>
-                        </React.Fragment>
-                      )
-                    })}
-                  </TableBody>
+                              {viewDetailsModal.user?.is_guest_session && (
+                                <TableCell>
+                                  <span className="text-sm font-mono font-semibold text-gray-900">
+                                    {subscription.session_code || 'N/A'}
+                                  </span>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          </React.Fragment>
+                        )
+                      })}
+                    </TableBody>
                   </Table>
                 </div>
               </div>
@@ -4165,202 +4238,202 @@ const SubscriptionMonitor = ({ userId }) => {
                 <p className="text-gray-500">No active subscriptions</p>
               </div>
             )}
-            
+
             {/* Transaction History Section */}
             {allUserSales.length > 0 && (() => {
               // Get unique plan names for filter
               const uniquePlans = [...new Set(allUserSales.map(sale => sale.plan_name).filter(Boolean))]
-              
+
               // Sort sales by plan_id (Membership first), then by sale_date (latest first)
               const sortedSales = [...allUserSales].sort((a, b) => {
                 const planIdA = a.plan_id || 999 // Put items without plan_id at the end
                 const planIdB = b.plan_id || 999
-                
+
                 // First sort by plan_id (ascending - so plan 1 comes before plan 2)
                 if (planIdA !== planIdB) {
                   return planIdA - planIdB
                 }
-                
+
                 // If same plan_id, sort by date (descending - latest first)
                 const dateA = new Date(a.sale_date || 0).getTime()
                 const dateB = new Date(b.sale_date || 0).getTime()
                 return dateB - dateA
               })
-              
+
               // Filter transactions by selected plan
-              const filteredSales = transactionHistoryPlanFilter === "all" 
-                ? sortedSales 
+              const filteredSales = transactionHistoryPlanFilter === "all"
+                ? sortedSales
                 : sortedSales.filter(sale => sale.plan_name === transactionHistoryPlanFilter)
-              
+
               const totalFiltered = filteredSales.length
               const totalPages = Math.ceil(totalFiltered / transactionsPerPage)
-              
+
               return (
-              <div className="pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Transaction History</h3>
-                  <div className="flex items-center gap-3">
-                    <Select 
-                      value={transactionHistoryPlanFilter} 
-                      onValueChange={(value) => {
-                        setTransactionHistoryPlanFilter(value)
-                        setTransactionHistoryPage(1) // Reset to first page when filter changes
-                      }}
-                    >
-                      <SelectTrigger className="h-8 w-40 text-xs border-gray-300">
-                        <SelectValue placeholder="Filter by plan" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Plans</SelectItem>
-                        {uniquePlans.map((planName) => (
-                          <SelectItem key={planName} value={planName}>
-                            {planName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {totalFiltered > transactionsPerPage && (
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
-                        Showing {((transactionHistoryPage - 1) * transactionsPerPage) + 1}-{Math.min(transactionHistoryPage * transactionsPerPage, totalFiltered)} of {totalFiltered}
-                      </span>
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Transaction History</h3>
+                    <div className="flex items-center gap-3">
+                      <Select
+                        value={transactionHistoryPlanFilter}
+                        onValueChange={(value) => {
+                          setTransactionHistoryPlanFilter(value)
+                          setTransactionHistoryPage(1) // Reset to first page when filter changes
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-40 text-xs border-gray-300">
+                          <SelectValue placeholder="Filter by plan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Plans</SelectItem>
+                          {uniquePlans.map((planName) => (
+                            <SelectItem key={planName} value={planName}>
+                              {planName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {totalFiltered > transactionsPerPage && (
+                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                          Showing {((transactionHistoryPage - 1) * transactionsPerPage) + 1}-{Math.min(transactionHistoryPage * transactionsPerPage, totalFiltered)} of {totalFiltered}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {filteredSales.length > 0 ? (
+                      filteredSales
+                        .slice((transactionHistoryPage - 1) * transactionsPerPage, transactionHistoryPage * transactionsPerPage)
+                        .map((sale, idx) => {
+                          // Get payment method from multiple possible sources
+                          // Check payments array first, then sales table, then subscription table
+                          let paymentMethodRaw = 'cash'
+                          if (sale.payments && sale.payments.length > 0 && sale.payments[0].payment_method) {
+                            paymentMethodRaw = sale.payments[0].payment_method
+                          } else if (sale.payment_method) {
+                            paymentMethodRaw = sale.payment_method
+                          } else if (sale.payment_table_payment_method) {
+                            paymentMethodRaw = sale.payment_table_payment_method
+                          } else if (sale.subscription_payment_method) {
+                            paymentMethodRaw = sale.subscription_payment_method
+                          }
+                          const paymentMethod = paymentMethodRaw.toLowerCase()
+                          const quantity = sale.quantity || sale.detail_quantity || 1
+
+                          return (
+                            <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors">
+                              <div className="p-4">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                      <span className="text-sm font-semibold text-gray-900">{sale.plan_name || 'N/A'}</span>
+                                      <span className="text-xs text-gray-600 font-medium">
+                                        {quantity}x
+                                      </span>
+                                      <span className="text-xs text-gray-500">
+                                        {sale.transaction_status || 'confirmed'}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1">{formatDate(sale.sale_date)}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm text-gray-700">{formatCurrency(sale.total_amount || 0)}</p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">Payment</p>
+                                    <span className="text-xs text-gray-700 font-medium">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash' ? 'GCASH' : paymentMethod.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-gray-500 mb-1">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash'
+                                        ? 'Reference'
+                                        : 'Receipt'}
+                                    </p>
+                                    <p className="text-xs font-mono text-gray-700 break-all">
+                                      {paymentMethod === 'digital' || paymentMethod === 'gcash'
+                                        ? (sale.reference_number || sale.payment_reference_number || (sale.payments && sale.payments.length > 0 ? sale.payments[0].reference_number : null) || sale.receipt_number || 'N/A')
+                                        : (sale.receipt_number || 'N/A')}
+                                    </p>
+                                  </div>
+                                  {sale.session_code && (
+                                    <div>
+                                      <p className="text-xs text-gray-500 mb-1">Session Code</p>
+                                      <p className="text-xs font-mono font-semibold text-gray-900">
+                                        {sale.session_code}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })) : (
+                      <div className="text-center py-8 text-gray-500 text-sm">
+                        No transactions found for selected plan
+                      </div>
                     )}
                   </div>
-                </div>
-                
-                <div className="space-y-3">
-                  {filteredSales.length > 0 ? (
-                    filteredSales
-                      .slice((transactionHistoryPage - 1) * transactionsPerPage, transactionHistoryPage * transactionsPerPage)
-                      .map((sale, idx) => {
-                    // Get payment method from multiple possible sources
-                    // Check payments array first, then sales table, then subscription table
-                    let paymentMethodRaw = 'cash'
-                    if (sale.payments && sale.payments.length > 0 && sale.payments[0].payment_method) {
-                        paymentMethodRaw = sale.payments[0].payment_method
-                    } else if (sale.payment_method) {
-                        paymentMethodRaw = sale.payment_method
-                    } else if (sale.payment_table_payment_method) {
-                        paymentMethodRaw = sale.payment_table_payment_method
-                    } else if (sale.subscription_payment_method) {
-                        paymentMethodRaw = sale.subscription_payment_method
-                    }
-                    const paymentMethod = paymentMethodRaw.toLowerCase()
-                    const quantity = sale.quantity || sale.detail_quantity || 1
-                    
-                    return (
-                      <div key={sale.id || idx} className="rounded-lg border border-gray-200 bg-white hover:border-gray-300 transition-colors">
-                        <div className="p-4">
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className="text-sm font-semibold text-gray-900">{sale.plan_name || 'N/A'}</span>
-                                <span className="text-xs text-gray-600 font-medium">
-                                  {quantity}x
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {sale.transaction_status || 'confirmed'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-1">{formatDate(sale.sale_date)}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-gray-700">{formatCurrency(sale.total_amount || 0)}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
-                            <div>
-                              <p className="text-xs text-gray-500 mb-1">Payment</p>
-                              <span className="text-xs text-gray-700 font-medium">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' ? 'GCASH' : paymentMethod.toUpperCase()}
+
+                  {/* Pagination Controls */}
+                  {totalFiltered > transactionsPerPage && (
+                    <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-gray-200">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransactionHistoryPage(prev => Math.max(1, prev - 1))}
+                        disabled={transactionHistoryPage === 1}
+                        className="h-8 px-3"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                          // Show first page, last page, current page, and pages around current
+                          if (
+                            page === 1 ||
+                            page === totalPages ||
+                            (page >= transactionHistoryPage - 1 && page <= transactionHistoryPage + 1)
+                          ) {
+                            return (
+                              <Button
+                                key={page}
+                                variant={transactionHistoryPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setTransactionHistoryPage(page)}
+                                className={`h-8 w-8 p-0 ${transactionHistoryPage === page ? 'bg-gray-900 text-white hover:bg-gray-800' : ''}`}
+                              >
+                                {page}
+                              </Button>
+                            )
+                          } else if (
+                            page === transactionHistoryPage - 2 ||
+                            page === transactionHistoryPage + 2
+                          ) {
+                            return (
+                              <span key={page} className="px-2 text-gray-400">
+                                ...
                               </span>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-500 mb-1">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
-                                  ? 'Reference' 
-                                  : 'Receipt'}
-                              </p>
-                              <p className="text-xs font-mono text-gray-700 break-all">
-                                {paymentMethod === 'digital' || paymentMethod === 'gcash' 
-                                  ? (sale.reference_number || sale.payment_reference_number || (sale.payments && sale.payments.length > 0 ? sale.payments[0].reference_number : null) || sale.receipt_number || 'N/A')
-                                  : (sale.receipt_number || 'N/A')}
-                              </p>
-                            </div>
-                            {sale.session_code && (
-                              <div>
-                                <p className="text-xs text-gray-500 mb-1">Session Code</p>
-                                <p className="text-xs font-mono font-semibold text-gray-900">
-                                  {sale.session_code}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                            )
+                          }
+                          return null
+                        })}
                       </div>
-                    )
-                  })) : (
-                    <div className="text-center py-8 text-gray-500 text-sm">
-                      No transactions found for selected plan
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransactionHistoryPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={transactionHistoryPage >= totalPages}
+                        className="h-8 px-3"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
                     </div>
                   )}
                 </div>
-                
-                {/* Pagination Controls */}
-                {totalFiltered > transactionsPerPage && (
-                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-gray-200">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setTransactionHistoryPage(prev => Math.max(1, prev - 1))}
-                      disabled={transactionHistoryPage === 1}
-                      className="h-8 px-3"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                        // Show first page, last page, current page, and pages around current
-                        if (
-                          page === 1 ||
-                          page === totalPages ||
-                          (page >= transactionHistoryPage - 1 && page <= transactionHistoryPage + 1)
-                        ) {
-                          return (
-                            <Button
-                              key={page}
-                              variant={transactionHistoryPage === page ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => setTransactionHistoryPage(page)}
-                              className={`h-8 w-8 p-0 ${transactionHistoryPage === page ? 'bg-gray-900 text-white hover:bg-gray-800' : ''}`}
-                            >
-                              {page}
-                            </Button>
-                          )
-                        } else if (
-                          page === transactionHistoryPage - 2 ||
-                          page === transactionHistoryPage + 2
-                        ) {
-                          return (
-                            <span key={page} className="px-2 text-gray-400">
-                              ...
-                            </span>
-                          )
-                        }
-                        return null
-                      })}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setTransactionHistoryPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={transactionHistoryPage >= totalPages}
-                      className="h-8 px-3"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
-              </div>
               )
             })()}
           </div>

@@ -234,14 +234,18 @@ try {
         $checkParentConsentStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
         $hasParentConsent = $checkParentConsentStmt->rowCount() > 0;
 
+        $checkSystemPhotoStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+        $hasSystemPhoto = $checkSystemPhotoStmt->rowCount() > 0;
+
+        $sysPhoto = $hasSystemPhoto ? ', system_photo_url' : '';
         if ($hasDeactivationReason && $hasParentConsent) {
-            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason, parent_consent_file_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+            $stmt = $pdo->query("SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason, parent_consent_file_url{$sysPhoto} FROM `user` WHERE user_type_id = 4 ORDER BY id DESC");
         } else if ($hasDeactivationReason) {
-            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+            $stmt = $pdo->query("SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason{$sysPhoto} FROM `user` WHERE user_type_id = 4 ORDER BY id DESC");
         } else if ($hasParentConsent) {
-            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, parent_consent_file_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+            $stmt = $pdo->query("SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, parent_consent_file_url{$sysPhoto} FROM `user` WHERE user_type_id = 4 ORDER BY id DESC");
         } else {
-            $stmt = $pdo->query('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE user_type_id = 4 ORDER BY id DESC');
+            $stmt = $pdo->query("SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url{$sysPhoto} FROM `user` WHERE user_type_id = 4 ORDER BY id DESC");
         }
         $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         respond($members);
@@ -257,24 +261,32 @@ try {
         $checkParentConsentStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
         $hasParentConsent = $checkParentConsentStmt->rowCount() > 0;
 
+        $checkSystemPhotoStmt2 = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+        $hasSystemPhoto2 = $checkSystemPhotoStmt2->rowCount() > 0;
+        $sysPhoto2 = $hasSystemPhoto2 ? ', system_photo_url' : '';
+        error_log("DEBUG GET member by id - hasSystemPhoto2: " . ($hasSystemPhoto2 ? 'yes' : 'no') . ", sysPhoto2: '{$sysPhoto2}'");
+
         if ($hasDeactivationReason && $hasParentConsent) {
-            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason, parent_consent_file_url FROM `user` WHERE id = ?');
+            $sql = "SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason, parent_consent_file_url{$sysPhoto2} FROM `user` WHERE id = ?";
         } else if ($hasDeactivationReason) {
-            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason FROM `user` WHERE id = ?');
+            $sql = "SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, deactivation_reason{$sysPhoto2} FROM `user` WHERE id = ?";
         } else if ($hasParentConsent) {
-            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, parent_consent_file_url FROM `user` WHERE id = ?');
+            $sql = "SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url, parent_consent_file_url{$sysPhoto2} FROM `user` WHERE id = ?";
         } else {
-            $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url FROM `user` WHERE id = ?');
+            $sql = "SELECT id, fname, mname, lname, email, gender_id, bday, user_type_id, account_status, created_at, profile_photo_url{$sysPhoto2} FROM `user` WHERE id = ?";
         }
+        error_log("DEBUG GET member by id - SQL: " . $sql);
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([$_GET['id']]);
         $member = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$member) {
             respond(['error' => 'Member not found'], 404);
         }
+        error_log("DEBUG GET member by id - member data: " . json_encode(['id' => $member['id'], 'system_photo_url' => $member['system_photo_url'] ?? 'NOT SET', 'profile_photo_url' => $member['profile_photo_url'] ?? 'NOT SET']));
         respond($member);
     }
 
-    // POST: add new member
+    // POST: add new member OR update member with photo (action=update)
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             // Handle both JSON and FormData (for file uploads)
@@ -285,16 +297,99 @@ try {
             if (strpos($contentType, 'multipart/form-data') !== false || !empty($_FILES)) {
                 // FormData request - get data from $_POST
                 $input = $_POST;
-                error_log("POST Member Add - Detected FormData request");
+                error_log("POST Member - Detected FormData request");
             } else {
                 // JSON request
                 $rawInput = file_get_contents('php://input');
                 $input = json_decode($rawInput, true);
                 if (!$input && $rawInput !== '') {
-                    error_log("POST Member Add - Failed to parse JSON: " . substr($rawInput, 0, 200));
+                    error_log("POST Member - Failed to parse JSON: " . substr($rawInput, 0, 200));
                     respond(['error' => 'Invalid JSON'], 400);
                 }
-                error_log("POST Member Add - Detected JSON request");
+                error_log("POST Member - Detected JSON request");
+            }
+
+            // POST action=update: update member with optional system photo (FormData; used by Edit Client and pending-approval flow)
+            if (!empty($input['action']) && $input['action'] === 'update' && isset($input['id']) && $input['id'] !== '') {
+                error_log('POST action=update: entered (id=' . $input['id'] . ')');
+                $updateId = is_numeric($input['id']) ? (int) $input['id'] : null;
+                if (!$updateId) {
+                    respond(['error' => 'Invalid member id'], 400);
+                }
+                foreach (['fname', 'lname', 'email', 'bday'] as $k) {
+                    if (!isset($input[$k]) || (is_string($input[$k]) ? trim($input[$k]) : $input[$k]) === '') {
+                        respond(['error' => 'Missing required fields: ' . $k], 400);
+                    }
+                }
+                $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, user_type_id FROM `user` WHERE LOWER(email) = LOWER(?) AND id != ?');
+                $stmt->execute([trim($input['email']), $updateId]);
+                if ($stmt->fetch()) {
+                    respond(['error' => 'Duplicate User Detected', 'message' => 'This email address is already in use.'], 409);
+                }
+                $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, user_type_id FROM `user` WHERE LOWER(TRIM(fname)) = LOWER(TRIM(?)) AND LOWER(TRIM(lname)) = LOWER(TRIM(?)) AND id != ? AND user_type_id = 4');
+                $stmt->execute([trim($input['fname']), trim($input['lname']), $updateId]);
+                if ($stmt->fetch()) {
+                    respond(['error' => 'Duplicate Name Combination', 'message' => 'A member with the same first and last name already exists.'], 409);
+                }
+                $mname = isset($input['mname']) && trim((string) $input['mname']) !== '' ? trim($input['mname']) : '';
+                $bday = $input['bday'];
+                if (is_string($bday)) {
+                    $bday = trim($bday);
+                }
+                $systemPhotoUrl = null;
+                if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+                    error_log('POST action=update: profile_photo received, name=' . ($_FILES['profile_photo']['name'] ?? '') . ', size=' . ($_FILES['profile_photo']['size'] ?? 0));
+                    $uploadDir = 'uploads/system_photos/';
+                    if (!is_dir($uploadDir)) {
+                        if (!mkdir($uploadDir, 0755, true)) {
+                            error_log('POST action=update: failed to create upload dir ' . $uploadDir);
+                            respond(['error' => 'Server configuration error', 'message' => 'Failed to create upload directory.'], 500);
+                        }
+                    }
+                    $file = $_FILES['profile_photo'];
+                    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                        respond(['error' => 'Invalid file type', 'message' => 'System photo must be JPG, PNG, GIF, or WebP.'], 400);
+                    }
+                    if ($file['size'] > 5 * 1024 * 1024) {
+                        respond(['error' => 'File too large', 'message' => 'System photo must be smaller than 5MB.'], 400);
+                    }
+                    $path = $uploadDir . 'system_' . time() . '_' . uniqid() . '.' . $ext;
+                    if (!move_uploaded_file($file['tmp_name'], $path)) {
+                        error_log('POST action=update: move_uploaded_file failed tmp=' . $file['tmp_name'] . ' path=' . $path);
+                        respond(['error' => 'File upload failed', 'message' => 'Failed to save system photo.'], 500);
+                    }
+                    $systemPhotoUrl = $path;
+                    error_log('POST action=update: system photo saved path=' . $path);
+                } else {
+                    $err = isset($_FILES['profile_photo']['error']) ? $_FILES['profile_photo']['error'] : 'no file';
+                    error_log('POST action=update: no profile_photo upload (isset=' . (isset($_FILES['profile_photo']) ? '1' : '0') . ', error=' . $err . ')');
+                }
+                $checkCol = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+                $hasSysPhoto = $checkCol && $checkCol->rowCount() > 0;
+                if (!empty($input['password'])) {
+                    if ($hasSysPhoto && $systemPhotoUrl !== null) {
+                        $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ?, system_photo_url = ? WHERE id = ?');
+                        $stmt->execute([trim($input['fname']), $mname, trim($input['lname']), trim($input['email']), $bday, password_hash($input['password'], PASSWORD_DEFAULT), $systemPhotoUrl, $updateId]);
+                    } else {
+                        $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
+                        $stmt->execute([trim($input['fname']), $mname, trim($input['lname']), trim($input['email']), $bday, password_hash($input['password'], PASSWORD_DEFAULT), $updateId]);
+                    }
+                } else {
+                    if ($hasSysPhoto && $systemPhotoUrl !== null) {
+                        $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, system_photo_url = ? WHERE id = ?');
+                        $stmt->execute([trim($input['fname']), $mname, trim($input['lname']), trim($input['email']), $bday, $systemPhotoUrl, $updateId]);
+                        error_log('POST action=update: updated member id=' . $updateId . ' with system_photo_url=' . $systemPhotoUrl);
+                    } else {
+                        $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
+                        $stmt->execute([trim($input['fname']), $mname, trim($input['lname']), trim($input['email']), $bday, $updateId]);
+                    }
+                }
+                $staffId = isset($input['staff_id']) ? $input['staff_id'] : null;
+                if (function_exists('logStaffActivity')) {
+                    logStaffActivity($pdo, $staffId, "Update Member", "Member updated - {$input['fname']} {$input['lname']} (ID: {$updateId})", "Member Management");
+                }
+                respond(['message' => 'Member updated successfully']);
             }
 
             // Log the input for debugging
@@ -463,11 +558,124 @@ try {
                 ], 500);
             }
 
-            // Check if parent_consent_file_url column exists
-            $checkColumnStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
-            $columnExists = $checkColumnStmt->rowCount() > 0;
+            // Handle system photo upload (for face tracking/identification - separate from mobile app profile photo)
+            $systemPhotoUrl = null;
+            error_log("DEBUG POST member - Checking for profile_photo file. isset(\$_FILES['profile_photo']): " . (isset($_FILES['profile_photo']) ? 'yes' : 'no'));
+            error_log("DEBUG POST member - \$_FILES keys: " . implode(', ', array_keys($_FILES)));
+            if (isset($_FILES['profile_photo'])) {
+                error_log("DEBUG POST member - \$_FILES['profile_photo']: " . print_r($_FILES['profile_photo'], true));
+            }
+            try {
+                if (isset($_FILES['profile_photo'])) {
+                    $fileError = $_FILES['profile_photo']['error'];
+                    error_log("System photo upload - Error code: $fileError");
 
-            if ($columnExists) {
+                    if ($fileError === UPLOAD_ERR_OK) {
+                        $uploadDir = 'uploads/system_photos/';
+                        // Create directory if it doesn't exist
+                        if (!file_exists($uploadDir)) {
+                            if (!mkdir($uploadDir, 0755, true)) {
+                                error_log("Failed to create upload directory: $uploadDir");
+                                respond([
+                                    'error' => 'Server configuration error',
+                                    'message' => 'Failed to create upload directory. Please contact administrator.'
+                                ], 500);
+                            }
+                        }
+
+                        $file = $_FILES['profile_photo'];
+                        $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                        $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+                        if (!in_array($fileExtension, $allowedExtensions)) {
+                            respond([
+                                'error' => 'Invalid file type',
+                                'message' => 'System photo must be an image file (JPG, PNG, GIF, or WebP).'
+                            ], 400);
+                        }
+
+                        // Validate file size (max 5MB)
+                        if ($file['size'] > 5 * 1024 * 1024) {
+                            respond([
+                                'error' => 'File too large',
+                                'message' => 'System photo must be smaller than 5MB.'
+                            ], 400);
+                        }
+
+                        // Generate unique filename
+                        $uniqueFilename = 'system_' . time() . '_' . uniqid() . '.' . $fileExtension;
+                        $uploadPath = $uploadDir . $uniqueFilename;
+
+                        // Move uploaded file
+                        if (move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                            $systemPhotoUrl = $uploadPath;
+                            error_log("✅ System photo uploaded successfully: $uploadPath");
+                        } else {
+                            error_log("Failed to move uploaded file: " . $file['tmp_name'] . " to " . $uploadPath);
+                            error_log("Upload directory exists: " . (file_exists($uploadDir) ? 'yes' : 'no'));
+                            error_log("Upload directory writable: " . (is_writable($uploadDir) ? 'yes' : 'no'));
+                            respond([
+                                'error' => 'File upload failed',
+                                'message' => 'Failed to save system photo. Please try again.'
+                            ], 500);
+                        }
+                    } else {
+                        // Handle upload errors
+                        $errorMessages = [
+                            UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive',
+                            UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive',
+                            UPLOAD_ERR_PARTIAL => 'File was only partially uploaded',
+                            UPLOAD_ERR_NO_FILE => 'No file was uploaded',
+                            UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder',
+                            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk',
+                            UPLOAD_ERR_EXTENSION => 'File upload stopped by extension'
+                        ];
+                        $errorMsg = $errorMessages[$fileError] ?? 'Unknown upload error';
+                        error_log("System photo upload error: $errorMsg (code: $fileError)");
+                        respond([
+                            'error' => 'File upload error',
+                            'message' => $errorMsg
+                        ], 400);
+                    }
+                } else {
+                    error_log("DEBUG POST member - No profile_photo file in \$_FILES");
+                }
+            } catch (Exception $e) {
+                error_log("Error handling system photo: " . $e->getMessage());
+                error_log("Stack trace: " . $e->getTraceAsString());
+                respond([
+                    'error' => 'File processing error',
+                    'message' => 'An error occurred while processing the system photo: ' . $e->getMessage()
+                ], 500);
+            }
+
+            // Check if columns exist
+            $checkParentConsentStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'parent_consent_file_url'");
+            $parentConsentColumnExists = $checkParentConsentStmt->rowCount() > 0;
+            
+            $checkSystemPhotoStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+            $systemPhotoColumnExists = $checkSystemPhotoStmt->rowCount() > 0;
+            error_log("DEBUG POST member - systemPhotoColumnExists: " . ($systemPhotoColumnExists ? 'yes' : 'no') . ", systemPhotoUrl: " . ($systemPhotoUrl ?? 'null'));
+
+            // Build INSERT statement with all available fields
+            if ($parentConsentColumnExists && $systemPhotoColumnExists) {
+                // Include both parent_consent_file_url and system_photo_url
+                $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status, parent_consent_file_url, system_photo_url) 
+                                       VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname, // Empty string instead of null
+                    trim($input['lname']),
+                    trim($input['email']),
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $gender_id,
+                    $input['bday'],
+                    $account_status,
+                    $parentConsentFileUrl,
+                    $systemPhotoUrl
+                ]);
+            } elseif ($parentConsentColumnExists) {
+                // Only parent_consent_file_url exists
                 $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status, parent_consent_file_url) 
                                        VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)');
                 $stmt->execute([
@@ -481,7 +689,23 @@ try {
                     $account_status,
                     $parentConsentFileUrl
                 ]);
+            } elseif ($systemPhotoColumnExists) {
+                // Only system_photo_url exists
+                $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status, system_photo_url) 
+                                       VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname, // Empty string instead of null
+                    trim($input['lname']),
+                    trim($input['email']),
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $gender_id,
+                    $input['bday'],
+                    $account_status,
+                    $systemPhotoUrl
+                ]);
             } else {
+                // Neither column exists
                 $stmt = $pdo->prepare('INSERT INTO `user` (user_type_id, fname, mname, lname, email, password, gender_id, bday, failed_attempt, account_status) 
                                        VALUES (4, ?, ?, ?, ?, ?, ?, ?, 0, ?)');
                 $stmt->execute([
@@ -497,6 +721,14 @@ try {
             }
 
             $newId = $pdo->lastInsertId();
+            error_log("DEBUG POST member - New member created with ID: $newId, systemPhotoUrl saved: " . ($systemPhotoUrl ?? 'NULL'));
+            
+            // Verify what was actually saved
+            $verifyStmt = $pdo->prepare('SELECT id, system_photo_url FROM `user` WHERE id = ?');
+            $verifyStmt->execute([$newId]);
+            $verifyData = $verifyStmt->fetch(PDO::FETCH_ASSOC);
+            error_log("DEBUG POST member - Verified in DB - system_photo_url: " . ($verifyData['system_photo_url'] ?? 'NOT SET'));
+            
             $stmt = $pdo->prepare('SELECT id, fname, mname, lname, email, gender_id, bday, account_status, created_at FROM `user` WHERE id = ?');
             $stmt->execute([$newId]);
             $newMember = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -684,27 +916,56 @@ try {
             }
         }
 
+        $removeSystemPhoto = !empty($input['remove_system_photo']);
+        $checkSystemPhotoCol = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+        $hasSystemPhotoCol = $checkSystemPhotoCol && $checkSystemPhotoCol->rowCount() > 0;
+
         if (!empty($input['password'])) {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string if not provided
-                trim($input['lname']),
-                trim($input['email']),
-                $input['bday'],
-                password_hash($input['password'], PASSWORD_DEFAULT),
-                $input['id']
-            ]);
+            if ($hasSystemPhotoCol && $removeSystemPhoto) {
+                $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ?, system_photo_url = NULL WHERE id = ?');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname,
+                    trim($input['lname']),
+                    trim($input['email']),
+                    $input['bday'],
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $input['id']
+                ]);
+            } else {
+                $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, password = ? WHERE id = ?');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname,
+                    trim($input['lname']),
+                    trim($input['email']),
+                    $input['bday'],
+                    password_hash($input['password'], PASSWORD_DEFAULT),
+                    $input['id']
+                ]);
+            }
         } else {
-            $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
-            $stmt->execute([
-                trim($input['fname']),
-                $mname, // Empty string if not provided
-                trim($input['lname']),
-                trim($input['email']),
-                $input['bday'],
-                $input['id']
-            ]);
+            if ($hasSystemPhotoCol && $removeSystemPhoto) {
+                $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ?, system_photo_url = NULL WHERE id = ?');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname,
+                    trim($input['lname']),
+                    trim($input['email']),
+                    $input['bday'],
+                    $input['id']
+                ]);
+            } else {
+                $stmt = $pdo->prepare('UPDATE `user` SET fname = ?, mname = ?, lname = ?, email = ?, bday = ? WHERE id = ?');
+                $stmt->execute([
+                    trim($input['fname']),
+                    $mname,
+                    trim($input['lname']),
+                    trim($input['email']),
+                    $input['bday'],
+                    $input['id']
+                ]);
+            }
         }
 
         // Log activity using centralized logger (same as monitor_subscription.php)

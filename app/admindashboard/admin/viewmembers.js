@@ -57,6 +57,7 @@ import {
   X,
   UserPlus,
   FileText,
+  ImagePlus,
 } from "lucide-react"
 
 // Helper function to generate standard password from user's name
@@ -249,6 +250,10 @@ const ViewMembers = ({ userId }) => {
   const [showEditPassword, setShowEditPassword] = useState(false)
   const [parentConsentFile, setParentConsentFile] = useState(null)
   const [parentConsentPreview, setParentConsentPreview] = useState(null)
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null)
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState(null)
+  const [editPhotoFile, setEditPhotoFile] = useState(null)
+  const [editPhotoPreview, setEditPhotoPreview] = useState(null)
   const [calculatedAge, setCalculatedAge] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
@@ -653,6 +658,43 @@ const ViewMembers = ({ userId }) => {
     }
   }, [currentView])
 
+  // Refetch member when opening Client Details so we have latest system_photo_url (and other DB fields)
+  useEffect(() => {
+    if (!isViewDialogOpen || !selectedMember?.id) return
+    console.log('🟡 [PHOTO DEBUG] Opening Client Details - initial selectedMember:', {
+      id: selectedMember.id,
+      name: `${selectedMember.fname} ${selectedMember.lname}`,
+      system_photo_url: selectedMember.system_photo_url,
+      profile_photo_url: selectedMember.profile_photo_url
+    })
+    let cancelled = false
+    const fn = async () => {
+      try {
+        console.log('🟡 [PHOTO DEBUG] Fetching member by ID:', selectedMember.id)
+        const res = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`)
+        if (!res.ok || cancelled) {
+          console.log('🟡 [PHOTO DEBUG] Fetch failed or cancelled:', res.ok, cancelled)
+          return
+        }
+        const data = await res.json()
+        console.log('🟡 [PHOTO DEBUG] Fetched member data:', {
+          id: data.id,
+          name: `${data.fname} ${data.lname}`,
+          system_photo_url: data.system_photo_url,
+          profile_photo_url: data.profile_photo_url,
+          allKeys: Object.keys(data)
+        })
+        if (cancelled || !data.id) return
+        setSelectedMember(data)
+        console.log('🟡 [PHOTO DEBUG] Updated selectedMember with fetched data')
+      } catch (e) {
+        if (!cancelled) console.error('🟡 [PHOTO DEBUG] Error refetching member for Client Details:', e)
+      }
+    }
+    fn()
+    return () => { cancelled = true }
+  }, [isViewDialogOpen, selectedMember?.id])
+
   useEffect(() => {
     let filtered = members
 
@@ -919,6 +961,8 @@ const ViewMembers = ({ userId }) => {
 
   const handleEditMember = (member) => {
     setSelectedMember(member)
+    setEditPhotoFile(null)
+    setEditPhotoPreview(null)
 
     // Handle invalid dates properly
     let safeBday = ""
@@ -1316,6 +1360,7 @@ const ViewMembers = ({ userId }) => {
       failed_attempt: 0,
       staff_id: userId,
       parent_consent_file: parentConsentFile, // Include consent file
+      profile_photo_file: profilePhotoFile, // Include profile photo file
     })
     
     // Switch to subscription assignment mode
@@ -1770,30 +1815,69 @@ const ViewMembers = ({ userId }) => {
         if (!approveResponse.ok) {
           throw new Error(approveResult.message || "Failed to approve account")
         }
-        
+
         newMemberId = pendingClientData.memberId
+
+        // Step 1b: If user uploaded a system photo during approval, update member with it
+        if (profilePhotoFile) {
+          const photoFormData = new FormData()
+          photoFormData.append("action", "update")
+          photoFormData.append("id", String(pendingClientData.memberId))
+          photoFormData.append("fname", (pendingClientData.fname || "").trim())
+          photoFormData.append("mname", (pendingClientData.mname || "").trim())
+          photoFormData.append("lname", (pendingClientData.lname || "").trim())
+          photoFormData.append("email", (pendingClientData.email || "").trim().toLowerCase())
+          photoFormData.append("bday", pendingClientData.bday || "")
+          photoFormData.append("user_type_id", String(pendingClientData.user_type_id || 4))
+          if (userId != null) photoFormData.append("staff_id", String(userId))
+          photoFormData.append("profile_photo", profilePhotoFile)
+          const photoRes = await fetch("https://api.cnergy.site/member_management.php", {
+            method: "POST",
+            body: photoFormData,
+          })
+          if (!photoRes.ok) {
+            const photoErr = await photoRes.json().catch(() => ({}))
+            console.warn("Failed to save system photo during approval:", photoErr.message || photoErr.error)
+            // Don't throw – approval and subscription succeeded; photo can be added later via Edit
+          }
+        }
       } else {
         // Step 1: Create the client account (new member)
-        // Use FormData if there's a consent file, otherwise use JSON
+        // Use FormData if there's a consent file or profile photo, otherwise use JSON
+        // IMPORTANT: Use current profilePhotoFile state (subscription step) — it's NOT in pendingClientData
+        // because pendingClientData is set on Proceed, before the user can upload a photo.
         let requestBody
         let headers
         
-        if (pendingClientData.parent_consent_file) {
+        console.log('🟡 [PHOTO DEBUG] Creating client - profilePhotoFile:', profilePhotoFile ? { name: profilePhotoFile.name, size: profilePhotoFile.size, type: profilePhotoFile.type } : 'null')
+        console.log('🟡 [PHOTO DEBUG] pendingClientData.parent_consent_file:', pendingClientData.parent_consent_file ? 'exists' : 'null')
+        
+        if (pendingClientData.parent_consent_file || profilePhotoFile) {
           const formData = new FormData()
           Object.keys(pendingClientData).forEach(key => {
-            if (key === 'parent_consent_file' || key === 'isApprovalFlow' || key === 'memberId') {
-              if (key === 'parent_consent_file') {
+            if (key === 'parent_consent_file' || key === 'profile_photo_file' || key === 'isApprovalFlow' || key === 'memberId') {
+              if (key === 'parent_consent_file' && pendingClientData[key]) {
                 formData.append('parent_consent_file', pendingClientData[key])
               }
-              // Skip isApprovalFlow and memberId - these are only for frontend logic
+              // Skip profile_photo_file — we use current profilePhotoFile below
             } else {
               formData.append(key, pendingClientData[key])
             }
           })
+          if (profilePhotoFile) {
+            console.log('🟡 [PHOTO DEBUG] Appending profile_photo to FormData:', profilePhotoFile.name, 'Size:', profilePhotoFile.size, 'Type:', profilePhotoFile.type)
+            formData.append('profile_photo', profilePhotoFile)
+            // Verify it was added
+            console.log('🟡 [PHOTO DEBUG] FormData has profile_photo:', formData.has('profile_photo'))
+          } else {
+            console.log('🟡 [PHOTO DEBUG] profilePhotoFile is null - NOT appending to FormData')
+          }
           requestBody = formData
           // Don't set Content-Type header - browser will set it with boundary for FormData
           headers = {}
+          console.log('🟡 [PHOTO DEBUG] Using FormData for request, has profile_photo:', formData.has('profile_photo'))
         } else {
+          console.log('🟡 [PHOTO DEBUG] Using JSON for request (no files)')
           // Remove isApprovalFlow and memberId from the data before sending
           const { isApprovalFlow, memberId, ...clientData } = pendingClientData
           requestBody = JSON.stringify(clientData)
@@ -1802,11 +1886,14 @@ const ViewMembers = ({ userId }) => {
           }
         }
         
+        console.log('🟡 [PHOTO DEBUG] Sending POST request to member_management.php')
         const clientResponse = await fetch("https://api.cnergy.site/member_management.php", {
           method: "POST",
           headers: headers,
           body: requestBody,
         })
+
+        console.log('🟡 [PHOTO DEBUG] Response status:', clientResponse.status, clientResponse.ok)
 
         if (!clientResponse.ok) {
           let result
@@ -2009,6 +2096,8 @@ const ViewMembers = ({ userId }) => {
         setIsAddDialogOpen(false)
         setShowSubscriptionAssignment(false)
         setPendingClientData(null)
+        setProfilePhotoFile(null)
+        setProfilePhotoPreview(null)
         setSubscriptionForm({
           selected_plan_ids: [],
           start_date: new Date().toISOString().split("T")[0],
@@ -2101,21 +2190,43 @@ const ViewMembers = ({ userId }) => {
         updateData.password = data.password
       }
 
-      console.log("Sending update request with data:", updateData)
+      let response
+      if (editPhotoFile) {
+        const formData = new FormData()
+        formData.append("action", "update")
+        formData.append("id", String(updateData.id))
+        formData.append("fname", updateData.fname)
+        formData.append("mname", updateData.mname)
+        formData.append("lname", updateData.lname)
+        formData.append("email", updateData.email)
+        formData.append("bday", updateData.bday)
+        formData.append("user_type_id", String(updateData.user_type_id))
+        if (updateData.staff_id != null) formData.append("staff_id", String(updateData.staff_id))
+        if (updateData.password) formData.append("password", updateData.password)
+        formData.append("profile_photo", editPhotoFile)
 
-      const response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updateData),
-      })
+        console.log("Sending update request with FormData (photo change)")
+        response = await fetch("https://api.cnergy.site/member_management.php", {
+          method: "POST",
+          body: formData,
+        })
+      } else {
+        console.log("Sending update request with data:", updateData)
+        response = await fetch(`https://api.cnergy.site/member_management.php?id=${selectedMember.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updateData),
+        })
+      }
 
       console.log("Update response status:", response.status)
-      const result = await response.json()
+      const result = await response.json().catch(() => ({}))
       console.log("Update response result:", result)
 
       if (response.ok) {
+        if (editPhotoPreview) URL.revokeObjectURL(editPhotoPreview)
+        setEditPhotoFile(null)
+        setEditPhotoPreview(null)
         const getResponse = await fetch("https://api.cnergy.site/member_management.php")
         const updatedMembers = await getResponse.json()
         setMembers(Array.isArray(updatedMembers) ? updatedMembers : [])
@@ -2551,7 +2662,7 @@ const ViewMembers = ({ userId }) => {
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="w-40 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-              max={endDate || undefined}
+              max={endDate || new Date().toISOString().slice(0, 10)}
             />
             <Label htmlFor="end-date-filter" className="flex items-center gap-2 whitespace-nowrap">
               <CalendarIcon className="h-4 w-4 text-slate-600" />
@@ -2564,6 +2675,7 @@ const ViewMembers = ({ userId }) => {
               onChange={(e) => setEndDate(e.target.value)}
               className="w-40 h-11 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
               min={startDate || undefined}
+              max={new Date().toISOString().slice(0, 10)}
             />
             {(startDate || endDate) && (
               <Button
@@ -2642,7 +2754,7 @@ const ViewMembers = ({ userId }) => {
                     >
                       <div className="flex items-center gap-4 w-full">
                         <Avatar className="flex-shrink-0 w-12 h-12 border-2 border-primary/20">
-                          <AvatarImage src={normalizeProfilePhotoUrl(member.profile_photo_url)} alt={`${member.fname} ${member.lname}`} />
+                          <AvatarImage src={normalizeProfilePhotoUrl(member.system_photo_url)} alt={`${member.fname} ${member.lname}`} />
                           <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10 text-primary font-semibold text-sm">
                             {initials}
                           </AvatarFallback>
@@ -3482,13 +3594,29 @@ const ViewMembers = ({ userId }) => {
               {/* Client Information Card */}
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
-                  <Avatar className="w-12 h-12 border-2 border-primary/20">
-                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
-                    <AvatarFallback className="bg-primary/10">
-                      <User className="h-6 w-6 text-primary" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
+                  <div className="flex-shrink-0 w-20 h-20 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-100">
+                    {(() => {
+                      const photoUrl = selectedMember?.system_photo_url || selectedMember?.profile_photo_url
+                      const normalizedUrl = photoUrl ? normalizeProfilePhotoUrl(photoUrl) : null
+                      if (normalizedUrl) {
+                        return (
+                          <a href={normalizedUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer hover:opacity-90 transition-opacity" title="View full size">
+                            <img
+                              src={normalizedUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </a>
+                        )
+                      }
+                      return (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <User className="h-9 w-9 text-gray-400" />
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <div className="flex-1 min-w-0">
                     <p className="font-semibold text-lg text-gray-900 mb-1">
                       {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
                     </p>
@@ -3673,6 +3801,8 @@ const ViewMembers = ({ userId }) => {
           // Reset all states when modal closes
           setShowSubscriptionAssignment(false)
           setPendingClientData(null)
+          setProfilePhotoFile(null)
+          setProfilePhotoPreview(null)
           setSubscriptionForm({
             selected_plan_ids: [],
             start_date: new Date().toISOString().split("T")[0],
@@ -4302,6 +4432,94 @@ const ViewMembers = ({ userId }) => {
                 </div>
               </div>
 
+              {/* Client Photo Upload Section - Show when plans are selected */}
+              {subscriptionForm.selected_plan_ids && subscriptionForm.selected_plan_ids.length > 0 && (
+                <>
+                  <div className="border-t border-gray-200"></div>
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-semibold text-gray-900">Client Photo</Label>
+                      <p className="text-xs text-gray-600 mt-1">
+                        Upload a photo for face tracking and identification (optional)
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              // Validate file type
+                              if (!file.type.startsWith('image/')) {
+                                toast({
+                                  title: "Invalid file type",
+                                  description: "Please select an image file (JPG, PNG, etc.)",
+                                  variant: "destructive",
+                                })
+                                return
+                              }
+                              // Validate file size (max 5MB)
+                              if (file.size > 5 * 1024 * 1024) {
+                                toast({
+                                  title: "File too large",
+                                  description: "Image must be smaller than 5MB",
+                                  variant: "destructive",
+                                })
+                                return
+                              }
+                              setProfilePhotoFile(file)
+                              // Create preview
+                              const reader = new FileReader()
+                              reader.onloadend = () => {
+                                setProfilePhotoPreview(reader.result)
+                              }
+                              reader.readAsDataURL(file)
+                            }
+                          }}
+                          className="h-10 text-sm"
+                        />
+                        {profilePhotoFile && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setProfilePhotoFile(null)
+                              setProfilePhotoPreview(null)
+                              // Reset file input
+                              const fileInput = document.querySelector('input[type="file"][accept="image/*"]')
+                              if (fileInput) fileInput.value = ''
+                            }}
+                            className="h-10"
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                      {profilePhotoPreview && (
+                        <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={profilePhotoPreview}
+                              alt="Profile preview"
+                              className="w-20 h-20 object-cover rounded-lg border border-gray-300"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">{profilePhotoFile.name}</p>
+                              <p className="text-xs text-gray-500">
+                                File size: {(profilePhotoFile.size / 1024).toFixed(2)} KB
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Divider */}
               <div className="border-t border-gray-200"></div>
 
@@ -4515,6 +4733,8 @@ const ViewMembers = ({ userId }) => {
                         setIsVerificationDialogOpen(true)
                       }
                       setPendingClientData(null)
+                      setProfilePhotoFile(null)
+                      setProfilePhotoPreview(null)
                       setPlanQuantities({})
                       setSubscriptionForm({
                         plan_id: "",
@@ -4536,6 +4756,8 @@ const ViewMembers = ({ userId }) => {
                     setIsAddDialogOpen(false)
                     setShowSubscriptionAssignment(false)
                     setPendingClientData(null)
+                    setProfilePhotoFile(null)
+                    setProfilePhotoPreview(null)
                     setSubscriptionForm({
                       plan_id: "",
                       start_date: new Date().toISOString().split("T")[0],
@@ -4577,7 +4799,14 @@ const ViewMembers = ({ userId }) => {
       </Dialog>
 
       {/* Edit Client Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+        setIsEditDialogOpen(open)
+        if (!open) {
+          if (editPhotoPreview) URL.revokeObjectURL(editPhotoPreview)
+          setEditPhotoFile(null)
+          setEditPhotoPreview(null)
+        }
+      }}>
         <DialogContent className="sm:max-w-2xl max-w-[95vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader className="space-y-3 pb-4 border-b">
             <DialogTitle className="text-2xl font-semibold flex items-center gap-2">
@@ -4588,6 +4817,67 @@ const ViewMembers = ({ userId }) => {
               Update the client's information and account details.
             </DialogDescription>
           </DialogHeader>
+          {selectedMember && (
+            <div className="mb-4 pb-4 border-b">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-20">
+                  <div className="w-20 h-20 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-100 mb-2">
+                    {(() => {
+                      const previewUrl = editPhotoPreview || (() => {
+                        const photoUrl = selectedMember?.system_photo_url || selectedMember?.profile_photo_url
+                        return photoUrl ? normalizeProfilePhotoUrl(photoUrl) : null
+                      })()
+                      if (previewUrl) {
+                        return (
+                          <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer hover:opacity-90 transition-opacity" title="View full size">
+                            <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+                          </a>
+                        )
+                      }
+                      return (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <User className="h-9 w-9 text-gray-400" />
+                        </div>
+                      )
+                    })()}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    id="edit-photo-input"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) {
+                        setEditPhotoFile(f)
+                        setEditPhotoPreview(URL.createObjectURL(f))
+                      }
+                      e.target.value = ""
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 min-h-8 text-xs w-full px-3 justify-center gap-1.5 shrink-0"
+                    onClick={() => document.getElementById("edit-photo-input")?.click()}
+                  >
+                    <ImagePlus className="h-3.5 w-3.5 shrink-0" />
+                    Change
+                  </Button>
+                </div>
+                <div className="flex-1 min-w-0 pt-0">
+                  <p className="font-semibold text-lg text-gray-900 mb-1">
+                    {formatName(`${selectedMember.fname} ${selectedMember.mname || ''} ${selectedMember.lname}`).trim()}
+                  </p>
+                  <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <Mail className="h-3.5 w-3.5" />
+                    {selectedMember.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(handleUpdateMember, (errors) => {
               console.log("Form validation errors:", errors)
@@ -4899,7 +5189,7 @@ const ViewMembers = ({ userId }) => {
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
                   <Avatar className="w-12 h-12 border-2 border-primary/20">
-                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.system_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
                     <AvatarFallback className="bg-primary/10">
                       <User className="h-6 w-6 text-primary" />
                     </AvatarFallback>
@@ -5059,7 +5349,7 @@ const ViewMembers = ({ userId }) => {
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4 mb-4">
                   <Avatar className="w-12 h-12 border-2 border-primary/20">
-                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.profile_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
+                    <AvatarImage src={normalizeProfilePhotoUrl(selectedMember?.system_photo_url)} alt={`${selectedMember?.fname} ${selectedMember?.lname}`} />
                     <AvatarFallback className="bg-primary/10">
                       <User className="h-6 w-6 text-primary" />
                     </AvatarFallback>
@@ -5298,7 +5588,7 @@ const ViewMembers = ({ userId }) => {
               <div className="bg-gradient-to-br from-gray-50 to-gray-100/50 border-2 border-gray-200 rounded-xl p-5 shadow-sm">
                 <div className="flex items-start gap-4">
                   <Avatar className="w-12 h-12 border-2 border-primary/20">
-                    <AvatarImage src={normalizeProfilePhotoUrl(discountDialogMember.profile_photo_url)} alt={`${discountDialogMember.fname} ${discountDialogMember.lname}`} />
+                    <AvatarImage src={normalizeProfilePhotoUrl(discountDialogMember.system_photo_url)} alt={`${discountDialogMember.fname} ${discountDialogMember.lname}`} />
                     <AvatarFallback className="bg-primary/10">
                       <User className="h-6 w-6 text-primary" />
                     </AvatarFallback>

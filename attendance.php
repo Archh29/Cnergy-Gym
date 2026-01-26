@@ -32,6 +32,22 @@ function getStaffIdFromRequest($data = null)
     return null;
 }
 
+// Helper function to format end_date for gym sessions (9 PM on expiration date)
+function formatEndDateForPlan($planName, $endDate) {
+    // Check if this is a gym session plan
+    $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $planName);
+    
+    if ($isGymSession && $endDate) {
+        // Parse the end_date and set to 9 PM on that date
+        $dateObj = new DateTime($endDate, new DateTimeZone('Asia/Manila'));
+        $dateObj->setTime(21, 0, 0); // 9 PM
+        return $dateObj->format('Y-m-d H:i:s');
+    }
+    
+    // For non-gym sessions, return as-is
+    return $endDate;
+}
+
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -551,13 +567,13 @@ function getDeniedLogs(PDO $pdo): void
 
         // Get date filter if provided
         $dateFilter = $_GET['date'] ?? '';
-        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100; // Default to 100 most recent
-        
+        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100; // Default to 100 most recent
+
         // Ensure limit is positive and reasonable
         if ($limit < 1 || $limit > 1000) {
             $limit = 100;
         }
-        
+
         $whereClause = '';
         $params = [];
 
@@ -588,7 +604,7 @@ function getDeniedLogs(PDO $pdo): void
             LEFT JOIN `user` u ON adl.user_id = u.id
             " . $whereClause . "
             ORDER BY adl.attempted_at DESC
-            LIMIT " . (int)$limit . "
+            LIMIT " . (int) $limit . "
         ";
 
         $stmt = $pdo->prepare($sql);
@@ -764,7 +780,12 @@ function handleQRScan(PDO $pdo, array $input): void
         return;
     }
 
-    $userStmt = $pdo->prepare("SELECT id, fname, lname FROM `user` WHERE id = ?");
+    // Check if system_photo_url column exists
+    $checkSystemPhotoStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
+    $hasSystemPhoto = $checkSystemPhotoStmt->rowCount() > 0;
+    $sysPhoto = $hasSystemPhoto ? ', system_photo_url' : '';
+    
+    $userStmt = $pdo->prepare("SELECT id, fname, lname, profile_photo_url{$sysPhoto} FROM `user` WHERE id = ?");
     $userStmt->execute([(int) $userId]);
     $user = $userStmt->fetch();
 
@@ -773,17 +794,31 @@ function handleQRScan(PDO $pdo, array $input): void
         return;
     }
 
-    // Check if user has an active gym access plan (IDs 2, 3, 5, 6)
+    // Check if user has an active gym access plan (monthly plans 2,3,5,6 + gym session / day pass / walk-in by id or name)
+    // Session-style plans: also accept same-day validity when end_date is date-only (e.g. midnight), so "just availed" gym session checks in successfully
     try {
         $planStmt = $pdo->prepare("
             SELECT s.id, s.plan_id, s.start_date, s.end_date, s.status_id,
                    p.plan_name, p.duration_months, p.duration_days
             FROM subscription s
             JOIN member_subscription_plan p ON s.plan_id = p.id
-            WHERE s.user_id = ? 
-            AND s.plan_id IN (2, 3, 5, 6)
+            WHERE s.user_id = ?
             AND s.status_id = 2
-            AND s.end_date > NOW()
+            AND (
+                s.plan_id IN (2, 3, 5, 6)
+                OR LOWER(p.plan_name) LIKE '%gym session%'
+                OR LOWER(p.plan_name) LIKE '%day pass%'
+                OR LOWER(p.plan_name) LIKE '%walk-in%'
+                OR LOWER(p.plan_name) LIKE '%walk in%'
+            )
+            AND (
+                s.end_date > NOW()
+                OR (
+                    (s.plan_id = 6 OR LOWER(p.plan_name) LIKE '%gym session%' OR LOWER(p.plan_name) LIKE '%day pass%' OR LOWER(p.plan_name) LIKE '%walk-in%' OR LOWER(p.plan_name) LIKE '%walk in%')
+                    AND DATE(s.start_date) = CURDATE()
+                    AND DATE(s.end_date) >= CURDATE()
+                )
+            )
             ORDER BY s.end_date DESC
             LIMIT 1
         ");
@@ -809,9 +844,15 @@ function handleQRScan(PDO $pdo, array $input): void
                 SELECT s.end_date, p.plan_name
                 FROM subscription s
                 JOIN member_subscription_plan p ON s.plan_id = p.id
-                WHERE s.user_id = ? 
-                AND s.plan_id IN (2, 3, 5, 6)
+                WHERE s.user_id = ?
                 AND s.status_id = 2
+                AND (
+                    s.plan_id IN (2, 3, 5, 6)
+                    OR LOWER(p.plan_name) LIKE '%gym session%'
+                    OR LOWER(p.plan_name) LIKE '%day pass%'
+                    OR LOWER(p.plan_name) LIKE '%walk-in%'
+                    OR LOWER(p.plan_name) LIKE '%walk in%'
+                )
                 ORDER BY s.end_date DESC
                 LIMIT 1
             ");
@@ -829,7 +870,7 @@ function handleQRScan(PDO $pdo, array $input): void
         if ($expiredPlan) {
             $expiredDate = date('M j, Y', strtotime($expiredPlan['end_date']));
             $denialMessage = "❌ {$user['fname']} {$user['lname']} - Gym access expired on {$expiredDate}";
-            
+
             // Log denied attendance
             logDeniedAttendance($pdo, (int) $userId, 'expired_plan', [
                 'message' => $denialMessage,
@@ -837,28 +878,34 @@ function handleQRScan(PDO $pdo, array $input): void
                 'expired_date_db' => $expiredPlan['end_date'],
                 'plan_name' => $expiredPlan['plan_name']
             ], $entryMethod);
-            
+
             echo json_encode([
                 'success' => false,
                 'message' => $denialMessage,
                 'type' => 'expired_plan',
                 'user_name' => $user['fname'] . ' ' . $user['lname'],
+                'user_id' => (int) $userId,
+                'system_photo_url' => $user['system_photo_url'] ?? null,
+                'profile_photo_url' => $user['profile_photo_url'] ?? null,
                 'expired_date' => $expiredDate,
                 'plan_name' => $expiredPlan['plan_name']
             ]);
         } else {
             $denialMessage = "❌ {$user['fname']} {$user['lname']} - No active gym access plan found";
-            
+
             // Log denied attendance
             logDeniedAttendance($pdo, (int) $userId, 'no_plan', [
                 'message' => $denialMessage
             ], $entryMethod);
-            
+
             echo json_encode([
                 'success' => false,
                 'message' => $denialMessage,
                 'type' => 'no_plan',
-                'user_name' => $user['fname'] . ' ' . $user['lname']
+                'user_name' => $user['fname'] . ' ' . $user['lname'],
+                'user_id' => (int) $userId,
+                'system_photo_url' => $user['system_photo_url'] ?? null,
+                'profile_photo_url' => $user['profile_photo_url'] ?? null
             ]);
         }
         return;
@@ -952,19 +999,31 @@ function handleQRScan(PDO $pdo, array $input): void
             $staffId = getStaffIdFromRequest($input);
             logStaffActivity($pdo, $staffId, "Auto Checkout", "Member {$user['fname']} {$user['lname']} auto checked out from " . date('M j', strtotime($sessionDate)) . " ({$formatted_duration})", "Attendance");
 
-            echo json_encode([
-                'success' => true,
-                'action' => 'auto_checkout',
-                'message' => $user['fname'] . ' ' . $user['lname'] . ' - Auto checked out from ' . date('M j', strtotime($sessionDate)) . ' (' . $formatted_duration . '). Please scan again to check in for today.',
-                'user_name' => $user['fname'] . ' ' . $user['lname'],
-                'old_session_date' => date('M j, Y', strtotime($sessionDate)),
-                'old_session_duration' => $formatted_duration,
-                'plan_info' => [
-                    'plan_name' => $activePlan['plan_name'],
-                    'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
-                    'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
-                ]
-            ]);
+        // For gym sessions, don't send plan_info on checkout - session is complete
+        $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $activePlan['plan_name'] ?? '');
+        $responseData = [
+            'success' => true,
+            'action' => 'auto_checkout',
+            'message' => $user['fname'] . ' ' . $user['lname'] . ' - Auto checked out from ' . date('M j', strtotime($sessionDate)) . ' (' . $formatted_duration . '). Please scan again to check in for today.',
+            'user_name' => $user['fname'] . ' ' . $user['lname'],
+            'user_id' => (int) $userId,
+            'system_photo_url' => $user['system_photo_url'] ?? null,
+            'profile_photo_url' => $user['profile_photo_url'] ?? null,
+            'old_session_date' => date('M j, Y', strtotime($sessionDate)),
+            'old_session_duration' => $formatted_duration
+        ];
+        
+        // Only include plan_info for non-gym sessions on checkout
+        if (!$isGymSession) {
+            $responseData['plan_info'] = [
+                'plan_name' => $activePlan['plan_name'],
+                'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
+                'end_date' => formatEndDateForPlan($activePlan['plan_name'], $activePlan['end_date']),
+                'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
+            ];
+        }
+        
+        echo json_encode($responseData);
         } else {
             // Check 30-second cooldown for checkout
             if ($timeDifference < 30) {
@@ -972,9 +1031,12 @@ function handleQRScan(PDO $pdo, array $input): void
                 error_log("DEBUG: Checkout cooldown active - " . $remainingTime . " seconds remaining");
                 echo json_encode([
                     'success' => false,
-                    'message' => "⏰ Please wait {$remainingTime} seconds before checking out",
+                    'message' => "Please wait {$remainingTime} seconds before checking out",
                     'type' => 'cooldown',
-                    'remaining_seconds' => $remainingTime
+                    'remaining_seconds' => $remainingTime,
+                    'user_id' => (int) $userId,
+                    'user_name' => $user['fname'] . ' ' . $user['lname'],
+                    'system_photo_url' => $user['system_photo_url'] ?? null
                 ]);
                 return;
             }
@@ -999,21 +1061,33 @@ function handleQRScan(PDO $pdo, array $input): void
             $staffId = getStaffIdFromRequest($input);
             logStaffActivity($pdo, $staffId, "Member Checkout", "Member {$user['fname']} {$user['lname']} checked out successfully! Session: {$formatted_duration}", "Attendance");
 
-            echo json_encode([
+            // For gym sessions, don't send plan_info on checkout - session is complete
+            $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $activePlan['plan_name'] ?? '');
+            $responseData = [
                 'success' => true,
                 'action' => 'auto_checkout',
                 'message' => $user['fname'] . ' ' . $user['lname'] . ' checked out successfully! Session: ' . $formatted_duration,
                 'user_name' => $user['fname'] . ' ' . $user['lname'],
+                'user_id' => (int) $userId,
+                'system_photo_url' => $user['system_photo_url'] ?? null,
+                'profile_photo_url' => $user['profile_photo_url'] ?? null,
                 'check_out' => $checkoutTimeFormatted,
                 'check_out_time' => $checkoutTimeFormatted,
                 'checkout_time' => $checkoutTimeFormatted,
-                'duration' => $formatted_duration,
-                'plan_info' => [
+                'duration' => $formatted_duration
+            ];
+            
+            // Only include plan_info for non-gym sessions on checkout
+            if (!$isGymSession) {
+                $responseData['plan_info'] = [
                     'plan_name' => $activePlan['plan_name'],
                     'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
+                    'end_date' => formatEndDateForPlan($activePlan['plan_name'], $activePlan['end_date']),
                     'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
-                ]
-            ]);
+                ];
+            }
+            
+            echo json_encode($responseData);
         }
     } else {
         error_log("DEBUG: No active session found, checking if user already attended today");
@@ -1034,20 +1108,28 @@ function handleQRScan(PDO $pdo, array $input): void
             if ($todayAttendance['check_out'] === null) {
                 // User has active session for today but it wasn't detected above (race condition)
                 error_log("DEBUG: User has active session for today but wasn't detected, aborting");
+                $userName = $user['fname'] . ' ' . $user['lname'];
                 echo json_encode([
                     'success' => false,
-                    'message' => 'You already have an active session for today',
-                    'type' => 'already_checked_in'
+                    'message' => "{$userName} already has an active session for today",
+                    'type' => 'already_checked_in',
+                    'user_name' => $userName,
+                    'user_id' => (int) $userId,
+                    'system_photo_url' => $user['system_photo_url'] ?? null
                 ]);
                 return;
             } else {
                 // User already completed attendance for today
                 $checkOutTime = date('M j, Y g:i A', strtotime($todayAttendance['check_out']));
                 error_log("DEBUG: User already attended today, completed at: " . $checkOutTime);
+                $userName = $user['fname'] . ' ' . $user['lname'];
                 echo json_encode([
                     'success' => false,
-                    'message' => "You have already completed your attendance for today (checked out at {$checkOutTime})",
+                    'message' => "{$userName} has already completed attendance for today (checked out at {$checkOutTime})",
                     'type' => 'already_attended_today',
+                    'user_name' => $userName,
+                    'user_id' => (int) $userId,
+                    'system_photo_url' => $user['system_photo_url'] ?? null,
                     'check_out_time' => $checkOutTime
                 ]);
                 return;
@@ -1064,7 +1146,10 @@ function handleQRScan(PDO $pdo, array $input): void
             echo json_encode([
                 'success' => false,
                 'message' => 'Session conflict detected. Please try again.',
-                'type' => 'session_conflict'
+                'type' => 'session_conflict',
+                'user_id' => (int) $userId,
+                'user_name' => $user['fname'] . ' ' . $user['lname'],
+                'system_photo_url' => $user['system_photo_url'] ?? null
             ]);
             return;
         }
@@ -1085,10 +1170,14 @@ function handleQRScan(PDO $pdo, array $input): void
             'message' => $user['fname'] . ' ' . $user['lname'] . ' checked in successfully!',
             'attendance_id' => $attendanceId,
             'user_name' => $user['fname'] . ' ' . $user['lname'],
+            'user_id' => (int) $userId,
+            'system_photo_url' => $user['system_photo_url'] ?? null,
+            'profile_photo_url' => $user['profile_photo_url'] ?? null,
             'check_in' => date('M j, Y g:i A'),
             'plan_info' => [
                 'plan_name' => $activePlan['plan_name'],
                 'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
+                'end_date' => formatEndDateForPlan($activePlan['plan_name'], $activePlan['end_date']),
                 'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
             ]
         ]);
@@ -1315,14 +1404,14 @@ function autoCheckoutExpiredGuests(PDO $pdo): void
             $createdAt = new DateTime($session['created_at'], new DateTimeZone('Asia/Manila'));
             $checkoutTimeObj = clone $createdAt;
             $checkoutTimeObj->setTime(21, 0, 0); // Set to 9 PM (21:00)
-            
+
             // If created after 9 PM, it should expire at 9 PM next day
             if ($createdAt->format('H:i') >= '21:00') {
                 $checkoutTimeObj->modify('+1 day');
             }
-            
+
             $checkoutTime = $checkoutTimeObj->format('Y-m-d H:i:s');
-            
+
             error_log("autoCheckoutExpiredGuests: Checking out guest {$session['guest_name']} (ID: {$session['id']}) - Created: {$session['created_at']}, Checkout: {$checkoutTime}");
 
             // Update guest_session checkout_time

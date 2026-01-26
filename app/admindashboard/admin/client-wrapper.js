@@ -52,6 +52,15 @@ export default function AdminDashboardClient() {
     }
   }, [])
 
+  // Listen for toast click → open subscription details for user
+  useEffect(() => {
+    const handleOpenSubscriptionDetails = () => {
+      setCurrentSection('MonitorSubscriptions')
+    }
+    window.addEventListener('open-subscription-details-for-user', handleOpenSubscriptionDetails)
+    return () => window.removeEventListener('open-subscription-details-for-user', handleOpenSubscriptionDetails)
+  }, [])
+
   const fetchUserInfo = async () => {
     try {
       const response = await fetch("https://api.cnergy.site/session.php", {

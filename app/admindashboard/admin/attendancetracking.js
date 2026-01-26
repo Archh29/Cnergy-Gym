@@ -28,9 +28,8 @@ const AttendanceTracking = ({ userId }) => {
   const [failedScans, setFailedScans] = useState([])
   const [filterType, setFilterType] = useState("all") // "all", "members", "guests"
   const [sessionTypeFilter, setSessionTypeFilter] = useState("all") // "all", "session", "guest" - only shown when filterType === "guests"
-  const [selectedMonth, setSelectedMonth] = useState("all-time") // Month filter (MM format or "all-time")
-  const [selectedYear, setSelectedYear] = useState("all-time") // Year filter
-  const [selectedDate, setSelectedDate] = useState("") // Day filter (YYYY-MM-DD format)
+  const [startDate, setStartDate] = useState("") // Start date filter (YYYY-MM-DD format)
+  const [endDate, setEndDate] = useState("") // End date filter (YYYY-MM-DD format)
   const [quickFilter, setQuickFilter] = useState("today") // "today", "yesterday", "last-week", "last-month", "all-time"
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(20) // Number of items per page
@@ -116,6 +115,79 @@ const AttendanceTracking = ({ userId }) => {
     }
   }
 
+  // Helper function to apply quick filter dates
+  const applyQuickFilter = (filter) => {
+    // Get current date in Philippine timezone
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+    const phDateParts = formatter.formatToParts(now)
+    const phYear = parseInt(phDateParts.find(p => p.type === 'year').value, 10)
+    const phMonth = parseInt(phDateParts.find(p => p.type === 'month').value, 10)
+    const phDay = parseInt(phDateParts.find(p => p.type === 'day').value, 10)
+    const phDate = new Date(phYear, phMonth - 1, phDay)
+
+    switch (filter) {
+      case "today": {
+        const today = `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
+        setStartDate(today)
+        setEndDate(today)
+        break
+      }
+      case "yesterday": {
+        const yesterdayDate = new Date(phDate)
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+        const yYear = yesterdayDate.getFullYear()
+        const yMonth = yesterdayDate.getMonth() + 1
+        const yDay = yesterdayDate.getDate()
+        const yesterdayStr = `${yYear}-${String(yMonth).padStart(2, '0')}-${String(yDay).padStart(2, '0')}`
+        setStartDate(yesterdayStr)
+        setEndDate(yesterdayStr)
+        break
+      }
+      case "last-week": {
+        const lastWeekEnd = new Date(phDate)
+        lastWeekEnd.setDate(lastWeekEnd.getDate() - 1) // Yesterday
+        const lastWeekStart = new Date(lastWeekEnd)
+        lastWeekStart.setDate(lastWeekStart.getDate() - 6) // 7 days ago
+        const endYear = lastWeekEnd.getFullYear()
+        const endMonth = lastWeekEnd.getMonth() + 1
+        const endDay = lastWeekEnd.getDate()
+        const startYear = lastWeekStart.getFullYear()
+        const startMonth = lastWeekStart.getMonth() + 1
+        const startDay = lastWeekStart.getDate()
+        setStartDate(`${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`)
+        setEndDate(`${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`)
+        break
+      }
+      case "last-month": {
+        const lastMonthEnd = new Date(phDate)
+        lastMonthEnd.setDate(lastMonthEnd.getDate() - 1) // Yesterday
+        const lastMonthStart = new Date(lastMonthEnd)
+        lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
+        lastMonthStart.setDate(1) // First day of last month
+        const endYear = lastMonthEnd.getFullYear()
+        const endMonth = lastMonthEnd.getMonth() + 1
+        const endDay = lastMonthEnd.getDate()
+        const startYear = lastMonthStart.getFullYear()
+        const startMonth = lastMonthStart.getMonth() + 1
+        const startDay = lastMonthStart.getDate()
+        setStartDate(`${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`)
+        setEndDate(`${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`)
+        break
+      }
+      case "all-time":
+      default:
+        setStartDate("")
+        setEndDate("")
+        break
+    }
+  }
+
   // Helper function to parse date from various formats
   // Dates from backend are in Philippine timezone, so we need to parse them correctly
   const parseDateFromEntry = (entry) => {
@@ -139,7 +211,7 @@ const AttendanceTracking = ({ userId }) => {
         const month = monthNames.indexOf(dateMatch[1])
         const day = parseInt(dateMatch[2], 10)
         const year = parseInt(dateMatch[3], 10)
-        
+
         if (month !== -1 && day && year) {
           // Create date in Philippine timezone to avoid UTC conversion issues
           // Format as YYYY-MM-DD
@@ -164,136 +236,38 @@ const AttendanceTracking = ({ userId }) => {
     }
   }
 
-  // Helper function to get date range for quick filters
-  const getQuickFilterDateRange = () => {
-    // Get current date in Philippine timezone
-    const now = new Date()
-    const formatter = new Intl.DateTimeFormat("en-CA", { 
-      timeZone: "Asia/Manila",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    })
-    const phDateParts = formatter.formatToParts(now)
-    const phYear = parseInt(phDateParts.find(p => p.type === 'year').value, 10)
-    const phMonth = parseInt(phDateParts.find(p => p.type === 'month').value, 10)
-    const phDay = parseInt(phDateParts.find(p => p.type === 'day').value, 10)
-    const phDate = new Date(phYear, phMonth - 1, phDay) // Create date in local timezone (month is 0-indexed)
 
-    switch (quickFilter) {
-      case "today": {
-        const today = `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
-        return { start: today, end: today }
-      }
-      case "yesterday": {
-        const yesterdayDate = new Date(phDate)
-        yesterdayDate.setDate(yesterdayDate.getDate() - 1)
-        const yYear = yesterdayDate.getFullYear()
-        const yMonth = yesterdayDate.getMonth() + 1
-        const yDay = yesterdayDate.getDate()
-        const yesterdayStr = `${yYear}-${String(yMonth).padStart(2, '0')}-${String(yDay).padStart(2, '0')}`
-        return { start: yesterdayStr, end: yesterdayStr }
-      }
-      case "last-week": {
-        const lastWeekEnd = new Date(phDate)
-        lastWeekEnd.setDate(lastWeekEnd.getDate() - 1) // Yesterday
-        const lastWeekStart = new Date(lastWeekEnd)
-        lastWeekStart.setDate(lastWeekStart.getDate() - 6) // 7 days ago
-        const endYear = lastWeekEnd.getFullYear()
-        const endMonth = lastWeekEnd.getMonth() + 1
-        const endDay = lastWeekEnd.getDate()
-        const startYear = lastWeekStart.getFullYear()
-        const startMonth = lastWeekStart.getMonth() + 1
-        const startDay = lastWeekStart.getDate()
-        return {
-          start: `${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
-          end: `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
-        }
-      }
-      case "last-month": {
-        const lastMonthEnd = new Date(phDate)
-        lastMonthEnd.setDate(lastMonthEnd.getDate() - 1) // Yesterday
-        const lastMonthStart = new Date(lastMonthEnd)
-        lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
-        lastMonthStart.setDate(1) // First day of last month
-        const endYear = lastMonthEnd.getFullYear()
-        const endMonth = lastMonthEnd.getMonth() + 1
-        const endDay = lastMonthEnd.getDate()
-        const startYear = lastMonthStart.getFullYear()
-        const startMonth = lastMonthStart.getMonth() + 1
-        const startDay = lastMonthStart.getDate()
-        return {
-          start: `${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`,
-          end: `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
-        }
-      }
-      case "all-time":
-      default:
-        return null
-    }
-  }
-
-  // Filter attendance based on type (date filtering is done server-side)
+  // Filter attendance based on type and date range
   const getFilteredAttendance = () => {
     let filtered = attendance.filter((entry) =>
       entry.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
 
-    // Apply quick filter first (if not "all-time" and no specific date/month/year filters)
-    const hasSpecificFilters = selectedDate || (selectedMonth && selectedMonth !== "all-time") || (selectedYear && selectedYear !== "all-time")
-
-    if (!hasSpecificFilters && quickFilter !== "all-time") {
-      const dateRange = getQuickFilterDateRange()
-      if (dateRange) {
-        filtered = filtered.filter((entry) => {
-          const entryDate = parseDateFromEntry(entry)
-          if (!entryDate) return false
-          return entryDate >= dateRange.start && entryDate <= dateRange.end
-        })
-      }
-    }
-
-    // Apply date filter (specific day) - takes priority over quick filter
-    if (selectedDate) {
+    // Apply date range filter (start date and end date)
+    if (startDate || endDate) {
       filtered = filtered.filter((entry) => {
         const entryDate = parseDateFromEntry(entry)
-        console.log("🔍 Debug - Day filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected:", selectedDate)
-        return entryDate === selectedDate
-      })
-    }
-    // Apply month filter (entire month) - takes priority over quick filter
-    else if (selectedMonth && selectedMonth !== "all-time") {
-      filtered = filtered.filter((entry) => {
-        const entryDate = parseDateFromEntry(entry)
-        console.log("🔍 Debug - Month filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected month:", selectedMonth, "Selected year:", selectedYear)
-        if (entryDate) {
-          const entryMonth = entryDate.substring(5, 7) // Get MM part (YYYY-MM-DD format)
-          const entryYear = entryDate.substring(0, 4) // Get YYYY part
+        if (!entryDate) return false
 
-          // If year is also selected, check both month and year
-          if (selectedYear && selectedYear !== "all-time") {
-            console.log("🔍 Debug - Comparing month and year:", entryMonth, "vs", selectedMonth, "and", entryYear, "vs", selectedYear)
-            return entryMonth === selectedMonth && entryYear === selectedYear
-          } else {
-            // Just check month
-            console.log("🔍 Debug - Comparing months:", entryMonth, "vs", selectedMonth)
-            return entryMonth === selectedMonth
-          }
+        const entryDateObj = new Date(entryDate)
+        entryDateObj.setHours(0, 0, 0, 0)
+
+        let matchesStart = true
+        let matchesEnd = true
+
+        if (startDate) {
+          const startDateObj = new Date(startDate)
+          startDateObj.setHours(0, 0, 0, 0)
+          matchesStart = entryDateObj >= startDateObj
         }
-        return false
-      })
-    }
-    // Apply year filter (if no month selected) - takes priority over quick filter
-    else if (selectedYear && selectedYear !== "all-time") {
-      filtered = filtered.filter((entry) => {
-        const entryDate = parseDateFromEntry(entry)
-        console.log("🔍 Debug - Year filter - Entry:", entry.name, "Parsed date:", entryDate, "Selected year:", selectedYear)
-        if (entryDate) {
-          const entryYear = entryDate.substring(0, 4) // Get YYYY part
-          console.log("🔍 Debug - Comparing years:", entryYear, "vs", selectedYear)
-          return entryYear === selectedYear
+
+        if (endDate) {
+          const endDateObj = new Date(endDate)
+          endDateObj.setHours(23, 59, 59, 999)
+          matchesEnd = entryDateObj <= endDateObj
         }
-        return false
+
+        return matchesStart && matchesEnd
       })
     }
 
@@ -329,18 +303,18 @@ const AttendanceTracking = ({ userId }) => {
         // Fallback: check plan_name
         const planName = (entry.plan_name || "").toLowerCase()
         const isGymSessionByName = planName.includes("session") || planName.includes("gym session")
-        
+
         const isGymSessionEntry = isGuest || isGymSession || isGymSessionByName
-        
+
         if (!isGymSessionEntry) return false
-        
+
         // Apply session type filter if Gym Session is selected
         if (sessionTypeFilter === "guest") {
           return entry.user_type === "guest"
         } else if (sessionTypeFilter === "session") {
           return entry.user_type !== "guest" && (isGymSession || isGymSessionByName)
         }
-        
+
         return true
       })
     } else if (filterType === "active") {
@@ -399,14 +373,14 @@ const AttendanceTracking = ({ userId }) => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://api.cnergy.site"
       console.log("🔍 Admin - Fetching denied logs from database:", `${apiUrl}/attendance.php?action=denied_logs&limit=100`)
-      
+
       const response = await axios.get(`${apiUrl}/attendance.php?action=denied_logs&limit=100`, {
         timeout: 10000 // 10 second timeout
       })
-      
+
       const dbLogs = response.data || []
       console.log("📊 Admin - Database response:", dbLogs.length, "logs")
-      
+
       if (Array.isArray(dbLogs)) {
         // Convert database format to frontend format
         const formattedLogs = dbLogs.map(log => ({
@@ -417,7 +391,7 @@ const AttendanceTracking = ({ userId }) => {
           entryMethod: log.entryMethod || log.entry_method || 'unknown',
           qrData: null // Not stored in database
         }))
-        
+
         // Resolve member names for entries that only have "Member ID: X"
         const needsResolution = formattedLogs.filter(scan =>
           scan.memberName && scan.memberName.startsWith("Member ID: ")
@@ -446,7 +420,7 @@ const AttendanceTracking = ({ userId }) => {
               }
               return scan
             })
-            
+
             console.log("✅ Admin - Loaded", resolvedLogs.length, "denied logs from database")
             setFailedScans(resolvedLogs)
             return
@@ -454,7 +428,7 @@ const AttendanceTracking = ({ userId }) => {
             console.error("Failed to resolve member names:", err)
           }
         }
-        
+
         console.log("✅ Admin - Loaded", formattedLogs.length, "denied logs from database")
         setFailedScans(formattedLogs)
       } else {
@@ -495,17 +469,32 @@ const AttendanceTracking = ({ userId }) => {
     }, 5000)
   }
 
-  // Initial data load
+  // Initial data load and set default to today
   useEffect(() => {
+    // Set default filter to today on mount
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+    const phDateParts = formatter.formatToParts(now)
+    const phYear = parseInt(phDateParts.find(p => p.type === 'year').value, 10)
+    const phMonth = parseInt(phDateParts.find(p => p.type === 'month').value, 10)
+    const phDay = parseInt(phDateParts.find(p => p.type === 'day').value, 10)
+    const today = `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
+    setStartDate(today)
+    setEndDate(today)
     fetchData()
     loadFailedScans() // Load denied logs on component mount
   }, [])
 
-  // Refetch data when month, year, or date filter changes
+  // Refetch data when date range filter changes
   useEffect(() => {
     fetchData()
-  }, [selectedMonth, selectedYear, selectedDate])
-  
+  }, [startDate, endDate])
+
   // Reload failed scans when dialog opens to ensure fresh data
   useEffect(() => {
     if (failedScansOpen) {
@@ -751,43 +740,23 @@ const AttendanceTracking = ({ userId }) => {
 
   // Get period label based on filters
   const getPeriodLabel = () => {
-    // Check if specific date/month/year filters are applied (they take priority)
-    const hasSpecificFilters = selectedDate ||
-      (selectedMonth && selectedMonth !== "all-time") ||
-      (selectedYear && selectedYear !== "all-time")
-
-    // If specific filters are applied, use those
-    if (selectedDate) {
-      const date = new Date(selectedDate)
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
-    if (selectedMonth && selectedMonth !== "all-time") {
-      if (selectedYear && selectedYear !== "all-time") {
-        const monthDate = new Date(`${selectedYear}-${selectedMonth}-01`)
-        return monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    if (startDate && endDate) {
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      if (startDate === endDate) {
+        return start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       }
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-      const monthNum = parseInt(selectedMonth)
-      return monthNames[monthNum - 1] || "This Month"
+      return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
-    if (selectedYear && selectedYear !== "all-time") {
-      return selectedYear
+    if (startDate) {
+      const start = new Date(startDate)
+      return `From ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
-
-    // Otherwise, use quick filter label
-    switch (quickFilter) {
-      case "today":
-        return "Today"
-      case "yesterday":
-        return "Yesterday"
-      case "last-week":
-        return "Last Week"
-      case "last-month":
-        return "Last Month"
-      case "all-time":
-      default:
-        return "All Time"
+    if (endDate) {
+      const end = new Date(endDate)
+      return `Until ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
     }
+    return "All Time"
   }
 
   // Get today's attendance (unfiltered by date)
@@ -894,18 +863,16 @@ const AttendanceTracking = ({ userId }) => {
       startIndex,
       endIndex,
       showingEntries: paginatedAttendance.length,
-      quickFilter,
       filterType,
-      selectedMonth,
-      selectedYear,
-      selectedDate
+      startDate,
+      endDate
     })
-  }, [filteredAttendance.length, currentPage, itemsPerPage, quickFilter, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate])
+  }, [filteredAttendance.length, currentPage, itemsPerPage, filterType, sessionTypeFilter, startDate, endDate, quickFilter])
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterType, sessionTypeFilter, selectedMonth, selectedYear, selectedDate, quickFilter])
+  }, [searchQuery, filterType, sessionTypeFilter, startDate, endDate, quickFilter])
 
   return (
     <div className="w-full max-w-[99.5%] mx-auto p-4 space-y-4">
@@ -1001,85 +968,85 @@ const AttendanceTracking = ({ userId }) => {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="p-6 bg-slate-50/30">
+        <CardContent className="p-6 bg-slate-50/20">
           {/* Analytics Cards Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-slate-300 ${filterType === "all" ? "border-2 border-slate-400 bg-slate-50 shadow-md" : ""
+              className={`border border-slate-200/80 bg-white shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-slate-300/80 ${filterType === "all" ? "border-2 border-slate-400/60 bg-slate-50/50 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("all")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Total ({getPeriodLabel()})</CardTitle>
-                <Users className="h-4 w-4 text-slate-400" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Total ({getPeriodLabel()})</CardTitle>
+                <Users className="h-4 w-4 text-slate-500" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.total}</div>
                 <p className="text-xs text-slate-500 mt-1">Attendance records</p>
               </CardContent>
             </Card>
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-yellow-300 ${filterType === "premium" ? "border-2 border-yellow-400 bg-yellow-50 shadow-md" : ""
+              className={`border border-slate-200/80 bg-white shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-amber-200/60 ${filterType === "premium" ? "border-2 border-amber-300/60 bg-amber-50/30 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("premium")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Premium</CardTitle>
-                <UserCheck className="h-4 w-4 text-yellow-500" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Premium</CardTitle>
+                <UserCheck className="h-4 w-4 text-amber-600" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.premium}</div>
                 <p className="text-xs text-slate-500 mt-1">Premium member check-ins</p>
               </CardContent>
             </Card>
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${filterType === "standard" ? "border-2 border-blue-400 bg-blue-50 shadow-md" : ""
+              className={`border border-slate-200/80 bg-white shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-slate-300/80 ${filterType === "standard" ? "border-2 border-slate-400/60 bg-slate-50/50 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("standard")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Standard</CardTitle>
-                <Users className="h-4 w-4 text-blue-500" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Standard</CardTitle>
+                <Users className="h-4 w-4 text-slate-600" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.standard}</div>
                 <p className="text-xs text-slate-500 mt-1">Standard user check-ins</p>
               </CardContent>
             </Card>
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-blue-300 ${filterType === "guests" ? "border-2 border-blue-400 bg-blue-50 shadow-md" : ""
+              className={`border border-slate-200/80 bg-white shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-slate-300/80 ${filterType === "guests" ? "border-2 border-slate-400/60 bg-slate-50/50 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("guests")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Gym Session</CardTitle>
-                <Users className="h-4 w-4 text-blue-500" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Gym Session</CardTitle>
+                <Users className="h-4 w-4 text-slate-600" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.dayPass}</div>
                 <p className="text-xs text-slate-500 mt-1">Gym session check-ins</p>
               </CardContent>
             </Card>
             <Card
-              className={`border-slate-200 shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-green-300 ${filterType === "active" ? "border-2 border-green-400 bg-green-50 shadow-md" : ""
+              className={`border border-slate-200/80 bg-white shadow-sm transition-all cursor-pointer hover:shadow-md hover:border-emerald-200/60 ${filterType === "active" ? "border-2 border-emerald-300/60 bg-emerald-50/30 shadow-md" : ""
                 }`}
               onClick={() => setFilterType("active")}
             >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Active</CardTitle>
-                <Activity className="h-4 w-4 text-green-500" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Active</CardTitle>
+                <Activity className="h-4 w-4 text-emerald-600" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.active}</div>
                 <p className="text-xs text-slate-500 mt-1">Currently in gym</p>
               </CardContent>
             </Card>
-            <Card className="border-slate-200 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-slate-600">Peak Hour</CardTitle>
-                <BarChart3 className="h-4 w-4 text-orange-500" />
+            <Card className="border border-slate-200/80 bg-white shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-4">
+                <CardTitle className="text-sm font-medium text-slate-700">Peak Hour</CardTitle>
+                <BarChart3 className="h-4 w-4 text-slate-600" />
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-4 pb-4">
                 <div className="text-2xl font-bold text-slate-900">{analytics.peakHour}</div>
                 <p className="text-xs text-slate-500 mt-1">Most active time</p>
               </CardContent>
@@ -1087,41 +1054,44 @@ const AttendanceTracking = ({ userId }) => {
           </div>
 
           {/* Filters Row */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-6">
-            <div className={`flex items-center ${filterType === "guests" ? "gap-2 flex-wrap" : "gap-3 flex-nowrap"}`}>
+          <div className="bg-white rounded-lg border border-slate-200/60 shadow-sm p-5 mb-6">
+            <div className="flex flex-wrap items-center gap-4">
               <div className="relative flex-shrink-0">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
                 <Input
-                  placeholder={filterType === "guests" ? "Search..." : "Search members, emails, or names..."}
+                  placeholder="Search members, emails, or names..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`pl-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm ${filterType === "guests" ? "w-48 text-sm h-9" : "w-56"}`}
+                  className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm h-10"
                 />
               </div>
-              <Label htmlFor="user-type-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Plan:</Label>
-              <Select value={filterType} onValueChange={(value) => {
-                setFilterType(value)
-                // Reset session type filter when plan filter changes
-                if (value !== "guests") {
-                  setSessionTypeFilter("all")
-                }
-              }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-32 h-9 text-sm" : "w-40"}`} id="user-type-filter">
-                  <SelectValue placeholder="All Plans" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Plans</SelectItem>
-                  <SelectItem value="premium">Premium</SelectItem>
-                  <SelectItem value="standard">Standard</SelectItem>
-                  <SelectItem value="guests">Gym Session</SelectItem>
-                </SelectContent>
-              </Select>
+
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                <Label htmlFor="user-type-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Plan:</Label>
+                <Select value={filterType} onValueChange={(value) => {
+                  setFilterType(value)
+                  if (value !== "guests") {
+                    setSessionTypeFilter("all")
+                  }
+                }}>
+                  <SelectTrigger className="w-36 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20" id="user-type-filter">
+                    <SelectValue placeholder="All Plans" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Plans</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="guests">Gym Session</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Type filter - only show when Gym Session is selected */}
               {filterType === "guests" && (
-                <>
-                  <Label htmlFor="session-type-filter" className="flex-shrink-0 whitespace-nowrap text-sm">Type:</Label>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="session-type-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Type:</Label>
                   <Select value={sessionTypeFilter} onValueChange={setSessionTypeFilter}>
-                    <SelectTrigger className="w-28 flex-shrink-0 h-9 text-sm" id="session-type-filter">
+                    <SelectTrigger className="w-32 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20" id="session-type-filter">
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1130,89 +1100,80 @@ const AttendanceTracking = ({ userId }) => {
                       <SelectItem value="guest">Guest Session</SelectItem>
                     </SelectContent>
                   </Select>
-                </>
+                </div>
               )}
-              <Label htmlFor="quick-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>{filterType === "guests" ? "Quick:" : "Quick Filter:"}</Label>
-              <Select value={quickFilter} onValueChange={(value) => {
-                setQuickFilter(value)
-                // Clear specific filters when quick filter changes
-                setSelectedDate("")
-                setSelectedMonth("all-time")
-                setSelectedYear("all-time")
-              }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="quick-filter">
-                  <SelectValue placeholder="Today" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="yesterday">Yesterday</SelectItem>
-                  <SelectItem value="last-week">Last Week</SelectItem>
-                  <SelectItem value="last-month">Last Month</SelectItem>
-                  <SelectItem value="all-time">All Time</SelectItem>
-                </SelectContent>
-              </Select>
-              <Label htmlFor="month-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Month:</Label>
-              <Select value={selectedMonth} onValueChange={(value) => {
-                setSelectedMonth(value)
-                setSelectedDate("")
-                setQuickFilter("all-time") // Reset quick filter when using specific filters
-              }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-28 h-9 text-sm" : "w-36"}`} id="month-filter">
-                  <SelectValue placeholder="All Months" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all-time">All Months</SelectItem>
-                  <SelectItem value="01">January</SelectItem>
-                  <SelectItem value="02">February</SelectItem>
-                  <SelectItem value="03">March</SelectItem>
-                  <SelectItem value="04">April</SelectItem>
-                  <SelectItem value="05">May</SelectItem>
-                  <SelectItem value="06">June</SelectItem>
-                  <SelectItem value="07">July</SelectItem>
-                  <SelectItem value="08">August</SelectItem>
-                  <SelectItem value="09">September</SelectItem>
-                  <SelectItem value="10">October</SelectItem>
-                  <SelectItem value="11">November</SelectItem>
-                  <SelectItem value="12">December</SelectItem>
-                </SelectContent>
-              </Select>
-              <Label htmlFor="year-filter" className={`flex-shrink-0 whitespace-nowrap ${filterType === "guests" ? "text-sm" : ""}`}>Year:</Label>
-              <Select value={selectedYear} onValueChange={(value) => {
-                setSelectedYear(value)
-                setSelectedDate("")
-                setQuickFilter("all-time") // Reset quick filter when using specific filters
-              }}>
-                <SelectTrigger className={`flex-shrink-0 ${filterType === "guests" ? "w-24 h-9 text-sm" : "w-32"}`} id="year-filter">
-                  <SelectValue placeholder="All Years" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all-time">All Years</SelectItem>
-                  <SelectItem value="2024">2024</SelectItem>
-                  <SelectItem value="2025">2025</SelectItem>
-                  <SelectItem value="2026">2026</SelectItem>
-                </SelectContent>
-              </Select>
-              <Label htmlFor="day-filter" className="flex-shrink-0 whitespace-nowrap">Day:</Label>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value)
-                  setSelectedMonth("all-time")
-                  setQuickFilter("all-time") // Reset quick filter when using specific filters
-                }}
-                className="w-36 flex-shrink-0 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
-                id="day-filter"
-              />
+
+              <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                <Label htmlFor="quick-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Quick:</Label>
+                <Select value={quickFilter} onValueChange={(value) => {
+                  setQuickFilter(value)
+                  applyQuickFilter(value)
+                }}>
+                  <SelectTrigger className="w-32 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20" id="quick-filter">
+                    <SelectValue placeholder="All Time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all-time">All Time</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="yesterday">Yesterday</SelectItem>
+                    <SelectItem value="last-week">Last Week</SelectItem>
+                    <SelectItem value="last-month">Last Month</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Calendar className="h-4 w-4 text-slate-500" />
+                <Label htmlFor="start-date-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Start Date:</Label>
+                <Input
+                  type="date"
+                  id="start-date-filter"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value)
+                    setQuickFilter("all-time") // Reset quick filter when manually changing dates
+                  }}
+                  className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                  max={endDate || new Date().toISOString().slice(0, 10)}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Label htmlFor="end-date-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">End Date:</Label>
+                <Input
+                  type="date"
+                  id="end-date-filter"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value)
+                    setQuickFilter("all-time") // Reset quick filter when manually changing dates
+                  }}
+                  className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                  min={startDate || undefined}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+              </div>
+
+              {(startDate || endDate) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStartDate("")
+                    setEndDate("")
+                    setQuickFilter("all-time")
+                  }}
+                  className="h-10 px-4 text-sm border-slate-300 hover:bg-slate-50 hover:border-slate-400"
+                >
+                  Clear Dates
+                </Button>
+              )}
             </div>
           </div>
 
           {/* Attendance Table */}
-          <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+          <div className="rounded-lg border border-slate-200/80 shadow-sm overflow-hidden bg-white">
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader className="sticky top-0 bg-gradient-to-r from-slate-50 to-slate-100 z-10">
-                  <TableRow className="border-b-2 border-slate-200">
+                <TableHeader className="sticky top-0 bg-gradient-to-r from-slate-50/95 to-slate-100/95 backdrop-blur-sm z-10">
+                  <TableRow className="border-b border-slate-200/80">
                     <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
                     <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Type</TableHead>
                     <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Check In</TableHead>
@@ -1230,7 +1191,7 @@ const AttendanceTracking = ({ userId }) => {
                     </TableRow>
                   ) : (
                     paginatedAttendance.map((entry, index) => (
-                      <TableRow key={`${entry.user_type}-${entry.id}-${index}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                      <TableRow key={`${entry.user_type}-${entry.id}-${index}`} className="hover:bg-slate-50/50 transition-colors border-b border-slate-100/60">
                         <TableCell className="font-medium text-slate-900">
                           {entry.name}
                           {entry.user_type === 'guest' && (

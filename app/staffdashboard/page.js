@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
-import { CheckCircle, AlertCircle, Clock, Wifi, X } from "lucide-react"
+import { CheckCircle, AlertCircle, Clock, Wifi, Eye } from "lucide-react"
 import StaffDashboardClient from "./staff/client-wrapper"
 
 // Error Boundary Component
@@ -49,7 +49,7 @@ class ErrorBoundary extends React.Component {
 
 const App = () => {
   const router = useRouter()
-  const [notification, setNotification] = useState({ show: false, message: "", type: "" })
+  const [notification, setNotification] = useState({ show: false, message: "", type: "", memberPhoto: null, userId: null })
   const [lastScanTime, setLastScanTime] = useState(0)
   const [scanCount, setScanCount] = useState(0)
   const [isConnected, setIsConnected] = useState(true)
@@ -66,22 +66,203 @@ const App = () => {
     isListening: false,
   })
 
-  // Show notification with membership info if available
-  const showNotification = (message, type = "success", membership = null) => {
-    let fullMessage = message
-
-    if (membership) {
-      fullMessage += `\nPlan: ${membership.plan_name}`
-      if (membership.days_left >= 0) {
-        fullMessage += ` | ${membership.days_left} day(s) left`
-      } else {
-        fullMessage += ` | Expired`
-      }
+  // Normalize system_photo_url for serve_image (matches viewmembers logic)
+  const normalizeSystemPhotoUrl = (url) => {
+    if (!url || typeof url !== "string") return null
+    if (url.includes("serve_image.php")) return url
+    if (url.startsWith("http://") || url.startsWith("https://")) return url
+    if (url.startsWith("uploads/") || url.startsWith("uploads%2F")) {
+      const normalizedPath = url.replace(/\//g, "%2F")
+      return `https://api.cnergy.site/serve_image.php?path=${normalizedPath}`
     }
-    // Remove the automatic "No active membership" addition since backend now handles this
+    return `https://api.cnergy.site/serve_image.php?path=${encodeURIComponent(url)}`
+  }
 
-    setNotification({ show: true, message: fullMessage, type })
-    setTimeout(() => setNotification({ show: false, message: "", type: "" }), 8000)
+  // Show notification with membership info and member photo if available
+  const showNotification = (message, type = "success", membership = null, memberPhoto = null, userId = null) => {
+    // Don't add plan info here if message already contains plan info to avoid duplicates
+    // Check for any existing plan info (case-insensitive, check for "Plan:" pattern)
+    const hasPlanInfo = /\bplan\s*:/i.test(message)
+    let fullMessage = message
+    if (membership && !hasPlanInfo) {
+      let timeText = "Expired"
+      
+      // Check if this is a gym session plan (expires at 9 PM on expiration date)
+      const isGymSession = /gym\s+session|day\s+pass|walk[- ]?in/i.test(membership.plan_name || '')
+      
+      // Always calculate from end_date for accuracy, especially when days_remaining is 0 but hours remain
+      const endDateStr = membership.end_date || membership.expires_on
+      if (endDateStr) {
+        try {
+          const now = new Date()
+          let endDate = null
+          
+          // For gym sessions, always set expiration to 9 PM on the expiration date
+          if (isGymSession) {
+            // Try to parse from end_date first (MySQL datetime format)
+            if (membership.end_date) {
+              const parsedEndDate = new Date(membership.end_date)
+              if (!isNaN(parsedEndDate.getTime())) {
+                // Extract just the date part and set to 9 PM
+                const dateOnly = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate())
+                dateOnly.setHours(21, 0, 0, 0) // 9 PM on expiration date
+                endDate = dateOnly
+              }
+            }
+            
+            // If end_date parsing failed, try expires_on (formatted string like "Jan 26, 2026")
+            if (!endDate && membership.expires_on) {
+              const parsedExpiresOn = new Date(membership.expires_on)
+              if (!isNaN(parsedExpiresOn.getTime())) {
+                // Extract just the date part and set to 9 PM
+                const dateOnly = new Date(parsedExpiresOn.getFullYear(), parsedExpiresOn.getMonth(), parsedExpiresOn.getDate())
+                dateOnly.setHours(21, 0, 0, 0) // 9 PM on expiration date
+                endDate = dateOnly
+              }
+            }
+          } else {
+            // For non-gym sessions, parse normally
+            endDate = new Date(endDateStr)
+            if (isNaN(endDate.getTime()) && membership.expires_on) {
+              endDate = new Date(membership.expires_on)
+            }
+          }
+          
+          if (endDate && !isNaN(endDate.getTime())) {
+            const diffMs = endDate.getTime() - now.getTime()
+            
+            if (diffMs > 0) {
+              const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+              const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+              const minutesRemaining = Math.floor(diffMs / (1000 * 60))
+              
+              if (daysRemaining >= 1) {
+                timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
+              } else if (isGymSession && hoursRemaining < 1 && minutesRemaining > 0) {
+                // For gym sessions, show minutes when less than 1 hour
+                timeText = `${minutesRemaining} ${minutesRemaining === 1 ? "minute" : "minutes"} left`
+              } else if (hoursRemaining > 0) {
+                timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+              } else if (minutesRemaining > 0) {
+                timeText = `${minutesRemaining} ${minutesRemaining === 1 ? "minute" : "minutes"} left`
+              } else {
+                timeText = "Expired"
+              }
+            } else {
+              timeText = "Expired"
+            }
+          } else {
+            console.error("Invalid date format:", endDateStr, membership.expires_on)
+            // Fallback to days_remaining if date parsing fails
+            const daysRemaining = typeof (membership.days_remaining ?? membership.days_left) === "number" ? (membership.days_remaining ?? membership.days_left) : null
+            if (daysRemaining !== null && daysRemaining >= 0) {
+              if (daysRemaining >= 1) {
+                timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
+              } else if (isGymSession) {
+                // For gym sessions with 0 days, calculate hours until 9 PM today
+                const today9PM = new Date()
+                today9PM.setHours(21, 0, 0, 0)
+                const now = new Date()
+                const diffMs = today9PM.getTime() - now.getTime()
+                if (diffMs > 0) {
+                  const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                  if (hoursRemaining > 0) {
+                    timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                  } else {
+                    timeText = "Expired"
+                  }
+                } else {
+                  timeText = "Expired"
+                }
+              } else {
+                timeText = "Expired"
+              }
+            } else {
+              timeText = "Expired"
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing end_date:", e, endDateStr)
+          // Fallback to days_remaining if available
+          const daysRemaining = typeof (membership.days_remaining ?? membership.days_left) === "number" ? (membership.days_remaining ?? membership.days_left) : null
+          if (daysRemaining !== null && daysRemaining >= 0) {
+            if (daysRemaining >= 1) {
+              timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
+            } else if (isGymSession) {
+              // For gym sessions with 0 days, calculate hours until 9 PM today
+              const today9PM = new Date()
+              today9PM.setHours(21, 0, 0, 0)
+              const now = new Date()
+              const diffMs = today9PM.getTime() - now.getTime()
+              if (diffMs > 0) {
+                const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                if (hoursRemaining > 0) {
+                  timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                } else {
+                  timeText = "Expired"
+                }
+              } else {
+                timeText = "Expired"
+              }
+            } else {
+              timeText = "Expired"
+            }
+          }
+        }
+      } else {
+        // Fallback to days_remaining if end_date not available
+        const daysRemaining = typeof (membership.days_remaining ?? membership.days_left) === "number" ? (membership.days_remaining ?? membership.days_left) : null
+        if (daysRemaining !== null && daysRemaining >= 0) {
+          if (daysRemaining >= 1) {
+            timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
+          } else if (isGymSession) {
+            // For gym sessions with 0 days, calculate hours until 9 PM today
+            const today9PM = new Date()
+            today9PM.setHours(21, 0, 0, 0)
+            const now = new Date()
+            const diffMs = today9PM.getTime() - now.getTime()
+            if (diffMs > 0) {
+              const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+              if (hoursRemaining > 0) {
+                timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+              } else {
+                timeText = "Expired"
+              }
+            } else {
+              timeText = "Expired"
+            }
+          } else {
+            timeText = "Expired"
+          }
+        }
+      }
+      // Add plan info without any emojis
+      fullMessage += `\nPlan: ${membership.plan_name}  ·  ${timeText}`
+    }
+    
+    // Remove ALL emojis from entire message and remove duplicate plan lines
+    // First, remove all emojis (including clipboard emoji U+1F4CB)
+    fullMessage = fullMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
+    
+    // Now remove duplicate plan lines (normalize separators first)
+    const lines = fullMessage.split('\n')
+    let planLineFound = false
+    fullMessage = lines.filter(line => {
+      const trimmedLine = line.trim()
+      if (/\bplan\s*:/i.test(trimmedLine)) {
+        if (planLineFound) {
+          return false // Skip duplicate plan lines
+        }
+        planLineFound = true
+        // Normalize separators to consistent format
+        return trimmedLine.replace(/\s*[|•·]\s*/g, ' · ').trim()
+      }
+      return trimmedLine
+    }).join('\n').trim()
+    
+    setNotification({ show: true, message: fullMessage, type, memberPhoto, userId })
+    // Use 15050ms to ensure animation completes (15s animation + 50ms buffer)
+    setTimeout(() => setNotification({ show: false, message: "", type: "", memberPhoto: null, userId: null }), 15050)
   }
 
   // Clean and normalize QR data
@@ -161,18 +342,224 @@ const App = () => {
         const actionType = response.data.action
         let notificationMessage = response.data.message
 
-        // Add plan info to notification if available
-        if (response.data.plan_info) {
-          const planInfo = response.data.plan_info
-          notificationMessage += `\n📋 Plan: ${planInfo.plan_name} | Expires: ${planInfo.expires_on} | Days left: ${planInfo.days_remaining}`
+        // For checkout actions, don't add plan info - session is complete
+        const isCheckoutAction = actionType === "auto_checkout" || actionType === "checkout"
+        
+        // Add plan info to notification if available (single line, no duplicate)
+        // Skip plan info for checkout actions - session is done
+        // Check for any existing plan info in message (case-insensitive, check for "Plan:" pattern)
+        const hasPlanInfo = /\bplan\s*:/i.test(notificationMessage)
+        if (response.data.plan_info && !hasPlanInfo && !isCheckoutAction) {
+          const p = response.data.plan_info
+          let timeText = "Expired"
+          
+          // Check if this is a gym session plan (expires at 9 PM on expiration date)
+          const isGymSession = /gym\s+session|day\s+pass|walk[- ]?in/i.test(p.plan_name || '')
+          
+          // Always calculate from end_date for accuracy, especially when days_remaining is 0 but hours remain
+          const endDateStr = p.end_date || p.expires_on
+          if (endDateStr) {
+            try {
+              const now = new Date()
+              let endDate = null
+              
+              // For gym sessions, always set expiration to 9 PM on the expiration date
+              if (isGymSession) {
+                // Try to parse from end_date first (MySQL datetime format)
+                if (p.end_date) {
+                  const parsedEndDate = new Date(p.end_date)
+                  if (!isNaN(parsedEndDate.getTime())) {
+                    // Extract just the date part and set to 9 PM
+                    const dateOnly = new Date(parsedEndDate.getFullYear(), parsedEndDate.getMonth(), parsedEndDate.getDate())
+                    dateOnly.setHours(21, 0, 0, 0) // 9 PM on expiration date
+                    endDate = dateOnly
+                  }
+                }
+                
+                // If end_date parsing failed, try expires_on (formatted string like "Jan 26, 2026")
+                if (!endDate && p.expires_on) {
+                  const parsedExpiresOn = new Date(p.expires_on)
+                  if (!isNaN(parsedExpiresOn.getTime())) {
+                    // Extract just the date part and set to 9 PM
+                    const dateOnly = new Date(parsedExpiresOn.getFullYear(), parsedExpiresOn.getMonth(), parsedExpiresOn.getDate())
+                    dateOnly.setHours(21, 0, 0, 0) // 9 PM on expiration date
+                    endDate = dateOnly
+                  }
+                }
+              } else {
+                // For non-gym sessions, parse normally
+                endDate = new Date(endDateStr)
+                if (isNaN(endDate.getTime()) && p.expires_on) {
+                  endDate = new Date(p.expires_on)
+                }
+              }
+              
+              if (endDate && !isNaN(endDate.getTime())) {
+                const diffMs = endDate.getTime() - now.getTime()
+                
+                console.log("DEBUG: plan_name:", p.plan_name, "isGymSession:", isGymSession)
+                console.log("DEBUG: end_date string:", endDateStr, "expires_on:", p.expires_on)
+                console.log("DEBUG: parsed endDate:", endDate, "now:", now)
+                console.log("DEBUG: diffMs:", diffMs, "diffMs > 0:", diffMs > 0)
+                
+                if (diffMs > 0) {
+                  const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                  const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                  const minutesRemaining = Math.floor(diffMs / (1000 * 60))
+                  
+                  console.log("DEBUG: daysRemaining:", daysRemaining, "hoursRemaining:", hoursRemaining, "minutesRemaining:", minutesRemaining)
+                  
+                  if (daysRemaining >= 1) {
+                    timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
+                  } else if (isGymSession && hoursRemaining < 1 && minutesRemaining > 0) {
+                    // For gym sessions, show minutes when less than 1 hour
+                    timeText = `${minutesRemaining} ${minutesRemaining === 1 ? "minute" : "minutes"} left`
+                  } else if (hoursRemaining > 0) {
+                    timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                  } else if (minutesRemaining > 0) {
+                    timeText = `${minutesRemaining} ${minutesRemaining === 1 ? "minute" : "minutes"} left`
+                  } else {
+                    timeText = "Expired"
+                  }
+                } else {
+                  console.log("DEBUG: diffMs <= 0, setting to Expired")
+                  timeText = "Expired"
+                }
+              } else {
+                console.error("Invalid date format:", endDateStr, p.expires_on)
+                // Fallback to days_remaining if date parsing fails
+                if (p.days_remaining !== undefined && p.days_remaining >= 0) {
+                  if (p.days_remaining >= 1) {
+                    timeText = `${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left`
+                  } else if (isGymSession) {
+                    // For gym sessions with 0 days, calculate hours until 9 PM today
+                    const today9PM = new Date()
+                    today9PM.setHours(21, 0, 0, 0)
+                    const now = new Date()
+                    const diffMs = today9PM.getTime() - now.getTime()
+                    if (diffMs > 0) {
+                      const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                      const minutesRemaining = Math.floor(diffMs / (1000 * 60))
+                      if (hoursRemaining > 0) {
+                        timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                      } else if (minutesRemaining > 0) {
+                        timeText = `${minutesRemaining} ${minutesRemaining === 1 ? "minute" : "minutes"} left`
+                      } else {
+                        timeText = "Expired"
+                      }
+                    } else {
+                      timeText = "Expired"
+                    }
+                  } else {
+                    timeText = "Expired"
+                  }
+                } else {
+                  timeText = "Expired"
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing end_date:", e, endDateStr)
+              // Fallback to days_remaining if date parsing fails
+              if (p.days_remaining !== undefined && p.days_remaining >= 0) {
+                if (p.days_remaining >= 1) {
+                  timeText = `${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left`
+                } else if (isGymSession) {
+                  // For gym sessions with 0 days, calculate hours until 9 PM today
+                  const today9PM = new Date()
+                  today9PM.setHours(21, 0, 0, 0)
+                  const now = new Date()
+                  const diffMs = today9PM.getTime() - now.getTime()
+                  if (diffMs > 0) {
+                    const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                    if (hoursRemaining > 0) {
+                      timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                    } else {
+                      timeText = "Expired"
+                    }
+                  } else {
+                    timeText = "Expired"
+                  }
+                } else {
+                  timeText = "Expired"
+                }
+              } else {
+                timeText = "Expired"
+              }
+            }
+          } else {
+            // No end_date available, use days_remaining
+            if (p.days_remaining !== undefined && p.days_remaining >= 0) {
+              if (p.days_remaining >= 1) {
+                timeText = `${p.days_remaining} ${p.days_remaining === 1 ? "day" : "days"} left`
+              } else if (isGymSession) {
+                // For gym sessions with 0 days, calculate hours until 9 PM today
+                const today9PM = new Date()
+                today9PM.setHours(21, 0, 0, 0)
+                const now = new Date()
+                const diffMs = today9PM.getTime() - now.getTime()
+                if (diffMs > 0) {
+                  const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
+                  if (hoursRemaining > 0) {
+                    timeText = `${hoursRemaining} ${hoursRemaining === 1 ? "hour" : "hours"} left`
+                  } else {
+                    timeText = "Expired"
+                  }
+                } else {
+                  timeText = "Expired"
+                }
+              } else {
+                timeText = "Expired"
+              }
+            }
+          }
+          // Add plan info without any emojis - improve wording
+          // For gym sessions, show better formatting
+          if (isGymSession) {
+            if (timeText === "Expired") {
+              notificationMessage += `\nPlan: ${p.plan_name}  ·  Session expired`
+            } else {
+              notificationMessage += `\nPlan: ${p.plan_name}  ·  ${timeText} remaining  ·  Expires ${p.expires_on} at 9 PM`
+            }
+          } else {
+            if (timeText === "Expired") {
+              notificationMessage += `\nPlan: ${p.plan_name}  ·  Expired`
+            } else {
+              notificationMessage += `\nPlan: ${p.plan_name}  ·  ${timeText}  ·  Expires ${p.expires_on}`
+            }
+          }
         }
+        
+        // Remove ALL emojis from entire message and remove duplicate plan lines
+        // First, remove all emojis (including clipboard emoji U+1F4CB)
+        notificationMessage = notificationMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
+        
+        // Now remove duplicate plan lines (normalize separators first)
+        const lines = notificationMessage.split('\n')
+        let planLineFound = false
+        notificationMessage = lines.filter(line => {
+          const trimmedLine = line.trim()
+          if (/\bplan\s*:/i.test(trimmedLine)) {
+            if (planLineFound) {
+              return false // Skip duplicate plan lines
+            }
+            planLineFound = true
+            // Normalize separators to consistent format
+            return trimmedLine.replace(/\s*[|•·]\s*/g, ' · ').trim()
+          }
+          return trimmedLine
+        }).join('\n').trim()
 
-        if (actionType === "auto_checkout") {
-          showNotification(notificationMessage, "info")
+        const normalizedPhoto = normalizeSystemPhotoUrl(response.data.system_photo_url)
+        const uid = response.data.user_id != null ? response.data.user_id : null
+
+        // Show notification based on action type
+        if (actionType === "auto_checkout" || actionType === "checkout") {
+          // For checkout, just show the message without plan info (already skipped above)
+          showNotification(notificationMessage, "info", null, normalizedPhoto, uid)
         } else if (actionType === "auto_checkout_and_checkin") {
-          showNotification(notificationMessage, "info")
+          showNotification(notificationMessage, "info", null, normalizedPhoto, uid)
         } else {
-          showNotification(notificationMessage, "success")
+          showNotification(notificationMessage, "success", null, normalizedPhoto, uid)
         }
 
         // Trigger custom event for other components
@@ -256,33 +643,35 @@ const App = () => {
           console.log("✅ Denied attendance logged to database by backend:", { memberName, errorType, entryMethod: "qr" })
         }
 
+        // Get member photo URL for error toasts (only system_photo_url)
+        const normalizedPhoto = normalizeSystemPhotoUrl(response.data.system_photo_url)
+        const uid = response.data.user_id != null ? response.data.user_id : null
+
         // Handle plan validation errors with better messages
         if (response.data.type === "expired_plan") {
-          const displayName = memberName !== "Unknown" ? `${memberName} - ` : ''
-          const errorMessage = `${displayName}❌ This gym goer's monthly subscription has expired. Please ask the gym goer to renew their subscription.`
-          showNotification(errorMessage, "error")
+          const name = memberName !== "Unknown" ? memberName : "This member"
+          showNotification(`${name} — Subscription expired. Ask them to renew.`, "error", null, normalizedPhoto, uid)
         }
         else if (response.data.type === "no_plan") {
-          const displayName = memberName !== "Unknown" ? `${memberName} - ` : ''
-          const errorMessage = `${displayName}❌ This gym goer currently has no active monthly subscription. Please ask the gym goer to purchase a subscription.`
-          showNotification(errorMessage, "error")
+          const name = memberName !== "Unknown" ? memberName : "This member"
+          showNotification(`Ask ${name} to purchase a gym access subscription plan.`, "error", null, normalizedPhoto, uid)
         }
         // Handle cooldown errors
         else if (response.data.type === "cooldown") {
-          showNotification(response.data.message, "warning")
+          showNotification(response.data.message, "warning", null, normalizedPhoto, uid)
         }
-        // Handle attendance limit errors
+        // Handle attendance limit errors (show member image when available)
         else if (response.data.type === "already_checked_in") {
-          showNotification(response.data.message, "warning")
+          showNotification(response.data.message, "warning", null, normalizedPhoto, uid)
         }
         else if (response.data.type === "already_attended_today") {
-          showNotification(response.data.message, "info")
+          showNotification(response.data.message, "info", null, normalizedPhoto, uid)
         }
         // Handle session conflict errors
         else if (response.data.type === "session_conflict") {
-          showNotification(response.data.message, "error")
+          showNotification(response.data.message, "error", null, normalizedPhoto, uid)
         } else {
-          showNotification(response.data.message || "Failed to process QR code", "error")
+          showNotification(response.data.message || "Failed to process QR code", "error", null, normalizedPhoto, uid)
         }
       }
       setIsConnected(true)
@@ -452,79 +841,82 @@ const App = () => {
 
       {/* Modern Enhanced Notification */}
       {notification.show && (
-        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:max-w-md z-[9999] animate-in slide-in-from-top-2 fade-in-0 duration-300">
+        <div className="fixed top-4 right-4 left-4 sm:left-auto sm:max-w-lg z-[9999] animate-in slide-in-from-top-2 fade-in-0 duration-300" style={{ isolation: "isolate" }}>
           <div
-            className={`
-              relative rounded-xl shadow-2xl border-2 backdrop-blur-sm overflow-hidden
-              ${notification.type === "error"
-                ? "border-red-300/50 bg-gradient-to-br from-red-50 to-red-100/80"
+            className={
+              notification.type === "error"
+                ? "relative rounded-2xl overflow-hidden bg-red-50/95 border border-red-200/60 shadow-lg shadow-red-900/5"
                 : notification.type === "warning"
-                  ? "border-orange-300/50 bg-gradient-to-br from-orange-50 to-orange-100/80"
-                  : "border-green-300/50 bg-gradient-to-br from-green-50 to-green-100/80"
-              }
-            `}
+                  ? "relative rounded-2xl overflow-hidden bg-amber-50/95 border border-amber-200/60 shadow-lg shadow-amber-900/5"
+                  : "relative rounded-2xl overflow-hidden bg-emerald-50/95 border border-emerald-200/60 shadow-lg shadow-emerald-900/5"
+            }
           >
-            {/* Animated border effect */}
-            <div className={`absolute inset-0 ${notification.type === "error" ? "bg-red-500/10" : notification.type === "warning" ? "bg-orange-500/10" : "bg-green-500/10"} animate-pulse`} />
-            
-            <div className="relative flex items-start gap-4 p-5">
-              {/* Icon with background circle */}
-              <div className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full ${
-                notification.type === "error"
-                  ? "bg-red-100"
-                  : notification.type === "warning"
-                    ? "bg-orange-100"
-                    : "bg-green-100"
-              }`}>
-                {notification.type === "error" ? (
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                ) : notification.type === "warning" ? (
-                  <Clock className="w-5 h-5 text-orange-600" />
+            <div className="relative flex flex-col">
+              <div className="flex items-start gap-4 p-5">
+                {notification.memberPhoto ? (
+                  <div className="flex-shrink-0 w-14 h-14 rounded-xl overflow-hidden bg-white/80 shadow-sm ring-1 ring-black/5">
+                    <img src={notification.memberPhoto} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = "none"; const n = e.target.nextElementSibling; if (n) n.style.display = "flex" }} />
+                    <div className="w-full h-full flex items-center justify-center hidden bg-gray-100">
+                      {notification.type === "error" ? <AlertCircle className="w-6 h-6 text-red-500" /> : notification.type === "warning" ? <Clock className="w-6 h-6 text-amber-600" /> : <CheckCircle className="w-6 h-6 text-emerald-600" />}
+                    </div>
+                  </div>
                 ) : (
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <div className={`flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-xl ${notification.type === "error" ? "bg-red-100/80" : notification.type === "warning" ? "bg-amber-100/80" : "bg-emerald-100/80"}`}>
+                    {notification.type === "error" ? <AlertCircle className="w-6 h-6 text-red-500" /> : notification.type === "warning" ? <Clock className="w-6 h-6 text-amber-600" /> : <CheckCircle className="w-6 h-6 text-emerald-600" />}
+                  </div>
                 )}
+                <div className="flex-1 min-w-0 pt-0.5">
+                  <p className={`text-[15px] font-medium leading-snug whitespace-pre-line break-words ${notification.type === "error" ? "text-red-900/90" : notification.type === "warning" ? "text-amber-900/90" : "text-emerald-900/90"}`} dangerouslySetInnerHTML={{ __html: notification.message.replace(/₱/g, "&#8369;") }} />
+                </div>
               </div>
-              
-              {/* Message content */}
-              <div className="flex-1 min-w-0">
-                <p
-                  className={`text-sm font-semibold leading-relaxed whitespace-pre-line break-words ${
-                    notification.type === "error"
-                      ? "text-red-900"
-                      : notification.type === "warning"
-                        ? "text-orange-900"
-                        : "text-green-900"
-                  }`}
-                  dangerouslySetInnerHTML={{ __html: notification.message.replace(/₱/g, '&#8369;') }}
-                />
-              </div>
-              
-              {/* Close button */}
-              <button
-                onClick={() => setNotification({ show: false, message: "", type: "" })}
-                className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
-                  notification.type === "error"
-                    ? "hover:bg-red-200/50 text-red-600"
-                    : notification.type === "warning"
-                      ? "hover:bg-orange-200/50 text-orange-600"
-                      : "hover:bg-green-200/50 text-green-600"
-                }`}
-                aria-label="Close notification"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              {notification.userId != null && (
+                <div className="px-5 pb-4 pt-0">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      const uid = notification.userId
+                      if (uid == null || uid === "") return
+                      try {
+                        sessionStorage.setItem("openSubscriptionDetailsUserId", String(uid))
+                        window.dispatchEvent(new CustomEvent("open-subscription-details-for-user", { detail: { userId: uid } }))
+                      } finally {
+                        setNotification({ show: false, message: "", type: "", memberPhoto: null, userId: null })
+                      }
+                    }}
+                    className={`
+                      w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium text-sm transition-all duration-200 active:scale-[0.98]
+                      ${notification.type === "error"
+                        ? "bg-red-100/80 border border-red-200/70 text-red-800 hover:bg-red-200/80"
+                        : notification.type === "warning"
+                          ? "bg-amber-100/80 border border-amber-200/70 text-amber-800 hover:bg-amber-200/80"
+                          : "bg-emerald-100/80 border border-emerald-200/70 text-emerald-800 hover:bg-emerald-200/80"
+                      }
+                    `}
+                  >
+                    <Eye className="w-4 h-4 shrink-0 opacity-80" />
+                    View details
+                  </button>
+                </div>
+              )}
             </div>
-            
-            {/* Progress bar */}
-            <div className={`h-1 ${notification.type === "error" ? "bg-red-500" : notification.type === "warning" ? "bg-orange-500" : "bg-green-500"}`} style={{ animation: 'shrink 8s linear forwards' }} />
+
+            <div className="h-1 bg-black/5 overflow-hidden">
+              <div
+                className={`h-full ${notification.type === "error" ? "bg-red-400/70" : notification.type === "warning" ? "bg-amber-400/70" : "bg-emerald-400/70"}`}
+                style={{ width: "100%", animation: "toast-shrink 15s linear forwards", animationFillMode: "forwards" }}
+              />
+            </div>
           </div>
         </div>
       )}
-      
+
       <style jsx>{`
-        @keyframes shrink {
-          from { width: 100%; }
-          to { width: 0%; }
+        @keyframes toast-shrink {
+          0% { width: 100%; }
+          100% { width: 0%; }
         }
       `}</style>
 

@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import React, { useState, useEffect, useContext } from "react"
 import axios from "axios"
@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
+const MEMBER_API_URL = "https://api.cnergy.site/member_management.php"
 
 const SubscriptionMonitor = ({ userId }) => {
   // Helper function to normalize profile photo URLs
@@ -286,6 +287,55 @@ const SubscriptionMonitor = ({ userId }) => {
         console.error('Error parsing nav params:', e)
       }
     }
+  }, [])
+
+  // Open Subscription Details modal for a user (from toast click)
+  const openSubscriptionDetailsForUserId = async (uid) => {
+    if (!uid) return
+    const id = typeof uid === 'string' ? parseInt(uid, 10) : uid
+    if (!id) return
+    try {
+      const [userRes, subsRes] = await Promise.all([
+        axios.get(`${MEMBER_API_URL}?id=${id}`),
+        axios.get(`${API_URL}?user_id=${id}`)
+      ])
+      const member = userRes.data && !userRes.data.error ? userRes.data : null
+      const subs = Array.isArray(subsRes.data?.subscriptions) ? subsRes.data.subscriptions : []
+      if (!member) return
+      const user = {
+        id: member.id,
+        user_id: member.id,
+        fname: member.fname,
+        mname: member.mname,
+        lname: member.lname,
+        email: member.email,
+        system_photo_url: member.system_photo_url || null,
+        is_guest_session: false
+      }
+      setViewDetailsModal({ open: true, user, subscriptions: subs })
+    } catch (e) {
+      console.error('Error opening subscription details for user:', id, e)
+    } finally {
+      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) {}
+    }
+  }
+
+  // Check sessionStorage on mount (navigate from toast → Monitor Subscriptions)
+  useEffect(() => {
+    const raw = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('openSubscriptionDetailsUserId') : null
+    if (!raw) return
+    sessionStorage.removeItem('openSubscriptionDetailsUserId')
+    openSubscriptionDetailsForUserId(raw)
+  }, [])
+
+  // Listen for toast click when already on Monitor Subscriptions
+  useEffect(() => {
+    const handler = (e) => {
+      const uid = e.detail?.userId ?? sessionStorage.getItem('openSubscriptionDetailsUserId')
+      if (uid) openSubscriptionDetailsForUserId(uid)
+    }
+    window.addEventListener('open-subscription-details-for-user', handler)
+    return () => window.removeEventListener('open-subscription-details-for-user', handler)
   }, [])
 
   // Fetch guest session sales
@@ -1589,30 +1639,30 @@ const SubscriptionMonitor = ({ userId }) => {
   // Helper function to check if subscription matches date range filter
   const matchesDateRangeFilter = (subscription) => {
     if (!subscription.start_date) return true
-    
+
     // If no date filters are set, show all subscriptions
     if (!startDate && !endDate) return true
 
     const subscriptionDate = new Date(subscription.start_date)
     subscriptionDate.setHours(0, 0, 0, 0) // Normalize to start of day
-    
+
     let matchesStart = true
     let matchesEnd = true
-    
+
     // Check start date filter
     if (startDate) {
       const filterStartDate = new Date(startDate)
       filterStartDate.setHours(0, 0, 0, 0)
       matchesStart = subscriptionDate >= filterStartDate
     }
-    
+
     // Check end date filter
     if (endDate) {
       const filterEndDate = new Date(endDate)
       filterEndDate.setHours(0, 0, 0, 0)
       matchesEnd = subscriptionDate <= filterEndDate
     }
-    
+
     return matchesStart && matchesEnd
   }
 
@@ -1633,6 +1683,7 @@ const SubscriptionMonitor = ({ userId }) => {
           mname: subscription.mname,
           lname: subscription.lname,
           email: subscription.email,
+          system_photo_url: subscription.system_photo_url || null,
           guest_name: subscription.guest_name,
           is_guest_session: subscription.is_guest_session,
           subscription_type: subscription.subscription_type,
@@ -1885,24 +1936,24 @@ const SubscriptionMonitor = ({ userId }) => {
       if (subscription.start_date) {
         const subscriptionDate = new Date(subscription.start_date)
         subscriptionDate.setHours(0, 0, 0, 0) // Normalize to start of day
-        
+
         let matchesStart = true
         let matchesEnd = true
-        
+
         // Check start date filter
         if (startDate) {
           const filterStartDate = new Date(startDate)
           filterStartDate.setHours(0, 0, 0, 0)
           matchesStart = subscriptionDate >= filterStartDate
         }
-        
+
         // Check end date filter
         if (endDate) {
           const filterEndDate = new Date(endDate)
           filterEndDate.setHours(0, 0, 0, 0)
           matchesEnd = subscriptionDate <= filterEndDate
         }
-        
+
         matchesDateRange = matchesStart && matchesEnd
       }
 
@@ -1922,7 +1973,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       // Check if subscription is expired (end_date is in the past)
       const endDate = new Date(s.end_date)
       if (endDate < now) return false
@@ -1942,7 +1993,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       const endDate = new Date(s.end_date)
       // Check if subscription is already expired (end_date is in the past)
       if (endDate < now) return false
@@ -1958,7 +2009,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       const endDate = new Date(s.end_date)
       return endDate < now && (s.display_status === "Active" || s.status_name === "approved")
     })
@@ -1968,7 +2019,7 @@ const SubscriptionMonitor = ({ userId }) => {
     return (subscriptions || []).filter((s) => {
       // Apply date range filter first
       if (!matchesDateRangeFilter(s)) return false
-      
+
       return s.status_name === "cancelled" || s.display_status === "Cancelled"
     })
   }
@@ -2386,7 +2437,7 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <TableCell>
                                   <div className="flex items-center gap-3">
                                     <Avatar className="h-10 w-10">
-                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.profile_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
+                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.system_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
                                       <AvatarFallback>
                                         {primarySub ? getAvatarInitials(primarySub) : 'U'}
                                       </AvatarFallback>
@@ -3983,26 +4034,43 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="space-y-3">
               <DialogTitle className="text-xl font-semibold text-gray-900">Subscription Details</DialogTitle>
               {viewDetailsModal.user && (
-                <div className="space-y-0.5">
-                  <p className="text-base font-medium text-gray-900">
-                    {viewDetailsModal.user.is_guest_session
-                      ? viewDetailsModal.user.guest_name
-                      : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
-                  </p>
-                  {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
-                    <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
-                  )}
-                  {viewDetailsModal.user.is_guest_session && (
-                    (viewDetailsModal.user.session_code ||
-                      (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
-                      <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
-                        Session Code: <span className="text-gray-900">
-                          {viewDetailsModal.user.session_code ||
-                            (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
-                        </span>
-                      </p>
-                    )
-                  )}
+                <div className="flex items-start gap-4">
+                  {!viewDetailsModal.user.is_guest_session && (viewDetailsModal.user.system_photo_url || (viewDetailsModal.subscriptions?.[0]?.system_photo_url)) ? (
+                    <div className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-100">
+                      <img
+                        src={normalizeProfilePhotoUrl(viewDetailsModal.user.system_photo_url || viewDetailsModal.subscriptions?.[0]?.system_photo_url)}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : !viewDetailsModal.user.is_guest_session ? (
+                    <div className="flex-shrink-0 w-14 h-14 rounded-lg border-2 border-gray-200 bg-gray-100 flex items-center justify-center">
+                      <span className="text-lg font-semibold text-gray-400">
+                        {viewDetailsModal.user.fname?.[0] || viewDetailsModal.user.lname?.[0] || '?'}
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <p className="text-base font-medium text-gray-900">
+                      {viewDetailsModal.user.is_guest_session
+                        ? viewDetailsModal.user.guest_name
+                        : `${viewDetailsModal.user.fname || ''} ${viewDetailsModal.user.mname || ''} ${viewDetailsModal.user.lname || ''}`.trim() || 'Unknown User'}
+                    </p>
+                    {!viewDetailsModal.user.is_guest_session && viewDetailsModal.user.email && (
+                      <p className="text-sm text-gray-500">{viewDetailsModal.user.email}</p>
+                    )}
+                    {viewDetailsModal.user.is_guest_session && (
+                      (viewDetailsModal.user.session_code ||
+                        (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions.length > 0 && viewDetailsModal.subscriptions[0].session_code)) && (
+                        <p className="text-sm font-mono font-semibold text-gray-700 mt-1">
+                          Session Code: <span className="text-gray-900">
+                            {viewDetailsModal.user.session_code ||
+                              (viewDetailsModal.subscriptions && viewDetailsModal.subscriptions[0].session_code)}
+                          </span>
+                        </p>
+                      )
+                    )}
+                  </div>
                 </div>
               )}
             </div>

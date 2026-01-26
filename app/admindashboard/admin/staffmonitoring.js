@@ -38,6 +38,21 @@ import {
 const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
 const STAFF_MONITORING_API_URL = "https://api.cnergy.site/staff_monitoring.php"
 
+function getTodayYYYYMMDD() {
+  const n = new Date()
+  const f = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const p = f.formatToParts(n)
+  const y = p.find((x) => x.type === "year").value
+  const m = p.find((x) => x.type === "month").value
+  const d = p.find((x) => x.type === "day").value
+  return `${y}-${m}-${d}`
+}
+
 const StaffMonitoring = () => {
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -53,6 +68,16 @@ const StaffMonitoring = () => {
   const [customDate, setCustomDate] = useState(null)
   const [useCustomDate, setUseCustomDate] = useState(false)
   const [dateRange, setDateRange] = useState({ from: null, to: null })
+
+  // Start Date / End Date for Activity Logs (like home dashboard)
+  const [activityStartDate, setActivityStartDate] = useState(() => getTodayYYYYMMDD())
+  const [activityEndDate, setActivityEndDate] = useState(() => getTodayYYYYMMDD())
+  const [activityQuickFilter, setActivityQuickFilter] = useState("today")
+
+  // Start Date / End Date for Staff Performance tab
+  const [performanceStartDate, setPerformanceStartDate] = useState(() => getTodayYYYYMMDD())
+  const [performanceEndDate, setPerformanceEndDate] = useState(() => getTodayYYYYMMDD())
+  const [performanceQuickFilter, setPerformanceQuickFilter] = useState("today")
 
   // Data states
   const [activities, setActivities] = useState([])
@@ -88,13 +113,13 @@ const StaffMonitoring = () => {
   // Reload data when filters change
   useEffect(() => {
     loadStaffActivities()
-  }, [staffFilter, dateFilter, activityTypeFilter, customDate, useCustomDate, dateRange, monthFilter, yearFilter])
+  }, [staffFilter, dateFilter, activityTypeFilter, customDate, useCustomDate, dateRange, monthFilter, yearFilter, activityStartDate, activityEndDate])
 
   // Reload performance data when filters change
   useEffect(() => {
     loadStaffPerformance()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange])
+  }, [dateFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange, performanceStartDate, performanceEndDate])
 
   // Reload summary when date filter changes
   useEffect(() => {
@@ -137,8 +162,12 @@ const StaffMonitoring = () => {
       const params = new URLSearchParams()
       if (staffFilter !== "all") params.append("staff_id", staffFilter)
 
-      // Handle date filtering - custom date takes priority
-      if (useCustomDate && customDate) {
+      // Handle date filtering - Start/End Date Range takes priority (like home)
+      if (activityStartDate || activityEndDate) {
+        params.append("date_filter", "range")
+        if (activityStartDate) params.append("date_from", activityStartDate)
+        if (activityEndDate) params.append("date_to", activityEndDate)
+      } else if (useCustomDate && customDate) {
         params.append("date_filter", "custom")
         params.append("custom_date", format(customDate, "yyyy-MM-dd"))
       } else if (useCustomDate && dateRange.from && dateRange.to) {
@@ -278,8 +307,12 @@ const StaffMonitoring = () => {
       // Follow the SAME pattern as loadStaffActivities
       const params = new URLSearchParams()
 
-      // Handle date filtering - custom date takes priority (same as Activity Logs)
-      if (useCustomDate && customDate) {
+      // Handle date filtering - Start/End date range takes priority
+      if (performanceStartDate || performanceEndDate) {
+        params.append("date_filter", "range")
+        if (performanceStartDate) params.append("date_from", performanceStartDate)
+        if (performanceEndDate) params.append("date_to", performanceEndDate)
+      } else if (useCustomDate && customDate) {
         params.append("date_filter", "custom")
         params.append("custom_date", format(customDate, "yyyy-MM-dd"))
       } else if (useCustomDate && dateRange.from && dateRange.to) {
@@ -417,6 +450,99 @@ const StaffMonitoring = () => {
       console.error("Error loading staff list:", error)
       // Set empty array instead of mock data
       setStaffList([])
+    }
+  }
+
+  const getTodayPH = () => {
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    const parts = formatter.formatToParts(now)
+    const y = parseInt(parts.find((p) => p.type === "year").value, 10)
+    const m = parseInt(parts.find((p) => p.type === "month").value, 10)
+    const d = parseInt(parts.find((p) => p.type === "day").value, 10)
+    return { y, m, d, date: new Date(y, m - 1, d) }
+  }
+
+  const applyActivityQuickFilter = (filter) => {
+    const { y, m, d, date } = getTodayPH()
+    const pad = (n) => String(n).padStart(2, "0")
+    const toStr = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+
+    switch (filter) {
+      case "today": {
+        const t = `${y}-${pad(m)}-${pad(d)}`
+        setActivityStartDate(t)
+        setActivityEndDate(t)
+        break
+      }
+      case "week": {
+        const weekStart = new Date(date)
+        weekStart.setDate(date.getDate() - date.getDay())
+        setActivityStartDate(toStr(weekStart))
+        setActivityEndDate(toStr(date))
+        break
+      }
+      case "month": {
+        const monthStart = new Date(y, m - 1, 1)
+        setActivityStartDate(toStr(monthStart))
+        setActivityEndDate(toStr(date))
+        break
+      }
+      case "year": {
+        const yearStart = new Date(y, 0, 1)
+        setActivityStartDate(toStr(yearStart))
+        setActivityEndDate(toStr(date))
+        break
+      }
+      case "all-time":
+      default:
+        setActivityStartDate("")
+        setActivityEndDate("")
+        break
+    }
+  }
+
+  const applyPerformanceQuickFilter = (filter) => {
+    const { y, m, d, date } = getTodayPH()
+    const pad = (n) => String(n).padStart(2, "0")
+    const toStr = (dt) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+
+    switch (filter) {
+      case "today": {
+        const t = `${y}-${pad(m)}-${pad(d)}`
+        setPerformanceStartDate(t)
+        setPerformanceEndDate(t)
+        break
+      }
+      case "week": {
+        const weekStart = new Date(date)
+        weekStart.setDate(date.getDate() - date.getDay())
+        setPerformanceStartDate(toStr(weekStart))
+        setPerformanceEndDate(toStr(date))
+        break
+      }
+      case "month": {
+        const monthStart = new Date(y, m - 1, 1)
+        setPerformanceStartDate(toStr(monthStart))
+        setPerformanceEndDate(toStr(date))
+        break
+      }
+      case "year": {
+        const yearStart = new Date(y, 0, 1)
+        setPerformanceStartDate(toStr(yearStart))
+        setPerformanceEndDate(toStr(date))
+        break
+      }
+      case "all-time":
+      default:
+        setPerformanceStartDate("")
+        setPerformanceEndDate("")
+        break
     }
   }
 
@@ -1075,58 +1201,72 @@ const StaffMonitoring = () => {
       if (!matchesSearch) return false
     }
 
-    // Date filter (frontend filtering as backup)
-    if (dateFilter !== "all" && !useCustomDate) {
+    // Date filter: Start/End Date Range (like home) takes priority
+    if (activityStartDate || activityEndDate) {
       const activityDate = new Date(activity.timestamp)
       if (isNaN(activityDate.getTime())) return false
-
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-
-      switch (dateFilter) {
-        case "today":
-          const activityDay = new Date(activityDate)
-          activityDay.setHours(0, 0, 0, 0)
-          if (activityDay.getTime() !== today.getTime()) return false
-          break
-        case "week":
-          const weekStart = new Date(today)
-          weekStart.setDate(today.getDate() - today.getDay())
-          if (activityDate < weekStart) return false
-          break
-        case "month":
-          if (activityDate.getMonth() !== today.getMonth() || activityDate.getFullYear() !== today.getFullYear()) return false
-          break
-        case "year":
-          if (activityDate.getFullYear() !== today.getFullYear()) return false
-          break
+      if (activityStartDate) {
+        const start = new Date(activityStartDate)
+        start.setHours(0, 0, 0, 0)
+        if (activityDate < start) return false
       }
-    }
+      if (activityEndDate) {
+        const end = new Date(activityEndDate)
+        end.setHours(23, 59, 59, 999)
+        if (activityDate > end) return false
+      }
+    } else {
+      // Quick period, month/year, custom date
+      if (dateFilter !== "all" && !useCustomDate) {
+        const activityDate = new Date(activity.timestamp)
+        if (isNaN(activityDate.getTime())) return false
 
-    // Month and year filters (frontend filtering as backup)
-    if (monthFilter !== "all" || yearFilter !== "all") {
-      const activityDate = new Date(activity.timestamp)
-      if (isNaN(activityDate.getTime())) return false
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
 
-      if (monthFilter !== "all") {
-        const activityMonth = activityDate.getMonth() + 1
-        if (activityMonth.toString() !== monthFilter) return false
+        switch (dateFilter) {
+          case "today":
+            const activityDay = new Date(activityDate)
+            activityDay.setHours(0, 0, 0, 0)
+            if (activityDay.getTime() !== today.getTime()) return false
+            break
+          case "week":
+            const weekStart = new Date(today)
+            weekStart.setDate(today.getDate() - today.getDay())
+            if (activityDate < weekStart) return false
+            break
+          case "month":
+            if (activityDate.getMonth() !== today.getMonth() || activityDate.getFullYear() !== today.getFullYear()) return false
+            break
+          case "year":
+            if (activityDate.getFullYear() !== today.getFullYear()) return false
+            break
+        }
       }
 
-      if (yearFilter !== "all") {
-        const activityYear = activityDate.getFullYear().toString()
-        if (activityYear !== yearFilter) return false
+      if (monthFilter !== "all" || yearFilter !== "all") {
+        const activityDate = new Date(activity.timestamp)
+        if (isNaN(activityDate.getTime())) return false
+
+        if (monthFilter !== "all") {
+          const activityMonth = activityDate.getMonth() + 1
+          if (activityMonth.toString() !== monthFilter) return false
+        }
+
+        if (yearFilter !== "all") {
+          const activityYear = activityDate.getFullYear().toString()
+          if (activityYear !== yearFilter) return false
+        }
       }
-    }
 
-    // Custom date filter
-    if (useCustomDate && customDate) {
-      const activityDate = new Date(activity.timestamp)
-      if (isNaN(activityDate.getTime())) return false
+      if (useCustomDate && customDate) {
+        const activityDate = new Date(activity.timestamp)
+        if (isNaN(activityDate.getTime())) return false
 
-      const customDateStr = format(customDate, "yyyy-MM-dd")
-      const activityDateStr = format(activityDate, "yyyy-MM-dd")
-      if (activityDateStr !== customDateStr) return false
+        const customDateStr = format(customDate, "yyyy-MM-dd")
+        const activityDateStr = format(activityDate, "yyyy-MM-dd")
+        if (activityDateStr !== customDateStr) return false
+      }
     }
 
     return true
@@ -1141,7 +1281,7 @@ const StaffMonitoring = () => {
   // Reset pagination when filters change
   useEffect(() => {
     setActivityLogsCurrentPage(1)
-  }, [searchQuery, staffFilter, dateFilter, activityTypeFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange])
+  }, [searchQuery, staffFilter, dateFilter, activityTypeFilter, monthFilter, yearFilter, useCustomDate, customDate, dateRange, activityStartDate, activityEndDate])
 
   console.log("Activities state:", activities.length)
   console.log("Filtered activities:", filteredActivities.length)
@@ -1158,7 +1298,7 @@ const StaffMonitoring = () => {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-4 text-lg">Loading activity logs...</p>
+          <p className="mt-4 text-lg">Loading logs…</p>
         </div>
       </div>
     )
@@ -1171,13 +1311,13 @@ const StaffMonitoring = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-600">
               <Activity className="h-5 w-5" />
-              Activity Logs - Error
+              Couldn’t load logs
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-center py-8">
               <p className="text-muted-foreground mb-4">
-                There was an error loading the activity logs.
+                Something went wrong. Try again.
               </p>
               <Button onClick={() => {
                 setHasError(false)
@@ -1224,8 +1364,7 @@ const StaffMonitoring = () => {
   }
 
   const getActivitiesLabel = () => {
-    const filterLabel = getFilterLabel()
-    return `${filterLabel}'s Activities`
+    return getFilterLabel()
   }
 
   const getMostActiveLabel = () => {
@@ -1243,7 +1382,7 @@ const StaffMonitoring = () => {
             </div>
             <div>
               <CardTitle className="text-3xl font-bold text-gray-900 mb-2">Activity Logs</CardTitle>
-              <p className="text-sm text-gray-600 font-medium">View all system activities and logs across CNERGY GYM</p>
+              <p className="text-sm text-gray-600 font-medium">Actions by staff, admins, and system across sales, subscriptions, check-ins, and more</p>
             </div>
           </div>
         </CardHeader>
@@ -1261,7 +1400,7 @@ const StaffMonitoring = () => {
           <CardContent>
             <div className="text-3xl font-bold text-gray-900 mb-1">{summary.activities_today}</div>
             <p className="text-xs text-gray-600 font-medium">
-              Total activities
+              Actions recorded
             </p>
           </CardContent>
         </Card>
@@ -1276,7 +1415,7 @@ const StaffMonitoring = () => {
           <CardContent>
             <div className="text-3xl font-bold text-gray-900 mb-1">{summary.activities_this_month}</div>
             <p className="text-xs text-gray-600 font-medium">
-              Total activities
+              Recorded this month
             </p>
           </CardContent>
         </Card>
@@ -1381,7 +1520,7 @@ const StaffMonitoring = () => {
                   }
                 }}
               >
-                View Activities
+                View their log
               </Button>
             )}
           </CardContent>
@@ -1390,8 +1529,8 @@ const StaffMonitoring = () => {
 
       <Tabs defaultValue="activities" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="activities">Activity Logs</TabsTrigger>
-          <TabsTrigger value="performance">Activity Summary</TabsTrigger>
+          <TabsTrigger value="activities">Event Log</TabsTrigger>
+          <TabsTrigger value="performance">Staff Performance</TabsTrigger>
         </TabsList>
 
         <TabsContent value="activities">
@@ -1400,8 +1539,8 @@ const StaffMonitoring = () => {
               <div className="flex flex-col gap-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-2xl font-bold text-gray-900 mb-1">Activity Logs</CardTitle>
-                    <p className="text-sm text-gray-600 font-medium">View and filter all system activities across CNERGY GYM</p>
+                    <CardTitle className="text-2xl font-bold text-gray-900 mb-1">Event Log</CardTitle>
+                    <p className="text-sm text-gray-600 font-medium">Filter by staff, date, or category. Includes admins, staff, and system events.</p>
                   </div>
                   <Button onClick={loadStaffActivities} variant="outline" size="sm" className="font-medium border-gray-300 hover:bg-gray-50">
                     <RefreshCw className="mr-2 h-4 w-4" />
@@ -1414,243 +1553,135 @@ const StaffMonitoring = () => {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
                   <Input
                     type="search"
-                    placeholder="Search activities, staff names, or categories..."
+                    placeholder="Search by action, staff name, or category…"
                     className="pl-10 h-11 text-base border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 rounded-lg"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
                 </div>
 
-                {/* Filters Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {/* Staff Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="staff-filter" className="text-sm font-semibold text-gray-700">User</Label>
-                    <Select value={staffFilter} onValueChange={setStaffFilter}>
-                      <SelectTrigger className="w-full h-10 border-2 border-gray-300 rounded-lg">
-                        <SelectValue placeholder="All Users" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Users</SelectItem>
-                        {(staffList || []).filter(staff => staff.id && staff.name).map((staff) => (
-                          <SelectItem key={staff.id} value={staff.id.toString()}>
-                            {staff.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Category Type Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="activity-filter" className="text-sm font-semibold text-gray-700">Category Type</Label>
-                    <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
-                      <SelectTrigger className="w-full h-10 border-2 border-gray-300 rounded-lg">
-                        <SelectValue placeholder="All Categories" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        <SelectItem value="Coach Management">Coach Management</SelectItem>
-                        <SelectItem value="Subscription Management">Subscription Management</SelectItem>
-                        <SelectItem value="Day Pass Access">Day Pass Access</SelectItem>
-                        <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
-                        <SelectItem value="Sales">Sales</SelectItem>
-                        <SelectItem value="Product Management">Product Management</SelectItem>
-                        <SelectItem value="Inventory Management">Inventory Management</SelectItem>
-                        <SelectItem value="User Management">User Management</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Month Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="month-filter" className="text-sm font-semibold text-gray-700">Month</Label>
-                    <Select
-                      value={monthFilter}
-                      onValueChange={(value) => {
-                        setMonthFilter(value)
-                        if (value !== "all") {
-                          setUseCustomDate(false)
-                          setDateFilter("all")
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-full h-10 border-2 border-gray-300 rounded-lg">
-                        <SelectValue placeholder="All Months" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        <SelectItem value="1">January</SelectItem>
-                        <SelectItem value="2">February</SelectItem>
-                        <SelectItem value="3">March</SelectItem>
-                        <SelectItem value="4">April</SelectItem>
-                        <SelectItem value="5">May</SelectItem>
-                        <SelectItem value="6">June</SelectItem>
-                        <SelectItem value="7">July</SelectItem>
-                        <SelectItem value="8">August</SelectItem>
-                        <SelectItem value="9">September</SelectItem>
-                        <SelectItem value="10">October</SelectItem>
-                        <SelectItem value="11">November</SelectItem>
-                        <SelectItem value="12">December</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Year Filter with Pick Date */}
-                  <div className="space-y-2 flex-1">
-                    <Label htmlFor="year-filter" className="text-sm font-semibold text-gray-700">Year</Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={yearFilter}
-                        onValueChange={(value) => {
-                          setYearFilter(value)
-                          if (value !== "all") {
-                            setUseCustomDate(false)
-                            setDateFilter("all")
-                          }
-                        }}
-                        className="flex-1"
-                      >
-                        <SelectTrigger className="w-full h-10 border-2 border-gray-300 rounded-lg">
-                          <SelectValue placeholder="All Years" />
+                {/* Filters: Performed by → Category → Quick → Start Date → End Date */}
+                <div className="rounded-lg border border-slate-200/60 bg-white shadow-sm p-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="staff-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Performed by:</Label>
+                      <Select value={staffFilter} onValueChange={setStaffFilter}>
+                        <SelectTrigger id="staff-filter" className="w-48 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All staff & system" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">All Years</SelectItem>
-                          <SelectItem value="2025">2025</SelectItem>
-                          <SelectItem value="2024">2024</SelectItem>
-                          <SelectItem value="2023">2023</SelectItem>
-                          <SelectItem value="2022">2022</SelectItem>
-                          <SelectItem value="2021">2021</SelectItem>
-                          <SelectItem value="2020">2020</SelectItem>
+                          <SelectItem value="all">All staff & system</SelectItem>
+                          {(staffList || []).filter(staff => staff.id && staff.name).map((staff) => (
+                            <SelectItem key={staff.id} value={staff.id.toString()}>
+                              {staff.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-
-                      {/* Calendar Date Picker Button - next to Year */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant={useCustomDate ? "default" : "outline"}
-                            size="sm"
-                            className="h-10 text-xs font-medium whitespace-nowrap"
-                          >
-                            <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
-                            {customDate ? format(customDate, "MMM dd") : "Pick Date"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={customDate}
-                            onSelect={(date) => {
-                              setCustomDate(date)
-                              setUseCustomDate(!!date)
-                              if (date) {
-                                setDateFilter("custom")
-                                setMonthFilter("all")
-                                setYearFilter("all")
-                              }
-                            }}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
                     </div>
-                  </div>
-                </div>
-
-                {/* Quick Period Filters and Custom Date */}
-                <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-200">
-                  <Label className="text-sm font-semibold text-gray-700">Quick Filters:</Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant={dateFilter === "today" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("today")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-8 text-xs font-medium"
-                    >
-                      Today
-                    </Button>
-                    <Button
-                      variant={dateFilter === "week" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("week")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-8 text-xs font-medium"
-                    >
-                      This Week
-                    </Button>
-                    <Button
-                      variant={dateFilter === "month" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("month")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-8 text-xs font-medium"
-                    >
-                      This Month
-                    </Button>
-                    <Button
-                      variant={dateFilter === "year" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("year")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-8 text-xs font-medium"
-                    >
-                      This Year
-                    </Button>
-                    <Button
-                      variant={dateFilter === "all" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("all")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-8 text-xs font-medium"
-                    >
-                      All Time
-                    </Button>
-
-                    {/* Clear Date Button */}
-                    {(useCustomDate && customDate) || monthFilter !== "all" || yearFilter !== "all" ? (
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <Label htmlFor="activity-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Category:</Label>
+                      <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+                        <SelectTrigger id="activity-filter" className="w-48 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All categories</SelectItem>
+                          <SelectItem value="Coach Management">Coach Management</SelectItem>
+                          <SelectItem value="Subscription Management">Subscription Management</SelectItem>
+                          <SelectItem value="Day Pass Access">Day Pass Access</SelectItem>
+                          <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
+                          <SelectItem value="Sales">Sales</SelectItem>
+                          <SelectItem value="Product Management">Product Management</SelectItem>
+                          <SelectItem value="Inventory Management">Inventory Management</SelectItem>
+                          <SelectItem value="User Management">User Management</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <Label htmlFor="activity-quick-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Quick:</Label>
+                      <Select
+                        value={activityQuickFilter}
+                        onValueChange={(v) => {
+                          setActivityQuickFilter(v)
+                          applyActivityQuickFilter(v)
+                        }}
+                      >
+                        <SelectTrigger id="activity-quick-filter" className="w-32 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All time" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all-time">All time</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="week">This week</SelectItem>
+                          <SelectItem value="month">This month</SelectItem>
+                          <SelectItem value="year">This year</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <CalendarIcon className="h-4 w-4 text-slate-500" />
+                      <Label htmlFor="activity-start-date" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Start Date:</Label>
+                      <Input
+                        type="date"
+                        id="activity-start-date"
+                        value={activityStartDate}
+                        onChange={(e) => {
+                          setActivityStartDate(e.target.value)
+                          setActivityQuickFilter("all-time")
+                          setDateFilter("all")
+                          setMonthFilter("all")
+                          setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                          setDateRange({ from: null, to: null })
+                        }}
+                        className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                        max={activityEndDate || new Date().toISOString().slice(0, 10)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="activity-end-date" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">End Date:</Label>
+                      <Input
+                        type="date"
+                        id="activity-end-date"
+                        value={activityEndDate}
+                        onChange={(e) => {
+                          setActivityEndDate(e.target.value)
+                          setActivityQuickFilter("all-time")
+                          setDateFilter("all")
+                          setMonthFilter("all")
+                          setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                          setDateRange({ from: null, to: null })
+                        }}
+                        className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                        min={activityStartDate || undefined}
+                        max={new Date().toISOString().slice(0, 10)}
+                      />
+                    </div>
+                    {(activityStartDate || activityEndDate) && (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          setCustomDate(null)
-                          setUseCustomDate(false)
+                          setActivityStartDate("")
+                          setActivityEndDate("")
+                          setActivityQuickFilter("all-time")
                           setDateFilter("all")
                           setMonthFilter("all")
                           setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                          setDateRange({ from: null, to: null })
                         }}
-                        className="h-8 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200"
+                        className="h-10 px-4 text-sm border-slate-300 hover:bg-slate-50 hover:border-slate-400"
                       >
-                        ✕ Clear
+                        Clear Dates
                       </Button>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               </div>
@@ -1660,17 +1691,17 @@ const StaffMonitoring = () => {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gray-50 hover:bg-gray-50 border-b-2 border-gray-200">
-                      <TableHead className="font-semibold text-gray-900">User</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Activity</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Performed by</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Action</TableHead>
                       <TableHead className="font-semibold text-gray-900">Category</TableHead>
-                      <TableHead className="font-semibold text-gray-900">Timestamp</TableHead>
+                      <TableHead className="font-semibold text-gray-900">Time</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {paginatedActivities.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                          No activities found matching your criteria
+                          No events match the current filters
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -1725,7 +1756,7 @@ const StaffMonitoring = () => {
               {filteredActivities.length > 0 && (
                 <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 bg-white mb-6">
                   <div className="text-sm text-gray-500">
-                    {filteredActivities.length} {filteredActivities.length === 1 ? 'entry' : 'entries'} total
+                    {filteredActivities.length} {filteredActivities.length === 1 ? 'event' : 'events'}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1766,8 +1797,8 @@ const StaffMonitoring = () => {
                       <Activity className="h-6 w-6 text-white" />
                     </div>
                     <div>
-                      <CardTitle className="text-2xl font-bold text-gray-900 mb-1">Activity Summary</CardTitle>
-                      <p className="text-sm text-gray-600 font-medium">Track activities</p>
+                      <CardTitle className="text-2xl font-bold text-gray-900 mb-1">Staff Performance</CardTitle>
+                      <p className="text-sm text-gray-600 font-medium">Breakdown of actions</p>
                     </div>
                   </div>
                   <Button onClick={loadStaffPerformance} variant="outline" size="sm" className="font-medium border-gray-300 hover:bg-gray-50 shadow-sm">
@@ -1776,182 +1807,126 @@ const StaffMonitoring = () => {
                   </Button>
                 </div>
 
-                {/* Filters Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Month Filter */}
-                  <div className="space-y-2">
-                    <Label htmlFor="performance-month-filter" className="text-sm font-semibold text-gray-700">Month</Label>
-                    <Select
-                      value={monthFilter}
-                      onValueChange={(value) => {
-                        setMonthFilter(value)
-                        if (value !== "all") {
-                          setUseCustomDate(false)
-                          setDateFilter("all")
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="w-full h-11 border-2 border-gray-300 rounded-lg shadow-sm hover:border-gray-400 transition-colors">
-                        <SelectValue placeholder="All Months" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Months</SelectItem>
-                        <SelectItem value="1">January</SelectItem>
-                        <SelectItem value="2">February</SelectItem>
-                        <SelectItem value="3">March</SelectItem>
-                        <SelectItem value="4">April</SelectItem>
-                        <SelectItem value="5">May</SelectItem>
-                        <SelectItem value="6">June</SelectItem>
-                        <SelectItem value="7">July</SelectItem>
-                        <SelectItem value="8">August</SelectItem>
-                        <SelectItem value="9">September</SelectItem>
-                        <SelectItem value="10">October</SelectItem>
-                        <SelectItem value="11">November</SelectItem>
-                        <SelectItem value="12">December</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Year Filter with Pick Date */}
-                  <div className="space-y-2 flex-1">
-                    <Label htmlFor="performance-year-filter" className="text-sm font-semibold text-gray-700">Year</Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={yearFilter}
-                        onValueChange={(value) => {
-                          setYearFilter(value)
-                          if (value !== "all") {
-                            setUseCustomDate(false)
-                            setDateFilter("all")
-                          }
-                        }}
-                        className="flex-1"
-                      >
-                        <SelectTrigger className="w-full h-11 border-2 border-gray-300 rounded-lg shadow-sm hover:border-gray-400 transition-colors">
-                          <SelectValue placeholder="All Years" />
+                {/* Filters: Performed by → Category → Quick → Start Date → End Date */}
+                <div className="rounded-lg border border-slate-200/60 bg-white shadow-sm p-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="performance-staff-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Performed by:</Label>
+                      <Select value={staffFilter} onValueChange={setStaffFilter}>
+                        <SelectTrigger id="performance-staff-filter" className="w-48 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All staff & system" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">All Years</SelectItem>
-                          <SelectItem value="2025">2025</SelectItem>
-                          <SelectItem value="2024">2024</SelectItem>
-                          <SelectItem value="2023">2023</SelectItem>
-                          <SelectItem value="2022">2022</SelectItem>
-                          <SelectItem value="2021">2021</SelectItem>
-                          <SelectItem value="2020">2020</SelectItem>
+                          <SelectItem value="all">All staff & system</SelectItem>
+                          {(staffList || []).filter(staff => staff.id && staff.name).map((staff) => (
+                            <SelectItem key={staff.id} value={staff.id.toString()}>
+                              {staff.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-
-                      {/* Calendar Date Picker Button - next to Year */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant={useCustomDate ? "default" : "outline"}
-                            size="sm"
-                            className="h-11 text-xs font-medium whitespace-nowrap"
-                          >
-                            <CalendarIcon className="mr-1.5 h-3.5 w-3.5" />
-                            {customDate ? format(customDate, "MMM dd") : "Pick Date"}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0 shadow-2xl" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={customDate}
-                            onSelect={(date) => {
-                              setCustomDate(date)
-                              setUseCustomDate(!!date)
-                              if (date) {
-                                setDateFilter("custom")
-                                setMonthFilter("all")
-                                setYearFilter("all")
-                              }
-                            }}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
                     </div>
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <Label htmlFor="performance-category-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Category:</Label>
+                      <Select value={activityTypeFilter} onValueChange={setActivityTypeFilter}>
+                        <SelectTrigger id="performance-category-filter" className="w-48 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All categories</SelectItem>
+                          <SelectItem value="Coach Management">Coach Management</SelectItem>
+                          <SelectItem value="Subscription Management">Subscription Management</SelectItem>
+                          <SelectItem value="Day Pass Access">Day Pass Access</SelectItem>
+                          <SelectItem value="Coach Assignment">Coach Assignment</SelectItem>
+                          <SelectItem value="Sales">Sales</SelectItem>
+                          <SelectItem value="Product Management">Product Management</SelectItem>
+                          <SelectItem value="Inventory Management">Inventory Management</SelectItem>
+                          <SelectItem value="User Management">User Management</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <Label htmlFor="performance-quick-filter" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Quick:</Label>
+                      <Select
+                        value={performanceQuickFilter}
+                        onValueChange={(v) => {
+                          setPerformanceQuickFilter(v)
+                          applyPerformanceQuickFilter(v)
+                        }}
+                      >
+                        <SelectTrigger id="performance-quick-filter" className="w-32 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20">
+                          <SelectValue placeholder="All time" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all-time">All time</SelectItem>
+                          <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="week">This week</SelectItem>
+                          <SelectItem value="month">This month</SelectItem>
+                          <SelectItem value="year">This year</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
+                      <CalendarIcon className="h-4 w-4 text-slate-500" />
+                      <Label htmlFor="perf-start-date" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">Start Date:</Label>
+                      <Input
+                        type="date"
+                        id="perf-start-date"
+                        value={performanceStartDate}
+                        onChange={(e) => {
+                          setPerformanceStartDate(e.target.value)
+                          setPerformanceQuickFilter("all-time")
+                          setDateFilter("all")
+                          setMonthFilter("all")
+                          setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                        }}
+                        className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                        max={performanceEndDate || new Date().toISOString().slice(0, 10)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="perf-end-date" className="flex-shrink-0 whitespace-nowrap text-sm font-medium text-slate-700">End Date:</Label>
+                      <Input
+                        type="date"
+                        id="perf-end-date"
+                        value={performanceEndDate}
+                        onChange={(e) => {
+                          setPerformanceEndDate(e.target.value)
+                          setPerformanceQuickFilter("all-time")
+                          setDateFilter("all")
+                          setMonthFilter("all")
+                          setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                        }}
+                        className="w-40 h-10 border-slate-300 focus:border-slate-400 focus:ring-slate-400/20 shadow-sm"
+                        min={performanceStartDate || undefined}
+                        max={new Date().toISOString().slice(0, 10)}
+                      />
+                    </div>
+                    {(performanceStartDate || performanceEndDate) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setPerformanceStartDate("")
+                          setPerformanceEndDate("")
+                          setPerformanceQuickFilter("all-time")
+                          setDateFilter("all")
+                          setMonthFilter("all")
+                          setYearFilter("all")
+                          setUseCustomDate(false)
+                          setCustomDate(null)
+                        }}
+                        className="h-10 px-4 text-sm border-slate-300 hover:bg-slate-50 hover:border-slate-400"
+                      >
+                        Clear Dates
+                      </Button>
+                    )}
                   </div>
-                </div>
-
-                {/* Quick Period Filters */}
-                <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-200">
-                  <Label className="text-sm font-semibold text-gray-700">Quick Filters:</Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant={dateFilter === "today" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("today")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-9 text-xs font-medium shadow-sm hover:shadow transition-all"
-                    >
-                      Today
-                    </Button>
-                    <Button
-                      variant={dateFilter === "week" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("week")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-9 text-xs font-medium shadow-sm hover:shadow transition-all"
-                    >
-                      This Week
-                    </Button>
-                    <Button
-                      variant={dateFilter === "month" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("month")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-9 text-xs font-medium shadow-sm hover:shadow transition-all"
-                    >
-                      This Month
-                    </Button>
-                    <Button
-                      variant={dateFilter === "year" && monthFilter === "all" && yearFilter === "all" && !useCustomDate ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("year")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-9 text-xs font-medium shadow-sm hover:shadow transition-all"
-                    >
-                      This Year
-                    </Button>
-                  </div>
-
-                  {(monthFilter !== "all" || yearFilter !== "all") ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setDateFilter("all")
-                        setMonthFilter("all")
-                        setYearFilter("all")
-                        setUseCustomDate(false)
-                        setCustomDate(null)
-                      }}
-                      className="h-9 px-3 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 hover:border-red-300 transition-all duration-200 ml-auto shadow-sm"
-                    >
-                      ✕ Clear
-                    </Button>
-                  ) : null}
                 </div>
               </div>
             </CardHeader>
@@ -1979,8 +1954,8 @@ const StaffMonitoring = () => {
                             <div className="p-4 rounded-full bg-gray-100">
                               <RefreshCw className="h-10 w-10 text-gray-400 animate-spin" />
                             </div>
-                            <p className="text-base font-semibold text-gray-700">Loading performance data...</p>
-                            <p className="text-sm text-gray-500">Please wait while we fetch the data</p>
+                            <p className="text-base font-semibold text-gray-700">Loading…</p>
+                            <p className="text-sm text-gray-500">Fetching staff performance</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1991,8 +1966,8 @@ const StaffMonitoring = () => {
                             <div className="p-4 rounded-full bg-gray-100">
                               <Activity className="h-10 w-10 text-gray-400" />
                             </div>
-                            <p className="text-base font-semibold text-gray-700">No activity data available</p>
-                            <p className="text-sm text-gray-500">Try adjusting your filters or select a different time period</p>
+                            <p className="text-base font-semibold text-gray-700">No records for this period</p>
+                            <p className="text-sm text-gray-500">Change the date range or filters above</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2062,10 +2037,10 @@ const StaffMonitoring = () => {
         <DialogContent className="max-w-6xl max-h-[90vh] border-0 shadow-2xl">
           <DialogHeader className="pb-4 border-b border-gray-200">
             <DialogTitle className="text-2xl font-bold text-gray-900">
-              Today's Activities - {selectedUserName}
+              Log for {selectedUserName}
             </DialogTitle>
             <DialogDescription className="text-sm text-gray-600 mt-1">
-              View all activities performed by {selectedUserName} today
+              Actions in the selected period
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-y-auto max-h-[65vh] -mx-6 px-6">

@@ -128,16 +128,16 @@ const GymDashboard = () => {
       if (response.data.success) {
         const stats = response.data.summaryStats
         let allClientsData = [] // Store clients data for generating membership chart
-        
+
         // Fetch sales and filter by date range
         let filteredSales = []
         try {
           // Fetch all sales (we'll filter client-side based on date range)
-            const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
-              timeout: 10000
-            })
-            const allSalesData = salesResponse.data.sales || []
-            
+          const salesResponse = await axios.get(`https://api.cnergy.site/sales.php?action=sales`, {
+            timeout: 10000
+          })
+          const allSalesData = salesResponse.data.sales || []
+
           // Filter sales by date range
           if (startDate || endDate) {
             filteredSales = allSalesData.filter(sale => {
@@ -167,53 +167,53 @@ const GymDashboard = () => {
             phTime.setHours(0, 0, 0, 0)
             const todayStr = format(phTime, "yyyy-MM-dd")
             filteredSales = allSalesData.filter(sale => {
-                const saleDate = new Date(sale.sale_date)
-                saleDate.setHours(0, 0, 0, 0)
-                const saleDateStr = format(saleDate, "yyyy-MM-dd")
-                return saleDateStr === todayStr
-              })
+              const saleDate = new Date(sale.sale_date)
+              saleDate.setHours(0, 0, 0, 0)
+              const saleDateStr = format(saleDate, "yyyy-MM-dd")
+              return saleDateStr === todayStr
+            })
           }
-          
+
           // Calculate sales total
           const salesTotal = filteredSales.reduce((sum, sale) => sum + (sale.total_amount || 0), 0)
-            
+
           // Update salesToday with calculated value
           stats.salesToday.value = salesTotal
-            setAllSales(allSalesData)
+          setAllSales(allSalesData)
           console.log("Sales (filtered by date range):", salesTotal, "Date Range:", { startDate, endDate })
-          } catch (salesError) {
+        } catch (salesError) {
           console.error("Error fetching sales:", salesError)
-            // Keep the API value if sales fetch fails
+          // Keep the API value if sales fetch fails
         }
-        
+
         // Fetch active subscriptions and clients using the same logic as monitoring subscription page
         try {
           const subscriptionsResponse = await axios.get(`https://api.cnergy.site/monitor_subscription.php`, {
             timeout: 10000
           })
           const allSubscriptions = subscriptionsResponse.data.subscriptions || []
-          
+
           // Filter active subscriptions (same logic as monitoring subscription page - getActiveSubscriptions)
           const now = new Date()
           const activeSubscriptions = allSubscriptions.filter((s) => {
             // Exclude cancelled subscriptions
-            if (s.status_name?.toLowerCase() === "cancelled" || 
-                s.display_status?.toLowerCase() === "cancelled" ||
-                s.status_name?.toLowerCase() === "canceled" || 
-                s.display_status?.toLowerCase() === "canceled") {
+            if (s.status_name?.toLowerCase() === "cancelled" ||
+              s.display_status?.toLowerCase() === "cancelled" ||
+              s.status_name?.toLowerCase() === "canceled" ||
+              s.display_status?.toLowerCase() === "canceled") {
               return false
             }
-            
+
             // Check if subscription is expired (end_date is in the past)
             if (s.end_date) {
               const endDate = new Date(s.end_date)
               if (endDate < now) return false
             }
-            
+
             // Only show if status is Active or approved and not expired
             return s.display_status === "Active" || s.status_name === "approved"
           })
-          
+
           // Group by user (same as monitoring subscription page - groupSubscriptionsByUser)
           const grouped = {}
           activeSubscriptions.forEach((subscription) => {
@@ -221,19 +221,19 @@ const GymDashboard = () => {
             const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
               ? `guest_${subscription.guest_name || subscription.id}`
               : subscription.user_id || `unknown_${subscription.id}`
-            
+
             if (!grouped[key]) {
               grouped[key] = []
             }
             grouped[key].push(subscription)
           })
-          
+
           const activeCount = Object.keys(grouped).length
           stats.activeSubscriptions.value = activeCount
-          
+
           // Update Annual Members count - same as active subscriptions (users with active membership plans)
           stats.members.active.value = activeCount
-          
+
           // Fetch total clients (same logic as View Clients page - only approved clients)
           try {
             const clientsResponse = await axios.get(`https://api.cnergy.site/member_management.php`, {
@@ -245,49 +245,49 @@ const GymDashboard = () => {
             // Filter to only approved clients (same as View Clients page)
             const approvedClients = allClients.filter((m) => m.account_status === "approved")
             const clientsCount = approvedClients.length
-            
+
             stats.totalUsers.active.value = clientsCount
             console.log("Total clients count (approved only):", clientsCount, "Total members:", allClients.length)
           } catch (clientsError) {
             console.error("Error fetching clients:", clientsError)
             // Keep the API value if clients fetch fails
           }
-          
+
           console.log("Active subscriptions count (grouped by user):", activeCount, "Total active subscriptions:", activeSubscriptions.length)
-          
+
           // Calculate expiring subscriptions (same logic as monitoring subscription page - getExpiringSoonSubscriptions)
           const today = new Date()
           today.setHours(0, 0, 0, 0)
           const sevenDaysFromNow = new Date()
           sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
           sevenDaysFromNow.setHours(23, 59, 59, 999)
-          
+
           const expiringSoonSubscriptions = allSubscriptions.filter((s) => {
             if (!s.end_date) return false
-            
+
             const endDate = new Date(s.end_date)
             // Check if subscription is already expired (end_date is in the past)
             if (endDate < now) return false
-            
+
             endDate.setHours(0, 0, 0, 0)
             return (s.display_status === "Active" || s.status_name === "approved") &&
               endDate >= today &&
               endDate <= sevenDaysFromNow
           })
-          
+
           // Group expiring subscriptions by user (same logic as groupSubscriptionsByUser)
           const groupedExpiring = {}
           expiringSoonSubscriptions.forEach((subscription) => {
             const key = subscription.is_guest_session || subscription.subscription_type === 'guest'
               ? `guest_${subscription.guest_name || subscription.id}`
               : subscription.user_id || `unknown_${subscription.id}`
-            
+
             if (!groupedExpiring[key]) {
               groupedExpiring[key] = []
             }
             groupedExpiring[key].push(subscription)
           })
-          
+
           const expiringCount = Object.keys(groupedExpiring).length
           stats.upcomingExpirations.value = expiringCount
           console.log("Expiring subscriptions count (grouped by user):", expiringCount, "Total expiring subscriptions:", expiringSoonSubscriptions.length)
@@ -295,7 +295,7 @@ const GymDashboard = () => {
           console.error("Error fetching active subscriptions:", subscriptionsError)
           // Keep the API value if subscriptions fetch fails
         }
-        
+
         // Fetch active attendance (only currently checked in, not total)
         try {
           const attendanceResponse = await axios.get(`https://api.cnergy.site/attendance.php?action=attendance`, {
@@ -303,25 +303,25 @@ const GymDashboard = () => {
           })
           // The API returns an array directly, not wrapped in an object
           const attendanceData = Array.isArray(attendanceResponse.data) ? attendanceResponse.data : (attendanceResponse.data?.attendance || [])
-          
+
           // Filter for only active sessions (same logic as attendance tracking page)
           const activeAttendance = attendanceData.filter(entry => {
             // Active if check_out is null, undefined, or contains "Still in gym"
             return !entry.check_out || entry.check_out === null || (typeof entry.check_out === 'string' && entry.check_out.includes("Still in gym"))
           })
-          
-          stats.attendanceToday = { 
-            value: activeAttendance.length, 
-            trend: 0, 
-            isPositive: true 
+
+          stats.attendanceToday = {
+            value: activeAttendance.length,
+            trend: 0,
+            isPositive: true
           }
         } catch (attendanceError) {
           console.error("Error fetching attendance:", attendanceError)
           stats.attendanceToday = { value: 0, trend: 0, isPositive: true }
         }
-        
+
         setSummaryStats(stats)
-        
+
         // Handle membership data based on date range
         let filteredMembershipData = response.data.membershipData || []
         if ((startDate || endDate) && allClientsData.length > 0) {
@@ -331,7 +331,7 @@ const GymDashboard = () => {
             const approvedClients = allClientsData.filter((m) => m.account_status === "approved")
             const filteredClients = approvedClients.filter(client => {
               if (!client.created_at) return false
-              
+
               const createdDate = new Date(client.created_at)
               createdDate.setHours(0, 0, 0, 0)
 
@@ -352,17 +352,17 @@ const GymDashboard = () => {
 
               return matchesStart && matchesEnd
             })
-            
+
             // Group clients by day and count how many were created each day
             const clientsByDate = {}
-            
+
             filteredClients.forEach(client => {
               if (!client.created_at) return
-              
+
               const createdDate = new Date(client.created_at)
               const dateKey = format(createdDate, "yyyy-MM-dd")
               const displayKey = format(createdDate, "MMM dd")
-              
+
               if (!clientsByDate[dateKey]) {
                 clientsByDate[dateKey] = {
                   name: displayKey,
@@ -370,14 +370,14 @@ const GymDashboard = () => {
                   count: 0
                 }
               }
-              
+
               clientsByDate[dateKey].count += 1
             })
-            
+
             // Convert to array, sort by date, and calculate cumulative total
             const sortedDates = Object.values(clientsByDate)
               .sort((a, b) => new Date(a.date) - new Date(b.date))
-            
+
             // Calculate base count (clients created before the start date)
             let baseCount = 0
             if (startDate) {
@@ -390,7 +390,7 @@ const GymDashboard = () => {
                 return createdDate < filterStartDate
               }).length
             }
-            
+
             let cumulativeCount = baseCount
             filteredMembershipData = sortedDates.map(item => {
               cumulativeCount += item.count
@@ -399,7 +399,7 @@ const GymDashboard = () => {
                 members: cumulativeCount
               }
             })
-            
+
             console.log("Generated membership data from filtered clients:", filteredMembershipData.length, "days")
           } catch (membershipError) {
             console.error("Error generating membership data from clients:", membershipError)
@@ -409,9 +409,9 @@ const GymDashboard = () => {
           // Use API data when no date range is set
           filteredMembershipData = response.data.membershipData || []
         }
-        
+
         setMembershipData(filteredMembershipData)
-        
+
         // Filter revenue data by date range
         let filteredRevenueData = response.data.revenueData || []
         if ((startDate || endDate) && filteredSales.length > 0) {
@@ -419,14 +419,14 @@ const GymDashboard = () => {
           try {
             // Group sales by day for the chart
             const revenueByDate = {}
-            
+
             filteredSales.forEach(sale => {
               if (!sale.sale_date || !sale.total_amount) return
-              
+
               const saleDate = new Date(sale.sale_date)
               const dateKey = format(saleDate, "yyyy-MM-dd")
               const displayKey = format(saleDate, "MMM dd")
-              
+
               if (!revenueByDate[dateKey]) {
                 revenueByDate[dateKey] = {
                   name: displayKey,
@@ -434,10 +434,10 @@ const GymDashboard = () => {
                   revenue: 0
                 }
               }
-              
+
               revenueByDate[dateKey].revenue += parseFloat(sale.total_amount) || 0
             })
-            
+
             // Convert to array and sort by date
             filteredRevenueData = Object.values(revenueByDate)
               .sort((a, b) => new Date(a.date) - new Date(b.date))
@@ -445,7 +445,7 @@ const GymDashboard = () => {
                 name: item.name,
                 revenue: item.revenue
               }))
-            
+
             console.log("Generated revenue data from filtered sales:", filteredRevenueData.length, "days")
           } catch (revenueError) {
             console.error("Error generating revenue data from sales:", revenueError)
@@ -456,22 +456,22 @@ const GymDashboard = () => {
           const phToday = getPhilippineTime()
           phToday.setHours(0, 0, 0, 0)
           const todayStr = format(phToday, "yyyy-MM-dd")
-          
+
           filteredRevenueData = filteredRevenueData.filter(item => {
             // If it's a time format (HH:MM), check if it represents today in Philippine time
             if (item.name && item.name.match(/^\d{1,2}:\d{2}$/)) {
               const [utcHours, minutes] = item.name.split(':').map(Number)
-              
+
               // Get today's date in UTC
               const now = new Date()
               const utcYear = now.getUTCFullYear()
               const utcMonth = now.getUTCMonth()
               const utcDay = now.getUTCDate()
-              
+
               // Try both today and yesterday in UTC (since late UTC hours might be from previous day)
               const utcDateToday = new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHours, minutes, 0))
               const utcDateYesterday = new Date(Date.UTC(utcYear, utcMonth, utcDay - 1, utcHours, minutes, 0))
-              
+
               // Convert to Philippine time and get the date
               const getPHDate = (utcDate) => {
                 const phTimeStr = utcDate.toLocaleString("en-US", {
@@ -483,10 +483,10 @@ const GymDashboard = () => {
                 const [phMonth, phDay, phYear] = phTimeStr.split('/').map(Number)
                 return `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
               }
-              
+
               const phDate1 = getPHDate(utcDateToday)
               const phDate2 = getPHDate(utcDateYesterday)
-              
+
               // Include if either conversion results in today's date in Philippine time
               return phDate1 === todayStr || phDate2 === todayStr
             }
@@ -494,7 +494,7 @@ const GymDashboard = () => {
             return true
           })
         }
-        
+
         setRevenueData(filteredRevenueData)
         setRetryCount(0)
       } else {
@@ -542,15 +542,15 @@ const GymDashboard = () => {
   const convertTimeToPH = (timeString) => {
     // Parse time string (HH:MM format) - assume it's UTC
     const [utcHours, minutes] = timeString.split(':').map(Number)
-    
+
     // Philippine time is UTC+8, so add 8 hours
     let phHours = utcHours + 8
-    
+
     // Handle day rollover (if hour exceeds 23, it's next day, but for display we just show the hour)
     if (phHours >= 24) {
       phHours = phHours - 24
     }
-    
+
     // Format as 12-hour with AM/PM
     const period = phHours >= 12 ? 'PM' : 'AM'
     const hour12 = phHours % 12 || 12
@@ -569,18 +569,10 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), convert to Philippine timezone first, then to 12-hour format with AM/PM
+      // If it's a time format (HH:MM), always convert from UTC to Philippine timezone, then to 12-hour format with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-        // For "today" period (when no date range is set), convert UTC time to Philippine time
-        const formattedTime = (!startDate && !endDate)
-          ? convertTimeToPH(item.name)
-          : (() => {
-              // For other periods, just format as 12-hour
-        const [hours, minutes] = item.name.split(':').map(Number)
-        const period = hours >= 12 ? 'PM' : 'AM'
-              const hour12 = hours % 12 || 12
-              return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
-            })()
+        // Always convert UTC time to Philippine time (UTC+8)
+        const formattedTime = convertTimeToPH(item.name)
         return { ...item, displayName: formattedTime }
       }
 
@@ -642,7 +634,7 @@ const GymDashboard = () => {
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="w-40 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                max={endDate || undefined}
+                max={endDate || new Date().toISOString().slice(0, 10)}
               />
               <Label htmlFor="end-date-filter" className="flex items-center gap-2 whitespace-nowrap">
                 <Calendar className="h-4 w-4 text-gray-600" />
@@ -655,6 +647,7 @@ const GymDashboard = () => {
                 onChange={(e) => setEndDate(e.target.value)}
                 className="w-40 h-10 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
                 min={startDate || undefined}
+                max={new Date().toISOString().slice(0, 10)}
               />
               {(startDate || endDate) && (
                 <Button
@@ -680,7 +673,7 @@ const GymDashboard = () => {
             ) : (
               <>
                 {/* Total Clients */}
-                <Card 
+                <Card
                   className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
                     localStorage.setItem('adminNavTarget', 'ViewClients')
@@ -711,11 +704,11 @@ const GymDashboard = () => {
                 </Card>
 
                 {/* Sales Card */}
-                <Card 
+                <Card
                   className="border border-green-300 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
                     localStorage.setItem('adminNavTarget', 'Sales')
-                    localStorage.setItem('adminNavParams', JSON.stringify({ 
+                    localStorage.setItem('adminNavParams', JSON.stringify({
                       openModal: 'totalSales',
                       startDate: startDate || undefined,
                       endDate: endDate || undefined
@@ -732,17 +725,17 @@ const GymDashboard = () => {
                   <CardContent>
                     <div className="text-2xl font-bold text-green-700 mb-1">₱{Number(summaryStats.salesToday.value || 0).toLocaleString('en-US')}</div>
                     <p className="text-xs text-gray-600">
-                      {startDate || endDate ? 
+                      {startDate || endDate ?
                         (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd, yyyy")}` :
-                         startDate ? `From ${format(new Date(startDate), "MMM dd, yyyy")}` :
-                         `Until ${format(new Date(endDate), "MMM dd, yyyy")}`) :
+                          startDate ? `From ${format(new Date(startDate), "MMM dd, yyyy")}` :
+                            `Until ${format(new Date(endDate), "MMM dd, yyyy")}`) :
                         "Today's revenue"}
                     </p>
                   </CardContent>
                 </Card>
 
                 {/* Attendance Card */}
-                <Card 
+                <Card
                   className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
                     localStorage.setItem('adminNavTarget', 'AttendanceTracking')
@@ -765,7 +758,7 @@ const GymDashboard = () => {
                 </Card>
 
                 {/* Active Subscriptions */}
-                <Card 
+                <Card
                   className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
                     localStorage.setItem('adminNavTarget', 'MonitorSubscriptions')
@@ -786,7 +779,7 @@ const GymDashboard = () => {
                 </Card>
 
                 {/* Expirations */}
-                <Card 
+                <Card
                   className="border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 bg-white cursor-pointer hover:scale-[1.02]"
                   onClick={() => {
                     localStorage.setItem('adminNavTarget', 'MonitorSubscriptions')
@@ -818,12 +811,12 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-              {startDate || endDate ? 
-                (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
-                 startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
-                 `Until ${format(new Date(endDate), "MMM dd")}`) :
-                "Today's"} Client Growth
-            </CardTitle>
+                  {startDate || endDate ?
+                    (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
+                      startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
+                        `Until ${format(new Date(endDate), "MMM dd")}`) :
+                    "Today's"} Client Growth
+                </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Client growth trend</CardDescription>
               </div>
             </div>
@@ -836,13 +829,13 @@ const GymDashboard = () => {
               className="h-[320px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart 
+                <LineChart
                   data={formatChartData(membershipData)}
                   margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                 >
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    stroke="#f3f4f6" 
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#f3f4f6"
                     strokeOpacity={0.5}
                     vertical={false}
                   />
@@ -894,12 +887,12 @@ const GymDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
-              {startDate || endDate ? 
-                (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
-                 startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
-                 `Until ${format(new Date(endDate), "MMM dd")}`) :
-                "Today's"} Revenue
-            </CardTitle>
+                  {startDate || endDate ?
+                    (startDate && endDate ? `${format(new Date(startDate), "MMM dd")} - ${format(new Date(endDate), "MMM dd")}` :
+                      startDate ? `From ${format(new Date(startDate), "MMM dd")}` :
+                        `Until ${format(new Date(endDate), "MMM dd")}`) :
+                    "Today's"} Revenue
+                </CardTitle>
                 <CardDescription className="text-xs text-gray-500 mt-0">Revenue performance</CardDescription>
               </div>
             </div>
@@ -912,13 +905,13 @@ const GymDashboard = () => {
               className="h-[320px]"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
+                <BarChart
                   data={formatChartData(revenueData)}
                   margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
                 >
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    stroke="#f3f4f6" 
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#f3f4f6"
                     strokeOpacity={0.5}
                     vertical={false}
                   />
@@ -939,8 +932,8 @@ const GymDashboard = () => {
                     tickMargin={8}
                     width={70}
                   />
-                  <Bar 
-                    dataKey="revenue" 
+                  <Bar
+                    dataKey="revenue"
                     fill="#14b8a6"
                     radius={[6, 6, 0, 0]}
                     opacity={0.85}
@@ -958,19 +951,19 @@ const GymDashboard = () => {
                       formatter={(value) => {
                         // Format currency with commas and proper decimal places
                         const numValue = typeof value === 'number' ? value : parseFloat(value) || 0
-                        return `₱${numValue.toLocaleString('en-US', { 
-                          minimumFractionDigits: 2, 
-                          maximumFractionDigits: 2 
+                        return `₱${numValue.toLocaleString('en-US', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
                         })}`
                       }}
                       labelFormatter={(label) => {
                         if (!label) return 'N/A'
-                        
+
                         // If it's already in 12-hour format (has AM/PM), return as is
                         if (typeof label === 'string' && (label.includes('AM') || label.includes('PM'))) {
                           return label
                         }
-                        
+
                         // If it's in 24-hour format (HH:MM or HH:MM:SS), convert to 12-hour
                         if (typeof label === 'string') {
                           const timeMatch = label.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/)
@@ -982,7 +975,7 @@ const GymDashboard = () => {
                             return `${hour12}:${minutes} ${period}`
                           }
                         }
-                        
+
                         return label
                       }}
                     />}
