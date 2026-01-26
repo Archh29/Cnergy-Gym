@@ -33,17 +33,18 @@ function getStaffIdFromRequest($data = null)
 }
 
 // Helper function to format end_date for gym sessions (9 PM on expiration date)
-function formatEndDateForPlan($planName, $endDate) {
+function formatEndDateForPlan($planName, $endDate)
+{
     // Check if this is a gym session plan
     $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $planName);
-    
+
     if ($isGymSession && $endDate) {
         // Parse the end_date and set to 9 PM on that date
         $dateObj = new DateTime($endDate, new DateTimeZone('Asia/Manila'));
         $dateObj->setTime(21, 0, 0); // 9 PM
         return $dateObj->format('Y-m-d H:i:s');
     }
-    
+
     // For non-gym sessions, return as-is
     return $endDate;
 }
@@ -784,7 +785,7 @@ function handleQRScan(PDO $pdo, array $input): void
     $checkSystemPhotoStmt = $pdo->query("SHOW COLUMNS FROM `user` LIKE 'system_photo_url'");
     $hasSystemPhoto = $checkSystemPhotoStmt->rowCount() > 0;
     $sysPhoto = $hasSystemPhoto ? ', system_photo_url' : '';
-    
+
     $userStmt = $pdo->prepare("SELECT id, fname, lname, profile_photo_url{$sysPhoto} FROM `user` WHERE id = ?");
     $userStmt->execute([(int) $userId]);
     $user = $userStmt->fetch();
@@ -999,31 +1000,31 @@ function handleQRScan(PDO $pdo, array $input): void
             $staffId = getStaffIdFromRequest($input);
             logStaffActivity($pdo, $staffId, "Auto Checkout", "Member {$user['fname']} {$user['lname']} auto checked out from " . date('M j', strtotime($sessionDate)) . " ({$formatted_duration})", "Attendance");
 
-        // For gym sessions, don't send plan_info on checkout - session is complete
-        $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $activePlan['plan_name'] ?? '');
-        $responseData = [
-            'success' => true,
-            'action' => 'auto_checkout',
-            'message' => $user['fname'] . ' ' . $user['lname'] . ' - Auto checked out from ' . date('M j', strtotime($sessionDate)) . ' (' . $formatted_duration . '). Please scan again to check in for today.',
-            'user_name' => $user['fname'] . ' ' . $user['lname'],
-            'user_id' => (int) $userId,
-            'system_photo_url' => $user['system_photo_url'] ?? null,
-            'profile_photo_url' => $user['profile_photo_url'] ?? null,
-            'old_session_date' => date('M j, Y', strtotime($sessionDate)),
-            'old_session_duration' => $formatted_duration
-        ];
-        
-        // Only include plan_info for non-gym sessions on checkout
-        if (!$isGymSession) {
-            $responseData['plan_info'] = [
-                'plan_name' => $activePlan['plan_name'],
-                'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
-                'end_date' => formatEndDateForPlan($activePlan['plan_name'], $activePlan['end_date']),
-                'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
+            // For gym sessions, don't send plan_info on checkout - session is complete
+            $isGymSession = preg_match('/gym\s+session|day\s+pass|walk[- ]?in/i', $activePlan['plan_name'] ?? '');
+            $responseData = [
+                'success' => true,
+                'action' => 'auto_checkout',
+                'message' => $user['fname'] . ' ' . $user['lname'] . ' - Auto checked out from ' . date('M j', strtotime($sessionDate)) . ' (' . $formatted_duration . '). Please scan again to check in for today.',
+                'user_name' => $user['fname'] . ' ' . $user['lname'],
+                'user_id' => (int) $userId,
+                'system_photo_url' => $user['system_photo_url'] ?? null,
+                'profile_photo_url' => $user['profile_photo_url'] ?? null,
+                'old_session_date' => date('M j, Y', strtotime($sessionDate)),
+                'old_session_duration' => $formatted_duration
             ];
-        }
-        
-        echo json_encode($responseData);
+
+            // Only include plan_info for non-gym sessions on checkout
+            if (!$isGymSession) {
+                $responseData['plan_info'] = [
+                    'plan_name' => $activePlan['plan_name'],
+                    'expires_on' => date('M j, Y', strtotime($activePlan['end_date'])),
+                    'end_date' => formatEndDateForPlan($activePlan['plan_name'], $activePlan['end_date']),
+                    'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
+                ];
+            }
+
+            echo json_encode($responseData);
         } else {
             // Check 30-second cooldown for checkout
             if ($timeDifference < 30) {
@@ -1076,7 +1077,7 @@ function handleQRScan(PDO $pdo, array $input): void
                 'checkout_time' => $checkoutTimeFormatted,
                 'duration' => $formatted_duration
             ];
-            
+
             // Only include plan_info for non-gym sessions on checkout
             if (!$isGymSession) {
                 $responseData['plan_info'] = [
@@ -1086,7 +1087,7 @@ function handleQRScan(PDO $pdo, array $input): void
                     'days_remaining' => max(0, floor((strtotime($activePlan['end_date']) - time()) / (60 * 60 * 24)))
                 ];
             }
-            
+
             echo json_encode($responseData);
         }
     } else {
