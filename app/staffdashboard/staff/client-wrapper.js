@@ -44,7 +44,7 @@ export default function StaffDashboardClient() {
 
   const fetchUserInfo = async () => {
     try {
-      const response = await fetch("https://api.cnergy.site/session.php", {
+      const response = await fetch("/api/session", {
         credentials: "include",
         headers: {
           "Content-Type": "application/json"

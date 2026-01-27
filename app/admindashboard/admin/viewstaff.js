@@ -13,7 +13,8 @@ import { useToast } from "@/components/ui/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 
-const API_BASE_URL = "https://api.cnergy.site/addstaff.php"
+// Use Next.js proxy in dev to avoid CORS issues
+const API_BASE_URL = "/api/addstaff"
 
 const validatePassword = (password) => {
   const errors = []
@@ -99,8 +100,9 @@ const ViewStaff = () => {
     fetchArchivedStaff() // Also fetch archived staff count on mount
   }, [])
 
-  // Auto-generate password when name fields change
+  // Auto-generate password when name fields change (Add flow only; never during Edit)
   useEffect(() => {
+    if (editOpen) return
     if (formData.fname || formData.lname) {
       const generatedPassword = generateStaffPassword(formData.fname, formData.mname, formData.lname)
       setFormData((prev) => ({
@@ -357,7 +359,9 @@ const ViewStaff = () => {
 
       toast({
         title: "Success",
-        description: "Staff member updated successfully",
+        description: response.data?.password_updated
+          ? "Staff member updated (password updated)."
+          : "Staff member updated successfully",
       })
       setEditOpen(false)
       resetForm()
@@ -890,6 +894,7 @@ const ViewStaff = () => {
                   name="password"
                   placeholder="********"
                   value={formData.password || ""}
+                  autoComplete="new-password"
                   onChange={handleInputChange}
                   className={`h-11 pr-12 border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/20 ${validationErrors.password ? "border-red-500" : ""}`}
                 />

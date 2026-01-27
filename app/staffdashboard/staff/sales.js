@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect } from "react"
 import axios from "axios"
@@ -18,16 +18,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -61,8 +51,6 @@ import {
   Clock,
   Store,
   BarChart3,
-  Archive,
-  RotateCcw,
   RefreshCw,
   X,
   XCircle,
@@ -129,10 +117,8 @@ const Sales = ({ userId }) => {
   const [editProduct, setEditProduct] = useState(null)
   const [editProductData, setEditProductData] = useState({ name: "", price: "", category: "Uncategorized" })
 
-  // Archive/Restore state
-  const [showArchived, setShowArchived] = useState(false)
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
-  const [productToArchive, setProductToArchive] = useState(null)
+  // Staff should not be able to archive/restore products
+  const showArchived = false
 
   // Toast notifications
   const { toast } = useToast()
@@ -527,7 +513,7 @@ const Sales = ({ userId }) => {
 
   const loadProducts = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}?action=products${showArchived ? '&archived=1' : ''}`, {
+      const response = await axios.get(`${API_BASE_URL}?action=products`, {
         timeout: 30000 // 30 second timeout
       })
       console.log("Products loaded:", response.data.products)
@@ -536,12 +522,6 @@ const Sales = ({ userId }) => {
       console.error("Error loading products:", error)
     }
   }
-
-  // Reload products when archive view changes
-  useEffect(() => {
-    loadProducts()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showArchived])
 
   const loadCoaches = async () => {
     try {
@@ -1369,60 +1349,6 @@ const Sales = ({ userId }) => {
     }
   }
 
-  const handleArchiveProduct = async () => {
-    if (!productToArchive) return
-
-    setLoading(true)
-    try {
-      const response = await axios.delete(`${API_BASE_URL}?action=product`, {
-        data: { id: productToArchive.id }
-      })
-
-      if (response.data.success) {
-        const productName = productToArchive.name
-        setArchiveDialogOpen(false)
-        setProductToArchive(null)
-        await loadProducts()
-        toast({
-          title: "Product Archived Successfully",
-          description: `"${productName}" has been archived and hidden from active inventory. You can restore it anytime.`,
-        })
-      }
-    } catch (error) {
-      console.error("Error archiving product:", error)
-      alert(error.response?.data?.error || "Error archiving product")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRestoreProduct = async (product) => {
-    setLoading(true)
-    try {
-      const response = await axios.put(`${API_BASE_URL}?action=restore`, {
-        id: product.id
-      })
-
-      if (response.data.success) {
-        await loadProducts()
-        toast({
-          title: "Product Restored Successfully",
-          description: `"${product.name}" has been restored and is now visible in active inventory.`,
-        })
-      }
-    } catch (error) {
-      console.error("Error restoring product:", error)
-      alert(error.response?.data?.error || "Error restoring product")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const openArchiveDialog = (product) => {
-    setProductToArchive(product)
-    setArchiveDialogOpen(true)
-  }
-
   const openEditDialog = (product) => {
     setEditProduct(product)
     setEditProductData({
@@ -1783,7 +1709,7 @@ const Sales = ({ userId }) => {
 
   useEffect(() => {
     setInventoryCurrentPage(1)
-  }, [productSearchQuery, categoryFilter, productStockStatusFilter, productPriceRangeFilter, showArchived])
+  }, [productSearchQuery, categoryFilter, productStockStatusFilter, productPriceRangeFilter])
 
 
   if (loading && sales.length === 0) {
@@ -2753,23 +2679,6 @@ const Sales = ({ userId }) => {
                       {/* Spacer - Big Space */}
                       <div className="flex-1"></div>
 
-                      {/* Archive Button */}
-                      <Button
-                        variant={showArchived ? "default" : "outline"}
-                        onClick={() => setShowArchived(!showArchived)}
-                        className={`h-10 border-2 transition-all duration-200 ${showArchived
-                          ? "bg-orange-600 hover:bg-orange-700 text-white border-orange-600 shadow-md"
-                          : "bg-white hover:bg-gray-50 text-gray-700 border-gray-300 hover:border-gray-400"
-                          }`}
-                      >
-                        {showArchived ? (
-                          <RotateCcw className="mr-2 h-4 w-4" />
-                        ) : (
-                          <Archive className="mr-2 h-4 w-4" />
-                        )}
-                        <span className="text-sm font-medium">Archive</span>
-                      </Button>
-
                       {/* Category Filter */}
                       <div className="flex items-center gap-2">
                         <Label htmlFor="product-category-filter" className="text-sm font-semibold text-gray-700 whitespace-nowrap flex items-center gap-1">
@@ -2919,29 +2828,6 @@ const Sales = ({ userId }) => {
                                 <Edit className="mr-1 h-3 w-3" />
                                 Edit
                               </Button>
-                              {!showArchived ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openArchiveDialog(product)}
-                                  disabled={loading}
-                                  className="border-2 border-orange-300 text-orange-700 hover:bg-orange-50"
-                                >
-                                  <Archive className="mr-1 h-3 w-3" />
-                                  Archive
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleRestoreProduct(product)}
-                                  disabled={loading}
-                                  className="border-2 border-green-300 text-green-700 hover:bg-green-50"
-                                >
-                                  <RotateCcw className="mr-1 h-3 w-3" />
-                                  Restore
-                                </Button>
-                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -3341,61 +3227,6 @@ const Sales = ({ userId }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Archive Confirmation Dialog */}
-      <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader className="space-y-3 pb-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-orange-100">
-                <Archive className="h-5 w-5 text-orange-600" />
-              </div>
-              <div>
-                <AlertDialogTitle className="text-xl font-bold text-gray-900">Archive Product</AlertDialogTitle>
-                <AlertDialogDescription className="text-sm text-gray-600 mt-1">
-                  {productToArchive?.name}
-                </AlertDialogDescription>
-              </div>
-            </div>
-          </AlertDialogHeader>
-          <div className="py-4 space-y-3">
-            <p className="text-sm text-gray-700">
-              Are you sure you want to archive <span className="font-semibold text-gray-900">&quot;{productToArchive?.name}&quot;</span>?
-            </p>
-            <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5" />
-                <div className="space-y-2 text-sm text-orange-800">
-                  <p className="font-semibold">Important Notes:</p>
-                  <ul className="list-disc list-inside space-y-1 text-orange-700">
-                    <li>This product will be hidden from active inventory</li>
-                    <li>Sales data will be preserved</li>
-                    <li>You can restore this product later</li>
-                    <li>This action does not delete the product</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-          <AlertDialogFooter className="pt-4 border-t border-gray-200">
-            <AlertDialogCancel className="h-11 border-2 border-gray-300 hover:bg-gray-50" disabled={loading}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleArchiveProduct}
-              disabled={loading}
-              className="h-11 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
-            >
-              {loading ? "Archiving..." : (
-                <>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive Product
-                </>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
 
       {/* Low Stock Products Dialog */}

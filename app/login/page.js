@@ -5,7 +5,9 @@ import { FaUser, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 import ReCAPTCHA from "react-google-recaptcha";
 import axios from "axios";
 
-const API_BASE = "https://api.cnergy.site/"; // match your frontend origin
+// In dev, go through Next.js proxy to avoid CORS.
+// In prod, you can keep calling the API domain directly if you want.
+const API_BASE = "";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -67,7 +69,7 @@ export default function Login() {
 
     try {
       const response = await axios.post(
-        `${API_BASE}/login.php`,
+        `/api/login`,
         { email, password },
         {
           withCredentials: true,

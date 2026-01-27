@@ -1973,7 +1973,7 @@ function createSale($pdo, $data)
 		$productList = !empty($productNames) ? implode(", ", $productNames) : "Subscription/Service";
 
 		// Log activity using centralized logger (same as monitor_subscription.php)
-		$staffId = $data['staff_id'] ?? null;
+		$staffId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 		error_log("DEBUG Sales - staffId: " . ($staffId ?? 'NULL') . " from request data");
 		error_log("DEBUG Sales - Full request data: " . json_encode($data));
 		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: {$productList} - Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}", "Sales");
@@ -2294,7 +2294,7 @@ function createPOSSale($pdo, $data)
 		$pdo->commit();
 
 		// Log activity using centralized logger (same as monitor_subscription.php)
-		$staffId = $data['staff_id'] ?? null;
+		$staffId = $data['cashier_id'] ?? $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
 		error_log("DEBUG Sales POS - staffId: " . ($staffId ?? 'NULL') . " from request data");
 		error_log("DEBUG Sales POS - Full request data: " . json_encode($data));
 		logStaffActivity($pdo, $staffId, "Process POS Sale", "POS Sale completed: Total: ₱{$data['total_amount']}, Payment: {$paymentMethod}, Receipt: {$receiptNumber}, Change: ₱{$changeGiven}", "Sales");

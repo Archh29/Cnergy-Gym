@@ -219,8 +219,19 @@ try {
             }
 
             // Update user table - handle password update if provided
-            if (!empty($data['password'])) {
-                $hashedPassword = password_hash($data['password'], PASSWORD_DEFAULT);
+            // Accept either `password` or `new_password` from client.
+            $newPasswordRaw = '';
+            if (isset($data['new_password'])) {
+                $newPasswordRaw = (string)$data['new_password'];
+            } elseif (isset($data['password'])) {
+                $newPasswordRaw = (string)$data['password'];
+            }
+
+            $newPassword = trim($newPasswordRaw);
+            $passwordWillUpdate = ($newPassword !== '');
+
+            if ($passwordWillUpdate) {
+                $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
                 try {
                     $stmt = $pdo->prepare("UPDATE user SET email = ?, password = ?, user_type_id = ?, gender_id = ?, fname = ?, mname = ?, lname = ?, bday = ? WHERE id = ?");
                 } catch (PDOException $e) {
@@ -255,7 +266,10 @@ try {
                 ]);
             }
 
-            echo json_encode(["success" => "Staff member updated successfully"]);
+            echo json_encode([
+                "success" => "Staff member updated successfully",
+                "password_updated" => $passwordWillUpdate
+            ]);
             break;
 
         case 'DELETE':

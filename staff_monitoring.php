@@ -113,13 +113,19 @@ function getStaffActivitiesFromAPI($pdo)
             'limit' => $_GET['limit'] ?? 50
         ];
 
-        // Build the query with LEFT JOIN to include activities with NULL user_id
+        // Build the query.
+        // IMPORTANT: Admin Activity Logs should show only real Admin/Staff actors (no NULL "System User"
+        // and no member/other accounts).
         $whereConditions = [];
         $params = [];
 
+        // Always restrict to real staff/admin actions
+        $whereConditions[] = "al.user_id IS NOT NULL";
+        $whereConditions[] = "u.user_type_id IN (1, 2)";
+
         // Add filters
         if ($filters['staff_id'] !== 'all') {
-            $whereConditions[] = "(al.user_id = ? OR al.user_id IS NULL)";
+            $whereConditions[] = "al.user_id = ?";
             $params[] = $filters['staff_id'];
         }
 
@@ -216,17 +222,17 @@ function getStaffActivitiesFromAPI($pdo)
         $whereClause = !empty($whereConditions) ? "WHERE " . implode(" AND ", $whereConditions) : "";
         $limit = isset($filters['limit']) ? (int) $filters['limit'] : 50;
 
-        // FIXED QUERY: Use LEFT JOIN and handle NULL user_id properly
+        // Staff/Admin-only activity feed
         $stmt = $pdo->prepare("
             SELECT 
                 al.id,
                 al.user_id,
                 al.activity,
                 al.timestamp,
-                COALESCE(u.fname, 'System') as fname,
-                COALESCE(u.lname, 'User') as lname,
-                COALESCE(u.email, 'system@cnergy.com') as email,
-                COALESCE(ut.type_name, 'system') as user_type,
+                u.fname as fname,
+                u.lname as lname,
+                u.email as email,
+                ut.type_name as user_type,
                 CASE 
                     WHEN al.activity LIKE '%Add Coach%' OR al.activity LIKE '%Delete Coach%' OR al.activity LIKE '%Update Coach%' THEN 'Coach Management'
                     WHEN al.activity LIKE '%Approve Subscription%' OR al.activity LIKE '%subscription%' THEN 'Subscription Management'
@@ -317,10 +323,10 @@ function getStaffPerformance($pdo)
 
     $stmt = $pdo->prepare("
         SELECT 
-            COALESCE(u.id, 0) as staff_id,
-            COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
-            COALESCE(u.email, 'system@cnergy.com') as email,
-            COALESCE(ut.type_name, 'system') as user_type,
+            u.id as staff_id,
+            CONCAT(u.fname, ' ', u.lname) as staff_name,
+            u.email as email,
+            ut.type_name as user_type,
             COUNT(al.id) as total_activities,
             COUNT(CASE WHEN al.activity LIKE '%Add Coach%' OR al.activity LIKE '%Delete Coach%' OR al.activity LIKE '%Update Coach%' THEN 1 END) as coach_management,
             COUNT(CASE WHEN al.activity LIKE '%Approve Subscription%' THEN 1 END) as subscription_management,
@@ -333,7 +339,9 @@ function getStaffPerformance($pdo)
         LEFT JOIN user u ON al.user_id = u.id
         LEFT JOIN usertype ut ON u.user_type_id = ut.id
         WHERE $dateCondition
-        GROUP BY COALESCE(u.id, 0), u.fname, u.lname, u.email, ut.type_name
+          AND al.user_id IS NOT NULL
+          AND u.user_type_id IN (1, 2)
+        GROUP BY u.id, u.fname, u.lname, u.email, ut.type_name
         ORDER BY total_activities DESC
     ");
 
@@ -480,15 +488,16 @@ function getStaffSummary($pdo)
         }
 
         // Get most active staff based on date filter
-        $whereClause = $dateCondition ? "WHERE $dateCondition" : "";
+        $whereClause = $dateCondition ? "WHERE $dateCondition" : "WHERE 1=1";
+        $whereClause .= " AND al.user_id IS NOT NULL AND u.user_type_id IN (1, 2)";
         $sql = "
             SELECT 
-                COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
+                CONCAT(u.fname, ' ', u.lname) as staff_name,
                 COUNT(al.id) as activity_count
             FROM activity_log al
             LEFT JOIN user u ON al.user_id = u.id
             $whereClause
-            GROUP BY COALESCE(u.id, 0), u.fname, u.lname
+            GROUP BY u.id, u.fname, u.lname
             ORDER BY activity_count DESC
             LIMIT 1
         ";
@@ -644,12 +653,14 @@ function getActivityStats($pdo, $dateFilter = 'today', $monthFilter = 'all', $ye
         // Get top staff today
         $stmt = $pdo->prepare("
             SELECT 
-                COALESCE(CONCAT(u.fname, ' ', u.lname), 'System User') as staff_name,
+                CONCAT(u.fname, ' ', u.lname) as staff_name,
                 COUNT(al.id) as activity_count
             FROM activity_log al
             LEFT JOIN user u ON al.user_id = u.id
             WHERE DATE(al.timestamp) = CURDATE()
-            GROUP BY COALESCE(u.id, 0), u.fname, u.lname
+              AND al.user_id IS NOT NULL
+              AND u.user_type_id IN (1, 2)
+            GROUP BY u.id, u.fname, u.lname
             ORDER BY activity_count DESC
             LIMIT 5
         ");

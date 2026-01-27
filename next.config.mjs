@@ -9,6 +9,22 @@ const nextConfig = {
     // your project has type errors.
     ignoreBuildErrors: false,
   },
+  async rewrites() {
+    return [
+      {
+        source: "/api/login",
+        destination: "https://api.cnergy.site/login.php",
+      },
+      {
+        source: "/api/session",
+        destination: "https://api.cnergy.site/session.php",
+      },
+      {
+        source: "/api/addstaff",
+        destination: "https://api.cnergy.site/addstaff.php",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
