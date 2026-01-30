@@ -46,13 +46,82 @@ import {
 
 const SUPPORT_API_URL = "https://api.cnergy.site/support_tickets.php"
 
+const parseApiDate = (value) => {
+    if (!value) return new Date(0)
+    if (value instanceof Date) return value
+    if (typeof value === "number") return new Date(value)
+    if (typeof value !== "string") return new Date(0)
+
+    const trimmed = value.trim()
+    // If backend sends MySQL datetime without timezone (e.g. "2026-01-30 06:12:00"), treat it as UTC.
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmed)) {
+        return new Date(trimmed.replace(" ", "T") + "Z")
+    }
+    return new Date(trimmed)
+}
+
+const filterMessagesForTicket = (messages, ticketId) => {
+    if (!Array.isArray(messages)) return []
+    const target = Number.parseInt(ticketId, 10)
+    if (!Number.isFinite(target)) return messages
+
+    const getMessageTicketId = (m) => {
+        const candidates = [m?.ticket_id, m?.ticketId, m?.support_ticket_id, m?.supportTicketId]
+        for (const c of candidates) {
+            const n = Number.parseInt(c, 10)
+            if (Number.isFinite(n)) return n
+        }
+        return null
+    }
+
+    const hasAnyTicketId = messages.some((m) => getMessageTicketId(m) != null)
+    if (!hasAnyTicketId) {
+        console.warn("[support] messages missing ticket_id; cannot client-filter mixed tickets safely")
+        return messages
+    }
+
+    return messages.filter((m) => getMessageTicketId(m) === target)
+}
+
+const SUPPORT_PANEL_STORAGE_KEY = "cnergy-support-tickets-panel-v1"
+
+const getDefaultPanelRect = () => {
+    if (typeof window === "undefined") {
+        return { x: 16, y: 16, width: 420, height: 720 }
+    }
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const width = Math.min(420, Math.max(320, vw - 16))
+    const height = Math.min(720, Math.max(520, vh - 96))
+    const x = Math.max(16, vw - width - 16)
+    const y = Math.max(16, vh - height - 16)
+    return { x, y, width, height }
+}
+
+const clampPanelRect = (rect) => {
+    if (typeof window === "undefined") return rect
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const minW = 320
+    const minH = 520
+    const maxW = Math.max(minW, vw - 16)
+    const maxH = Math.max(minH, vh - 16)
+
+    const width = Math.min(maxW, Math.max(minW, rect.width))
+    const height = Math.min(maxH, Math.max(minH, rect.height))
+    const x = Math.min(Math.max(0, rect.x), Math.max(0, vw - width))
+    const y = Math.min(Math.max(0, rect.y), Math.max(0, vh - height))
+    return { x, y, width, height }
+}
+
 const TICKET_TOAST_STYLE = {
     position: "fixed",
     top: "1rem",
-    right: "1rem",
+    right: "auto",
     bottom: "auto",
-    left: "auto",
-    minWidth: "280px",
+    left: "1rem",
+    width: "320px",
+    maxWidth: "calc(100vw - 2rem)",
     zIndex: 9999,
 }
 
@@ -92,9 +161,42 @@ const AdminChat = ({ userId: propUserId }) => {
     const [isLoadingMessages, setIsLoadingMessages] = useState(false)
     const [userIdLoadingTimeout, setUserIdLoadingTimeout] = useState(false)
     const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false)
+    const [panelRect, setPanelRect] = useState(() => {
+        if (typeof window === "undefined") return getDefaultPanelRect()
+        try {
+            const raw = localStorage.getItem(SUPPORT_PANEL_STORAGE_KEY)
+            if (!raw) return getDefaultPanelRect()
+            const parsed = JSON.parse(raw)
+            if (!parsed || typeof parsed !== "object") return getDefaultPanelRect()
+            return clampPanelRect({
+                x: Number(parsed.x),
+                y: Number(parsed.y),
+                width: Number(parsed.width),
+                height: Number(parsed.height),
+            })
+        } catch {
+            return getDefaultPanelRect()
+        }
+    })
+    const dragRef = useRef({ mode: null, pointerId: null, startX: 0, startY: 0, startRect: null })
     const messagesEndRef = useRef(null)
     const messageInputRef = useRef(null)
     const { toast } = useToast()
+
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        try {
+            localStorage.setItem(SUPPORT_PANEL_STORAGE_KEY, JSON.stringify(panelRect))
+        } catch {
+        }
+    }, [panelRect])
+
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const onResize = () => setPanelRect((prev) => clampPanelRect(prev))
+        window.addEventListener("resize", onResize)
+        return () => window.removeEventListener("resize", onResize)
+    }, [])
 
     // Sync userId from prop when it changes, and periodically check sessionStorage
     useEffect(() => {
@@ -177,8 +279,8 @@ const AdminChat = ({ userId: propUserId }) => {
 
             // Sort by created_at descending (newest first)
             const sortedData = tickets.sort((a, b) => {
-                const dateA = new Date(a.created_at || a.last_message_at || 0)
-                const dateB = new Date(b.created_at || b.last_message_at || 0)
+                const dateA = parseApiDate(a.created_at || a.last_message_at)
+                const dateB = parseApiDate(b.created_at || b.last_message_at)
                 return dateB - dateA
             })
 
@@ -238,11 +340,13 @@ const AdminChat = ({ userId: propUserId }) => {
                         user_type_id: msg.user_type_id
                     })
                 })
-                setMessages(data.messages)
+                const filtered = filterMessagesForTicket(data.messages, ticketId)
+                setMessages(filtered)
                 setTimeout(() => scrollToBottom(), 100)
             } else if (data.messages && Array.isArray(data.messages)) {
                 console.log("🔍 [fetchTicketMessages] Messages array received:", data.messages)
-                setMessages(data.messages)
+                const filtered = filterMessagesForTicket(data.messages, ticketId)
+                setMessages(filtered)
                 setTimeout(() => scrollToBottom(), 100)
             } else {
                 console.log("🔍 [fetchTicketMessages] No messages found")
@@ -423,10 +527,11 @@ const AdminChat = ({ userId: propUserId }) => {
                 setViewMode("user-tickets")
                 setSelectedTicket(null)
                 toast({
-                    title: "Ticket resolved",
-                    description: "Conversation moved to the Resolved tab.",
-                    duration: 4000,
+                    title: `Resolved: ${selectedTicket?.user_name || selectedTicket?.user_email || "User"}`,
+                    description: `Issue: ${selectedTicket?.subject || "Support request"}`,
+                    duration: 3000,
                     style: TICKET_TOAST_STYLE,
+                    className: "p-4 pr-6",
                 })
             } else {
                 throw new Error(data.error || data.message || "Failed to resolve ticket")
@@ -552,7 +657,7 @@ const AdminChat = ({ userId: propUserId }) => {
             }
 
             // Track latest ticket time
-            const ticketTime = new Date(ticket.last_message_at || ticket.created_at || 0)
+            const ticketTime = parseApiDate(ticket.last_message_at || ticket.created_at)
             if (!userData.latestTicketTime || ticketTime > userData.latestTicketTime) {
                 userData.latestTicketTime = ticketTime
             }
@@ -605,8 +710,8 @@ const AdminChat = ({ userId: propUserId }) => {
 
         const userTickets = supportTickets.filter(ticket => ticket.user_id === selectedUser.user_id)
         return userTickets.sort((a, b) => {
-            const dateA = new Date(a.created_at || a.last_message_at || 0)
-            const dateB = new Date(b.created_at || b.last_message_at || 0)
+            const dateA = parseApiDate(a.created_at || a.last_message_at)
+            const dateB = parseApiDate(b.created_at || b.last_message_at)
             return dateB - dateA
         })
     }
@@ -649,16 +754,8 @@ const AdminChat = ({ userId: propUserId }) => {
     }
 
     const parsePHDate = (timestamp) => {
-        if (!timestamp) return null
-        let normalized = typeof timestamp === "string" ? timestamp.trim() : timestamp
-        if (typeof normalized === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
-            normalized = normalized.replace(" ", "T") + "+08:00"
-        }
-        if (typeof normalized === "string" && !normalized.endsWith("Z") && !normalized.includes("+")) {
-            normalized = normalized + "+08:00"
-        }
-        const date = new Date(normalized)
-        return isNaN(date.getTime()) ? null : date
+        const date = parseApiDate(timestamp)
+        return date && !isNaN(date.getTime()) ? date : null
     }
 
     const formatMessageTime = (timestamp) => {
@@ -773,33 +870,69 @@ const AdminChat = ({ userId: propUserId }) => {
             {isOpen && (
                 <div
                     className={cn(
-                        "fixed z-[100] transition-all duration-300 ease-in-out",
-                        "w-[calc(100vw-1rem)] sm:w-[420px] h-[calc(100vh-4rem)] max-h-[90vh]",
-                        "!bg-white dark:bg-gray-800 rounded-xl shadow-2xl",
-                        "border-2 border-gray-300 dark:border-gray-700",
+                        "fixed z-[100] transition-all duration-300 ease-out",
+                        "!bg-white dark:bg-gray-800 rounded-2xl shadow-2xl",
+                        "border border-black/10 dark:border-white/10",
+                        "ring-1 ring-black/5 dark:ring-white/5",
                         "flex flex-col overflow-hidden",
                         "max-w-full"
                     )}
                     style={{
-                        bottom: '1rem',
-                        right: '1rem',
-                        top: 'auto',
+                        left: `${panelRect.x}px`,
+                        top: `${panelRect.y}px`,
+                        width: `${panelRect.width}px`,
+                        height: `${panelRect.height}px`,
                         zIndex: 100,
                         boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
                     }}
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-500 to-orange-600 border-b border-orange-700">
+                    <div
+                        className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-orange-500 via-orange-500 to-orange-600 border-b border-orange-700/60"
+                        style={{ cursor: "grab", touchAction: "none" }}
+                        onPointerDown={(e) => {
+                            if (e.button !== 0) return
+                            dragRef.current = {
+                                mode: "drag",
+                                pointerId: e.pointerId,
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                startRect: panelRect,
+                            }
+                            try {
+                                e.currentTarget.setPointerCapture(e.pointerId)
+                            } catch {
+                            }
+                        }}
+                        onPointerMove={(e) => {
+                            if (dragRef.current.mode !== "drag") return
+                            if (dragRef.current.pointerId !== e.pointerId) return
+                            const dx = e.clientX - dragRef.current.startX
+                            const dy = e.clientY - dragRef.current.startY
+                            const start = dragRef.current.startRect
+                            if (!start) return
+                            setPanelRect(clampPanelRect({
+                                x: start.x + dx,
+                                y: start.y + dy,
+                                width: start.width,
+                                height: start.height,
+                            }))
+                        }}
+                        onPointerUp={(e) => {
+                            if (dragRef.current.pointerId !== e.pointerId) return
+                            dragRef.current = { mode: null, pointerId: null, startX: 0, startY: 0, startRect: null }
+                        }}
+                    >
                         <div className="flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl bg-white/20 backdrop-blur-sm shadow-lg">
-                                <MessageCircle className="w-6 h-6 text-white" />
+                            <div className="p-2 rounded-2xl bg-white/15 backdrop-blur-md shadow-sm ring-1 ring-white/20">
+                                <MessageCircle className="w-5 h-5 text-white" />
                             </div>
                             <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-lg text-white">
+                                <h3 className="font-semibold text-[15px] tracking-tight text-white">
                                     Support Tickets
                                 </h3>
                                 {totalBadgeCount > 0 && (
-                                    <Badge className="bg-white text-orange-600 hover:bg-orange-50 text-xs font-semibold px-2.5 py-1 shadow-sm">
+                                    <Badge className="bg-white/95 text-orange-700 hover:bg-white text-[11px] font-semibold px-2 py-0.5 shadow-sm rounded-full">
                                         {totalBadgeCount} active
                                     </Badge>
                                 )}
@@ -808,12 +941,58 @@ const AdminChat = ({ userId: propUserId }) => {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 text-white hover:bg-white/20 rounded-lg"
+                            className="h-8 w-8 text-white/90 hover:text-white hover:bg-white/15 rounded-xl"
+                            onPointerDown={(e) => e.stopPropagation()}
                             onClick={() => setIsOpen(false)}
                         >
                             <X className="w-5 h-5" />
                         </Button>
                     </div>
+
+                    <div
+                        style={{
+                            position: "absolute",
+                            right: 6,
+                            bottom: 6,
+                            width: 16,
+                            height: 16,
+                            cursor: "nwse-resize",
+                            touchAction: "none",
+                        }}
+                        onPointerDown={(e) => {
+                            e.stopPropagation()
+                            if (e.button !== 0) return
+                            dragRef.current = {
+                                mode: "resize",
+                                pointerId: e.pointerId,
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                startRect: panelRect,
+                            }
+                            try {
+                                e.currentTarget.setPointerCapture(e.pointerId)
+                            } catch {
+                            }
+                        }}
+                        onPointerMove={(e) => {
+                            if (dragRef.current.mode !== "resize") return
+                            if (dragRef.current.pointerId !== e.pointerId) return
+                            const dx = e.clientX - dragRef.current.startX
+                            const dy = e.clientY - dragRef.current.startY
+                            const start = dragRef.current.startRect
+                            if (!start) return
+                            setPanelRect(clampPanelRect({
+                                x: start.x,
+                                y: start.y,
+                                width: start.width + dx,
+                                height: start.height + dy,
+                            }))
+                        }}
+                        onPointerUp={(e) => {
+                            if (dragRef.current.pointerId !== e.pointerId) return
+                            dragRef.current = { mode: null, pointerId: null, startX: 0, startY: 0, startRect: null }
+                        }}
+                    />
 
                     {viewMode === "conversation" && selectedTicket ? (
                         // Conversation View
@@ -1022,21 +1201,21 @@ const AdminChat = ({ userId: propUserId }) => {
                         // Users List View
                         <div className="flex flex-col h-full overflow-hidden min-h-0">
                             {/* Filters */}
-                            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-2 flex-shrink-0">
+                            <div className="p-3 border-b border-gray-200/70 dark:border-gray-700 space-y-2 flex-shrink-0 bg-white/70 dark:bg-gray-800/70 backdrop-blur">
                                 <div className="relative">
                                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
                                     <Input
                                         placeholder="Search users..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-8 h-9 text-sm"
+                                        className="pl-8 h-9 text-sm rounded-xl border-gray-200/80 focus:border-orange-400 focus:ring-orange-200"
                                     />
                                 </div>
                                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                                    <TabsList className="grid w-full grid-cols-3">
-                                        <TabsTrigger value="pending">Pending</TabsTrigger>
-                                        <TabsTrigger value="in_progress">In Progress</TabsTrigger>
-                                        <TabsTrigger value="resolved">Resolved</TabsTrigger>
+                                    <TabsList className="grid w-full grid-cols-3 rounded-xl bg-gray-100/70 dark:bg-gray-700/50 p-1">
+                                        <TabsTrigger value="pending" className="rounded-lg text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">Pending</TabsTrigger>
+                                        <TabsTrigger value="in_progress" className="rounded-lg text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">In Progress</TabsTrigger>
+                                        <TabsTrigger value="resolved" className="rounded-lg text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">Resolved</TabsTrigger>
                                     </TabsList>
                                 </Tabs>
                             </div>
@@ -1055,9 +1234,11 @@ const AdminChat = ({ userId: propUserId }) => {
                                     </div>
                                 ) : filteredUsers().length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400 p-4">
-                                        <User className="w-10 h-10 mb-3 opacity-30" />
-                                        <p className="text-sm font-medium">No users found</p>
-                                        <p className="text-xs mt-2 opacity-75 text-center max-w-xs">
+                                        <div className="w-12 h-12 rounded-2xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-3">
+                                            <User className="w-6 h-6 opacity-60" />
+                                        </div>
+                                        <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">No users found</p>
+                                        <p className="text-xs mt-1.5 text-gray-500 dark:text-gray-400 text-center max-w-xs">
                                             {searchQuery
                                                 ? "Try adjusting your search"
                                                 : activeTab === "pending"
@@ -1184,7 +1365,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                                         </span>
                                                         {ticket.last_message_at && (
                                                             <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                                                                {formatDistanceToNow(new Date(ticket.last_message_at), { addSuffix: true })}
+                                                                {formatDistanceToNow(parseApiDate(ticket.last_message_at), { addSuffix: true })}
                                                             </span>
                                                         )}
                                                     </div>
@@ -1207,18 +1388,16 @@ const AdminChat = ({ userId: propUserId }) => {
                             <CheckCircle2 className="h-5 w-5 text-green-600" />
                             Mark Ticket as Resolved
                         </AlertDialogTitle>
-                        <AlertDialogDescription className="pt-2 space-y-2">
-                            <p>
-                                Are you sure you want to mark ticket <span className="font-semibold">#{selectedTicket?.ticket_number}</span> as resolved?
-                            </p>
-                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-3">
-                                <p className="text-sm text-orange-900 font-semibold mb-1">Warning:</p>
-                                <p className="text-sm text-orange-800">
-                                    Once resolved, this ticket will be moved to the "Resolved" tab and no further messages can be sent. This action cannot be undone.
-                                </p>
-                            </div>
+                        <AlertDialogDescription className="pt-2">
+                            Are you sure you want to mark ticket <span className="font-semibold">#{selectedTicket?.ticket_number}</span> as resolved?
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-3">
+                        <p className="text-sm text-orange-900 font-semibold mb-1">Warning:</p>
+                        <p className="text-sm text-orange-800">
+                            Once resolved, this ticket will be moved to the "Resolved" tab and no further messages can be sent. This action cannot be undone.
+                        </p>
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction

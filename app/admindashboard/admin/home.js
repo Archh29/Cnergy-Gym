@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { format } from "date-fns"
-import { Users, CreditCard, AlertTriangle, Calendar, TrendingUp, TrendingDown, DollarSign, Package, Activity } from "lucide-react"
+import { Users, CreditCard, AlertTriangle, Calendar, TrendingUp, TrendingDown, DollarSign, Package, Activity, RefreshCw } from "lucide-react"
 
 // Helper function to get Philippine time
 const getPhilippineTime = () => {
@@ -456,43 +456,6 @@ const GymDashboard = () => {
           const phToday = getPhilippineTime()
           phToday.setHours(0, 0, 0, 0)
           const todayStr = format(phToday, "yyyy-MM-dd")
-
-          filteredRevenueData = filteredRevenueData.filter(item => {
-            // If it's a time format (HH:MM), check if it represents today in Philippine time
-            if (item.name && item.name.match(/^\d{1,2}:\d{2}$/)) {
-              const [utcHours, minutes] = item.name.split(':').map(Number)
-
-              // Get today's date in UTC
-              const now = new Date()
-              const utcYear = now.getUTCFullYear()
-              const utcMonth = now.getUTCMonth()
-              const utcDay = now.getUTCDate()
-
-              // Try both today and yesterday in UTC (since late UTC hours might be from previous day)
-              const utcDateToday = new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHours, minutes, 0))
-              const utcDateYesterday = new Date(Date.UTC(utcYear, utcMonth, utcDay - 1, utcHours, minutes, 0))
-
-              // Convert to Philippine time and get the date
-              const getPHDate = (utcDate) => {
-                const phTimeStr = utcDate.toLocaleString("en-US", {
-                  timeZone: "Asia/Manila",
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit"
-                })
-                const [phMonth, phDay, phYear] = phTimeStr.split('/').map(Number)
-                return `${phYear}-${String(phMonth).padStart(2, '0')}-${String(phDay).padStart(2, '0')}`
-              }
-
-              const phDate1 = getPHDate(utcDateToday)
-              const phDate2 = getPHDate(utcDateYesterday)
-
-              // Include if either conversion results in today's date in Philippine time
-              return phDate1 === todayStr || phDate2 === todayStr
-            }
-            // For non-time formats, include them (they should already be filtered by API)
-            return true
-          })
         }
 
         setRevenueData(filteredRevenueData)
@@ -538,27 +501,43 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
-  // Helper function to convert UTC time to Philippine time
-  const convertTimeToPH = (timeString) => {
-    // Parse time string (HH:MM format) - assume it's UTC
-    const [utcHours, minutes] = timeString.split(':').map(Number)
-
-    // Philippine time is UTC+8, so add 8 hours
-    let phHours = utcHours + 8
-
-    // Handle day rollover (if hour exceeds 23, it's next day, but for display we just show the hour)
-    if (phHours >= 24) {
-      phHours = phHours - 24
-    }
-
-    // Format as 12-hour with AM/PM
-    const period = phHours >= 12 ? 'PM' : 'AM'
-    const hour12 = phHours % 12 || 12
-    return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+  const formatTimeTo12Hour = (hours, minutes) => {
+    const h = ((hours % 24) + 24) % 24
+    const period = h >= 12 ? 'PM' : 'AM'
+    const hour12 = h % 12 || 12
+    return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`
   }
 
-  // Format chart data to show proper dates
-  const formatChartData = (data) => {
+  const formatTimeBucketToPHLabel = (timeString) => {
+    const [hours, minutes] = timeString.split(':').map(Number)
+    return formatTimeTo12Hour(hours, minutes)
+  }
+
+  const formatTimeBucketUTCToPHLabel = (timeString) => {
+    const [utcHours, minutes] = timeString.split(':').map(Number)
+    return formatTimeTo12Hour(utcHours + 8, minutes)
+  }
+
+  const getLatestRevenueTimeBucket = (data) => {
+    if (!Array.isArray(data) || data.length === 0) return null
+    const times = data
+      .map((d) => (typeof d?.name === "string" ? d.name : null))
+      .filter((n) => n && /^\d{1,2}:\d{2}$/.test(n))
+
+    let best = null
+    let bestScore = -1
+    for (const t of times) {
+      const [h, m] = t.split(":").map(Number)
+      const score = h * 60 + m
+      if (Number.isFinite(score) && score > bestScore) {
+        bestScore = score
+        best = t
+      }
+    }
+    return best
+  }
+
+  const formatRevenueChartData = (data) => {
     if (!data || data.length === 0) return []
 
     return data.map(item => {
@@ -569,11 +548,9 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), always convert from UTC to Philippine timezone, then to 12-hour format with AM/PM
+      // If it's a time format (HH:MM), treat it as PH time and format to 12-hour with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
-        // Always convert UTC time to Philippine time (UTC+8)
-        const formattedTime = convertTimeToPH(item.name)
-        return { ...item, displayName: formattedTime }
+        return { ...item, displayName: formatTimeBucketToPHLabel(item.name) }
       }
 
       // Handle month abbreviations (e.g., "Jan", "Feb", "Aug", "Oct")
@@ -594,6 +571,43 @@ const GymDashboard = () => {
       }
 
       // Use original name
+      return { ...item, displayName: item.name }
+    })
+  }
+
+  const formatMembershipChartData = (data) => {
+    if (!data || data.length === 0) return []
+
+    return data.map(item => {
+      if (!item.name) return { ...item, displayName: item.name || '' }
+
+      if (item.displayName) {
+        return item
+      }
+
+      if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+        return { ...item, displayName: formatTimeBucketToPHLabel(item.name) }
+      }
+
+      const monthAbbrev = item.name.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}$/i)
+      if (monthAbbrev) {
+        return { ...item, displayName: item.name }
+      }
+
+      try {
+        const date = new Date(item.name)
+        if (!isNaN(date.getTime())) {
+          const phLabel = date.toLocaleTimeString("en-US", {
+            timeZone: "Asia/Manila",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+          return { ...item, displayName: phLabel }
+        }
+      } catch (error) {
+      }
+
       return { ...item, displayName: item.name }
     })
   }
@@ -624,6 +638,15 @@ const GymDashboard = () => {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               {/* Date Range Filter */}
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRetry}
+                className="h-10 w-10 border-gray-300 hover:bg-gray-50"
+                title="Refresh"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
               <Label htmlFor="start-date-filter" className="flex items-center gap-2 whitespace-nowrap">
                 <Calendar className="h-4 w-4 text-gray-600" />
                 Start Date:
@@ -807,7 +830,7 @@ const GymDashboard = () => {
       {/* Charts */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card className="border border-gray-100 shadow-sm bg-white overflow-hidden">
-          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-100">
+          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-200 bg-gray-50/80">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
@@ -822,68 +845,82 @@ const GymDashboard = () => {
             </div>
           </CardHeader>
           <CardContent className="p-6 pt-4">
-            <ChartContainer
-              config={{
-                members: { label: "Clients", color: "hsl(var(--chart-1))" },
-              }}
-              className="h-[320px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={formatChartData(membershipData)}
-                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="#f3f4f6"
-                    strokeOpacity={0.5}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="displayName"
-                    className="text-xs fill-gray-500"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                  />
-                  <YAxis
-                    className="text-xs fill-gray-500"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={formatNumber}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                    tickMargin={8}
-                    width={60}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="members"
-                    strokeWidth={2.5}
-                    stroke="#f97316"
-                    dot={{ fill: '#f97316', r: 4, strokeWidth: 2 }}
-                    activeDot={{
-                      r: 6,
-                      stroke: '#f97316',
-                      strokeWidth: 2,
-                      fill: '#fff',
-                    }}
-                  />
-                  <ChartTooltip
-                    content={<ChartTooltipContent
-                      className="bg-white border border-gray-200 shadow-lg rounded-lg"
-                      formatter={(value) => formatNumber(value)}
-                      labelFormatter={(label) => label || 'N/A'}
-                    />}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {formatMembershipChartData(membershipData).length === 0 ? (
+              <div className="h-[320px] flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-gray-700">No new clients</div>
+                  <div className="text-xs text-gray-500 mt-1">This chart updates when a new gym goer is added.</div>
+                </div>
+              </div>
+            ) : (
+              <ChartContainer
+                config={{
+                  members: { label: "Clients", color: "hsl(var(--chart-1))" },
+                }}
+                className="h-[320px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={formatMembershipChartData(membershipData)}
+                    barSize={26}
+                    barGap={8}
+                    barCategoryGap={18}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="growthGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fb923c" stopOpacity={0.95} />
+                        <stop offset="55%" stopColor="#f97316" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#ea580c" stopOpacity={0.85} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="4 6"
+                      stroke="#e5e7eb"
+                      strokeOpacity={0.9}
+                      vertical={true}
+                    />
+                    <XAxis
+                      dataKey="displayName"
+                      className="text-xs fill-gray-500"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tick={{ fill: '#6b7280', fontSize: 11 }}
+                    />
+                    <YAxis
+                      className="text-xs fill-gray-500"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatNumber}
+                      tick={{ fill: '#6b7280', fontSize: 11 }}
+                      tickMargin={8}
+                      width={60}
+                      allowDecimals={false}
+                      domain={[0, (dataMax) => Math.max(1, Math.ceil(dataMax))]}
+                    />
+                    <Bar
+                      dataKey="members"
+                      radius={[10, 10, 10, 10]}
+                      fill="url(#growthGradient)"
+                      className="drop-shadow-sm"
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent
+                        className="bg-white border border-gray-200 shadow-lg rounded-lg"
+                        formatter={(value) => formatNumber(value)}
+                        labelFormatter={(label) => label || 'N/A'}
+                      />}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
 
         <Card className="border border-gray-100 shadow-sm bg-white overflow-hidden">
-          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-100">
+          <CardHeader className="pb-3 pt-4 px-6 border-b border-gray-200 bg-gray-50/80">
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base font-semibold text-gray-800 mb-0.5">
@@ -898,91 +935,102 @@ const GymDashboard = () => {
             </div>
           </CardHeader>
           <CardContent className="p-6 pt-4">
-            <ChartContainer
-              config={{
-                revenue: { label: "Revenue", color: "#14b8a6" },
-              }}
-              className="h-[320px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={formatChartData(revenueData)}
-                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="#f3f4f6"
-                    strokeOpacity={0.5}
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="displayName"
-                    className="text-xs fill-gray-500"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                  />
-                  <YAxis
-                    className="text-xs fill-gray-500"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={formatCurrency}
-                    tick={{ fill: '#6b7280', fontSize: 11 }}
-                    tickMargin={8}
-                    width={70}
-                  />
-                  <Bar
-                    dataKey="revenue"
-                    fill="#14b8a6"
-                    radius={[6, 6, 0, 0]}
-                    opacity={0.85}
-                    activeBar={{
-                      fill: '#0d9488',
-                      opacity: 1,
-                      stroke: '#0d9488',
-                      strokeWidth: 1.5,
-                      radius: [6, 6, 0, 0],
-                    }}
-                  />
-                  <ChartTooltip
-                    content={<ChartTooltipContent
-                      className="bg-white border border-gray-200 shadow-lg rounded-lg"
-                      formatter={(value) => {
-                        // Format currency with commas and proper decimal places
-                        const numValue = typeof value === 'number' ? value : parseFloat(value) || 0
-                        return `₱${numValue.toLocaleString('en-US', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}`
+            {formatRevenueChartData(revenueData).length === 0 ? (
+              <div className="h-[320px] flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-gray-700">No revenue yet</div>
+                  <div className="text-xs text-gray-500 mt-1">This chart updates when a sale is recorded.</div>
+                </div>
+              </div>
+            ) : (
+              <ChartContainer
+                config={{
+                  revenue: { label: "Revenue", color: "#14b8a6" },
+                }}
+                className="h-[320px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={formatRevenueChartData(revenueData)}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.95} />
+                        <stop offset="60%" stopColor="#14b8a6" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#0d9488" stopOpacity={0.85} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="4 6"
+                      stroke="#e5e7eb"
+                      strokeOpacity={0.9}
+                      vertical={true}
+                    />
+                    <XAxis
+                      dataKey="displayName"
+                      className="text-xs fill-gray-500"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tick={{ fill: '#6b7280', fontSize: 11 }}
+                    />
+                    <YAxis
+                      className="text-xs fill-gray-500"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatCurrency}
+                      tick={{ fill: '#6b7280', fontSize: 11 }}
+                      tickMargin={8}
+                      width={70}
+                    />
+                    <Bar
+                      dataKey="revenue"
+                      fill="url(#revenueGradient)"
+                      radius={[18, 18, 18, 18]}
+                      opacity={0.92}
+                      className="drop-shadow-sm"
+                      activeBar={{
+                        fill: '#0d9488',
+                        opacity: 1,
+                        stroke: '#0d9488',
+                        strokeWidth: 1.5,
+                        radius: [18, 18, 18, 18],
                       }}
-                      labelFormatter={(label) => {
-                        if (!label) return 'N/A'
-
-                        // If it's already in 12-hour format (has AM/PM), return as is
-                        if (typeof label === 'string' && (label.includes('AM') || label.includes('PM'))) {
-                          return label
-                        }
-
-                        // If it's in 24-hour format (HH:MM or HH:MM:SS), convert to 12-hour
-                        if (typeof label === 'string') {
-                          const timeMatch = label.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/)
-                          if (timeMatch) {
-                            const hours = parseInt(timeMatch[1])
-                            const minutes = timeMatch[2]
-                            const period = hours >= 12 ? 'PM' : 'AM'
-                            const hour12 = hours % 12 || 12
-                            return `${hour12}:${minutes} ${period}`
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent
+                        className="bg-white border border-gray-200 shadow-lg rounded-lg"
+                        formatter={(value) => {
+                          const numValue = typeof value === 'number' ? value : parseFloat(value) || 0
+                          return `₱${numValue.toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}`
+                        }}
+                        labelFormatter={(label) => {
+                          if (!label) return 'N/A'
+                          if (typeof label === 'string' && (label.includes('AM') || label.includes('PM'))) {
+                            return label
                           }
-                        }
-
-                        return label
-                      }}
-                    />}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+                          if (typeof label === 'string') {
+                            const timeMatch = label.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/)
+                            if (timeMatch) {
+                              const hours = parseInt(timeMatch[1])
+                              const minutes = timeMatch[2]
+                              const period = hours >= 12 ? 'PM' : 'AM'
+                              const hour12 = hours % 12 || 12
+                              return `${hour12}:${minutes} ${period}`
+                            }
+                          }
+                          return label
+                        }}
+                      />}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
       </div>

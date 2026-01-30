@@ -149,9 +149,43 @@ const GymDashboard = () => {
     return value.toLocaleString()
   }
 
+  const formatTimeTo12Hour = (hours, minutes) => {
+    const h = ((hours % 24) + 24) % 24
+    const period = h >= 12 ? 'PM' : 'AM'
+    const hour12 = h % 12 || 12
+    return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`
+  }
 
-  // Format chart data to show proper dates
-  const formatChartData = (data) => {
+  const formatTimeBucketToPHLabel = (timeString) => {
+    const [hours, minutes] = timeString.split(':').map(Number)
+    return formatTimeTo12Hour(hours, minutes)
+  }
+
+  const formatTimeBucketUTCToPHLabel = (timeString) => {
+    const [utcHours, minutes] = timeString.split(':').map(Number)
+    return formatTimeTo12Hour(utcHours + 8, minutes)
+  }
+
+  const getLatestRevenueTimeBucket = (data) => {
+    if (!Array.isArray(data) || data.length === 0) return null
+    const times = data
+      .map((d) => (typeof d?.name === "string" ? d.name : null))
+      .filter((n) => n && /^\d{1,2}:\d{2}$/.test(n))
+
+    let best = null
+    let bestScore = -1
+    for (const t of times) {
+      const [h, m] = t.split(":").map(Number)
+      const score = h * 60 + m
+      if (Number.isFinite(score) && score > bestScore) {
+        bestScore = score
+        best = t
+      }
+    }
+    return best
+  }
+
+  const formatRevenueChartData = (data) => {
     if (!data || data.length === 0) return []
 
     return data.map(item => {
@@ -162,22 +196,10 @@ const GymDashboard = () => {
         return item
       }
 
-      // If it's a time format (HH:MM), convert from UTC to Philippine time (UTC+8) and format to 12-hour with AM/PM
+      // If it's a time format (HH:MM), treat it as PH time and format to 12-hour with AM/PM
       if (item.name.match(/^\d{1,2}:\d{2}$/)) {
         const [hours, minutes] = item.name.split(':').map(Number)
-        // Convert UTC to Philippine time (UTC+8)
-        let phHours = hours + 8
-        let phMinutes = minutes
-
-        // Handle day rollover
-        if (phHours >= 24) {
-          phHours = phHours - 24
-        }
-
-        const period = phHours >= 12 ? 'PM' : 'AM'
-        const hour12 = phHours % 12 || 12 // Convert 0 to 12, 13-23 to 1-11
-        const formattedTime = `${hour12}:${phMinutes.toString().padStart(2, '0')} ${period}`
-        return { ...item, displayName: formattedTime }
+        return { ...item, displayName: formatTimeBucketToPHLabel(`${hours}:${String(minutes).padStart(2, '0')}`) }
       }
 
       // Handle month abbreviations (e.g., "Jan", "Feb", "Aug", "Oct")
@@ -198,6 +220,43 @@ const GymDashboard = () => {
       }
 
       // Use original name
+      return { ...item, displayName: item.name }
+    })
+  }
+
+  const formatMembershipChartData = (data) => {
+    if (!data || data.length === 0) return []
+
+    return data.map(item => {
+      if (!item.name) return { ...item, displayName: item.name || '' }
+
+      if (item.displayName) {
+        return item
+      }
+
+      if (item.name.match(/^\d{1,2}:\d{2}$/)) {
+        return { ...item, displayName: formatTimeBucketToPHLabel(item.name) }
+      }
+
+      const monthAbbrev = item.name.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}$/i)
+      if (monthAbbrev) {
+        return { ...item, displayName: item.name }
+      }
+
+      try {
+        const date = new Date(item.name)
+        if (!isNaN(date.getTime())) {
+          const phLabel = date.toLocaleTimeString("en-US", {
+            timeZone: "Asia/Manila",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          })
+          return { ...item, displayName: phLabel }
+        }
+      } catch (error) {
+      }
+
       return { ...item, displayName: item.name }
     })
   }
@@ -404,7 +463,7 @@ const GymDashboard = () => {
       {/* Charts */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         <Card>
-          <CardHeader>
+          <CardHeader className="border-b border-gray-200 bg-gray-50/80">
             <CardTitle>
               {timePeriod === "today" ? "Today's" :
                 timePeriod === "week" ? "Weekly" :
@@ -414,55 +473,66 @@ const GymDashboard = () => {
             <CardDescription>Membership growth trend</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                members: { label: "Members", color: "hsl(var(--chart-1))" },
-              }}
-              className="h-[300px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={formatChartData(membershipData)}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="displayName"
-                    className="text-xs fill-muted-foreground"
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    className="text-xs fill-muted-foreground"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={formatNumber}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="members"
-                    strokeWidth={2}
-                    activeDot={{
-                      r: 8,
-                      style: { fill: "hsl(var(--chart-1))", opacity: 0.8 },
-                    }}
-                    style={{ stroke: "hsl(var(--chart-1))" }}
-                  />
-                  <ChartTooltip
-                    content={<ChartTooltipContent
-                      formatter={(value, name, props) => [
-                        formatNumber(value),
-                        "Members",
-                        `Date: ${props.payload?.name || 'N/A'}`
-                      ]}
-                      labelFormatter={(label) => `Period: ${label}`}
-                    />}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {formatMembershipChartData(membershipData).length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-gray-700">No new clients</div>
+                  <div className="text-xs text-gray-500 mt-1">This chart updates when a new gym goer is added.</div>
+                </div>
+              </div>
+            ) : (
+              <ChartContainer
+                config={{
+                  members: { label: "Members", color: "hsl(var(--chart-1))" },
+                }}
+                className="h-[300px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={formatMembershipChartData(membershipData)}
+                    barSize={26}
+                    barGap={8}
+                    barCategoryGap={18}
+                  >
+                    <defs>
+                      <linearGradient id="growthGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fb923c" stopOpacity={0.95} />
+                        <stop offset="55%" stopColor="#f97316" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#ea580c" stopOpacity={0.85} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 6" stroke="#e5e7eb" strokeOpacity={0.9} vertical={true} />
+                    <XAxis
+                      dataKey="displayName"
+                      className="text-xs fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      className="text-xs fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatNumber}
+                      allowDecimals={false}
+                      domain={[0, (dataMax) => Math.max(1, Math.ceil(dataMax))]}
+                    />
+                    <Bar dataKey="members" fill="url(#growthGradient)" radius={[10, 10, 10, 10]} className="drop-shadow-sm" />
+                    <ChartTooltip
+                      content={<ChartTooltipContent
+                        className="bg-white border border-gray-200 shadow-lg rounded-lg"
+                        formatter={(value) => formatNumber(value)}
+                        labelFormatter={(label) => label || 'N/A'}
+                      />}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="border-b border-gray-200 bg-gray-50/80">
             <CardTitle>
               {timePeriod === "today" ? "Today's" :
                 timePeriod === "week" ? "Weekly" :
@@ -472,41 +542,57 @@ const GymDashboard = () => {
             <CardDescription>Revenue performance over time</CardDescription>
           </CardHeader>
           <CardContent>
-            <ChartContainer
-              config={{
-                revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
-              }}
-              className="h-[300px]"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={formatChartData(revenueData)}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="displayName"
-                    className="text-xs fill-muted-foreground"
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    className="text-xs fill-muted-foreground"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={formatCurrency}
-                  />
-                  <Bar dataKey="revenue" style={{ fill: "hsl(var(--chart-2))", opacity: 0.8 }} />
-                  <ChartTooltip
-                    content={<ChartTooltipContent
-                      formatter={(value, name, props) => [
-                        `₱${value.toLocaleString()}`,
-                        "Revenue",
-                        `Period: ${props.payload?.name || 'N/A'}`
-                      ]}
-                      labelFormatter={(label) => `Revenue Period: ${label}`}
-                    />}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartContainer>
+            {formatRevenueChartData(revenueData).length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-gray-700">No revenue yet</div>
+                  <div className="text-xs text-gray-500 mt-1">This chart updates when a sale is recorded.</div>
+                </div>
+              </div>
+            ) : (
+              <ChartContainer
+                config={{
+                  revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
+                }}
+                className="h-[300px]"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={formatRevenueChartData(revenueData)}>
+                    <defs>
+                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.95} />
+                        <stop offset="60%" stopColor="#14b8a6" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#0d9488" stopOpacity={0.85} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 6" stroke="#e5e7eb" strokeOpacity={0.9} vertical={true} />
+                    <XAxis
+                      dataKey="displayName"
+                      className="text-xs fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      className="text-xs fill-muted-foreground"
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={formatCurrency}
+                    />
+                    <Bar dataKey="revenue" fill="url(#revenueGradient)" opacity={0.92} radius={[18, 18, 18, 18]} className="drop-shadow-sm" />
+                    <ChartTooltip
+                      content={<ChartTooltipContent
+                        formatter={(value, name, props) => [
+                          `₱${value.toLocaleString()}`,
+                          "Revenue",
+                          `Period: ${props.payload?.name || 'N/A'}`
+                        ]}
+                        labelFormatter={(label) => `Revenue Period: ${label}`}
+                      />}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            )}
           </CardContent>
         </Card>
       </div>

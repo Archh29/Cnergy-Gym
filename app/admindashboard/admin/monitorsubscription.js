@@ -316,7 +316,7 @@ const SubscriptionMonitor = ({ userId }) => {
     } catch (e) {
       console.error('Error opening subscription details for user:', id, e)
     } finally {
-      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) {}
+      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) { }
     }
   }
 
@@ -3333,8 +3333,8 @@ const SubscriptionMonitor = ({ userId }) => {
                         <div
                           key={plan.id}
                           className={`p-3 rounded-lg border-2 transition-all ${isSelected
-                              ? 'border-blue-400 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                            ? 'border-blue-400 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
                             } ${!isAvailable ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                           onClick={(e) => {
                             // Don't trigger if clicking on input field (quantity)
@@ -3471,8 +3471,8 @@ const SubscriptionMonitor = ({ userId }) => {
                           <div
                             key={index}
                             className={`p-3 rounded-md border ${isSelectedPlan
-                                ? 'bg-blue-50 border-blue-300'
-                                : 'bg-white border-green-200'
+                              ? 'bg-blue-50 border-blue-300'
+                              : 'bg-white border-green-200'
                               }`}
                           >
                             <div className="flex items-center justify-between">
@@ -3512,8 +3512,8 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-center gap-2">
                   <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${userActiveDiscount === 'student'
-                      ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                      : 'bg-purple-100 text-purple-700 border border-purple-300'
+                    ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                    : 'bg-purple-100 text-purple-700 border border-purple-300'
                     }`}>
                     {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
                   </div>
@@ -3838,8 +3838,8 @@ const SubscriptionMonitor = ({ userId }) => {
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "cash", amount_received: prev.payment_method === "cash" ? prev.amount_received : "" }))}
                   className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "cash"
-                      ? "border-gray-900 bg-gray-900 text-white shadow-md"
-                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                    ? "border-gray-900 bg-gray-900 text-white shadow-md"
+                    : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
                     }`}
                 >
                   Cash
@@ -3848,8 +3848,8 @@ const SubscriptionMonitor = ({ userId }) => {
                   type="button"
                   onClick={() => setGuestSessionForm(prev => ({ ...prev, payment_method: "digital", amount_received: "", gcash_reference: prev.payment_method === "digital" ? prev.gcash_reference : "" }))}
                   className={`h-10 w-full rounded-lg border-2 transition-all font-medium text-sm ${guestSessionForm.payment_method === "digital"
-                      ? "border-gray-900 bg-gray-900 text-white shadow-md"
-                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                    ? "border-gray-900 bg-gray-900 text-white shadow-md"
+                    : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
                     }`}
                 >
                   GCash
@@ -3878,10 +3878,22 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-gray-700">Amount Received</Label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="^\\d*(\\.\\d{0,2})?$"
                   value={guestSessionForm.amount_received}
-                  onChange={(e) => setGuestSessionForm(prev => ({ ...prev, amount_received: e.target.value }))}
+                  onWheelCapture={(e) => {
+                    e.currentTarget.blur()
+                  }}
+                  onKeyDown={(e) => {
+                    if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault()
+                  }}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    if (next === "" || /^\d*(\.\d{0,2})?$/.test(next)) {
+                      setGuestSessionForm(prev => ({ ...prev, amount_received: next }))
+                    }
+                  }}
                   placeholder="Enter amount received"
                   className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />

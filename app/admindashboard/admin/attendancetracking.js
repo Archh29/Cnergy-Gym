@@ -389,6 +389,8 @@ const AttendanceTracking = ({ userId }) => {
           message: log.message || '',
           memberName: log.memberName || log.user_name || 'Unknown',
           entryMethod: log.entryMethod || log.entry_method || 'unknown',
+          planName: log.planName || log.plan_name || null,
+          expiredDate: log.expiredDate || log.expired_date || null,
           qrData: null // Not stored in database
         }))
 
@@ -1469,7 +1471,6 @@ const AttendanceTracking = ({ userId }) => {
                         <TableRow className="border-b-2 border-slate-200">
                           <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Timestamp</TableHead>
                           <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
-                          <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Entry Method</TableHead>
                           <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Error Type</TableHead>
                           <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Reason</TableHead>
                         </TableRow>
@@ -1483,55 +1484,98 @@ const AttendanceTracking = ({ userId }) => {
                             <TableCell className="font-semibold text-slate-900">
                               {scan.memberName}
                             </TableCell>
-                            <TableCell className="text-sm text-slate-600">
-                              {scan.entryMethod === "manual" ? "Manual Entry" : scan.entryMethod === "qr" ? "QR Scan" : "QR Scan"}
-                            </TableCell>
                             <TableCell>
                               <Badge
                                 variant="destructive"
-                                className="bg-red-500 hover:bg-red-600 text-white shadow-sm"
+                                className={
+                                  scan.type === "expired_plan"
+                                    ? "bg-amber-500 hover:bg-amber-600 text-white shadow-sm"
+                                    : scan.type === "no_plan"
+                                      ? "bg-rose-500 hover:bg-rose-600 text-white shadow-sm"
+                                      : "bg-red-500 hover:bg-red-600 text-white shadow-sm"
+                                }
                               >
-                                {scan.type}
+                                {(() => {
+                                  const type = (scan.type || "").toLowerCase()
+                                  if (type === "no_plan") return "No Active Plan"
+                                  if (type === "expired_plan") return "Plan Expired"
+                                  if (type === "guest_expired") return "Guest Expired"
+                                  if (type === "guest_error") return "Guest Error"
+                                  return (scan.type || "Unknown")
+                                    .toString()
+                                    .replace(/_/g, " ")
+                                    .replace(/\b\w/g, (c) => c.toUpperCase())
+                                })()}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm text-slate-700 max-w-md">
                               {(() => {
-                                // Format error message consistently
-                                let formattedMessage = scan.message || ""
+                                const type = (scan.type || "").toLowerCase()
+                                const planRaw = scan.planName || ""
+                                const planPretty = planRaw
+                                  ? planRaw
+                                    .toString()
+                                    .replace(/_/g, " ")
+                                    .replace(/\b\w/g, (c) => c.toUpperCase())
+                                  : null
 
-                                // Remove X emoji and other emojis
-                                formattedMessage = formattedMessage.replace(/❌|✅|⚠️|🔴|🟢|🟡/g, "").trim()
-
-                                // Standardize error messages based on type
-                                if (scan.type === "no_plan") {
-                                  const name = scan.memberName || "Unknown"
-                                  formattedMessage = `${name} - No active subscription`
-                                } else if (scan.type === "expired_plan") {
-                                  const name = scan.memberName || "Unknown"
-                                  // Extract expiration date if present
-                                  const dateMatch = formattedMessage.match(/(\w+\s+\d{1,2},\s+\d{4})/i)
-                                  if (dateMatch) {
-                                    formattedMessage = `${name} - Subscription expired on ${dateMatch[1]}`
-                                  } else {
-                                    formattedMessage = `${name} - Subscription has expired`
-                                  }
-                                } else if (scan.type === "guest_expired") {
-                                  const name = scan.memberName || "Unknown"
-                                  formattedMessage = `${name} - Guest session has expired`
-                                } else if (scan.type === "guest_error") {
-                                  const name = scan.memberName || "Unknown"
-                                  formattedMessage = `${name} - Guest session error`
+                                const formatExpiredDate = (value) => {
+                                  if (!value) return null
+                                  try {
+                                    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                                      const d = new Date(`${value}T00:00:00`)
+                                      if (!isNaN(d.getTime())) {
+                                        return d.toLocaleDateString("en-US", {
+                                          timeZone: "Asia/Manila",
+                                          year: "numeric",
+                                          month: "short",
+                                          day: "numeric",
+                                        })
+                                      }
+                                    }
+                                    const d = new Date(value)
+                                    if (!isNaN(d.getTime())) {
+                                      return d.toLocaleDateString("en-US", {
+                                        timeZone: "Asia/Manila",
+                                        year: "numeric",
+                                        month: "short",
+                                        day: "numeric",
+                                      })
+                                    }
+                                  } catch (e) { }
+                                  return value
                                 }
 
-                                // Clean up any remaining inconsistencies
-                                formattedMessage = formattedMessage
+                                const expiredOn = formatExpiredDate(scan.expiredDate)
+
+                                if (type === "no_plan") {
+                                  return "No active subscription was found for this user."
+                                }
+
+                                if (type === "expired_plan") {
+                                  if (planPretty && expiredOn) return `${planPretty} subscription expired on ${expiredOn}.`
+                                  if (planPretty) return `${planPretty} subscription has expired.`
+                                  if (expiredOn) return `Subscription expired on ${expiredOn}.`
+                                  return "Subscription has expired."
+                                }
+
+                                if (type === "guest_expired") {
+                                  return "Guest session has expired."
+                                }
+
+                                if (type === "guest_error") {
+                                  return "Guest session is invalid or inactive."
+                                }
+
+                                let msg = (scan.message || "").toString()
+                                msg = msg.replace(/❌|✅|⚠️|🔴|🟢|🟡/g, "").trim()
+                                msg = msg
                                   .replace(/No active gym access plan found/g, "No active subscription")
                                   .replace(/no active monthly subscription/g, "no active subscription")
                                   .replace(/Gym access expired/g, "Subscription expired")
-                                  .replace(/\s+/g, " ") // Remove extra spaces
+                                  .replace(/\s+/g, " ")
                                   .trim()
-
-                                return formattedMessage
+                                return msg || "Access denied."
                               })()}
                             </TableCell>
                           </TableRow>

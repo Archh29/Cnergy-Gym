@@ -35,14 +35,17 @@ try {
     // Get time period parameter
     $period = $_GET['period'] ?? 'today';
 
+    // Frontend sends today's date in PH time for accurate 'today' filtering
+    $phDate = $_GET['ph_date'] ?? date('Y-m-d');
+
     // Define date conditions based on period
     // Note: For 'today' revenue, we convert UTC to Philippine time (+8 hours)
     $dateConditions = [
         'today' => [
-            'sales' => "DATE(DATE_ADD(sale_date, INTERVAL 8 HOUR)) = CURDATE()",
+            'sales' => "DATE(sale_date) = CURDATE()",
             'attendance' => "DATE(check_in) = CURDATE()",
             'membership' => "DATE(s.start_date) = CURDATE()",
-            'revenue' => "DATE(DATE_ADD(sale_date, INTERVAL 8 HOUR)) = CURDATE()"
+            'revenue' => "DATE(sale_date) = CURDATE()"
         ],
         'week' => [
             'sales' => "sale_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)",
@@ -133,11 +136,13 @@ try {
     switch ($period) {
         case 'today':
             $membershipQuery = "
-                SELECT DATE_FORMAT(s.start_date,'%H:00') AS name, COUNT(DISTINCT s.user_id) AS members
-                FROM `subscription` s
-                WHERE s.plan_id = 1 AND {$conditions['membership']}
-                GROUP BY HOUR(s.start_date)
-                ORDER BY s.start_date ASC
+                SELECT DATE_FORMAT(DATE_ADD(u.created_at, INTERVAL 8 HOUR),'%H:00') AS name, COUNT(*) AS members
+                FROM `user` u
+                WHERE u.user_type_id = 4
+                  AND u.account_status = 'approved'
+                  AND DATE(DATE_ADD(u.created_at, INTERVAL 8 HOUR)) = :ph_date
+                GROUP BY HOUR(DATE_ADD(u.created_at, INTERVAL 8 HOUR))
+                ORDER BY DATE_ADD(u.created_at, INTERVAL 8 HOUR) ASC
             ";
             break;
         case 'week':
@@ -169,33 +174,27 @@ try {
             break;
     }
     try {
-        $membershipData = $pdo->query($membershipQuery)->fetchAll(PDO::FETCH_ASSOC);
+        if ($period === 'today') {
+            $stmt = $pdo->prepare($membershipQuery);
+            $stmt->execute(['ph_date' => $phDate]);
+            $membershipData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $membershipData = $pdo->query($membershipQuery)->fetchAll(PDO::FETCH_ASSOC);
+        }
     } catch (PDOException $e) {
         throw new Exception("Error in membership data query: " . $e->getMessage() . " Query: " . $membershipQuery);
-    }
-
-    // If no data for today, provide some sample data for demonstration
-    if (empty($membershipData) && $period === 'today') {
-        $membershipData = [
-            ['name' => '00:00', 'members' => 0],
-            ['name' => '06:00', 'members' => 0],
-            ['name' => '12:00', 'members' => 0],
-            ['name' => '18:00', 'members' => 0]
-        ];
     }
 
     // --- REVENUE DATA ---
     $revenueQuery = "";
     switch ($period) {
         case 'today':
-            // CRITICAL FIX: Convert UTC time to Philippine time (+8 hours) before formatting
-            // This ensures the hour displayed matches Philippine timezone
             $revenueQuery = "
-                SELECT DATE_FORMAT(DATE_ADD(sale_date, INTERVAL 8 HOUR),'%H:00') AS name, IFNULL(SUM(total_amount),0) AS revenue
+                SELECT DATE_FORMAT(sale_date,'%H:00') AS name, IFNULL(SUM(total_amount),0) AS revenue
                 FROM `sales`
-                WHERE DATE(DATE_ADD(sale_date, INTERVAL 8 HOUR)) = CURDATE()
-                GROUP BY HOUR(DATE_ADD(sale_date, INTERVAL 8 HOUR))
-                ORDER BY DATE_ADD(sale_date, INTERVAL 8 HOUR) ASC
+                WHERE DATE(sale_date) = :ph_date
+                GROUP BY HOUR(sale_date)
+                ORDER BY sale_date ASC
             ";
             break;
         case 'week':
@@ -227,19 +226,15 @@ try {
             break;
     }
     try {
-        $revenueData = $pdo->query($revenueQuery)->fetchAll(PDO::FETCH_ASSOC);
+        if ($period === 'today') {
+            $stmt = $pdo->prepare($revenueQuery);
+            $stmt->execute(['ph_date' => $phDate]);
+            $revenueData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $revenueData = $pdo->query($revenueQuery)->fetchAll(PDO::FETCH_ASSOC);
+        }
     } catch (PDOException $e) {
         throw new Exception("Error in revenue data query: " . $e->getMessage() . " Query: " . $revenueQuery);
-    }
-
-    // If no data for today, provide some sample data for demonstration
-    if (empty($revenueData) && $period === 'today') {
-        $revenueData = [
-            ['name' => '00:00', 'revenue' => 0],
-            ['name' => '06:00', 'revenue' => 0],
-            ['name' => '12:00', 'revenue' => 0],
-            ['name' => '18:00', 'revenue' => 0]
-        ];
     }
 
     // --- RETURN JSON ---

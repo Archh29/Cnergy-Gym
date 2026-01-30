@@ -96,14 +96,14 @@ const SupportRequests = () => {
     try {
       setIsLoading(true)
       const response = await fetch("https://api.cnergy.site/support_requests.php?action=get_all_tickets")
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-      
+
       const data = await response.json()
       // Sort by created_at descending (newest first)
-      const sortedData = Array.isArray(data) 
+      const sortedData = Array.isArray(data)
         ? data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         : []
       setTickets(sortedData)
@@ -137,14 +137,14 @@ const SupportRequests = () => {
       setIsLoadingMessages(true)
       const adminIdParam = userId ? `&admin_id=${userId}` : ''
       const response = await fetch(`https://api.cnergy.site/support_requests.php?action=get_ticket_messages&ticket_id=${ticketId}${adminIdParam}`)
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-      
+
       const data = await response.json()
       console.log("🔍 [fetchTicketMessages] API response:", data)
-      
+
       if (data.success && data.messages) {
         console.log("🔍 [fetchTicketMessages] Messages received:", data.messages)
         console.log("🔍 [fetchTicketMessages] Number of messages:", data.messages.length)
@@ -282,8 +282,20 @@ const SupportRequests = () => {
         // Switch to resolved tab
         setActiveTab("resolved")
         toast({
-          title: "Ticket Resolved",
-          description: "The support ticket has been marked as resolved and moved to the resolved tab.",
+          title: `Resolved: ${selectedTicket?.user_name || selectedTicket?.user_email || "User"}`,
+          description: `Issue: ${selectedTicket?.subject || "Support request"}`,
+          duration: 3000,
+          style: {
+            position: "fixed",
+            top: "1rem",
+            left: "1rem",
+            right: "auto",
+            bottom: "auto",
+            width: "320px",
+            maxWidth: "calc(100vw - 2rem)",
+            zIndex: 9999,
+          },
+          className: "p-4 pr-6",
         })
       } else {
         throw new Error(data.error || "Failed to resolve ticket")
@@ -298,6 +310,19 @@ const SupportRequests = () => {
     }
   }
 
+  const parseApiDate = (value) => {
+    if (!value) return new Date(0)
+    if (value instanceof Date) return value
+    if (typeof value === "number") return new Date(value)
+    if (typeof value !== "string") return new Date(0)
+
+    const trimmed = value.trim()
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmed)) {
+      return new Date(trimmed.replace(" ", "T") + "Z")
+    }
+    return new Date(trimmed)
+  }
+
   const formatDate = (dateString) => {
     console.log("🔍 [formatDate] Input dateString:", dateString)
     if (!dateString) {
@@ -305,16 +330,16 @@ const SupportRequests = () => {
       return "N/A"
     }
     try {
-      const date = new Date(dateString)
+      const date = parseApiDate(dateString)
       console.log("🔍 [formatDate] Parsed Date object:", date)
       console.log("🔍 [formatDate] Date UTC string:", date.toUTCString())
       console.log("🔍 [formatDate] Date ISO string:", date.toISOString())
-      
+
       if (isNaN(date.getTime())) {
         console.log("🔍 [formatDate] Invalid date, returning N/A")
         return "N/A"
       }
-      
+
       // Get Philippine time
       const phTime = date.toLocaleString("en-US", {
         timeZone: "Asia/Manila",
@@ -328,7 +353,7 @@ const SupportRequests = () => {
       console.log("🔍 [formatDate] Philippine time formatted:", phTime)
       console.log("🔍 [formatDate] Current local time:", new Date().toLocaleString())
       console.log("🔍 [formatDate] Current PH time:", new Date().toLocaleString("en-US", { timeZone: "Asia/Manila" }))
-      
+
       return phTime
     } catch (error) {
       console.error("🔍 [formatDate] Error:", error)
@@ -344,7 +369,7 @@ const SupportRequests = () => {
     }
     const color = colors[status] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
     const label = status?.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Unknown"
-    
+
     return (
       <Badge className={color} variant="outline">
         {label}
@@ -360,7 +385,7 @@ const SupportRequests = () => {
     }
     const color = colors[source] || "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
     const label = source?.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Unknown"
-    
+
     return (
       <Badge className={color} variant="outline">
         {label}
@@ -441,66 +466,66 @@ const SupportRequests = () => {
                 </div>
               ) : filteredTickets.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery 
-                    ? "No in-progress tickets found matching your search." 
+                  {searchQuery
+                    ? "No in-progress tickets found matching your search."
                     : "No in-progress support tickets found."}
                 </div>
               ) : (
                 <div className="space-y-3">
                   {filteredTickets.map((ticket) => (
-                <div
-                  key={ticket.id}
-                  className="flex items-center justify-between p-5 border-2 border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md bg-white transition-all cursor-pointer group"
-                  onClick={() => handleViewTicket(ticket)}
-                >
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="p-3 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 group-hover:from-orange-200 group-hover:to-orange-300 transition-colors">
-                      <User className="h-5 w-5 text-orange-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className="font-bold text-base text-gray-900">{ticket.ticket_number}</span>
-                        {getStatusBadge(ticket.status)}
-                        {getSourceBadge(ticket.source)}
-                        {ticket.message_count > 0 && (
-                          <Badge className="bg-orange-500 text-white hover:bg-orange-600 text-xs">
-                            {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="font-semibold text-base text-gray-900">
-                          {ticket.user_name || ticket.user_email || 'Unknown User'}
-                        </span>
-                      </div>
-                      {ticket.user_email && ticket.user_name && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                          <Mail className="h-3.5 w-3.5" />
-                          <span>{ticket.user_email}</span>
+                    <div
+                      key={ticket.id}
+                      className="flex items-center justify-between p-5 border-2 border-gray-200 rounded-xl hover:border-orange-300 hover:shadow-md bg-white transition-all cursor-pointer group"
+                      onClick={() => handleViewTicket(ticket)}
+                    >
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="p-3 rounded-lg bg-gradient-to-br from-orange-100 to-orange-200 group-hover:from-orange-200 group-hover:to-orange-300 transition-colors">
+                          <User className="h-5 w-5 text-orange-600" />
                         </div>
-                      )}
-                      <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
-                        <Mail className="h-3.5 w-3.5 text-orange-500" />
-                        <span>{ticket.subject}</span>
-                      </div>
-                      <div className="text-sm text-gray-600 line-clamp-2 mb-3">
-                        {ticket.message}
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5" />
-                          <span>Created: {formatDate(ticket.created_at)}</span>
-                        </div>
-                        {ticket.last_message_at && (
-                          <div className="flex items-center gap-1.5">
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            <span>Latest: {formatDate(ticket.last_message_at)}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className="font-bold text-base text-gray-900">{ticket.ticket_number}</span>
+                            {getStatusBadge(ticket.status)}
+                            {getSourceBadge(ticket.source)}
+                            {ticket.message_count > 0 && (
+                              <Badge className="bg-orange-500 text-white hover:bg-orange-600 text-xs">
+                                {ticket.message_count} {ticket.message_count === 1 ? 'message' : 'messages'}
+                              </Badge>
+                            )}
                           </div>
-                        )}
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-semibold text-base text-gray-900">
+                              {ticket.user_name || ticket.user_email || 'Unknown User'}
+                            </span>
+                          </div>
+                          {ticket.user_email && ticket.user_name && (
+                            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                              <Mail className="h-3.5 w-3.5" />
+                              <span>{ticket.user_email}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-sm font-semibold text-gray-800 mb-2">
+                            <Mail className="h-3.5 w-3.5 text-orange-500" />
+                            <span>{ticket.subject}</span>
+                          </div>
+                          <div className="text-sm text-gray-600 line-clamp-2 mb-3">
+                            {ticket.message}
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="h-3.5 w-3.5" />
+                              <span>Created: {formatDate(ticket.created_at)}</span>
+                            </div>
+                            {ticket.last_message_at && (
+                              <div className="flex items-center gap-1.5">
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                <span>Latest: {formatDate(ticket.last_message_at)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
                   ))}
                 </div>
               )}
@@ -513,8 +538,8 @@ const SupportRequests = () => {
                 </div>
               ) : filteredTickets.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery 
-                    ? "No resolved tickets found matching your search." 
+                  {searchQuery
+                    ? "No resolved tickets found matching your search."
                     : "No resolved support tickets found."}
                 </div>
               ) : (
@@ -620,7 +645,7 @@ const SupportRequests = () => {
               </div>
             </div>
           </DialogHeader>
-          
+
           {selectedTicket && (
             <div className="space-y-5 p-6 bg-white" onClick={(e) => {
               console.log("🔍 [Dialog Click] Clicked inside dialog:", e.target)
@@ -700,11 +725,10 @@ const SupportRequests = () => {
                             className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}
                           >
                             <div
-                              className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${
-                                isAdmin
-                                  ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-tr-sm'
-                                  : 'bg-white text-gray-900 border border-gray-200 rounded-tl-sm'
-                              }`}
+                              className={`max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${isAdmin
+                                ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-tr-sm'
+                                : 'bg-white text-gray-900 border border-gray-200 rounded-tl-sm'
+                                }`}
                             >
                               <div className={`flex items-center gap-2 mb-1.5 ${isAdmin ? 'text-orange-50' : 'text-gray-700'}`}>
                                 <span className="text-xs font-semibold">
@@ -740,8 +764,8 @@ const SupportRequests = () => {
                       className="resize-none border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                     />
                   </div>
-                  <Button 
-                    onClick={handleSendMessage} 
+                  <Button
+                    onClick={handleSendMessage}
                     disabled={isSendingMessage || !newMessage.trim()}
                     className="w-full bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md"
                   >
@@ -789,7 +813,7 @@ const SupportRequests = () => {
                 Ticket: {selectedTicket?.ticket_number}
               </p>
               <p className="text-sm text-gray-600">
-                Once resolved, this ticket will be moved to the "Resolved" tab and the conversation will be closed. 
+                Once resolved, this ticket will be moved to the "Resolved" tab and the conversation will be closed.
                 You will no longer be able to send messages to this ticket.
               </p>
               <p className="text-sm font-medium text-orange-600 mt-3">

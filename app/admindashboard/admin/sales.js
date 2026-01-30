@@ -2095,13 +2095,30 @@ const Sales = ({ userId }) => {
                     Quantity
                   </Label>
                   <Input
-                    type="number"
-                    min="1"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="^\\d+$"
                     max={
                       selectedProduct ? (products.find((p) => p.id == selectedProduct || p.id === Number.parseInt(selectedProduct))?.stock || 1) : 1
                     }
                     value={quantity}
-                    onChange={(e) => setQuantity(Number.parseInt(e.target.value) || 1)}
+                    onWheelCapture={(e) => {
+                      e.currentTarget.blur()
+                    }}
+                    onKeyDown={(e) => {
+                      if (["e", "E", "+", "-", ".", ","].includes(e.key)) e.preventDefault()
+                    }}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      if (next === "") {
+                        setQuantity(1)
+                        return
+                      }
+                      if (/^\d+$/.test(next)) {
+                        const parsed = Number.parseInt(next, 10)
+                        setQuantity(parsed > 0 ? parsed : 1)
+                      }
+                    }}
                     onFocus={(e) => e.target.select()}
                     disabled={!selectedProduct}
                     className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold"
@@ -2233,10 +2250,22 @@ const Sales = ({ userId }) => {
                           <div className="space-y-2">
                             <Label className="text-sm font-semibold">Amount Received (₱)</Label>
                             <Input
-                              type="number"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
+                              pattern="^\\d*(\\.\\d{0,2})?$"
                               value={amountReceived}
-                              onChange={(e) => setAmountReceived(e.target.value)}
+                              onWheelCapture={(e) => {
+                                e.currentTarget.blur()
+                              }}
+                              onKeyDown={(e) => {
+                                if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault()
+                              }}
+                              onChange={(e) => {
+                                const next = e.target.value
+                                if (next === "" || /^\d*(\.\d{0,2})?$/.test(next)) {
+                                  setAmountReceived(next)
+                                }
+                              }}
                               placeholder="Enter amount received"
                               className="h-11"
                             />
@@ -2652,8 +2681,11 @@ const Sales = ({ userId }) => {
                             type="number"
                             step="0.01"
                             value={newProduct.price}
+                            onWheelCapture={(e) => {
+                              e.currentTarget.blur()
+                            }}
                             onChange={(e) => setNewProduct({ ...newProduct, price: e.target.value })}
-                            placeholder="Enter price"
+                            placeholder="0.00"
                             className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 text-lg font-semibold"
                           />
                         </div>
@@ -2665,6 +2697,9 @@ const Sales = ({ userId }) => {
                           <Input
                             type="number"
                             value={newProduct.stock}
+                            onWheelCapture={(e) => {
+                              e.currentTarget.blur()
+                            }}
                             onChange={(e) => setNewProduct({ ...newProduct, stock: e.target.value })}
                             placeholder="Enter stock quantity"
                             className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200"
@@ -2996,9 +3031,12 @@ const Sales = ({ userId }) => {
                 type="number"
                 min="1"
                 value={stockUpdateQuantity}
+                onWheelCapture={(e) => {
+                  e.currentTarget.blur()
+                }}
                 onChange={(e) => setStockUpdateQuantity(e.target.value)}
                 placeholder={isAddOnlyMode ? "Enter quantity to add" : "Enter quantity"}
-                className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-lg font-semibold"
+                className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                 autoFocus
               />
             </div>
@@ -3090,9 +3128,11 @@ const Sales = ({ userId }) => {
                 type="number"
                 step="0.01"
                 value={editProductData.price}
+                onWheelCapture={(e) => {
+                  e.currentTarget.blur()
+                }}
                 onChange={(e) => setEditProductData({ ...editProductData, price: e.target.value })}
-                placeholder="Enter price"
-                className="h-11 border-2 border-gray-300 focus:border-gray-500 focus:ring-2 focus:ring-gray-200 text-lg font-semibold"
+                className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
               />
             </div>
             <div className="space-y-2">

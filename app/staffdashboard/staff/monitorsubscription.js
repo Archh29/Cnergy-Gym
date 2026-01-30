@@ -316,7 +316,7 @@ const SubscriptionMonitor = ({ userId }) => {
     } catch (e) {
       console.error('Error opening subscription details for user:', id, e)
     } finally {
-      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) {}
+      try { sessionStorage.removeItem('openSubscriptionDetailsUserId') } catch (_) { }
     }
   }
 
@@ -3878,10 +3878,22 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="space-y-2">
                 <Label className="text-sm font-semibold text-gray-700">Amount Received</Label>
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="^\\d*(\\.\\d{0,2})?$"
                   value={guestSessionForm.amount_received}
-                  onChange={(e) => setGuestSessionForm(prev => ({ ...prev, amount_received: e.target.value }))}
+                  onWheelCapture={(e) => {
+                    e.currentTarget.blur()
+                  }}
+                  onKeyDown={(e) => {
+                    if (["e", "E", "+", "-"].includes(e.key)) e.preventDefault()
+                  }}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    if (next === "" || /^\d*(\.\d{0,2})?$/.test(next)) {
+                      setGuestSessionForm(prev => ({ ...prev, amount_received: next }))
+                    }
+                  }}
                   placeholder="Enter amount received"
                   className="h-11 text-sm border-gray-300 focus:border-gray-400 focus:ring-1 focus:ring-gray-200 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />

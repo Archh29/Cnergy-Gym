@@ -86,17 +86,17 @@ const App = () => {
     let fullMessage = message
     if (membership && !hasPlanInfo) {
       let timeText = "Expired"
-      
+
       // Check if this is a gym session plan (expires at 9 PM on expiration date)
       const isGymSession = /gym\s+session|day\s+pass|walk[- ]?in/i.test(membership.plan_name || '')
-      
+
       // Always calculate from end_date for accuracy, especially when days_remaining is 0 but hours remain
       const endDateStr = membership.end_date || membership.expires_on
       if (endDateStr) {
         try {
           const now = new Date()
           let endDate = null
-          
+
           // For gym sessions, always set expiration to 9 PM on the expiration date
           if (isGymSession) {
             // Try to parse from end_date first (MySQL datetime format)
@@ -109,7 +109,7 @@ const App = () => {
                 endDate = dateOnly
               }
             }
-            
+
             // If end_date parsing failed, try expires_on (formatted string like "Jan 26, 2026")
             if (!endDate && membership.expires_on) {
               const parsedExpiresOn = new Date(membership.expires_on)
@@ -127,15 +127,15 @@ const App = () => {
               endDate = new Date(membership.expires_on)
             }
           }
-          
+
           if (endDate && !isNaN(endDate.getTime())) {
             const diffMs = endDate.getTime() - now.getTime()
-            
+
             if (diffMs > 0) {
               const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24))
               const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
               const minutesRemaining = Math.floor(diffMs / (1000 * 60))
-              
+
               if (daysRemaining >= 1) {
                 timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
               } else if (isGymSession && hoursRemaining < 1 && minutesRemaining > 0) {
@@ -239,11 +239,11 @@ const App = () => {
       // Add plan info without any emojis
       fullMessage += `\nPlan: ${membership.plan_name}  ·  ${timeText}`
     }
-    
+
     // Remove ALL emojis from entire message and remove duplicate plan lines
     // First, remove all emojis (including clipboard emoji U+1F4CB)
     fullMessage = fullMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
-    
+
     // Now remove duplicate plan lines (normalize separators first)
     const lines = fullMessage.split('\n')
     let planLineFound = false
@@ -259,7 +259,7 @@ const App = () => {
       }
       return trimmedLine
     }).join('\n').trim()
-    
+
     setNotification({ show: true, message: fullMessage, type, memberPhoto, userId })
     // Use 15050ms to ensure animation completes (15s animation + 50ms buffer)
     setTimeout(() => setNotification({ show: false, message: "", type: "", memberPhoto: null, userId: null }), 15050)
@@ -344,7 +344,7 @@ const App = () => {
 
         // For checkout actions, don't add plan info - session is complete
         const isCheckoutAction = actionType === "auto_checkout" || actionType === "checkout"
-        
+
         // Add plan info to notification if available (single line, no duplicate)
         // Skip plan info for checkout actions - session is done
         // Check for any existing plan info in message (case-insensitive, check for "Plan:" pattern)
@@ -352,17 +352,17 @@ const App = () => {
         if (response.data.plan_info && !hasPlanInfo && !isCheckoutAction) {
           const p = response.data.plan_info
           let timeText = "Expired"
-          
+
           // Check if this is a gym session plan (expires at 9 PM on expiration date)
           const isGymSession = /gym\s+session|day\s+pass|walk[- ]?in/i.test(p.plan_name || '')
-          
+
           // Always calculate from end_date for accuracy, especially when days_remaining is 0 but hours remain
           const endDateStr = p.end_date || p.expires_on
           if (endDateStr) {
             try {
               const now = new Date()
               let endDate = null
-              
+
               // For gym sessions, always set expiration to 9 PM on the expiration date
               if (isGymSession) {
                 // Try to parse from end_date first (MySQL datetime format)
@@ -375,7 +375,7 @@ const App = () => {
                     endDate = dateOnly
                   }
                 }
-                
+
                 // If end_date parsing failed, try expires_on (formatted string like "Jan 26, 2026")
                 if (!endDate && p.expires_on) {
                   const parsedExpiresOn = new Date(p.expires_on)
@@ -393,22 +393,22 @@ const App = () => {
                   endDate = new Date(p.expires_on)
                 }
               }
-              
+
               if (endDate && !isNaN(endDate.getTime())) {
                 const diffMs = endDate.getTime() - now.getTime()
-                
+
                 console.log("DEBUG: plan_name:", p.plan_name, "isGymSession:", isGymSession)
                 console.log("DEBUG: end_date string:", endDateStr, "expires_on:", p.expires_on)
                 console.log("DEBUG: parsed endDate:", endDate, "now:", now)
                 console.log("DEBUG: diffMs:", diffMs, "diffMs > 0:", diffMs > 0)
-                
+
                 if (diffMs > 0) {
                   const daysRemaining = Math.floor(diffMs / (1000 * 60 * 60 * 24))
                   const hoursRemaining = Math.floor(diffMs / (1000 * 60 * 60))
                   const minutesRemaining = Math.floor(diffMs / (1000 * 60))
-                  
+
                   console.log("DEBUG: daysRemaining:", daysRemaining, "hoursRemaining:", hoursRemaining, "minutesRemaining:", minutesRemaining)
-                  
+
                   if (daysRemaining >= 1) {
                     timeText = `${daysRemaining} ${daysRemaining === 1 ? "day" : "days"} left`
                   } else if (isGymSession && hoursRemaining < 1 && minutesRemaining > 0) {
@@ -528,11 +528,11 @@ const App = () => {
             }
           }
         }
-        
+
         // Remove ALL emojis from entire message and remove duplicate plan lines
         // First, remove all emojis (including clipboard emoji U+1F4CB)
         notificationMessage = notificationMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/gu, '')
-        
+
         // Now remove duplicate plan lines (normalize separators first)
         const lines = notificationMessage.split('\n')
         let planLineFound = false
@@ -697,6 +697,9 @@ const App = () => {
 
     // Keyboard event handler
     const handleKeyboardEvent = (event) => {
+      if (!event || typeof event.key !== "string") {
+        return
+      }
       const currentTime = Date.now()
 
       // Skip if in input fields
