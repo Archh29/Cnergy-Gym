@@ -2035,25 +2035,54 @@ function updateProductStock($pdo, $data)
 
 	$quantity = (int) $data['quantity'];
 	$productId = (int) $data['product_id'];
-	$type = $data['type']; // 'add' or 'remove'
+	$type = $data['type']; // 'add', 'remove', or 'set'
 
-	if ($type === 'add') {
-		$stmt = $pdo->prepare("UPDATE `product` SET stock = stock + ? WHERE id = ?");
-	} else {
-		$stmt = $pdo->prepare("UPDATE `product` SET stock = GREATEST(0, stock - ?) WHERE id = ?");
+	$productStmt = $pdo->prepare("SELECT name, stock FROM product WHERE id = ?");
+	$productStmt->execute([$productId]);
+	$product = $productStmt->fetch(PDO::FETCH_ASSOC);
+	if (!$product) {
+		http_response_code(404);
+		echo json_encode(["error" => "Product not found"]);
+		return;
 	}
 
-	$stmt->execute([$quantity, $productId]);
+	$productName = $product['name'] ?? "Product ID: {$productId}";
+	$beforeStock = (int) ($product['stock'] ?? 0);
 
-	if ($stmt->rowCount() > 0) {
-		// Log activity using dedicated logging file
-		$productStmt = $pdo->prepare("SELECT name FROM product WHERE id = ?");
-		$productStmt->execute([$productId]);
-		$product = $productStmt->fetch();
-		$productName = $product ? $product['name'] : "Product ID: {$productId}";
+	if ($type === 'set') {
+		if ($quantity < 0) {
+			http_response_code(400);
+			echo json_encode(["error" => "Stock must be 0 or greater"]);
+			return;
+		}
+		$afterStock = $quantity;
+	} elseif ($type === 'add') {
+		if ($quantity <= 0) {
+			http_response_code(400);
+			echo json_encode(["error" => "Quantity must be greater than 0"]);
+			return;
+		}
+		$afterStock = $beforeStock + $quantity;
+	} else {
+		if ($quantity <= 0) {
+			http_response_code(400);
+			echo json_encode(["error" => "Quantity must be greater than 0"]);
+			return;
+		}
+		$afterStock = max(0, $beforeStock - $quantity);
+	}
 
+	$updateStmt = $pdo->prepare("UPDATE `product` SET stock = ? WHERE id = ?");
+	$updateStmt->execute([$afterStock, $productId]);
+
+	if ($updateStmt->rowCount() > 0) {
 		$userId = $_SESSION['user_id'] ?? null;
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode("Stock updated for {$productName}: {$type} {$quantity} units");
+		if ($type === 'set') {
+			$details = "Stock corrected for {$productName}: set to {$afterStock} (before: {$beforeStock})";
+		} else {
+			$details = "Stock updated for {$productName}: {$type} {$quantity} units (before: {$beforeStock}, after: {$afterStock})";
+		}
+		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode($details);
 		if ($userId) {
 			$logUrl .= "&user_id=" . $userId;
 		}
@@ -2061,8 +2090,7 @@ function updateProductStock($pdo, $data)
 
 		echo json_encode(["success" => "Stock updated successfully"]);
 	} else {
-		http_response_code(404);
-		echo json_encode(["error" => "Product not found"]);
+		echo json_encode(["success" => "No changes made"]);
 	}
 }
 

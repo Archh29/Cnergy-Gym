@@ -124,6 +124,7 @@ const Sales = ({ userId }) => {
   const [stockUpdateQuantity, setStockUpdateQuantity] = useState("")
   const [stockUpdateType, setStockUpdateType] = useState("add")
   const [isAddOnlyMode, setIsAddOnlyMode] = useState(false)
+  const [stockCurrentValue, setStockCurrentValue] = useState("")
 
   // Product edit state
   const [editProduct, setEditProduct] = useState(null)
@@ -234,6 +235,50 @@ const Sales = ({ userId }) => {
     const month = String(phTime.getMonth() + 1).padStart(2, '0')
     const day = String(phTime.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
+  }
+
+  const handleSetCurrentStock = async () => {
+    if (!stockUpdateProduct) return
+
+    const nextStock = Number.parseInt(stockCurrentValue)
+    if (Number.isNaN(nextStock) || nextStock < 0) {
+      alert("Stock must be 0 or greater")
+      return
+    }
+
+    // Ensure userId is available
+    if (!userId) {
+      alert("User ID is missing. Please refresh the page and try again.")
+      return
+    }
+
+    setLoading(true)
+    try {
+      const response = await axios.put(`${API_BASE_URL}?action=stock&staff_id=${userId}`, {
+        product_id: stockUpdateProduct.id,
+        quantity: nextStock,
+        type: "set",
+        staff_id: userId,
+      }, {
+        timeout: 30000
+      })
+
+      if (response.data.success) {
+        setSuccessMessage("Stock updated successfully!")
+        setShowSuccessNotification(true)
+        setStockUpdateProduct(null)
+        setStockUpdateQuantity("")
+        setStockUpdateType("add")
+        setIsAddOnlyMode(false)
+        setStockCurrentValue("")
+        await Promise.all([loadProducts(), loadAnalytics()])
+      }
+    } catch (error) {
+      console.error("Error updating stock:", error)
+      alert(error.response?.data?.error || "Error updating stock. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   // Load initial data
@@ -1269,9 +1314,16 @@ const Sales = ({ userId }) => {
     }
 
     const updateQuantity = Number.parseInt(stockUpdateQuantity)
-    if (updateQuantity <= 0) {
-      alert("Quantity must be greater than 0")
-      return
+    if (stockUpdateType === "set") {
+      if (Number.isNaN(updateQuantity) || updateQuantity < 0) {
+        alert("Stock must be 0 or greater")
+        return
+      }
+    } else {
+      if (updateQuantity <= 0) {
+        alert("Quantity must be greater than 0")
+        return
+      }
     }
 
     // Ensure userId is available
@@ -1292,7 +1344,11 @@ const Sales = ({ userId }) => {
       })
 
       if (response.data.success) {
-        setSuccessMessage(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+        setSuccessMessage(
+          stockUpdateType === "set"
+            ? "Stock updated successfully!"
+            : `Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`
+        )
         setShowSuccessNotification(true)
         setStockUpdateProduct(null)
         setStockUpdateQuantity("")
@@ -1314,13 +1370,19 @@ const Sales = ({ userId }) => {
         const updatedProduct = updatedProducts.data.products?.find(p => p.id === stockUpdateProduct.id)
 
         if (updatedProduct) {
-          const expectedStock = stockUpdateType === "add"
-            ? Number.parseInt(stockUpdateProduct.stock) + updateQuantity
-            : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - updateQuantity)
+          const expectedStock = stockUpdateType === "set"
+            ? Math.max(0, updateQuantity)
+            : stockUpdateType === "add"
+              ? Number.parseInt(stockUpdateProduct.stock) + updateQuantity
+              : Math.max(0, Number.parseInt(stockUpdateProduct.stock) - updateQuantity)
 
           if (updatedProduct.stock == expectedStock) {
             // Update actually succeeded, show success
-            setSuccessMessage(`Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`)
+            setSuccessMessage(
+              stockUpdateType === "set"
+                ? "Stock updated successfully!"
+                : `Stock ${stockUpdateType === "add" ? "added" : "removed"} successfully!`
+            )
             setShowSuccessNotification(true)
             setStockUpdateProduct(null)
             setStockUpdateQuantity("")
@@ -2999,6 +3061,7 @@ const Sales = ({ userId }) => {
         setStockUpdateProduct(null)
         setStockUpdateQuantity("")
         setStockUpdateType("add")
+        setStockCurrentValue("")
       }}>
         <DialogContent className="max-w-md" hideClose>
           <DialogHeader className="space-y-3 pb-4 border-b border-gray-200">
@@ -3008,7 +3071,7 @@ const Sales = ({ userId }) => {
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold text-gray-900">
-                  Add Stock
+                  Stock
                 </DialogTitle>
                 <DialogDescription className="text-sm text-gray-600 mt-1">
                   {stockUpdateProduct?.name}
@@ -3054,7 +3117,7 @@ const Sales = ({ userId }) => {
                       <div className="text-center">
                         <p className="text-xs text-gray-500 mb-1">New</p>
                         <span className="text-3xl font-bold text-green-700">
-                          {Number.parseInt(stockUpdateProduct.stock) + Number.parseInt(stockUpdateQuantity || "0")}
+                          {Number.parseInt(stockUpdateProduct.stock || 0) + Number.parseInt(stockUpdateQuantity || "0")}
                         </span>
                       </div>
                       <span className="text-sm font-medium text-gray-600">units</span>
@@ -3066,6 +3129,41 @@ const Sales = ({ userId }) => {
                 </div>
               </div>
             )}
+
+            <div className="border-t border-gray-200 pt-5 space-y-3">
+              <div>
+                <Label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Edit className="h-4 w-4 text-gray-500" />
+                  Current Stock
+                </Label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Use this if you need to correct the stock value.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="0"
+                  value={stockCurrentValue}
+                  onChange={(e) => setStockCurrentValue(e.target.value)}
+                  placeholder={String(stockUpdateProduct?.stock ?? "")}
+                  className="h-11 border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  onFocus={() => {
+                    if (stockUpdateProduct && (stockCurrentValue === "" || stockCurrentValue === null)) {
+                      setStockCurrentValue(String(stockUpdateProduct.stock ?? "0"))
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  onClick={handleSetCurrentStock}
+                  disabled={loading || stockCurrentValue === ""}
+                  className="h-11 px-4"
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
           </div>
           <DialogFooter className="pt-4 border-t border-gray-200">
             <Button

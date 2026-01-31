@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import axios from "axios"
 import { formatDateToISO, safeDate, formatDateOnlyPH } from "@/lib/dateUtils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -254,6 +254,15 @@ const ViewMembers = ({ userId }) => {
   const [profilePhotoPreview, setProfilePhotoPreview] = useState(null)
   const [editPhotoFile, setEditPhotoFile] = useState(null)
   const [editPhotoPreview, setEditPhotoPreview] = useState(null)
+  const [photoCropOpen, setPhotoCropOpen] = useState(false)
+  const [pendingPhotoFile, setPendingPhotoFile] = useState(null)
+  const [pendingPhotoSrc, setPendingPhotoSrc] = useState(null)
+  const [cropZoom, setCropZoom] = useState(1)
+  const [cropPos, setCropPos] = useState({ x: 0, y: 0 })
+  const [cropTarget, setCropTarget] = useState("add")
+  const cropContainerRef = useRef(null)
+  const cropImgRef = useRef(null)
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, baseX: 0, baseY: 0 })
   const [calculatedAge, setCalculatedAge] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const membersPerPage = 5
@@ -951,6 +960,124 @@ const ViewMembers = ({ userId }) => {
       user_type_id: member.user_type_id || 4,
     })
     setIsEditDialogOpen(true)
+  }
+
+  const clampCropPos = (pos, zoomValue) => {
+    const container = cropContainerRef.current
+    const img = cropImgRef.current
+    if (!container || !img) return pos
+
+    const size = container.clientWidth || 320
+    const naturalW = img.naturalWidth || 1
+    const naturalH = img.naturalHeight || 1
+    const baseScale = Math.max(size / naturalW, size / naturalH)
+
+    const displayW = naturalW * baseScale * zoomValue
+    const displayH = naturalH * baseScale * zoomValue
+
+    const maxX = Math.max(0, (displayW - size) / 2)
+    const maxY = Math.max(0, (displayH - size) / 2)
+
+    return {
+      x: Math.min(maxX, Math.max(-maxX, pos.x)),
+      y: Math.min(maxY, Math.max(-maxY, pos.y)),
+    }
+  }
+
+  const handleCropImgLoad = () => {
+    setCropPos((p) => clampCropPos(p, cropZoom))
+  }
+
+  const handleCropPointerDown = (e) => {
+    dragRef.current = {
+      dragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      baseX: cropPos.x,
+      baseY: cropPos.y,
+    }
+  }
+
+  const handleCropPointerMove = (e) => {
+    if (!dragRef.current.dragging) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    const next = { x: dragRef.current.baseX + dx, y: dragRef.current.baseY + dy }
+    setCropPos(clampCropPos(next, cropZoom))
+  }
+
+  const handleCropPointerUp = () => {
+    dragRef.current.dragging = false
+  }
+
+  const handleCropZoomChange = (value) => {
+    const z = Number(value) || 1
+    setCropZoom(z)
+    setCropPos((p) => clampCropPos(p, z))
+  }
+
+  const applyCroppedPhoto = async () => {
+    const file = pendingPhotoFile
+    const container = cropContainerRef.current
+    const img = cropImgRef.current
+    if (!file || !container || !img) {
+      setPhotoCropOpen(false)
+      return
+    }
+
+    const size = container.clientWidth || 320
+    const naturalW = img.naturalWidth || 1
+    const naturalH = img.naturalHeight || 1
+    const baseScale = Math.max(size / naturalW, size / naturalH)
+
+    const scale = baseScale * cropZoom
+    const visibleX = (naturalW * scale - size) / 2 - cropPos.x
+    const visibleY = (naturalH * scale - size) / 2 - cropPos.y
+
+    const sx = visibleX / scale
+    const sy = visibleY / scale
+    const sSize = size / scale
+
+    const outputSize = 512
+    const canvas = document.createElement("canvas")
+    canvas.width = outputSize
+    canvas.height = outputSize
+    const ctx = canvas.getContext("2d")
+    if (!ctx) {
+      setPhotoCropOpen(false)
+      return
+    }
+
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = "high"
+    ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, outputSize, outputSize)
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92))
+    if (!blob) {
+      setPhotoCropOpen(false)
+      return
+    }
+
+    const croppedFile = new File([blob], `photo_${Date.now()}.png`, { type: "image/png" })
+    const previewUrl = URL.createObjectURL(croppedFile)
+
+    if (cropTarget === "edit") {
+      if (editPhotoPreview && typeof editPhotoPreview === "string" && editPhotoPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(editPhotoPreview)
+      }
+      setEditPhotoFile(croppedFile)
+      setEditPhotoPreview(previewUrl)
+    } else {
+      if (profilePhotoPreview && typeof profilePhotoPreview === "string" && profilePhotoPreview.startsWith("blob:")) {
+        URL.revokeObjectURL(profilePhotoPreview)
+      }
+      setProfilePhotoFile(croppedFile)
+      setProfilePhotoPreview(previewUrl)
+    }
+
+    setPendingPhotoFile(null)
+    setPendingPhotoSrc(null)
+    setPhotoCropOpen(false)
   }
 
 
@@ -3548,14 +3675,18 @@ const ViewMembers = ({ userId }) => {
                                 })
                                 return
                               }
-                              setProfilePhotoFile(file)
-                              // Create preview
+                              setCropTarget("add")
+                              setPendingPhotoFile(file)
+                              setCropZoom(1)
+                              setCropPos({ x: 0, y: 0 })
                               const reader = new FileReader()
                               reader.onloadend = () => {
-                                setProfilePhotoPreview(reader.result)
+                                setPendingPhotoSrc(reader.result)
+                                setPhotoCropOpen(true)
                               }
                               reader.readAsDataURL(file)
                             }
+                            e.target.value = ""
                           }}
                           className="h-10 text-sm"
                         />
@@ -3943,8 +4074,16 @@ const ViewMembers = ({ userId }) => {
                     onChange={(e) => {
                       const f = e.target.files?.[0]
                       if (f) {
-                        setEditPhotoFile(f)
-                        setEditPhotoPreview(URL.createObjectURL(f))
+                        setCropTarget("edit")
+                        setPendingPhotoFile(f)
+                        setCropZoom(1)
+                        setCropPos({ x: 0, y: 0 })
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                          setPendingPhotoSrc(reader.result)
+                          setPhotoCropOpen(true)
+                        }
+                        reader.readAsDataURL(f)
                       }
                       e.target.value = ""
                     }}
@@ -4827,6 +4966,75 @@ const ViewMembers = ({ userId }) => {
               Close
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={photoCropOpen} onOpenChange={setPhotoCropOpen}>
+        <DialogContent className="max-w-xl z-[200]">
+          <DialogHeader>
+            <DialogTitle>Crop Photo</DialogTitle>
+            <DialogDescription>Drag to reposition and use the slider to zoom.</DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4">
+            <div
+              ref={cropContainerRef}
+              className="relative mx-auto w-[320px] h-[320px] rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 select-none"
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onPointerCancel={handleCropPointerUp}
+              onPointerLeave={handleCropPointerUp}
+            >
+              {pendingPhotoSrc && (
+                <img
+                  ref={cropImgRef}
+                  src={pendingPhotoSrc}
+                  alt="Crop"
+                  draggable={false}
+                  onLoad={handleCropImgLoad}
+                  className="absolute left-1/2 top-1/2 will-change-transform"
+                  style={{
+                    transform: `translate(calc(-50% + ${cropPos.x}px), calc(-50% + ${cropPos.y}px)) scale(${cropZoom})`,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                  }}
+                />
+              )}
+              <div className="absolute inset-0 ring-1 ring-inset ring-black/10" />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Label className="text-sm text-slate-600 whitespace-nowrap">Zoom</Label>
+              <input
+                type="range"
+                min="1"
+                max="3"
+                step="0.01"
+                value={cropZoom}
+                onChange={(e) => handleCropZoomChange(e.target.value)}
+                className="w-full"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPendingPhotoFile(null)
+                  setPendingPhotoSrc(null)
+                  setPhotoCropOpen(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="button" onClick={applyCroppedPhoto}>
+                Apply
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
