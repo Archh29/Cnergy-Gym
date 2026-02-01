@@ -2128,7 +2128,23 @@ const SubscriptionMonitor = ({ userId }) => {
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
+        <Card
+          className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-amber-50 via-yellow-50 to-white overflow-hidden group cursor-pointer"
+          onClick={() => setActiveTab("pending")}
+        >
+          <CardContent className="flex items-center p-6 relative">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200 rounded-full -mr-16 -mt-16 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+            <div className="p-4 rounded-xl bg-gradient-to-br from-amber-200 to-yellow-200 mr-4 shadow-md group-hover:scale-110 transition-transform">
+              <Clock className="h-6 w-6 text-amber-800" />
+            </div>
+            <div className="flex-1 relative z-10">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1.5">Pending Requests</p>
+              <p className="text-3xl font-bold text-amber-800">{analytics.pending}</p>
+              <p className="text-xs text-slate-500 mt-1">Pay-in-person / cash walk-ins</p>
+            </div>
+          </CardContent>
+        </Card>
         <Card
           className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-green-50 to-white overflow-hidden group cursor-pointer"
           onClick={() => setActiveTab("active")}
@@ -2305,6 +2321,223 @@ const SubscriptionMonitor = ({ userId }) => {
                 Cancelled ({analytics.cancelled})
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="pending" className="space-y-4 mt-6">
+              {/* Filters */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Left side - Search and Plan */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+                      <Input
+                        placeholder="Search members, emails, or plans..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-10 w-64 border-slate-300 focus:border-slate-400 focus:ring-slate-400 shadow-sm"
+                      />
+                    </div>
+                    <Label htmlFor="pending-plan-filter">Plan:</Label>
+                    <Select value={planFilter} onValueChange={(value) => {
+                      setPlanFilter(value)
+                      if (value !== "Gym Session" && value !== "Day Pass" && value !== "Walk In") {
+                        setSubscriptionTypeFilter("all")
+                      }
+                    }}>
+                      <SelectTrigger className="w-40" id="pending-plan-filter">
+                        <SelectValue placeholder="All Plans" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Plans</SelectItem>
+                        {subscriptionPlans.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.plan_name}>
+                            {plan.plan_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Only show Type filter when Gym Session/Day Pass/Walk In is selected */}
+                    {(planFilter === "Gym Session" || planFilter === "Day Pass" || planFilter === "Walk In") && (
+                      <>
+                        <Label htmlFor="pending-subscription-type-filter">Type:</Label>
+                        <Select value={subscriptionTypeFilter} onValueChange={setSubscriptionTypeFilter}>
+                          <SelectTrigger className="w-40" id="pending-subscription-type-filter">
+                            <SelectValue placeholder="All Types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Types</SelectItem>
+                            <SelectItem value="regular">Session</SelectItem>
+                            <SelectItem value="guest">Guest Session</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Right side - Date Range Filter */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <Label htmlFor="pending-start-date-filter" className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-slate-600" />
+                      Start Date:
+                    </Label>
+                    <Input
+                      type="date"
+                      id="pending-start-date-filter"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      max={endDate || new Date().toISOString().slice(0, 10)}
+                    />
+                    <Label htmlFor="pending-end-date-filter" className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-slate-600" />
+                      End Date:
+                    </Label>
+                    <Input
+                      type="date"
+                      id="pending-end-date-filter"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-40 h-10 border-slate-300 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      min={startDate || undefined}
+                    />
+                    {(startDate || endDate) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setStartDate("")
+                          setEndDate("")
+                        }}
+                        className="h-10 px-3 text-xs"
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Pending Subscriptions Table */}
+              {(() => {
+                const filteredPending = filterSubscriptions(getFilteredPendingByPlan())
+                const groupedPending = groupSubscriptionsByUser(filteredPending)
+                const pendingPagination = getPaginatedData(groupedPending, 'pending')
+
+                return groupedPending.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No pending subscriptions found</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-slate-200 shadow-lg overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-gradient-to-r from-amber-50 to-amber-100/50 hover:bg-amber-100 border-b-2 border-amber-200">
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider">Name</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pr-0">Status</TableHead>
+                            <TableHead className="font-bold text-slate-800 text-sm uppercase tracking-wider text-right w-auto pl-1">Details</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pendingPagination.paginated.map((user) => {
+                            const primarySub = user.subscriptions[0]
+                            return (
+                              <TableRow key={user.user_id || `guest_${user.guest_name}`} className="hover:bg-slate-50/80 transition-all border-b border-slate-100">
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-10 w-10">
+                                      <AvatarImage src={normalizeProfilePhotoUrl(primarySub?.system_photo_url)} alt={primarySub ? getDisplayName(primarySub) : 'User'} />
+                                      <AvatarFallback>
+                                        {primarySub ? getAvatarInitials(primarySub) : 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div>
+                                      <div className="font-medium flex items-center gap-2">
+                                        {primarySub ? getDisplayName(primarySub) : (user.guest_name || 'Unknown')}
+                                        {user.is_guest_session && (
+                                          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                            Guest
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {primarySub ? getDisplayEmail(primarySub) : (user.email || 'No email')}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right pr-0">
+                                  {primarySub && (
+                                    <div className="flex justify-end">
+                                      <Badge
+                                        className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
+                                      >
+                                        {getStatusIcon(primarySub.status_name)}
+                                        {primarySub.display_status || primarySub.status_name}
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right pl-1">
+                                  <div className="flex justify-end">
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      onClick={() => setViewDetailsModal({
+                                        open: true,
+                                        user: user,
+                                        subscriptions: user.subscriptions
+                                      })}
+                                      className="h-9 px-4 text-sm font-semibold bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      View Details
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {/* Pagination Controls */}
+                    {groupedPending.length > 0 && (
+                      <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white mt-0">
+                        <div className="text-sm text-slate-500">
+                          {groupedPending.length} {groupedPending.length === 1 ? 'user' : 'users'} total
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.max(1, prev.pending - 1) }))}
+                            disabled={pendingPagination.currentPage === 1}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <div className="px-3 py-1 text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md min-w-[100px] text-center">
+                            Page {pendingPagination.currentPage} of {pendingPagination.totalPages}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(prev => ({ ...prev, pending: Math.min(pendingPagination.totalPages, prev.pending + 1) }))}
+                            disabled={pendingPagination.currentPage === pendingPagination.totalPages}
+                            className="h-8 px-3 flex items-center gap-1 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </TabsContent>
 
             <TabsContent value="active" className="space-y-4 mt-6">
               {/* Filters */}

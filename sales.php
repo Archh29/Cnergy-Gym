@@ -2076,17 +2076,23 @@ function updateProductStock($pdo, $data)
 	$updateStmt->execute([$afterStock, $productId]);
 
 	if ($updateStmt->rowCount() > 0) {
-		$userId = $_SESSION['user_id'] ?? null;
+		$staffId = $data['staff_id'] ?? $_GET['staff_id'] ?? $_SESSION['user_id'] ?? null;
+		$staffId = (is_numeric($staffId) ? (int) $staffId : null);
 		if ($type === 'set') {
-			$details = "Stock corrected for {$productName}: set to {$afterStock} (before: {$beforeStock})";
+			$details = "{$productName}: corrected stock from {$beforeStock} to {$afterStock} units";
+		} elseif ($type === 'add') {
+			$details = "{$productName}: added {$quantity} units (before: {$beforeStock}, after: {$afterStock})";
 		} else {
-			$details = "Stock updated for {$productName}: {$type} {$quantity} units (before: {$beforeStock}, after: {$afterStock})";
+			$details = "{$productName}: removed {$quantity} units (before: {$beforeStock}, after: {$afterStock})";
 		}
-		$logUrl = "https://api.cnergy.site/log_activity.php?action=Update%20Stock&details=" . urlencode($details);
-		if ($userId) {
-			$logUrl .= "&user_id=" . $userId;
-		}
-		file_get_contents($logUrl);
+		logStaffActivity($pdo, $staffId, "Stock updated", $details, "Inventory Management", [
+			'product_id' => $productId,
+			'product_name' => $productName,
+			'type' => $type,
+			'quantity' => $quantity,
+			'before_stock' => $beforeStock,
+			'after_stock' => $afterStock,
+		]);
 
 		echo json_encode(["success" => "Stock updated successfully"]);
 	} else {
