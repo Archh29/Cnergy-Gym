@@ -155,8 +155,8 @@ const ViewCoach = () => {
     bio: "",
     specialty: "",
     experience: "",
-    per_session_rate: "300",
-    monthly_rate: "3200",
+    per_session_rate: "350",
+    monthly_rate: "3400",
     certifications: "",
     is_available: true,
     image_url: "",
@@ -270,14 +270,14 @@ const ViewCoach = () => {
 
     // Mark field as touched if it's one of the rate fields and the value has changed from default
     if (name === "per_session_rate") {
-      if (value !== "300") {
+      if (value !== "350") {
         setTouchedFields((prev) => ({
           ...prev,
           per_session_rate: true,
         }))
       }
     } else if (name === "monthly_rate") {
-      if (value !== "3200") {
+      if (value !== "3400") {
         setTouchedFields((prev) => ({
           ...prev,
           monthly_rate: true,
@@ -346,10 +346,10 @@ const ViewCoach = () => {
       bio: "",
       specialty: "",
       experience: "",
-      per_session_rate: "300",
+      per_session_rate: "350",
       package_rate: "",
       package_sessions: "",
-      monthly_rate: "3200",
+      monthly_rate: "3400",
       certifications: "",
       is_available: true,
       image_url: "",
@@ -594,10 +594,10 @@ const ViewCoach = () => {
         bio: formData.bio || "",
         specialty: selectedSpecialties.length > 0 ? selectedSpecialties : formData.specialty,
         experience: formData.experience,
-        per_session_rate: Number.parseFloat(formData.per_session_rate) || 300.0,
+        per_session_rate: Number.parseFloat(formData.per_session_rate) || 350.0,
         package_rate: formData.package_rate ? Number.parseFloat(formData.package_rate) : null,
         package_sessions: formData.package_sessions ? Number.parseInt(formData.package_sessions) : null,
-        monthly_rate: Number.parseFloat(formData.monthly_rate) || 3200.0,
+        monthly_rate: Number.parseFloat(formData.monthly_rate) || 3400.0,
         certifications: "", // Coaches will set this themselves
         is_available: true, // Default to available - coaches will update it themselves
         image_url: "", // Coaches will set this themselves
@@ -837,10 +837,10 @@ const ViewCoach = () => {
         bio: "",
         specialty: "",
         experience: "",
-        per_session_rate: "300",
+        per_session_rate: "350",
         package_rate: "",
         package_sessions: "",
-        monthly_rate: "3200",
+        monthly_rate: "3400",
         certifications: "",
         is_available: true,
         image_url: "",
@@ -1627,16 +1627,16 @@ const ViewCoach = () => {
                     step="0.01"
                     id="per_session_rate"
                     name="per_session_rate"
-                    placeholder="300.00"
+                    placeholder="350.00"
                     value={formData.per_session_rate}
                     onChange={handleInputChange}
                     className={`h-11 ${validationErrors.per_session_rate ? "border-red-500" : ""
-                      } ${!touchedFields.per_session_rate && formData.per_session_rate === "300"
+                      } ${!touchedFields.per_session_rate && formData.per_session_rate === "350"
                         ? "text-gray-400"
                         : "text-gray-900"
                       }`}
                     style={{
-                      color: !touchedFields.per_session_rate && formData.per_session_rate === "300"
+                      color: !touchedFields.per_session_rate && formData.per_session_rate === "350"
                         ? "#9CA3AF"
                         : "#111827"
                     }}
@@ -1652,15 +1652,15 @@ const ViewCoach = () => {
                     step="0.01"
                     id="monthly_rate"
                     name="monthly_rate"
-                    placeholder="3200.00"
+                    placeholder="3400.00"
                     value={formData.monthly_rate}
                     onChange={handleInputChange}
-                    className={`h-11 ${!touchedFields.monthly_rate && formData.monthly_rate === "3200"
+                    className={`h-11 ${!touchedFields.monthly_rate && formData.monthly_rate === "3400"
                       ? "text-gray-400"
                       : "text-gray-900"
                       }`}
                     style={{
-                      color: !touchedFields.monthly_rate && formData.monthly_rate === "3200"
+                      color: !touchedFields.monthly_rate && formData.monthly_rate === "3400"
                         ? "#9CA3AF"
                         : "#111827"
                     }}

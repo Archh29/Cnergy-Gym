@@ -358,31 +358,36 @@ const ViewMembers = ({ userId }) => {
     }
   })
 
+  const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    return originalPrice
+  }
+
   // Calculate discounted price using plan-specific amounts
   const calculateDiscountedPrice = (originalPrice, discountType, planId) => {
+    const effectiveOriginalPrice = getEffectiveOriginalPrice(originalPrice, discountType, planId)
     // Plan-specific discounts
     if (planId === 2) {
-      // Premium plan (ID 2): Student = 149 discount (850 final from 999), Senior = 400 discount (599 final from 999)
+      // Premium plan (ID 2)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 149)
+        return Math.max(0, effectiveOriginalPrice - 201)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 400)
+        return Math.max(0, effectiveOriginalPrice - 400)
       }
       // For other discount types, use default discount
       const discount = discountConfig[discountType]?.discount || 0
-      return Math.max(0, originalPrice - discount)
+      return Math.max(0, effectiveOriginalPrice - discount)
     } else if (planId === 3) {
-      // Standard plan (ID 3): Student = 301 discount (999 final), Senior = 601 discount (699 final)
+      // Standard plan (ID 3)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 301)
+        return Math.max(0, effectiveOriginalPrice - 400)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 601)
+        return Math.max(0, effectiveOriginalPrice - 601)
       }
     }
 
     // For other plans (5), use default discounts
     const discount = discountConfig[discountType]?.discount || 0
-    return Math.max(0, originalPrice - discount)
+    return Math.max(0, effectiveOriginalPrice - discount)
   }
 
   const form = useForm({
@@ -1629,7 +1634,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             const selectedPlanIdNum = parseInt(selectedPlanId)
             if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1672,7 +1678,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             const selectedPlanIdNum = parseInt(selectedPlanId)
             if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -3457,9 +3464,10 @@ const ViewMembers = ({ userId }) => {
                             verificationSubscriptionForm.discount_type !== 'none' &&
                             verificationSubscriptionForm.discount_type !== 'regular'
 
-                          const pricePerUnit = discountApplies ? calculateDiscountedPrice(basePrice, verificationSubscriptionForm.discount_type, planId) : basePrice
-                          const discountAmount = discountApplies ? (basePrice - pricePerUnit) : 0
-                          const subtotal = basePrice * quantity
+                          const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, verificationSubscriptionForm.discount_type, planId)
+                          const pricePerUnit = discountApplies ? calculateDiscountedPrice(effectiveBasePrice, verificationSubscriptionForm.discount_type, planId) : effectiveBasePrice
+                          const discountAmount = discountApplies ? (effectiveBasePrice - pricePerUnit) : 0
+                          const subtotal = effectiveBasePrice * quantity
                           const discountTotal = discountAmount * quantity
                           const finalPrice = pricePerUnit * quantity
 
@@ -3476,7 +3484,7 @@ const ViewMembers = ({ userId }) => {
                                   <>
                                     <div className="flex items-center justify-between text-xs">
                                       <span className="text-gray-600">Price per unit</span>
-                                      <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                      <span className="font-medium text-gray-900">₱{effectiveBasePrice.toFixed(2)}</span>
                                     </div>
                                     <div className="flex items-center justify-between text-xs">
                                       <span className="text-gray-600">Subtotal</span>
@@ -3486,7 +3494,7 @@ const ViewMembers = ({ userId }) => {
                                 ) : (
                                   <div className="flex items-center justify-between text-xs">
                                     <span className="text-gray-600">Price</span>
-                                    <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                    <span className="font-medium text-gray-900">₱{effectiveBasePrice.toFixed(2)}</span>
                                   </div>
                                 )}
                                 {discountApplies && (
@@ -3518,8 +3526,9 @@ const ViewMembers = ({ userId }) => {
                               const quantity = verificationPlanQuantities[planIdStr] || 1
                               if (planId === 2 || planId === 3 || planId === 5) {
                                 const basePrice = parseFloat(plan.price || 0)
-                                const discountedPrice = calculateDiscountedPrice(basePrice, verificationSubscriptionForm.discount_type, planId)
-                                const discountAmount = basePrice - discountedPrice
+                                const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, verificationSubscriptionForm.discount_type, planId)
+                                const discountedPrice = calculateDiscountedPrice(effectiveBasePrice, verificationSubscriptionForm.discount_type, planId)
+                                const discountAmount = effectiveBasePrice - discountedPrice
                                 return sum + (discountAmount * quantity)
                               }
                               return sum
@@ -4408,9 +4417,8 @@ const ViewMembers = ({ userId }) => {
                             let pricePerUnit = basePrice
                             if (newDiscount !== 'none' && newDiscount !== 'regular') {
                               const selectedPlanIdNum = parseInt(selectedPlanId)
-                              if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-                                pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount, selectedPlanIdNum)
-                              }
+                              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, newDiscount, selectedPlanIdNum)
+                              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, newDiscount, selectedPlanIdNum)
                             }
 
                             totalPrice += pricePerUnit * quantity
@@ -4450,9 +4458,8 @@ const ViewMembers = ({ userId }) => {
                             let pricePerUnit = basePrice
                             if (newDiscount !== 'none' && newDiscount !== 'regular') {
                               const selectedPlanIdNum = parseInt(selectedPlanId)
-                              if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-                                pricePerUnit = calculateDiscountedPrice(basePrice, newDiscount, selectedPlanIdNum)
-                              }
+                              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, newDiscount, selectedPlanIdNum)
+                              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, newDiscount, selectedPlanIdNum)
                             }
 
                             totalPrice += pricePerUnit * quantity
@@ -4716,9 +4723,10 @@ const ViewMembers = ({ userId }) => {
                           subscriptionForm.discount_type !== 'none' &&
                           subscriptionForm.discount_type !== 'regular'
 
-                        const pricePerUnit = discountApplies ? calculateDiscountedPrice(basePrice, subscriptionForm.discount_type, planId) : basePrice
-                        const discountAmount = discountApplies ? (basePrice - pricePerUnit) : 0
-                        const subtotal = basePrice * quantity
+                        const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
+                        const pricePerUnit = discountApplies ? calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId) : effectiveBasePrice
+                        const discountAmount = discountApplies ? (effectiveBasePrice - pricePerUnit) : 0
+                        const subtotal = effectiveBasePrice * quantity
                         const discountTotal = discountAmount * quantity
                         const finalPrice = pricePerUnit * quantity
 
@@ -4777,8 +4785,9 @@ const ViewMembers = ({ userId }) => {
                             const quantity = planQuantities[planIdStr] || 1
                             if (planId === 2 || planId === 3 || planId === 5) {
                               const basePrice = parseFloat(plan.price || 0)
-                              const discountedPrice = calculateDiscountedPrice(basePrice, subscriptionForm.discount_type, planId)
-                              const discountAmount = basePrice - discountedPrice
+                              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
+                              const discountedPrice = calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId)
+                              const discountAmount = effectiveBasePrice - discountedPrice
                               return sum + (discountAmount * quantity)
                             }
                             return sum

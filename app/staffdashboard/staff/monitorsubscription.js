@@ -422,10 +422,24 @@ const SubscriptionMonitor = ({ userId }) => {
     }
   }, [amountReceived, subscriptionForm.amount_paid]);
 
+  const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    return originalPrice
+  }
+
   // Calculate discounted price
-  const calculateDiscountedPrice = (originalPrice, discountType) => {
+  const calculateDiscountedPrice = (originalPrice, discountType, planId) => {
+    const effectiveOriginalPrice = getEffectiveOriginalPrice(originalPrice, discountType, planId)
+
+    if (planId == 2 && discountType === 'student') {
+      return Math.max(0, effectiveOriginalPrice - 201)
+    }
+
+    if (planId == 3 && discountType === 'student') {
+      return Math.max(0, effectiveOriginalPrice - 400)
+    }
+
     const discount = discountConfig[discountType]?.discount || 0;
-    return Math.max(0, originalPrice - discount);
+    return Math.max(0, effectiveOriginalPrice - discount);
   }
 
   const fetchAllData = async () => {
@@ -846,7 +860,7 @@ const SubscriptionMonitor = ({ userId }) => {
         let discountType = subscriptionForm.discount_type || "none"
         if ((planId == 2 || planId == 3 || planId == 5) && userActiveDiscount) {
           discountType = userActiveDiscount
-          planPrice = calculateDiscountedPrice(planPrice, discountType)
+          planPrice = calculateDiscountedPrice(planPrice, discountType, planId)
         }
 
         const planTotalPrice = planPrice * quantity
@@ -1298,7 +1312,7 @@ const SubscriptionMonitor = ({ userId }) => {
           let discountType = prev.discount_type || "none"
           if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
             discountType = userActiveDiscount
-            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType, selectedPlanId)
           }
 
           totalPrice += pricePerUnit * quantity
@@ -1337,7 +1351,7 @@ const SubscriptionMonitor = ({ userId }) => {
           let discountType = prev.discount_type || "none"
           if ((selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) && userActiveDiscount) {
             discountType = userActiveDiscount
-            pricePerUnit = calculateDiscountedPrice(basePrice, discountType)
+            pricePerUnit = calculateDiscountedPrice(basePrice, discountType, selectedPlanId)
           }
 
           totalPrice += pricePerUnit * qty
@@ -3779,7 +3793,7 @@ const SubscriptionMonitor = ({ userId }) => {
                       discount = discountConfig[userActiveDiscount]?.discount || 0
                       if (discount > 0) {
                         hasDiscount = true
-                        pricePerUnit = calculateDiscountedPrice(planPrice, userActiveDiscount)
+                        pricePerUnit = calculateDiscountedPrice(planPrice, userActiveDiscount, planId)
                       }
                     }
 

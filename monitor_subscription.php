@@ -1575,6 +1575,16 @@ function createManualSubscription($pdo, $data)
         if (!$plan)
             throw new Exception("Subscription plan not found");
 
+        if ($discount_type === 'student' && ($plan_id == 2 || $plan_id == 3)) {
+            $expectedUnitPrice = $plan_id == 2 ? 899 : 1100;
+            $expectedTotal = $expectedUnitPrice * max(1, $quantity);
+            $payment_amount = floatval(number_format($expectedTotal, 2, '.', ''));
+        }
+
+        if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
+            throw new Exception("Insufficient payment: Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more.");
+        }
+
         // Set timezone to Philippines
         date_default_timezone_set('Asia/Manila');
 
@@ -1619,6 +1629,11 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount if quantity not provided
                 $planPrice = floatval($plan['price']);
+                if ($discount_type === 'student' && $plan_id == 2) {
+                    $planPrice = 899;
+                } elseif ($discount_type === 'student' && $plan_id == 3) {
+                    $planPrice = 1100;
+                }
                 if ($planPrice > 0) {
                     // Calculate how many months the payment covers
                     $monthsPaid = floor($payment_amount / $planPrice);
@@ -1702,6 +1717,11 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount (only if quantity is not provided or is 0)
                 $planPrice = floatval($plan['price']);
+                if ($discount_type === 'student' && $plan_id == 2) {
+                    $planPrice = 899;
+                } elseif ($discount_type === 'student' && $plan_id == 3) {
+                    $planPrice = 1100;
+                }
                 if ($planPrice > 0) {
                     $extensionMonths = floor($payment_amount / $planPrice);
                     // For Plan ID 1, if calculated months is 1, it should be 12 months (1 year)
@@ -2018,6 +2038,11 @@ function createManualSubscription($pdo, $data)
         // Calculate duration in months from payment amount (more accurate than end_date)
         // This ensures we show the correct duration even if end_date calculation was wrong
         $planPrice = floatval($plan['price']);
+        if ($discount_type === 'student' && $plan_id == 2) {
+            $planPrice = 899;
+        } elseif ($discount_type === 'student' && $plan_id == 3) {
+            $planPrice = 1100;
+        }
         $totalMonths = 1; // Default to 1 month
 
         if ($planPrice > 0) {

@@ -344,31 +344,36 @@ const ViewMembers = ({ userId }) => {
     }
   })
 
+  const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    return originalPrice
+  }
+
   // Calculate discounted price using plan-specific amounts
   const calculateDiscountedPrice = (originalPrice, discountType, planId) => {
+    const effectiveOriginalPrice = getEffectiveOriginalPrice(originalPrice, discountType, planId)
     // Plan-specific discounts
     if (planId === 2) {
-      // Premium plan (ID 2): Student = 149 discount (850 final from 999), Senior = 400 discount (599 final from 999)
+      // Premium plan (ID 2)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 149)
+        return Math.max(0, effectiveOriginalPrice - 201)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 400)
+        return Math.max(0, effectiveOriginalPrice - 400)
       }
       // For other discount types, use default discount
       const discount = discountConfig[discountType]?.discount || 0
-      return Math.max(0, originalPrice - discount)
+      return Math.max(0, effectiveOriginalPrice - discount)
     } else if (planId === 3) {
-      // Standard plan (ID 3): Student = 301 discount (999 final), Senior = 601 discount (699 final)
+      // Standard plan (ID 3)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 301)
+        return Math.max(0, effectiveOriginalPrice - 400)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 601)
+        return Math.max(0, effectiveOriginalPrice - 601)
       }
     }
 
     // For other plans (5), use default discounts
     const discount = discountConfig[discountType]?.discount || 0
-    return Math.max(0, originalPrice - discount)
+    return Math.max(0, effectiveOriginalPrice - discount)
   }
 
   const form = useForm({
@@ -1352,8 +1357,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             const selectedPlanIdNum = parseInt(selectedPlanId)
             if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-              const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1392,7 +1397,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
               const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1422,7 +1428,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
               const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
