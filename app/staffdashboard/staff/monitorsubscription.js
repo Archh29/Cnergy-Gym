@@ -34,6 +34,7 @@ import {
   GraduationCap,
   UserCircle,
   Eye,
+  Shield,
 } from "lucide-react"
 
 const API_URL = "https://api.cnergy.site/monitor_subscription.php"
@@ -175,9 +176,105 @@ const SubscriptionMonitor = ({ userId }) => {
   const [paymentMethod, setPaymentMethod] = useState("cash")
   const [amountReceived, setAmountReceived] = useState("")
   const [changeGiven, setChangeGiven] = useState(0)
+
+  const [guestPaymentModal, setGuestPaymentModal] = useState({
+    open: false,
+    session: null,
+    amountReceived: "",
+  })
+  const [guestPaymentVerification, setGuestPaymentVerification] = useState({
+    open: false,
+    receiptNumber: null,
+    changeGiven: null,
+    amountDue: null,
+    amountReceived: null,
+    session: null,
+  })
+  const [toast, setToast] = useState({ open: false, type: "success", text: "" })
   const [referenceNumber, setReferenceNumber] = useState("")
   const [receiptNumber, setReceiptNumber] = useState("")
   const [transactionNotes, setTransactionNotes] = useState("")
+
+  useEffect(() => {
+    if (!toast.open) return
+    const t = setTimeout(() => {
+      setToast(prev => ({ ...prev, open: false }))
+    }, 4000)
+    return () => clearTimeout(t)
+  }, [toast.open])
+
+  const openGuestPaymentModal = (sessionSub) => {
+    if (!sessionSub?.guest_session_id) return
+    setGuestPaymentModal({
+      open: true,
+      session: sessionSub,
+      amountReceived: "",
+    })
+  }
+
+  const confirmGuestPayment = async () => {
+    const session = guestPaymentModal.session
+    if (!session?.guest_session_id) return
+
+    const amountDue = Number(session.amount_paid || 0)
+    const received = parseFloat(guestPaymentModal.amountReceived) || 0
+    if (received < amountDue) {
+      setMessage({ type: "error", text: `Insufficient payment. Amount due is ₱${amountDue.toFixed(2)}.` })
+      return
+    }
+
+    if (!userId) {
+      setMessage({ type: "error", text: "User session not found. Please log in again." })
+      return
+    }
+
+    setActionLoading(`guest_${session.guest_session_id}`)
+    setMessage(null)
+    try {
+      const response = await axios.post('https://api.cnergy.site/guest_session_admin.php', {
+        action: 'mark_paid',
+        session_id: session.guest_session_id,
+        staff_id: userId,
+        amount_received: parseFloat(guestPaymentModal.amountReceived) || 0,
+        payment_method: session.payment_method || 'cash',
+        notes: ''
+      }, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.data?.success) {
+        const receipt = response.data?.receipt_number || response.data?.data?.receipt_number || response.data?.data?.receiptNumber || null
+        const amountDue = Number(session.amount_paid || 0)
+        const amountReceived = parseFloat(guestPaymentModal.amountReceived) || 0
+        const computedChange = Math.max(0, amountReceived - amountDue)
+        const change = response.data?.change_given !== undefined ? response.data?.change_given : computedChange
+        setGuestPaymentModal({ open: false, session: null, amountReceived: "" })
+        setGuestPaymentVerification({
+          open: true,
+          receiptNumber: receipt || null,
+          changeGiven: change !== undefined ? change : null,
+          amountDue,
+          amountReceived,
+          session: session
+        })
+        const msg = receipt
+          ? `Payment confirmed. Receipt: ${receipt}`
+          : (response.data?.message || "Payment confirmed.")
+        setToast({ open: true, type: "success", text: msg })
+        await fetchAllData()
+      } else {
+        setMessage({ type: "error", text: response.data?.message || "Failed to approve walk-in request" })
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "Failed to approve walk-in request"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
+    }
+  }
   const [showReceipt, setShowReceipt] = useState(false)
   const [lastTransaction, setLastTransaction] = useState(null)
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
@@ -640,6 +737,41 @@ const SubscriptionMonitor = ({ userId }) => {
 
     // Show POS dialog immediately - let the modal handle fetching the data
     setIsCreateSubscriptionDialogOpen(true);
+  }
+
+  const handleApproveGuestSession = async (guestSessionId) => {
+    if (!guestSessionId) return
+    if (!userId) {
+      setMessage({ type: "error", text: "User session not found. Please log in again." })
+      return
+    }
+
+    setActionLoading(`guest_${guestSessionId}`)
+    setMessage(null)
+    try {
+      const response = await axios.post('https://api.cnergy.site/guest_session_admin.php', {
+        action: 'approve_session',
+        session_id: guestSessionId,
+        staff_id: userId
+      }, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (response.data?.success) {
+        setMessage({ type: "success", text: response.data?.message || "Walk-in request approved." })
+        await fetchAllData()
+      } else {
+        setMessage({ type: "error", text: response.data?.message || "Failed to approve walk-in request" })
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || "Failed to approve walk-in request"
+      setMessage({ type: "error", text: errorMessage })
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   // Fetch subscription details for the POS modal
@@ -2141,7 +2273,7 @@ const SubscriptionMonitor = ({ userId }) => {
             <div className="flex-1 relative z-10">
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider mb-1.5">Pending Requests</p>
               <p className="text-3xl font-bold text-amber-800">{analytics.pending}</p>
-              <p className="text-xs text-slate-500 mt-1">Pay-in-person / cash walk-ins</p>
+              <p className="text-xs text-slate-500 mt-1">Walk-in requests</p>
             </div>
           </CardContent>
         </Card>
@@ -2474,14 +2606,23 @@ const SubscriptionMonitor = ({ userId }) => {
                                       <Badge
                                         className={`${getStatusColor(primarySub.display_status || primarySub.status_name)} flex items-center gap-1 min-w-[90px] justify-center px-3 py-1.5 text-sm font-medium`}
                                       >
-                                        {getStatusIcon(primarySub.status_name)}
-                                        {primarySub.display_status || primarySub.status_name}
+                                        Pending
                                       </Badge>
                                     </div>
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right pl-1">
-                                  <div className="flex justify-end">
+                                  <div className="flex justify-end gap-2">
+                                    {!user.is_guest_session && primarySub?.subscription_id && (
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => handleApprove(primarySub.subscription_id)}
+                                        className="h-9 px-4 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-200 rounded-full"
+                                      >
+                                        Verify Account
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="default"
                                       size="sm"
@@ -2495,6 +2636,17 @@ const SubscriptionMonitor = ({ userId }) => {
                                       <Eye className="h-4 w-4" />
                                       View Details
                                     </Button>
+                                    {user.is_guest_session && primarySub?.guest_session_id && (
+                                      <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => openGuestPaymentModal(primarySub)}
+                                        disabled={actionLoading === `guest_${primarySub.guest_session_id}`}
+                                        className="h-9 w-10 px-0 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 shadow-sm hover:shadow transition-all duration-200 rounded-full disabled:opacity-60 disabled:cursor-not-allowed"
+                                      >
+                                        <Shield className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -3455,8 +3607,7 @@ const SubscriptionMonitor = ({ userId }) => {
             <DialogDescription>
               {currentSubscriptionId
                 ? "Process payment to approve this subscription request"
-                : "Assign a subscription to a member with discount options"
-              }
+                : "Assign a subscription to a member with discount options"}
             </DialogDescription>
           </DialogHeader>
 
@@ -3745,10 +3896,10 @@ const SubscriptionMonitor = ({ userId }) => {
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-center gap-2">
                   <div className={`px-3 py-1.5 rounded-md text-sm font-semibold ${userActiveDiscount === 'student'
-                    ? 'bg-blue-100 text-blue-700 border border-blue-300'
-                    : 'bg-purple-100 text-purple-700 border border-purple-300'
+                    ? 'bg-blue-100 text-blue-700 border-blue-300'
+                    : 'bg-purple-100 text-purple-700 border-purple-300'
                     }`}>
-                    {userActiveDiscount === 'student' ? '🎓 Student' : '👤 Senior (55+)'}
+                    {userActiveDiscount === 'student' ? '🎓 Student' : '👴 Senior (55+)'}
                   </div>
                   <span className="text-sm text-gray-600">
                     {subscriptionForm.selected_plan_ids?.some(pid => pid == 2 || pid == 3 || pid == 5)
@@ -3865,6 +4016,202 @@ const SubscriptionMonitor = ({ userId }) => {
             >
               {actionLoading === "create" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Process
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={guestPaymentVerification.open} onOpenChange={(open) => {
+        if (!open) {
+          setGuestPaymentVerification({ open: false, receiptNumber: null, changeGiven: null, amountDue: null, amountReceived: null, session: null })
+        } else {
+          setGuestPaymentVerification(prev => ({ ...prev, open: true }))
+        }
+      }}>
+        <DialogContent className="max-w-lg border-0 shadow-2xl" hideClose>
+          <DialogHeader className="bg-amber-50/80 backdrop-blur-sm rounded-t-lg -m-6 mb-0 px-6 py-4 border-b border-amber-200">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-semibold text-gray-900">Payment Verified</DialogTitle>
+                <DialogDescription className="text-sm text-gray-600">
+                  Receipt and transaction summary
+                </DialogDescription>
+              </div>
+              <Badge className="bg-green-100 text-green-800 border border-green-200">Confirmed</Badge>
+            </div>
+          </DialogHeader>
+
+          <div className="mt-6 space-y-4">
+            <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50 p-4">
+              <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Receipt</p>
+              <p className="mt-1 text-lg font-mono font-bold text-slate-900 break-all">
+                {guestPaymentVerification.receiptNumber || 'N/A'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">Name</p>
+                  <p className="text-sm font-semibold text-slate-900 truncate">
+                    {guestPaymentVerification.session?.guest_name || 'Walk-in'}
+                  </p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">Session Code</p>
+                  <p className="text-sm font-mono font-semibold text-slate-900 truncate">
+                    {guestPaymentVerification.session?.session_code || 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {(() => {
+              const due = Number(guestPaymentVerification.amountDue || 0)
+              const received = Number(guestPaymentVerification.amountReceived || 0)
+              const change = Math.max(0, received - due)
+              return (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-500">Amount Due</p>
+                    <p className="text-base font-bold text-slate-900">₱{due.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs text-slate-500">Received</p>
+                    <p className="text-base font-bold text-slate-900">₱{received.toFixed(2)}</p>
+                  </div>
+                  <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                    <p className="text-xs text-green-700">Change</p>
+                    <p className="text-base font-bold text-green-800">₱{change.toFixed(2)}</p>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
+          <DialogFooter className="mt-6">
+            <Button
+              onClick={() => setGuestPaymentVerification({ open: false, receiptNumber: null, changeGiven: null, amountDue: null, amountReceived: null, session: null })}
+              className="bg-gray-900 hover:bg-gray-800 text-white"
+            >
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {toast.open && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200]">
+          <div className={`rounded-full px-4 py-2 shadow-lg border text-sm font-medium ${toast.type === 'error'
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : 'bg-green-50 border-green-200 text-green-800'
+            }`}>
+            {toast.text}
+          </div>
+        </div>
+      )}
+
+      <Dialog open={guestPaymentModal.open} onOpenChange={(open) => {
+        if (!open) {
+          setGuestPaymentModal({ open: false, session: null, amountReceived: "" })
+        } else {
+          setGuestPaymentModal(prev => ({ ...prev, open: true }))
+        }
+      }}>
+        <DialogContent className="max-w-lg border-0 shadow-2xl" hideClose>
+          <DialogHeader className="bg-amber-50/80 backdrop-blur-sm rounded-t-lg -m-6 mb-0 px-6 py-4 border-b border-amber-200">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 text-white flex items-center justify-center flex-shrink-0">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-semibold text-gray-900">Process Walk-in Payment</DialogTitle>
+                <DialogDescription className="text-sm text-gray-600">
+                  Review the request details and confirm payment.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {guestPaymentModal.session && (
+            <div className="mt-6 space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 w-full">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-500">Name</p>
+                        <p className="text-base font-semibold text-slate-900 truncate">{guestPaymentModal.session.guest_name || `${guestPaymentModal.session.fname || ''} ${guestPaymentModal.session.lname || ''}`.trim() || 'Walk-in'}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-500">Session Code</p>
+                        <p className="text-base font-mono font-semibold text-slate-900 truncate">{guestPaymentModal.session.session_code || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <Badge className="bg-amber-100 text-amber-800 border border-amber-200">Pending</Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm text-slate-500">Amount Due</p>
+                  <p className="text-lg font-bold text-slate-900">₱{Number(guestPaymentModal.session.amount_paid || 0).toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm text-slate-500">Payment Method</p>
+                  <p className="text-base font-semibold text-slate-900 capitalize">{guestPaymentModal.session.payment_method || 'cash'}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+                <Label className="text-sm font-semibold text-slate-700">Amount Received</Label>
+                <Input
+                  value={guestPaymentModal.amountReceived}
+                  onChange={(e) => setGuestPaymentModal(prev => ({ ...prev, amountReceived: e.target.value }))}
+                  inputMode="decimal"
+                  placeholder="Enter amount received"
+                  className="h-11"
+                />
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Amount Due</p>
+                    <p className="text-sm font-semibold text-slate-900">₱{Number(guestPaymentModal.session.amount_paid || 0).toFixed(2)}</p>
+                  </div>
+                  {(() => {
+                    const due = Number(guestPaymentModal.session.amount_paid || 0)
+                    const received = parseFloat(guestPaymentModal.amountReceived) || 0
+                    const diff = received - due
+                    const isEnough = diff >= 0
+                    return (
+                      <div className={`rounded-lg border p-3 ${isEnough ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                        <p className={`text-xs ${isEnough ? 'text-green-700' : 'text-red-700'}`}>{isEnough ? 'Change' : 'Balance'}</p>
+                        <p className={`text-sm font-semibold ${isEnough ? 'text-green-800' : 'text-red-800'}`}>
+                          ₱{Math.abs(diff).toFixed(2)}
+                        </p>
+                      </div>
+                    )
+                  })()}
+                </div>
+                <p className="text-xs text-slate-500">Enter the amount received to calculate change automatically.</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setGuestPaymentModal({ open: false, session: null, amountReceived: "" })}
+              className="border-slate-300 text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmGuestPayment}
+              disabled={!guestPaymentModal.session || actionLoading === `guest_${guestPaymentModal.session?.guest_session_id}` || (parseFloat(guestPaymentModal.amountReceived) || 0) < Number(guestPaymentModal.session?.amount_paid || 0)}
+              className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white shadow-md hover:shadow-lg"
+            >
+              Confirm Payment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4277,7 +4624,7 @@ const SubscriptionMonitor = ({ userId }) => {
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" hideClose>
           <DialogHeader className="bg-gray-50/80 backdrop-blur-sm rounded-t-lg -m-6 mb-0 px-6 py-4 border-b border-gray-200">
             <div className="space-y-3">
-              <DialogTitle className="text-xl font-semibold text-gray-900">Subscription Details</DialogTitle>
+              <DialogTitle className="text-xl font-semibold text-gray-900">Request Details</DialogTitle>
               {viewDetailsModal.user && (
                 <div className="flex items-start gap-4">
                   {!viewDetailsModal.user.is_guest_session && (viewDetailsModal.user.system_photo_url || (viewDetailsModal.subscriptions?.[0]?.system_photo_url)) ? (
@@ -4326,7 +4673,7 @@ const SubscriptionMonitor = ({ userId }) => {
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-green-500"></span>
-                  Active Subscriptions
+                  Subscriptions
                 </h3>
                 <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
                   <Table>
@@ -4358,8 +4705,11 @@ const SubscriptionMonitor = ({ userId }) => {
                                 <Badge
                                   className={`${getStatusColor(subscription.display_status || subscription.status_name)} flex items-center gap-1 w-fit`}
                                 >
-                                  {getStatusIcon(subscription.status_name)}
-                                  {subscription.display_status || subscription.status_name}
+                                  {(() => {
+                                    const raw = String(subscription.display_status || subscription.status_name || '')
+                                    const normalized = raw.toLowerCase().includes('pending') ? 'Pending' : raw
+                                    return normalized
+                                  })()}
                                 </Badge>
                               </TableCell>
                               <TableCell>{formatDate(subscription.start_date)}</TableCell>
@@ -4470,7 +4820,7 @@ const SubscriptionMonitor = ({ userId }) => {
               </div>
             ) : (
               <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-gray-500">No active subscriptions</p>
+                <p className="text-gray-500">No subscriptions</p>
               </div>
             )}
 

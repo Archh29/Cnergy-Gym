@@ -572,38 +572,104 @@ function markGuestSessionPaid($pdo, $data)
 {
     try {
         $sessionId = $data['session_id'] ?? '';
+        $amountReceived = floatval($data['amount_received'] ?? 0);
+        $notes = $data['notes'] ?? '';
+        $staffId = getStaffIdFromRequest($data);
 
         if (empty($sessionId)) {
             throw new Exception('Session ID is required');
         }
 
-        $stmt = $pdo->prepare("
-            UPDATE guest_session 
-            SET paid = 1, status = 'approved' 
-            WHERE id = ?
-        ");
-        $stmt->execute([$sessionId]);
+        $pdo->beginTransaction();
 
-        if ($stmt->rowCount() === 0) {
-            throw new Exception('Session not found');
-        }
-
-        // Get updated session
-        $stmt = $pdo->prepare("SELECT * FROM guest_session WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM guest_session WHERE id = ? FOR UPDATE");
         $stmt->execute([$sessionId]);
         $session = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // Log activity using centralized logger (same as monitor_subscription.php)
-        $staffId = getStaffIdFromRequest($data);
-        logStaffActivity($pdo, $staffId, "Confirm Guest Payment", "Guest session payment confirmed: {$session['guest_name']} (ID: $sessionId) - Amount: ₱{$session['amount_paid']}", "Guest Management");
+        if (!$session) {
+            throw new Exception('Session not found');
+        }
+
+        $amountPaid = floatval($session['amount_paid'] ?? 0);
+        $changeGiven = max(0, $amountReceived - $amountPaid);
+
+        $receiptNumber = $session['receipt_number'] ?? null;
+        if (empty($receiptNumber)) {
+            $receiptNumber = generateGuestReceiptNumber($pdo);
+        }
+
+        $paymentMethod = $session['payment_method'] ?? ($data['payment_method'] ?? 'cash');
+        $referenceNumber = $data['reference_number'] ?? $data['gcash_reference'] ?? ($session['reference_number'] ?? null);
+
+        $updateStmt = $pdo->prepare("
+            UPDATE guest_session
+            SET paid = 1,
+                status = 'approved',
+                receipt_number = ?,
+                cashier_id = ?,
+                change_given = ?,
+                payment_method = ?,
+                reference_number = ?
+            WHERE id = ?
+        ");
+        $updateStmt->execute([$receiptNumber, $staffId, $changeGiven, $paymentMethod, $referenceNumber, $sessionId]);
+        $linkStmt = $pdo->prepare("SELECT id FROM sales_details WHERE guest_session_id = ? LIMIT 1");
+        $linkStmt->execute([$sessionId]);
+        $existingLink = $linkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$existingLink) {
+            $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
+            $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
+            $hasReferenceNumber = in_array('reference_number', $salesColumns);
+
+            if ($hasReferenceNumber) {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes, reference_number)
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $staffId, $changeGiven, $notes, $referenceNumber]);
+            } else {
+                $salesStmt = $pdo->prepare("
+                    INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, notes)
+                    VALUES (NULL, ?, NOW(), 'Guest', ?, 'confirmed', ?, ?, ?, ?, ?)
+                ");
+                $salesStmt->execute([$amountPaid, $paymentMethod, $receiptNumber, $staffId, $changeGiven, $notes]);
+            }
+
+            $saleId = $pdo->lastInsertId();
+            $detailsStmt = $pdo->prepare("
+                INSERT INTO sales_details (sale_id, guest_session_id, quantity, price)
+                VALUES (?, ?, 1, ?)
+            ");
+            $detailsStmt->execute([$saleId, $sessionId, $amountPaid]);
+        }
+
+        $stmt = $pdo->prepare("SELECT * FROM guest_session WHERE id = ?");
+        $stmt->execute([$sessionId]);
+        $updatedSession = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $pdo->commit();
+
+        $sessionCode = $updatedSession['session_code'] ?? null;
+        $desc = "Walk-in request marked as paid: {$updatedSession['guest_name']} (ID: $sessionId)";
+        if (!empty($sessionCode)) {
+            $desc .= ", Code: $sessionCode";
+        }
+        $desc .= ", Receipt: $receiptNumber, Amount: ₱$amountPaid, Received: ₱$amountReceived, Change: ₱$changeGiven";
+        logStaffActivity($pdo, $staffId, "Mark Walk-in Paid", $desc, "Walk-in Requests");
 
         echo json_encode([
             'success' => true,
             'message' => 'Payment confirmed successfully',
-            'data' => $session
+            'receipt_number' => $receiptNumber,
+            'change_given' => $changeGiven,
+            'data' => $updatedSession
         ]);
 
     } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
@@ -612,6 +678,7 @@ function markGuestSessionPaid($pdo, $data)
 function createGuestSession($pdo, $data)
 {
     try {
+        // ... (rest of the code remains the same)
         // Validate input data
         if (!is_array($data)) {
             throw new Exception('Invalid data format');

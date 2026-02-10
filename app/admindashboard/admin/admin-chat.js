@@ -161,6 +161,7 @@ const AdminChat = ({ userId: propUserId }) => {
     const [isLoadingMessages, setIsLoadingMessages] = useState(false)
     const [userIdLoadingTimeout, setUserIdLoadingTimeout] = useState(false)
     const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false)
+    const [isPanelInteracting, setIsPanelInteracting] = useState(false)
     const [panelRect, setPanelRect] = useState(() => {
         if (typeof window === "undefined") return getDefaultPanelRect()
         try {
@@ -179,9 +180,19 @@ const AdminChat = ({ userId: propUserId }) => {
         }
     })
     const dragRef = useRef({ mode: null, pointerId: null, startX: 0, startY: 0, startRect: null })
+    const rafRef = useRef({ rafId: null, pendingRect: null })
     const messagesEndRef = useRef(null)
     const messageInputRef = useRef(null)
     const { toast } = useToast()
+
+    useEffect(() => {
+        return () => {
+            if (rafRef.current.rafId) {
+                cancelAnimationFrame(rafRef.current.rafId)
+                rafRef.current.rafId = null
+            }
+        }
+    }, [])
 
     useEffect(() => {
         if (typeof window === "undefined") return
@@ -871,7 +882,8 @@ const AdminChat = ({ userId: propUserId }) => {
             {isOpen && (
                 <div
                     className={cn(
-                        "fixed z-[100] transition-all duration-300 ease-out",
+                        "fixed z-[100]",
+                        !isPanelInteracting && "transition-all duration-300 ease-out",
                         "!bg-white dark:bg-gray-800 rounded-2xl shadow-2xl",
                         "border border-black/10 dark:border-white/10",
                         "ring-1 ring-black/5 dark:ring-white/5",
@@ -900,6 +912,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                 startY: e.clientY,
                                 startRect: panelRect,
                             }
+                            setIsPanelInteracting(true)
                             try {
                                 e.currentTarget.setPointerCapture(e.pointerId)
                             } catch {
@@ -912,16 +925,25 @@ const AdminChat = ({ userId: propUserId }) => {
                             const dy = e.clientY - dragRef.current.startY
                             const start = dragRef.current.startRect
                             if (!start) return
-                            setPanelRect(clampPanelRect({
+
+                            rafRef.current.pendingRect = clampPanelRect({
                                 x: start.x + dx,
                                 y: start.y + dy,
                                 width: start.width,
                                 height: start.height,
-                            }))
+                            })
+                            if (rafRef.current.rafId) return
+                            rafRef.current.rafId = requestAnimationFrame(() => {
+                                rafRef.current.rafId = null
+                                if (rafRef.current.pendingRect) {
+                                    setPanelRect(rafRef.current.pendingRect)
+                                }
+                            })
                         }}
                         onPointerUp={(e) => {
                             if (dragRef.current.pointerId !== e.pointerId) return
                             dragRef.current = { mode: null, pointerId: null, startX: 0, startY: 0, startRect: null }
+                            setIsPanelInteracting(false)
                         }}
                     >
                         <div className="flex items-center gap-3">
@@ -970,6 +992,7 @@ const AdminChat = ({ userId: propUserId }) => {
                                 startY: e.clientY,
                                 startRect: panelRect,
                             }
+                            setIsPanelInteracting(true)
                             try {
                                 e.currentTarget.setPointerCapture(e.pointerId)
                             } catch {
@@ -982,16 +1005,25 @@ const AdminChat = ({ userId: propUserId }) => {
                             const dy = e.clientY - dragRef.current.startY
                             const start = dragRef.current.startRect
                             if (!start) return
-                            setPanelRect(clampPanelRect({
+
+                            rafRef.current.pendingRect = clampPanelRect({
                                 x: start.x,
                                 y: start.y,
                                 width: start.width + dx,
                                 height: start.height + dy,
-                            }))
+                            })
+                            if (rafRef.current.rafId) return
+                            rafRef.current.rafId = requestAnimationFrame(() => {
+                                rafRef.current.rafId = null
+                                if (rafRef.current.pendingRect) {
+                                    setPanelRect(rafRef.current.pendingRect)
+                                }
+                            })
                         }}
                         onPointerUp={(e) => {
                             if (dragRef.current.pointerId !== e.pointerId) return
                             dragRef.current = { mode: null, pointerId: null, startX: 0, startY: 0, startRect: null }
+                            setIsPanelInteracting(false)
                         }}
                     />
 

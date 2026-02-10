@@ -683,9 +683,10 @@ function getPendingSubscriptions($pdo)
                 gs.guest_name,
                 gs.guest_type,
                 gs.amount_paid,
-                gs.valid_until as end_date,
+                gs.valid_until,
                 gs.created_at as start_date,
                 gs.created_at,
+                gs.session_code,
                 gs.status,
                 gs.paid,
                 gs.receipt_number,
@@ -710,12 +711,9 @@ function getPendingSubscriptions($pdo)
                 $lname = $nameParts[1] ?? '';
                 $mname = '';
 
-                // Calculate end_date as 9 PM on the same day as created_at (same as Walk In plans)
-                date_default_timezone_set('Asia/Manila');
-                $start_date_obj = new DateTime($guest['created_at'], new DateTimeZone('Asia/Manila'));
-                $end_date_obj = clone $start_date_obj;
-                $end_date_obj->setTime(21, 0, 0); // Set to 9 PM (21:00)
-                $calculated_end_date = $end_date_obj->format('Y-m-d H:i:s');
+                // For walk-in requests, use the actual valid_until from guest_session.
+                // Do NOT force 9PM end times here; that can cause requests to appear expired/cancelled.
+                $effectiveEndDate = $guest['valid_until'] ?? null;
 
                 // Create subscription-like object for pending guest session
                 $guestSubscription = [
@@ -733,10 +731,11 @@ function getPendingSubscriptions($pdo)
                     'duration_months' => $dayPassDurationMonths,
                     'duration_days' => $dayPassDurationDays,
                     'start_date' => $guest['created_at'],
-                    'end_date' => $calculated_end_date, // Use calculated 9 PM end date
+                    'end_date' => $effectiveEndDate,
                     'created_at' => $guest['created_at'],
                     'status_id' => null,
                     'status_name' => $guest['status'] === 'pending' ? 'pending_approval' : 'pending_payment',
+                    'session_code' => $guest['session_code'] ?? null,
                     'is_guest_session' => true,
                     'subscription_type' => 'guest',
                     'guest_name' => $guest['guest_name'],
@@ -864,6 +863,7 @@ function getSubscriptionById($pdo, $id)
                     gs.valid_until as end_date,
                     gs.created_at as start_date,
                     gs.created_at,
+                    gs.session_code,
                     gs.status,
                     gs.paid,
                     gs.receipt_number,

@@ -217,6 +217,13 @@ function getSalesData($pdo)
 	$startDate = $_GET['start_date'] ?? '';
 	$endDate = $_GET['end_date'] ?? '';
 
+	try {
+		$pdo->exec("UPDATE guest_session SET receipt_number = CONCAT('GST', DATE_FORMAT(created_at, '%Y%m%d'), LPAD(id, 6, '0')) WHERE paid = 1 AND (receipt_number IS NULL OR receipt_number = '')");
+		$pdo->exec("UPDATE sales s INNER JOIN sales_details sd ON sd.sale_id = s.id INNER JOIN guest_session gs ON gs.id = sd.guest_session_id SET s.receipt_number = gs.receipt_number WHERE s.sale_type = 'Guest' AND (s.receipt_number IS NULL OR s.receipt_number = '') AND (gs.receipt_number IS NOT NULL AND gs.receipt_number != '')");
+	} catch (Exception $e) {
+		error_log('sales_api receipt backfill failed: ' . $e->getMessage());
+	}
+
 	// Build WHERE conditions
 	$whereConditions = [];
 	$params = [];
