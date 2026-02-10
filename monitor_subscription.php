@@ -1575,6 +1575,16 @@ function createManualSubscription($pdo, $data)
         if (!$plan)
             throw new Exception("Subscription plan not found");
 
+        if ($discount_type === 'student' && ($plan_id == 2 || $plan_id == 3)) {
+            $expectedUnitPrice = $plan_id == 2 ? 899 : 1100;
+            $expectedTotal = $expectedUnitPrice * max(1, $quantity);
+            $payment_amount = floatval(number_format($expectedTotal, 2, '.', ''));
+        }
+
+        if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
+            throw new Exception("Insufficient payment: Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more.");
+        }
+
         // Set timezone to Philippines
         date_default_timezone_set('Asia/Manila');
 
@@ -1619,6 +1629,11 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount if quantity not provided
                 $planPrice = floatval($plan['price']);
+                if ($discount_type === 'student' && $plan_id == 2) {
+                    $planPrice = 899;
+                } elseif ($discount_type === 'student' && $plan_id == 3) {
+                    $planPrice = 1100;
+                }
                 if ($planPrice > 0) {
                     // Calculate how many months the payment covers
                     $monthsPaid = floor($payment_amount / $planPrice);
@@ -1655,12 +1670,22 @@ function createManualSubscription($pdo, $data)
         }
 
         // Get approved status ID for manual subscriptions
-        $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
+        // Be tolerant of differing capitalization / naming in DB.
+        $statusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) = 'approved' LIMIT 1");
         $statusStmt->execute();
         $status = $statusStmt->fetch();
 
         if (!$status) {
-            throw new Exception("Approved status not found in database");
+            // Fallback: some DBs use 'active'/'activated' instead of 'approved'
+            $fallbackStatusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) IN ('active', 'activated') LIMIT 1");
+            $fallbackStatusStmt->execute();
+            $status = $fallbackStatusStmt->fetch();
+        }
+
+        if (!$status) {
+            $allStatusStmt = $pdo->query("SELECT status_name FROM subscription_status");
+            $allStatuses = $allStatusStmt->fetchAll(PDO::FETCH_COLUMN);
+            throw new Exception("Approved status not found in database. Existing statuses: " . implode(', ', $allStatuses));
         }
 
         // Check for existing active subscriptions
@@ -1702,6 +1727,11 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount (only if quantity is not provided or is 0)
                 $planPrice = floatval($plan['price']);
+                if ($discount_type === 'student' && $plan_id == 2) {
+                    $planPrice = 899;
+                } elseif ($discount_type === 'student' && $plan_id == 3) {
+                    $planPrice = 1100;
+                }
                 if ($planPrice > 0) {
                     $extensionMonths = floor($payment_amount / $planPrice);
                     // For Plan ID 1, if calculated months is 1, it should be 12 months (1 year)
@@ -2018,6 +2048,11 @@ function createManualSubscription($pdo, $data)
         // Calculate duration in months from payment amount (more accurate than end_date)
         // This ensures we show the correct duration even if end_date calculation was wrong
         $planPrice = floatval($plan['price']);
+        if ($discount_type === 'student' && $plan_id == 2) {
+            $planPrice = 899;
+        } elseif ($discount_type === 'student' && $plan_id == 3) {
+            $planPrice = 1100;
+        }
         $totalMonths = 1; // Default to 1 month
 
         if ($planPrice > 0) {

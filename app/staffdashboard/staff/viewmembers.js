@@ -344,31 +344,40 @@ const ViewMembers = ({ userId }) => {
     }
   })
 
+  const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    // Force authoritative base prices for plans with special discount rules
+    // so the client-calculated totals match the backend enforcement.
+    if (planId === 2) return 1100
+    if (planId === 3) return 1500
+    return originalPrice
+  }
+
   // Calculate discounted price using plan-specific amounts
   const calculateDiscountedPrice = (originalPrice, discountType, planId) => {
+    const effectiveOriginalPrice = getEffectiveOriginalPrice(originalPrice, discountType, planId)
     // Plan-specific discounts
     if (planId === 2) {
-      // Premium plan (ID 2): Student = 149 discount (850 final from 999), Senior = 400 discount (599 final from 999)
+      // Premium plan (ID 2)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 149)
+        return Math.max(0, effectiveOriginalPrice - 201)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 400)
+        return Math.max(0, effectiveOriginalPrice - 400)
       }
       // For other discount types, use default discount
       const discount = discountConfig[discountType]?.discount || 0
-      return Math.max(0, originalPrice - discount)
+      return Math.max(0, effectiveOriginalPrice - discount)
     } else if (planId === 3) {
-      // Standard plan (ID 3): Student = 301 discount (999 final), Senior = 601 discount (699 final)
+      // Standard plan (ID 3)
       if (discountType === 'student') {
-        return Math.max(0, originalPrice - 301)
+        return Math.max(0, effectiveOriginalPrice - 400)
       } else if (discountType === 'senior') {
-        return Math.max(0, originalPrice - 601)
+        return Math.max(0, effectiveOriginalPrice - 601)
       }
     }
 
     // For other plans (5), use default discounts
     const discount = discountConfig[discountType]?.discount || 0
-    return Math.max(0, originalPrice - discount)
+    return Math.max(0, effectiveOriginalPrice - discount)
   }
 
   const form = useForm({
@@ -1352,8 +1361,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             const selectedPlanIdNum = parseInt(selectedPlanId)
             if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
-              const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1392,7 +1401,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
               const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1422,7 +1432,8 @@ const ViewMembers = ({ userId }) => {
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
             if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
               const selectedPlanIdNum = parseInt(selectedPlanId)
-              pricePerUnit = calculateDiscountedPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
+              pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
@@ -1699,6 +1710,13 @@ const ViewMembers = ({ userId }) => {
       const totalAmountReceived = parseFloat(subscriptionForm.amount_received || subscriptionForm.amount_paid || 0)
       const totalChange = Math.max(0, totalAmountReceived - totalExpectedAmount)
 
+      if (subscriptionForm.payment_method === 'cash' && totalAmountReceived < totalExpectedAmount) {
+        showClientErrorToast(
+          `Insufficient payment. Amount received (₱${totalAmountReceived.toFixed(2)}) is less than total required (₱${totalExpectedAmount.toFixed(2)}).`
+        )
+        return
+      }
+
       // Distribute payment proportionally across subscriptions
       // For cash: distribute amount_received proportionally, apply change to first subscription
       // For GCash: each subscription gets its full amount (no change)
@@ -1710,16 +1728,10 @@ const ViewMembers = ({ userId }) => {
         let changeForPlan = 0
 
         if (subscriptionForm.payment_method === 'cash') {
-          // Distribute amount_received proportionally
-          const proportion = planTotalPrice / totalExpectedAmount
-          amountReceivedForPlan = totalAmountReceived * proportion
-
-          // Apply all change to the first subscription
-          if (index === 0) {
-            changeForPlan = totalChange
-            // Adjust amount_received to account for change
-            amountReceivedForPlan = planTotalPrice + totalChange
-          }
+          // Ensure each subscription gets at least its required amount.
+          // Put the full cash received + change on the first subscription record.
+          amountReceivedForPlan = index === 0 ? totalAmountReceived : planTotalPrice
+          changeForPlan = index === 0 ? totalChange : 0
         } else {
           // For GCash, amount received equals amount paid (no change)
           amountReceivedForPlan = planTotalPrice
@@ -1797,11 +1809,17 @@ const ViewMembers = ({ userId }) => {
         setMembers(membersArray)
         setFilteredMembers(membersArray)
       } else {
-        throw new Error(subscriptionResponse.data.error || "Failed to create subscription")
+        const firstFailed = subscriptionResponses.find(r => !r?.data?.success)
+        throw new Error(firstFailed?.data?.message || firstFailed?.data?.error || "Failed to create subscription")
       }
     } catch (error) {
       console.error("Error creating account and subscription:", error)
-      showClientErrorToast(error.response?.data?.error || error.message || "Failed to create the account and subscriptions. Please try again.")
+      showClientErrorToast(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to create the account and subscriptions. Please try again."
+      )
     } finally {
       setSubscriptionLoading(false)
     }
