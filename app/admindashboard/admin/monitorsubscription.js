@@ -423,6 +423,8 @@ const SubscriptionMonitor = ({ userId }) => {
   }, [amountReceived, subscriptionForm.amount_paid]);
 
   const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    if (planId == 2) return 1100
+    if (planId == 3) return 1500
     return originalPrice
   }
 

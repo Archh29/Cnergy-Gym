@@ -823,7 +823,7 @@ const ViewCoach = () => {
 
   // Ensure form is properly reset when Add Coach dialog opens
   useEffect(() => {
-    if (isAddDialogOpen) {
+    if (isAddDialogOpen) { 
       // Reset form completely when Add dialog opens - clear any edit data
       setFormData({
         fname: "",

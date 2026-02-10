@@ -359,6 +359,10 @@ const ViewMembers = ({ userId }) => {
   })
 
   const getEffectiveOriginalPrice = (originalPrice, discountType, planId) => {
+    // Force authoritative base prices for plans with special discount rules
+    // so the client-calculated totals match the backend enforcement.
+    if (planId === 2) return 1100
+    if (planId === 3) return 1500
     return originalPrice
   }
 
@@ -2158,6 +2162,13 @@ const ViewMembers = ({ userId }) => {
       const totalAmountReceived = parseFloat(subscriptionForm.amount_received || subscriptionForm.amount_paid || 0)
       const totalChange = Math.max(0, totalAmountReceived - totalExpectedAmount)
 
+      if (subscriptionForm.payment_method === 'cash' && totalAmountReceived < totalExpectedAmount) {
+        showClientErrorToast(
+          `Insufficient payment. Amount received (₱${totalAmountReceived.toFixed(2)}) is less than total required (₱${totalExpectedAmount.toFixed(2)}).`
+        )
+        return
+      }
+
       // Distribute payment proportionally across subscriptions
       // For cash: distribute amount_received proportionally, apply change to first subscription
       // For GCash: each subscription gets its full amount (no change)
@@ -2169,16 +2180,10 @@ const ViewMembers = ({ userId }) => {
         let changeForPlan = 0
 
         if (subscriptionForm.payment_method === 'cash') {
-          // Distribute amount_received proportionally
-          const proportion = planTotalPrice / totalExpectedAmount
-          amountReceivedForPlan = totalAmountReceived * proportion
-
-          // Apply all change to the first subscription
-          if (index === 0) {
-            changeForPlan = totalChange
-            // Adjust amount_received to account for change
-            amountReceivedForPlan = planTotalPrice + totalChange
-          }
+          // Ensure each subscription gets at least its required amount.
+          // Put the full cash received + change on the first subscription record.
+          amountReceivedForPlan = index === 0 ? totalAmountReceived : planTotalPrice
+          changeForPlan = index === 0 ? totalChange : 0
         } else {
           // For GCash, amount received equals amount paid (no change)
           amountReceivedForPlan = planTotalPrice
@@ -2254,11 +2259,17 @@ const ViewMembers = ({ userId }) => {
         setMembers(membersArray)
         setFilteredMembers(membersArray)
       } else {
-        throw new Error(subscriptionResponse.data.error || "Failed to create subscription")
+        const firstFailed = subscriptionResponses.find(r => !r?.data?.success)
+        throw new Error(firstFailed?.data?.message || firstFailed?.data?.error || "Failed to create subscription")
       }
     } catch (error) {
       console.error("Error creating account and subscription:", error)
-      showClientErrorToast(error.response?.data?.error || error.message || "Failed to create the account and subscriptions. Please try again.")
+      showClientErrorToast(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to create the account and subscriptions. Please try again."
+      )
     } finally {
       setSubscriptionLoading(false)
     }

@@ -1670,12 +1670,22 @@ function createManualSubscription($pdo, $data)
         }
 
         // Get approved status ID for manual subscriptions
-        $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
+        // Be tolerant of differing capitalization / naming in DB.
+        $statusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) = 'approved' LIMIT 1");
         $statusStmt->execute();
         $status = $statusStmt->fetch();
 
         if (!$status) {
-            throw new Exception("Approved status not found in database");
+            // Fallback: some DBs use 'active'/'activated' instead of 'approved'
+            $fallbackStatusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) IN ('active', 'activated') LIMIT 1");
+            $fallbackStatusStmt->execute();
+            $status = $fallbackStatusStmt->fetch();
+        }
+
+        if (!$status) {
+            $allStatusStmt = $pdo->query("SELECT status_name FROM subscription_status");
+            $allStatuses = $allStatusStmt->fetchAll(PDO::FETCH_COLUMN);
+            throw new Exception("Approved status not found in database. Existing statuses: " . implode(', ', $allStatuses));
         }
 
         // Check for existing active subscriptions
