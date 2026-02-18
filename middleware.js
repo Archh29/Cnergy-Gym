@@ -27,12 +27,6 @@ export function middleware(req) {
     return res;
   }
 
-  // 3. Prevent logged-in users from seeing /login again
-  if (normalizedPath === "/login" && role) {
-    if (role === "admin") return NextResponse.redirect(new URL("/admindashboard", req.url));
-    if (role === "staff") return NextResponse.redirect(new URL("/staffdashboard", req.url));
-  }
-
   // 4. Role-based route protection
   if (normalizedPath.startsWith("/admindashboard") && role !== "admin") {
     const res = NextResponse.redirect(new URL("/login", req.url));

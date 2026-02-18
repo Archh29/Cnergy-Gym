@@ -142,12 +142,12 @@ DELETE FROM `product`;
 ALTER TABLE `product` AUTO_INCREMENT = 1;
 
 -- Subscription Plans (referenced by subscription)
-DELETE FROM `member_subscription_plan`;
-ALTER TABLE `member_subscription_plan` AUTO_INCREMENT = 1;
+-- DELETE FROM `member_subscription_plan`;
+-- ALTER TABLE `member_subscription_plan` AUTO_INCREMENT = 1;
 
 -- Subscription Status (referenced by subscription)
-DELETE FROM `subscription_status`;
-ALTER TABLE `subscription_status` AUTO_INCREMENT = 1;
+-- DELETE FROM `subscription_status`;
+-- ALTER TABLE `subscription_status` AUTO_INCREMENT = 1;
 
 -- Coaches (referenced by coach_member_list)
 DELETE FROM `coaches`;

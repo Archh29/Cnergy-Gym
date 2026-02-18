@@ -92,26 +92,8 @@ export default function AdminDashboardClient() {
         return data.user_id
       }
 
-      // Not authenticated or no user_id in response (this is normal with 401)
-      // Fall back to sessionStorage - this is the primary source when cookies don't work
-      const storedUserId = sessionStorage.getItem("user_id")
-      if (storedUserId) {
-        // Use stored user_id from sessionStorage (set during login)
-        setUserId(parseInt(storedUserId))
-        return parseInt(storedUserId)
-      }
-
-      // No user_id available anywhere
-      // This is okay - user might need to log in again
       return null
     } catch (error) {
-      // Network errors or other exceptions - try sessionStorage fallback
-      const storedUserId = sessionStorage.getItem("user_id")
-      if (storedUserId) {
-        // Silently use stored user_id - network errors are common
-        setUserId(parseInt(storedUserId))
-        return parseInt(storedUserId)
-      }
       // Don't log 401 errors or network errors - they're expected
       // Only log unexpected errors
       if (error.name !== 'TypeError' &&
@@ -124,39 +106,49 @@ export default function AdminDashboardClient() {
     }
   }
 
+  const forceLogoutAndRedirect = () => {
+    try {
+      sessionStorage.removeItem("role")
+      sessionStorage.removeItem("user_role")
+      sessionStorage.removeItem("user_id")
+    } catch {
+      // ignore
+    }
+    document.cookie = `user_role=;expires=${new Date(0).toUTCString()};path=/;SameSite=Lax`
+    window.location.href = "/login"
+  }
+
   useEffect(() => {
     if (!isClient) return
 
-    const role = sessionStorage.getItem("role") || sessionStorage.getItem("user_role") || "Admin"
-    setUserRole(role)
+    // Authoritative auth check: if session is not valid, force re-login.
+    fetch("/api/session", {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then(async (res) => {
+        let data = null
+        try {
+          data = await res.json()
+        } catch {
+          data = null
+        }
 
-    // Get user ID from session storage first (fastest)
-    const storedUserId = sessionStorage.getItem("user_id")
-    if (storedUserId) {
-      setUserId(parseInt(storedUserId))
-      // Still try to refresh from API in background (but don't block)
-      // Silently handle failures - we already have user_id from sessionStorage
-      fetchUserInfo().catch(() => {
-        // Silently fail - we have sessionStorage fallback
-        // 401 errors are expected with third-party cookie restrictions
-      })
-    } else {
-      // If no user ID in session, try to get it from API
-      // This is expected after login if login.php didn't return user_id
-      fetchUserInfo().then(userId => {
-        if (userId) {
-          // Successfully retrieved user_id and stored in sessionStorage
+        if (data?.authenticated === true && data.user_id && (data.user_role === "admin" || data.user_role === "staff")) {
+          setUserRole(data.user_role)
+          setUserId(data.user_id)
+          sessionStorage.setItem("user_role", data.user_role)
+          sessionStorage.setItem("user_id", String(data.user_id))
+          document.cookie = `user_role=${data.user_role};path=/;SameSite=Lax`
           return
         }
-        // If we still don't have user_id, that's okay for now
-        // The app can still function, and user_id will be fetched when needed
-        // (e.g., when sending messages in support requests)
-        // Don't show warnings - 401 is expected with third-party cookies
-      }).catch(() => {
-        // Silently handle - fetchUserInfo already handled errors
-        // 401 errors are expected and handled silently
+
+        forceLogoutAndRedirect()
       })
-    }
+      .catch(() => {
+        // If we can't validate session, do not assume user is logged in.
+        forceLogoutAndRedirect()
+      })
 
     // Load dark mode state (only on client)
     const savedTheme = localStorage.getItem("theme")

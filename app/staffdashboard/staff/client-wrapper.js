@@ -75,27 +75,8 @@ export default function StaffDashboardClient() {
         return data.user_id
       }
 
-      // Not authenticated or no user_id in response
-      // This is normal - session might not work due to third-party cookie restrictions
-      // Fall back to sessionStorage
-      const storedUserId = sessionStorage.getItem("user_id")
-      if (storedUserId) {
-        // Use stored user_id from sessionStorage (set during login)
-        setUserId(parseInt(storedUserId))
-        return parseInt(storedUserId)
-      }
-
-      // No user_id available anywhere
-      // This is okay - user might need to log in again
       return null
     } catch (error) {
-      // Network errors or other exceptions - try sessionStorage fallback
-      const storedUserId = sessionStorage.getItem("user_id")
-      if (storedUserId) {
-        // Silently use stored user_id - network errors are common
-        setUserId(parseInt(storedUserId))
-        return parseInt(storedUserId)
-      }
       // Only log if it's not a network error
       if (error.name !== 'TypeError' && error.message !== 'Failed to fetch') {
         console.warn("Error fetching user info:", error.message)
@@ -104,32 +85,49 @@ export default function StaffDashboardClient() {
     }
   }
 
+  const forceLogoutAndRedirect = () => {
+    try {
+      sessionStorage.removeItem("role")
+      sessionStorage.removeItem("user_role")
+      sessionStorage.removeItem("user_id")
+    } catch {
+      // ignore
+    }
+    document.cookie = `user_role=;expires=${new Date(0).toUTCString()};path=/;SameSite=Lax`
+    window.location.href = "/login"
+  }
+
   useEffect(() => {
     if (!isClient) return
 
-    const role = sessionStorage.getItem("role") || sessionStorage.getItem("user_role") || "Staff"
-    setUserRole(role)
-
-    // Get user ID from session storage first (fastest)
-    const storedUserId = sessionStorage.getItem("user_id")
-    if (storedUserId) {
-      setUserId(parseInt(storedUserId))
-      // Still try to refresh from API in background (but don't block)
-      // Silently handle failures - we already have user_id from sessionStorage
-      fetchUserInfo().catch(() => {
-        // Silently fail - we have sessionStorage fallback
-      })
-    } else {
-      // If no user ID in session, try to get it from API
-      fetchUserInfo().then(userId => {
-        if (!userId) {
-          // Only log as warning, not error - user might need to log in again
-          console.warn("Could not retrieve user_id. User may need to log in again.")
+    // Authoritative auth check: if session is not valid, force re-login.
+    fetch("/api/session", {
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then(async (res) => {
+        let data = null
+        try {
+          data = await res.json()
+        } catch {
+          data = null
         }
-      }).catch(() => {
-        // Silently handle - already logged in fetchUserInfo if needed
+
+        if (data?.authenticated === true && data.user_id && (data.user_role === "admin" || data.user_role === "staff")) {
+          setUserRole(data.user_role)
+          setUserId(data.user_id)
+          sessionStorage.setItem("user_role", data.user_role)
+          sessionStorage.setItem("user_id", String(data.user_id))
+          document.cookie = `user_role=${data.user_role};path=/;SameSite=Lax`
+          return
+        }
+
+        forceLogoutAndRedirect()
       })
-    }
+      .catch(() => {
+        // If we can't validate session, do not assume user is logged in.
+        forceLogoutAndRedirect()
+      })
 
     // Load dark mode state (only on client)
     const savedTheme = localStorage.getItem("theme")

@@ -28,15 +28,49 @@ export default function Login() {
     document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Lax`;
   }, []);
 
-  useEffect(() => {
-    // Check if user is already logged in via sessionStorage
-    const storedRole = sessionStorage.getItem('user_role');
-    if (storedRole === 'admin' || storedRole === 'staff') {
-      // Ensure cookie is also set for middleware
-      setCookie('user_role', storedRole);
-      router.replace(`/${storedRole}dashboard`);
+  const clearAuthClientState = useCallback(() => {
+    try {
+      sessionStorage.removeItem('user_role');
+      sessionStorage.removeItem('user_id');
+      sessionStorage.removeItem('role');
+    } catch {
+      // ignore
     }
-  }, [router, setCookie]);
+    document.cookie = `user_role=;expires=${new Date(0).toUTCString()};path=/;SameSite=Lax`;
+  }, []);
+
+  useEffect(() => {
+    // Validate using server session first to avoid bypassing login via stale sessionStorage.
+    const validate = async () => {
+      try {
+        const res = await fetch('/api/session', {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+
+        if (data?.authenticated === true && (data.user_role === 'admin' || data.user_role === 'staff')) {
+          sessionStorage.setItem('user_role', data.user_role);
+          if (data.user_id) sessionStorage.setItem('user_id', String(data.user_id));
+          setCookie('user_role', data.user_role);
+          router.replace(`/${data.user_role}dashboard`);
+          return;
+        }
+
+        clearAuthClientState();
+      } catch {
+        // If session validation fails (network), do not auto-redirect.
+      }
+    };
+
+    validate();
+  }, [router, setCookie, clearAuthClientState]);
 
 
   const handleCaptchaChange = (response) => {
