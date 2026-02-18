@@ -315,6 +315,8 @@ const ViewMembers = ({ userId }) => {
     gcash_reference: "",
     notes: ""
   })
+  const [legacyMembershipEnabled, setLegacyMembershipEnabled] = useState(false)
+  const [legacyMembershipEndDate, setLegacyMembershipEndDate] = useState("")
   const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [verificationPlanQuantities, setVerificationPlanQuantities] = useState({}) // For verification dialog
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
@@ -1593,7 +1595,7 @@ const ViewMembers = ({ userId }) => {
         newPlans = normalizedPlans.filter(id => id !== planIdStr)
 
         // If removing Plan 1 (Gym Membership), also remove Plan 2 (Premium) since Premium requires Membership
-        if (planIdNum === 1 && newPlans.includes('2')) {
+        if (planIdNum === 1 && newPlans.includes('2') && !legacyMembershipEnabled) {
           newPlans = newPlans.filter(id => id !== '2')
           // Also remove quantity for Plan 2
           setPlanQuantities(prevQty => {
@@ -1611,6 +1613,17 @@ const ViewMembers = ({ userId }) => {
           })
         }
       } else {
+        if (planIdNum === 2) {
+          const hasMembershipSelected = normalizedPlans.includes('1') || normalizedPlans.includes('5')
+          if (!hasMembershipSelected && !legacyMembershipEnabled) {
+            toast({
+              title: "Cannot select plan",
+              description: "Monthly Access Premium requires an active Gym Membership. Select Gym Membership or enable Existing Member (Paper Record).",
+              variant: "destructive",
+            })
+            return prev
+          }
+        }
         // Add plan - use normalized plans and ensure no duplicates
         if (!normalizedPlans.includes(planIdStr)) {
           newPlans = [...normalizedPlans, planIdStr]
@@ -2129,6 +2142,34 @@ const ViewMembers = ({ userId }) => {
         }
       }
 
+      const hasMembershipPlanSelected = (subscriptionForm.selected_plan_ids || []).some(id => String(id) === '1' || String(id) === '5')
+      const willCreateExistingMembership = legacyMembershipEnabled && !hasMembershipPlanSelected
+
+      if (willCreateExistingMembership) {
+        if (!legacyMembershipEndDate) {
+          showClientErrorToast("Please select the Membership End Date for existing members.")
+          return
+        }
+
+        await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', {
+          user_id: newMemberId,
+          plan_id: 1,
+          start_date: new Date().toISOString().split('T')[0],
+          end_date_override: legacyMembershipEndDate,
+          legacy_membership: true,
+          discount_type: 'none',
+          amount_paid: '0',
+          payment_method: 'legacy',
+          amount_received: '0',
+          change_given: '0',
+          notes: subscriptionForm.notes || '',
+          quantity: 1,
+          created_by: 'Admin',
+          staff_id: userId,
+          transaction_status: 'confirmed'
+        })
+      }
+
       // Step 3: Create subscriptions for each selected plan
       // First, calculate total expected amount and payment distribution
       let totalExpectedAmount = 0
@@ -2217,7 +2258,7 @@ const ViewMembers = ({ userId }) => {
       if (allSuccess) {
         const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()
 
-        const planCount = subscriptionForm.selected_plan_ids.length
+        const planCount = subscriptionForm.selected_plan_ids.length + (willCreateExistingMembership ? 1 : 0)
         const planLabel = planCount === 1 ? "subscription" : "subscriptions"
         if (pendingClientData.isApprovalFlow) {
           showClientToast(
@@ -4492,6 +4533,44 @@ const ViewMembers = ({ userId }) => {
                     <UserCircle className={`h-6 w-6 ${subscriptionForm.discount_type === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
                     <span className={`font-semibold text-sm ${subscriptionForm.discount_type === 'senior' ? 'text-purple-800' : 'text-purple-700'}`}>Senior 55+</span>
                   </Button>
+                  <div className="col-span-2">
+                    <div className="rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-gray-900">Existing Gym Membership</p>
+                          <p className="text-xs text-gray-600">If the member already has a gym membership outside the system, set the membership end date here to unlock Premium.</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant={legacyMembershipEnabled ? "default" : "outline"}
+                          onClick={() => {
+                            setLegacyMembershipEnabled((v) => {
+                              const next = !v
+                              if (!next) {
+                                setLegacyMembershipEndDate("")
+                              }
+                              return next
+                            })
+                          }}
+                          className="h-9"
+                        >
+                          {legacyMembershipEnabled ? "Active" : "Set"}
+                        </Button>
+                      </div>
+
+                      {legacyMembershipEnabled && (
+                        <div className="grid grid-cols-1 gap-2">
+                          <Label className="text-xs font-medium text-gray-700">Gym membership ends on</Label>
+                          <Input
+                            type="date"
+                            className="h-11"
+                            value={legacyMembershipEndDate}
+                            onChange={(e) => setLegacyMembershipEndDate(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3">
                   <p className="text-xs text-amber-900 leading-relaxed">
@@ -4525,8 +4604,8 @@ const ViewMembers = ({ userId }) => {
                       (planIdNum === 1 && normalizedSelectedPlans.includes('3')) ||
                       (planIdNum === 3 && normalizedSelectedPlans.includes('1'))
 
-                    // Premium (Plan ID 2) requires Gym Membership (Plan ID 1)
-                    const hasGymMembership = normalizedSelectedPlans.includes('1')
+                    // Premium (Plan ID 2) requires Gym Membership (Plan ID 1) OR Existing Gym Membership override
+                    const hasGymMembership = normalizedSelectedPlans.includes('1') || legacyMembershipEnabled
                     const requiresMembership = planIdNum === 2 && !hasGymMembership
                     const isDisabled = !isAvailable || (isMutuallyExclusive && !isSelected) || requiresMembership
 
@@ -4566,7 +4645,7 @@ const ViewMembers = ({ userId }) => {
                             // Show toast when trying to select Premium without Membership
                             toast({
                               title: "Membership Required",
-                              description: "Monthly Access (Premium) requires Gym Membership. Please select Gym Membership first.",
+                              description: "Monthly Access (Premium) requires an active Gym Membership. Select Gym Membership or set Existing Gym Membership above.",
                               variant: "destructive",
                             })
                           } else if (isMutuallyExclusive && !isSelected) {

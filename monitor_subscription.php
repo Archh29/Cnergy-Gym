@@ -1043,11 +1043,16 @@ function getUserSubscriptions($pdo, $user_id)
             JOIN member_subscription_plan p ON s.plan_id = p.id
             JOIN subscription_status ss ON s.status_id = ss.id
             WHERE s.user_id = ?
-            AND s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
-            AND EXISTS (
-                SELECT 1 FROM payment pay 
-                WHERE pay.subscription_id = s.id
-            )  -- CRITICAL: Only show subscriptions with payment records
+            AND (
+                s.plan_id = 1
+                OR (
+                    s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
+                    AND EXISTS (
+                        SELECT 1 FROM payment pay 
+                        WHERE pay.subscription_id = s.id
+                    )  -- CRITICAL: Only show subscriptions with payment records
+                )
+            )
             ORDER BY s.start_date DESC
         ");
 
@@ -1185,11 +1190,16 @@ function getAvailablePlansForUser($pdo, $user_id)
             WHERE s.user_id = ? 
             AND ss.status_name = 'approved' 
             AND s.end_date >= CURDATE()
-            AND s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
-            AND EXISTS (
-                SELECT 1 FROM payment p 
-                WHERE p.subscription_id = s.id
-            )  -- CRITICAL: Only consider subscriptions with payment records
+            AND (
+                s.plan_id = 1
+                OR (
+                    s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
+                    AND EXISTS (
+                        SELECT 1 FROM payment p 
+                        WHERE p.subscription_id = s.id
+                    )
+                )
+            )
             ORDER BY s.plan_id
         ");
     $activeSubscriptionsStmt->execute([$user_id]);
@@ -1444,12 +1454,9 @@ function createManualSubscription($pdo, $data)
     // Validate required fields
     $required_fields = ['user_id', 'plan_id', 'start_date', 'amount_paid'];
     foreach ($required_fields as $field) {
-        if (!isset($data[$field]) || empty($data[$field])) {
+        if (!isset($data[$field])) {
             http_response_code(400);
-            echo json_encode([
-                "success" => false,
-                "error" => "Missing required field: $field"
-            ]);
+            echo json_encode(["success" => false, "error" => "Missing field", "message" => "$field is required"]);
             return;
         }
     }
@@ -1515,41 +1522,51 @@ function createManualSubscription($pdo, $data)
         $referenceNumber = $data['reference_number'] ?? null;
     }
 
+    $isLegacyMembership = !empty($data['legacy_membership']) && intval($plan_id) === 1;
+    $endDateOverride = $data['end_date_override'] ?? $data['membership_end_date'] ?? null;
+
     // CRITICAL: Validate payment details before creating subscription
     $amountReceived = floatval($data['amount_received'] ?? $payment_amount);
     $transactionStatus = $data['transaction_status'] ?? 'confirmed';
 
-    // Payment validation - prevent unpaid subscriptions from being created
-    if ($payment_amount <= 0) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Invalid payment amount",
-            "message" => "Payment amount must be greater than 0"
-        ]);
-        return;
-    }
+    if ($isLegacyMembership) {
+        $payment_amount = 0;
+        $amountReceived = 0;
+        $transactionStatus = 'confirmed';
+        $paymentMethod = 'legacy';
+    } else {
+        // Payment validation - prevent unpaid subscriptions from being created
+        if ($payment_amount <= 0) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Invalid payment amount",
+                "message" => "Payment amount must be greater than 0"
+            ]);
+            return;
+        }
 
-    // For cash payments, validate amount received
-    if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Insufficient payment",
-            "message" => "Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more."
-        ]);
-        return;
-    }
+        // For cash payments, validate amount received
+        if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Insufficient payment",
+                "message" => "Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more."
+            ]);
+            return;
+        }
 
-    // Validate transaction status
-    if ($transactionStatus !== 'confirmed' && $transactionStatus !== 'completed') {
-        http_response_code(400);
-        echo json_encode([
-            "success" => false,
-            "error" => "Payment not confirmed",
-            "message" => "Transaction must be confirmed before creating subscription"
-        ]);
-        return;
+        // Validate transaction status
+        if ($transactionStatus !== 'confirmed' && $transactionStatus !== 'completed') {
+            http_response_code(400);
+            echo json_encode([
+                "success" => false,
+                "error" => "Payment not confirmed",
+                "message" => "Transaction must be confirmed before creating subscription"
+            ]);
+            return;
+        }
     }
 
     $pdo->beginTransaction();
@@ -1575,19 +1592,20 @@ function createManualSubscription($pdo, $data)
         if (!$plan)
             throw new Exception("Subscription plan not found");
 
-        if ($discount_type === 'student' && ($plan_id == 2 || $plan_id == 3)) {
-            $expectedUnitPrice = $plan_id == 2 ? 899 : 1100;
-            $expectedTotal = $expectedUnitPrice * max(1, $quantity);
-            $payment_amount = floatval(number_format($expectedTotal, 2, '.', ''));
-        }
-
-        if ($paymentMethod === 'cash' && $amountReceived < $payment_amount) {
-            throw new Exception("Insufficient payment: Amount received (₱" . number_format($amountReceived, 2) . ") is less than required amount (₱" . number_format($payment_amount, 2) . "). Please collect ₱" . number_format($payment_amount - $amountReceived, 2) . " more.");
-        }
-
         // Set timezone to Philippines
         date_default_timezone_set('Asia/Manila');
 
+        // Special handling for legacy Gym Membership carryover (Plan ID 1)
+        if ($isLegacyMembership) {
+            if (empty($endDateOverride)) {
+                throw new Exception("Membership end date is required for legacy membership");
+            }
+
+            $start_date_obj = new DateTime('now', new DateTimeZone('Asia/Manila'));
+            $start_date = $start_date_obj->format('Y-m-d');
+            $end_date_obj = new DateTime($endDateOverride, new DateTimeZone('Asia/Manila'));
+            $end_date = $end_date_obj->format('Y-m-d');
+        }
         // Special handling for Walk In/Day Pass/Gym Session plans (plan_id = 6 or plan_name = 'Walk In' or 'Day Pass' or 'Gym Session')
         // For Day Pass plans, always use current date/time in Philippines timezone
         $planNameLower = strtolower($plan['plan_name']);
@@ -1629,11 +1647,6 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount if quantity not provided
                 $planPrice = floatval($plan['price']);
-                if ($discount_type === 'student' && $plan_id == 2) {
-                    $planPrice = 899;
-                } elseif ($discount_type === 'student' && $plan_id == 3) {
-                    $planPrice = 1100;
-                }
                 if ($planPrice > 0) {
                     // Calculate how many months the payment covers
                     $monthsPaid = floor($payment_amount / $planPrice);
@@ -1670,22 +1683,31 @@ function createManualSubscription($pdo, $data)
         }
 
         // Get approved status ID for manual subscriptions
-        // Be tolerant of differing capitalization / naming in DB.
-        $statusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) = 'approved' LIMIT 1");
+        $statusStmt = $pdo->prepare("SELECT id FROM subscription_status WHERE status_name = 'approved'");
         $statusStmt->execute();
         $status = $statusStmt->fetch();
 
         if (!$status) {
-            // Fallback: some DBs use 'active'/'activated' instead of 'approved'
-            $fallbackStatusStmt = $pdo->prepare("SELECT id, status_name FROM subscription_status WHERE LOWER(status_name) IN ('active', 'activated') LIMIT 1");
-            $fallbackStatusStmt->execute();
-            $status = $fallbackStatusStmt->fetch();
+            throw new Exception("Approved status not found in database");
         }
 
-        if (!$status) {
-            $allStatusStmt = $pdo->query("SELECT status_name FROM subscription_status");
-            $allStatuses = $allStatusStmt->fetchAll(PDO::FETCH_COLUMN);
-            throw new Exception("Approved status not found in database. Existing statuses: " . implode(', ', $allStatuses));
+        // Enforce rule: Monthly Access Premium requires active Gym Membership
+        if (intval($plan_id) === 2 && !$isLegacyMembership) {
+            $membershipCheckStmt = $pdo->prepare("
+                SELECT 1
+                FROM subscription s
+                JOIN subscription_status ss ON s.status_id = ss.id
+                WHERE s.user_id = ?
+                  AND ss.status_name = 'approved'
+                  AND s.end_date >= CURDATE()
+                  AND s.plan_id IN (1, 5)
+                LIMIT 1
+            ");
+            $membershipCheckStmt->execute([$user_id]);
+            $hasMembership = (bool)$membershipCheckStmt->fetchColumn();
+            if (!$hasMembership) {
+                throw new Exception("Monthly Access Premium requires an active Gym Membership.");
+            }
         }
 
         // Check for existing active subscriptions
@@ -1701,11 +1723,16 @@ function createManualSubscription($pdo, $data)
                 AND s.plan_id = ?
                 AND ss.status_name = 'approved' 
                 AND s.end_date >= CURDATE()
-                AND s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
-                AND EXISTS (
-                    SELECT 1 FROM payment p 
-                    WHERE p.subscription_id = s.id
-                )  -- CRITICAL: Only consider subscriptions with payment records
+                AND (
+                    s.plan_id = 1
+                    OR (
+                        s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
+                        AND EXISTS (
+                            SELECT 1 FROM payment p 
+                            WHERE p.subscription_id = s.id
+                        )
+                    )
+                )
             ");
         $existingStmt->execute([$user_id, $plan_id]);
         $existingSubscription = $existingStmt->fetch();
@@ -1727,11 +1754,6 @@ function createManualSubscription($pdo, $data)
             } else {
                 // Fallback: Calculate from payment amount (only if quantity is not provided or is 0)
                 $planPrice = floatval($plan['price']);
-                if ($discount_type === 'student' && $plan_id == 2) {
-                    $planPrice = 899;
-                } elseif ($discount_type === 'student' && $plan_id == 3) {
-                    $planPrice = 1100;
-                }
                 if ($planPrice > 0) {
                     $extensionMonths = floor($payment_amount / $planPrice);
                     // For Plan ID 1, if calculated months is 1, it should be 12 months (1 year)
@@ -1780,10 +1802,15 @@ function createManualSubscription($pdo, $data)
                 AND s.plan_id = ?
                 AND ss.status_name = 'approved' 
                 AND s.end_date < CURDATE()
-                AND s.amount_paid > 0
-                AND EXISTS (
-                    SELECT 1 FROM payment p 
-                    WHERE p.subscription_id = s.id
+                AND (
+                    s.plan_id = 1
+                    OR (
+                        s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
+                        AND EXISTS (
+                            SELECT 1 FROM payment p 
+                            WHERE p.subscription_id = s.id
+                        )
+                    )
                 )
                 ORDER BY s.end_date DESC
                 LIMIT 1
@@ -1829,10 +1856,15 @@ function createManualSubscription($pdo, $data)
                     WHERE s.user_id = ? 
                     AND s.plan_id = ?
                     AND ss.status_name = 'approved' 
-                    AND s.amount_paid > 0
-                    AND EXISTS (
-                        SELECT 1 FROM payment p 
-                        WHERE p.subscription_id = s.id
+                    AND (
+                        s.plan_id = 1
+                        OR (
+                            s.amount_paid > 0  -- CRITICAL: Only consider subscriptions with payment
+                            AND EXISTS (
+                                SELECT 1 FROM payment p 
+                                WHERE p.subscription_id = s.id
+                            )
+                        )
                     )
                     ORDER BY s.end_date DESC
                     LIMIT 1
@@ -1952,7 +1984,7 @@ function createManualSubscription($pdo, $data)
 
             // Only create payment record if transaction is confirmed/completed
             // Use Philippines timezone for accurate timestamp
-            if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
+            if (!$isLegacyMembership && ($transactionStatus === 'confirmed' || $transactionStatus === 'completed')) {
                 $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
                 $phTimeString = $phTime->format('Y-m-d H:i:s');
 
@@ -1991,9 +2023,12 @@ function createManualSubscription($pdo, $data)
                 $paymentStmt->execute($paymentValues);
                 $payment_id = $pdo->lastInsertId();
             } else {
-                // If payment is not confirmed, don't create payment record
+                // Legacy memberships intentionally have no payment record.
+                // If payment is not confirmed for non-legacy transactions, abort.
                 $payment_id = null;
-                throw new Exception("Payment not confirmed - subscription creation cancelled");
+                if (!$isLegacyMembership) {
+                    throw new Exception("Payment not confirmed - subscription creation cancelled");
+                }
             }
         } catch (Exception $e) {
             // If payment table doesn't exist or payment not confirmed, rollback transaction
@@ -2005,7 +2040,7 @@ function createManualSubscription($pdo, $data)
 
         // Create sales record - only for confirmed payments
         // Use Philippines timezone for accurate timestamp
-        if ($transactionStatus === 'confirmed' || $transactionStatus === 'completed') {
+        if (!$isLegacyMembership && ($transactionStatus === 'confirmed' || $transactionStatus === 'completed')) {
             $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
             $phTimeString = $phTime->format('Y-m-d H:i:s');
 
@@ -2048,11 +2083,6 @@ function createManualSubscription($pdo, $data)
         // Calculate duration in months from payment amount (more accurate than end_date)
         // This ensures we show the correct duration even if end_date calculation was wrong
         $planPrice = floatval($plan['price']);
-        if ($discount_type === 'student' && $plan_id == 2) {
-            $planPrice = 899;
-        } elseif ($discount_type === 'student' && $plan_id == 3) {
-            $planPrice = 1100;
-        }
         $totalMonths = 1; // Default to 1 month
 
         if ($planPrice > 0) {

@@ -302,6 +302,8 @@ const ViewMembers = ({ userId }) => {
     gcash_reference: "",
     notes: ""
   })
+  const [legacyMembershipEnabled, setLegacyMembershipEnabled] = useState(false)
+  const [legacyMembershipEndDate, setLegacyMembershipEndDate] = useState("")
   const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
 
@@ -1286,76 +1288,78 @@ const ViewMembers = ({ userId }) => {
 
     setSubscriptionForm(prev => {
       const currentPlans = prev.selected_plan_ids || []
-      const isSelected = currentPlans.includes(planIdStr)
-
-      // Check for mutual exclusivity: Plan 1 (Gym Membership) and Plan 3 (Monthly Access Standard)
+      const normalizedPlans = currentPlans.map(id => String(id))
+      const isSelected = normalizedPlans.includes(planIdStr)
       const planIdNum = parseInt(planIdStr)
+
+      // Mutual exclusivity: Plan 1 vs Plan 3
       if (!isSelected) {
-        // If trying to add a plan, check for conflicts
-        if (planIdNum === 1) {
-          // Trying to add Gym Membership - check if Plan 3 is selected
-          if (currentPlans.includes('3')) {
-            toast({
-              title: "Cannot select both plans",
-              description: "Gym Membership and Monthly Access (Standard) cannot be selected together. Please deselect Monthly Access (Standard) first.",
-              variant: "destructive",
-            })
-            return prev
-          }
-        } else if (planIdNum === 3) {
-          // Trying to add Monthly Access Standard - check if Plan 1 is selected
-          if (currentPlans.includes('1')) {
-            toast({
-              title: "Cannot select both plans",
-              description: "Monthly Access (Standard) and Gym Membership cannot be selected together. Please deselect Gym Membership first.",
-              variant: "destructive",
-            })
-            return prev
-          }
+        if (planIdNum === 1 && normalizedPlans.includes('3')) {
+          toast({
+            title: "Cannot select both plans",
+            description: "Gym Membership and Monthly Access (Standard) cannot be selected together. Please deselect Monthly Access (Standard) first.",
+            variant: "destructive",
+          })
+          return prev
+        }
+        if (planIdNum === 3 && normalizedPlans.includes('1')) {
+          toast({
+            title: "Cannot select both plans",
+            description: "Monthly Access (Standard) and Gym Membership cannot be selected together. Please deselect Gym Membership first.",
+            variant: "destructive",
+          })
+          return prev
         }
       }
 
       let newPlans
       if (isSelected) {
-        // Remove plan
-        newPlans = currentPlans.filter(id => id !== planIdStr)
+        newPlans = normalizedPlans.filter(id => id !== planIdStr)
 
-        // If removing Plan 1 (Gym Membership), also remove Plan 2 (Premium) since Premium requires Membership
-        if (planIdNum === 1 && newPlans.includes('2')) {
+        // If removing Plan 1, also remove Premium unless legacy membership enabled
+        if (planIdNum === 1 && newPlans.includes('2') && !legacyMembershipEnabled) {
           newPlans = newPlans.filter(id => id !== '2')
-          // Also remove quantity for Plan 2
           setPlanQuantities(prevQty => {
-            const newQty = { ...prevQty }
-            delete newQty[planIdStr]
-            delete newQty['2']
-            return newQty
+            const nextQty = { ...prevQty }
+            delete nextQty[planIdStr]
+            delete nextQty['2']
+            return nextQty
           })
         } else {
-          // Remove quantity for this plan only
           setPlanQuantities(prevQty => {
-            const newQty = { ...prevQty }
-            delete newQty[planIdStr]
-            return newQty
+            const nextQty = { ...prevQty }
+            delete nextQty[planIdStr]
+            return nextQty
           })
         }
       } else {
-        // Add plan
-        newPlans = [...currentPlans, planIdStr]
-        // Set default quantity to 1 for this plan
+        // Premium requires membership unless legacy membership enabled
+        if (planIdNum === 2) {
+          const hasMembershipSelected = normalizedPlans.includes('1') || normalizedPlans.includes('5')
+          if (!hasMembershipSelected && !legacyMembershipEnabled) {
+            toast({
+              title: "Cannot select plan",
+              description: "Monthly Access Premium requires an active Gym Membership. Select Gym Membership or enable Existing Member (Paper Record).",
+              variant: "destructive",
+            })
+            return prev
+          }
+        }
+
+        newPlans = normalizedPlans.includes(planIdStr) ? normalizedPlans : [...normalizedPlans, planIdStr]
         setPlanQuantities(prevQty => ({
           ...prevQty,
-          [planIdStr]: 1
+          [planIdStr]: 1,
         }))
       }
 
-      // Calculate total price for all selected plans
+      // Recalculate total price
       let totalPrice = 0
       newPlans.forEach(selectedPlanId => {
         const selectedPlan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
         if (selectedPlan) {
           const basePrice = parseFloat(selectedPlan.price || 0)
-          // Use current planQuantities state, or default to 1
-          const quantity = planQuantities[selectedPlanId] || (selectedPlanId === planIdStr && !isSelected ? 1 : (planQuantities[selectedPlanId] || 1))
+          const qty = (selectedPlanId === planIdStr && !isSelected) ? 1 : (planQuantities[selectedPlanId] || 1)
 
           let pricePerUnit = basePrice
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
@@ -1366,13 +1370,13 @@ const ViewMembers = ({ userId }) => {
             }
           }
 
-          totalPrice += pricePerUnit * quantity
+          totalPrice += pricePerUnit * qty
         }
       })
 
       return {
         ...prev,
-        selected_plan_ids: newPlans,
+        selected_plan_ids: [...newPlans],
         amount_paid: totalPrice.toFixed(2)
       }
     })
@@ -1385,22 +1389,22 @@ const ViewMembers = ({ userId }) => {
 
     setPlanQuantities(prev => ({
       ...prev,
-      [planIdStr]: quantity
+      [planIdStr]: quantity,
     }))
 
-    // Recalculate total price
     setSubscriptionForm(prev => {
       let totalPrice = 0
-      prev.selected_plan_ids.forEach(selectedPlanId => {
-        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+      const currentPlans = prev.selected_plan_ids || []
+      currentPlans.forEach(selectedPlanId => {
+        const plan = subscriptionPlans.find(p => p.id.toString() === String(selectedPlanId))
         if (plan) {
           const basePrice = parseFloat(plan.price || 0)
-          const qty = selectedPlanId === planIdStr ? quantity : (planQuantities[selectedPlanId] || 1)
+          const qty = String(selectedPlanId) === planIdStr ? quantity : (planQuantities[String(selectedPlanId)] || 1)
 
           let pricePerUnit = basePrice
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
-            if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
-              const selectedPlanIdNum = parseInt(selectedPlanId)
+            const selectedPlanIdNum = parseInt(String(selectedPlanId))
+            if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
               const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
               pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
@@ -1423,21 +1427,21 @@ const ViewMembers = ({ userId }) => {
       let totalPrice = 0
       const currentPlans = prev.selected_plan_ids || []
       currentPlans.forEach(selectedPlanId => {
-        const plan = subscriptionPlans.find(p => p.id.toString() === selectedPlanId)
+        const plan = subscriptionPlans.find(p => p.id.toString() === String(selectedPlanId))
         if (plan) {
           const basePrice = parseFloat(plan.price || 0)
-          const quantity = planQuantities[selectedPlanId] || 1
+          const qty = planQuantities[String(selectedPlanId)] || 1
 
           let pricePerUnit = basePrice
           if (prev.discount_type && prev.discount_type !== 'none' && prev.discount_type !== 'regular') {
-            if (selectedPlanId == 2 || selectedPlanId == 3 || selectedPlanId == 5) {
-              const selectedPlanIdNum = parseInt(selectedPlanId)
+            const selectedPlanIdNum = parseInt(String(selectedPlanId))
+            if (selectedPlanIdNum == 2 || selectedPlanIdNum == 3 || selectedPlanIdNum == 5) {
               const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, prev.discount_type, selectedPlanIdNum)
               pricePerUnit = calculateDiscountedPrice(effectiveBasePrice, prev.discount_type, selectedPlanIdNum)
             }
           }
 
-          totalPrice += pricePerUnit * quantity
+          totalPrice += pricePerUnit * qty
         }
       })
 
@@ -1677,6 +1681,34 @@ const ViewMembers = ({ userId }) => {
         }
       }
 
+      const hasMembershipPlanSelected = (subscriptionForm.selected_plan_ids || []).some(id => String(id) === '1' || String(id) === '5')
+      const willCreateExistingMembership = legacyMembershipEnabled && !hasMembershipPlanSelected
+
+      if (willCreateExistingMembership) {
+        if (!legacyMembershipEndDate) {
+          showClientErrorToast("Please select the Membership End Date for existing members.")
+          return
+        }
+
+        await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', {
+          user_id: newMemberId,
+          plan_id: 1,
+          start_date: new Date().toISOString().split('T')[0],
+          end_date_override: legacyMembershipEndDate,
+          legacy_membership: true,
+          discount_type: 'none',
+          amount_paid: '0',
+          payment_method: 'legacy',
+          amount_received: '0',
+          change_given: '0',
+          notes: subscriptionForm.notes || '',
+          quantity: 1,
+          created_by: 'Staff',
+          staff_id: userId,
+          transaction_status: 'confirmed'
+        })
+      }
+
       // Step 3: Create subscriptions for each selected plan
       // First, calculate total expected amount and payment distribution
       let totalExpectedAmount = 0
@@ -1765,7 +1797,7 @@ const ViewMembers = ({ userId }) => {
       if (allSuccess) {
         const fullName = `${pendingClientData.fname}${pendingClientData.mname ? ` ${pendingClientData.mname}` : ''} ${pendingClientData.lname}`.trim()
 
-        const planCount = subscriptionForm.selected_plan_ids.length
+        const planCount = subscriptionForm.selected_plan_ids.length + (willCreateExistingMembership ? 1 : 0)
         const planLabel = planCount === 1 ? "subscription" : "subscriptions"
         if (pendingClientData.isApprovalFlow) {
           showClientToast(
@@ -3552,6 +3584,44 @@ const ViewMembers = ({ userId }) => {
                     <UserCircle className={`h-6 w-6 ${subscriptionForm.discount_type === 'senior' ? 'text-purple-700' : 'text-purple-600'}`} />
                     <span className={`font-semibold text-sm ${subscriptionForm.discount_type === 'senior' ? 'text-purple-800' : 'text-purple-700'}`}>Senior 55+</span>
                   </Button>
+                  <div className="col-span-2">
+                    <div className="rounded-lg border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-gray-900">Existing Gym Membership</p>
+                          <p className="text-xs text-gray-600">If the member already has a gym membership outside the system, set the membership end date here to unlock Premium.</p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant={legacyMembershipEnabled ? "default" : "outline"}
+                          onClick={() => {
+                            setLegacyMembershipEnabled((v) => {
+                              const next = !v
+                              if (!next) {
+                                setLegacyMembershipEndDate("")
+                              }
+                              return next
+                            })
+                          }}
+                          className="h-9"
+                        >
+                          {legacyMembershipEnabled ? "Active" : "Set"}
+                        </Button>
+                      </div>
+
+                      {legacyMembershipEnabled && (
+                        <div className="grid grid-cols-1 gap-2">
+                          <Label className="text-xs font-medium text-gray-700">Gym membership ends on</Label>
+                          <Input
+                            type="date"
+                            className="h-11"
+                            value={legacyMembershipEndDate}
+                            onChange={(e) => setLegacyMembershipEndDate(e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3">
                   <p className="text-xs text-amber-900 leading-relaxed">
@@ -3582,8 +3652,8 @@ const ViewMembers = ({ userId }) => {
                       (planIdNum === 1 && subscriptionForm.selected_plan_ids?.includes('3')) ||
                       (planIdNum === 3 && subscriptionForm.selected_plan_ids?.includes('1'))
 
-                    // Premium (Plan ID 2) requires Gym Membership (Plan ID 1)
-                    const requiresMembership = planIdNum === 2 && !subscriptionForm.selected_plan_ids?.includes('1')
+                    // Premium (Plan ID 2) requires Gym Membership (Plan ID 1) OR Existing Gym Membership override
+                    const requiresMembership = planIdNum === 2 && !subscriptionForm.selected_plan_ids?.includes('1') && !legacyMembershipEnabled
 
                     const isDisabled = !isAvailable || (isMutuallyExclusive && !isSelected) || requiresMembership
 
@@ -3606,7 +3676,7 @@ const ViewMembers = ({ userId }) => {
                             // Show toast when trying to select Premium without Membership
                             toast({
                               title: "Membership Required",
-                              description: "Monthly Access (Premium) requires Gym Membership. Please select Gym Membership first.",
+                              description: "Monthly Access (Premium) requires an active Gym Membership. Select Gym Membership or set Existing Gym Membership above.",
                               variant: "destructive",
                             })
                           } else if (isMutuallyExclusive && !isSelected) {
