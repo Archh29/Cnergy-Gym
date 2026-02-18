@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useCallback } from "react"
+import { useCallback, useState } from "react"
 import {
   FaUsers,
   FaUserTie,
@@ -24,6 +24,16 @@ import {
 } from "react-icons/fa"
 import { GiWhistle } from "react-icons/gi"
 import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const Sidebar = ({
   activeSection = "ViewClients",
@@ -34,22 +44,25 @@ const Sidebar = ({
   onToggle = () => { }
 }) => {
   const router = useRouter()
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false)
 
   const handleLogout = useCallback(async () => {
-    // Make a request to your logout PHP endpoint to clear session and cookies
-    await fetch("https://api.cnergy.site/logout.php", {
-      method: "GET",
-      credentials: "include", // Ensure that cookies are sent with the request
-    })
-
-    // Clear sessionStorage and cookies
-    if (typeof window !== 'undefined') {
-      sessionStorage.clear()
-      document.cookie = "user_role=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC"
+    try {
+      await fetch("/api/logout", { method: "GET", credentials: "include" })
+    } catch {
+      // ignore
     }
-
-    // Redirect to the login page
-    router.push("/login")
+    try {
+      sessionStorage.clear()
+    } catch {
+      // ignore
+    }
+    try {
+      document.cookie = `user_role=;expires=${new Date(0).toUTCString()};path=/;SameSite=Lax`
+    } catch {
+      // ignore
+    }
+    window.location.href = "/login"
   }, [router])
 
   const handleSectionClick = useCallback((name) => {
@@ -106,7 +119,7 @@ const Sidebar = ({
               variant={activeSection === name ? "secondary" : "ghost"}
               className={`w-full mb-1 ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
               onClick={() => handleSectionClick(name)}
-            title={collapsed ? (name === "ViewClients" ? "View Client" : name === "Sales" ? "Sales" : name.replace(/([A-Z])/g, " $1").trim()) : ""}
+              title={collapsed ? (name === "ViewClients" ? "View Client" : name === "Sales" ? "Sales" : name.replace(/([A-Z])/g, " $1").trim()) : ""}
             >
               {icon}
               <span className={`text-sm font-medium truncate ${collapsed ? 'lg:hidden' : ''}`}>
@@ -135,7 +148,7 @@ const Sidebar = ({
         <Button
           variant="destructive"
           className={`w-full ${collapsed ? 'lg:justify-center lg:px-2' : 'justify-start'}`}
-          onClick={handleLogout}
+          onClick={() => setLogoutDialogOpen(true)}
           title={collapsed ? "Logout" : ""}
         >
           <FaSignOutAlt className="mr-2 h-4 w-4" />
@@ -144,6 +157,36 @@ const Sidebar = ({
           </span>
         </Button>
       </div>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent className="border border-gray-200/70 dark:border-gray-800 shadow-2xl bg-white dark:bg-gray-950">
+          <AlertDialogHeader className="space-y-3">
+            <div className="flex items-start gap-4">
+              <div className="h-11 w-11 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-300 flex items-center justify-center flex-shrink-0 border border-red-100 dark:border-red-900/60">
+                <FaSignOutAlt className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <AlertDialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-50">Confirm logout</AlertDialogTitle>
+                <AlertDialogDescription className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                  You’re about to end this session and return to the login screen.
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="mt-2">
+            <AlertDialogCancel className="h-10 px-5 border-gray-200 dark:border-gray-800">Stay logged in</AlertDialogCancel>
+            <AlertDialogAction
+              className="h-10 px-5 bg-red-600 hover:bg-red-700 text-white"
+              onClick={async () => {
+                setLogoutDialogOpen(false)
+                await handleLogout()
+              }}
+            >
+              Log out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   )
 }

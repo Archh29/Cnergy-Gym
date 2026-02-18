@@ -4640,7 +4640,7 @@ const SubscriptionMonitor = ({ userId }) => {
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" hideClose>
           <DialogHeader className="bg-gray-50/80 backdrop-blur-sm rounded-t-lg -m-6 mb-0 px-6 py-4 border-b border-gray-200">
             <div className="space-y-3">
-              <DialogTitle className="text-xl font-semibold text-gray-900">Request Details</DialogTitle>
+              <DialogTitle className="text-xl font-semibold text-gray-900">Subscription Details</DialogTitle>
               {viewDetailsModal.user && (
                 <div className="flex items-start gap-4">
                   {!viewDetailsModal.user.is_guest_session && (viewDetailsModal.user.system_photo_url || (viewDetailsModal.subscriptions?.[0]?.system_photo_url)) ? (
@@ -4841,12 +4841,33 @@ const SubscriptionMonitor = ({ userId }) => {
             )}
 
             {/* Transaction History Section */}
-            {allUserSales.length > 0 && (() => {
+            {(() => {
+              const currentSubs = Array.isArray(viewDetailsModal.subscriptions) ? viewDetailsModal.subscriptions : []
+              const hasMembershipSub = currentSubs.some(s => String(s.plan_id) === '1')
+              const hasMembershipSale = allUserSales.some(s => String(s.plan_id) === '1')
+
+              const syntheticSales = (hasMembershipSub && !hasMembershipSale)
+                ? [{
+                  id: `existing-membership-${currentSubs.find(s => String(s.plan_id) === '1')?.id || '1'}`,
+                  plan_id: 1,
+                  plan_name: 'Gym Membership',
+                  total_amount: 0,
+                  sale_date: currentSubs.find(s => String(s.plan_id) === '1')?.start_date || null,
+                  transaction_status: 'existing',
+                  payment_method: 'legacy',
+                  receipt_number: 'EXISTING',
+                  quantity: 1,
+                }]
+                : []
+
+              const displaySales = [...syntheticSales, ...(allUserSales || [])]
+              if (displaySales.length === 0) return null
+
               // Get unique plan names for filter
-              const uniquePlans = [...new Set(allUserSales.map(sale => sale.plan_name).filter(Boolean))]
+              const uniquePlans = [...new Set(displaySales.map(sale => sale.plan_name).filter(Boolean))]
 
               // Sort sales by plan_id (Membership first), then by sale_date (latest first)
-              const sortedSales = [...allUserSales].sort((a, b) => {
+              const sortedSales = [...displaySales].sort((a, b) => {
                 const planIdA = a.plan_id || 999 // Put items without plan_id at the end
                 const planIdB = b.plan_id || 999
 

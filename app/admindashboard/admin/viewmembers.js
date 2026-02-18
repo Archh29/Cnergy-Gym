@@ -317,6 +317,7 @@ const ViewMembers = ({ userId }) => {
   })
   const [legacyMembershipEnabled, setLegacyMembershipEnabled] = useState(false)
   const [legacyMembershipEndDate, setLegacyMembershipEndDate] = useState("")
+  const [legacyMembershipEndDateError, setLegacyMembershipEndDateError] = useState(false)
   const [planQuantities, setPlanQuantities] = useState({}) // Object to store quantity per plan: { planId: quantity }
   const [verificationPlanQuantities, setVerificationPlanQuantities] = useState({}) // For verification dialog
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
@@ -979,6 +980,92 @@ const ViewMembers = ({ userId }) => {
     await fetchMemberDiscounts(member.id)
   }
 
+  const openSubscriptionDetailsModal = async (member) => {
+    if (!member?.id) return
+
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('openSubscriptionDetailsUserId', String(member.id))
+      }
+      window.dispatchEvent(new CustomEvent('open-subscription-details-for-user', { detail: { userId: member.id } }))
+    } catch (e) {
+      console.error('Failed to navigate to subscription details:', e)
+      toast({
+        title: 'Error',
+        description: 'Failed to open subscription details. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const getDaysLeft = (endDate) => {
+    if (!endDate) return null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setHours(0, 0, 0, 0)
+    const diffTime = end.getTime() - today.getTime()
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  }
+
+  const calculateDaysLeft = (endDate) => {
+    if (!endDate) return null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const end = new Date(endDate)
+    end.setHours(0, 0, 0, 0)
+    const diffTime = end.getTime() - today.getTime()
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    return diffDays
+  }
+
+  const calculateTimeRemaining = (endDate) => {
+    if (!endDate) return null
+    const now = new Date()
+    const end = new Date(endDate)
+    const diffTime = end.getTime() - now.getTime()
+
+    if (diffTime < 0) {
+      const hoursAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60))
+      const minutesAgo = Math.floor(Math.abs(diffTime) / (1000 * 60))
+      const daysAgo = Math.floor(Math.abs(diffTime) / (1000 * 60 * 60 * 24))
+
+      if (hoursAgo < 1) {
+        return { type: 'expired_minutes', minutes: minutesAgo }
+      }
+      if (hoursAgo < 24) {
+        return { type: 'expired_hours', hours: hoursAgo }
+      }
+      return { type: 'expired', days: daysAgo }
+    }
+
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    const totalHours = Math.floor(diffTime / (1000 * 60 * 60))
+    const totalMinutes = Math.floor(diffTime / (1000 * 60))
+
+    if (totalHours < 1) {
+      return { type: 'minutes', minutes: totalMinutes }
+    }
+    if (diffDays < 1) {
+      return { type: 'hours', hours: totalHours }
+    }
+
+    if (diffDays >= 365) {
+      const years = Math.floor(diffDays / 365)
+      const remainingDaysAfterYears = diffDays % 365
+      const months = Math.floor(remainingDaysAfterYears / 30)
+      return { type: 'years_months', years, months, totalDays: diffDays }
+    }
+
+    if (diffDays >= 30) {
+      const months = Math.floor(diffDays / 30)
+      const remainingDays = diffDays % 30
+      return { type: 'months_days', months, days: remainingDays, totalDays: diffDays }
+    }
+
+    return { type: 'days', days: diffDays }
+  }
+
   const handleEditMember = (member) => {
     setSelectedMember(member)
     setEditPhotoFile(null)
@@ -1168,6 +1255,11 @@ const ViewMembers = ({ userId }) => {
       // Open Add Client dialog and switch to subscription assignment mode
       setIsAddDialogOpen(true)
       setShowSubscriptionAssignment(true)
+
+      // Reset legacy membership UI state when entering subscription assignment
+      setLegacyMembershipEnabled(false)
+      setLegacyMembershipEndDate("")
+      setLegacyMembershipEndDateError(false)
 
       // Fetch ALL subscription plans (use 0 to get all plans, same as Add Client flow)
       // During approval, we should be able to assign any plan including member-only plans
@@ -1363,7 +1455,7 @@ const ViewMembers = ({ userId }) => {
       const totalAmountReceived = parseFloat(verificationSubscriptionForm.amount_received || verificationSubscriptionForm.amount_paid || 0)
       const totalChange = Math.max(0, totalAmountReceived - totalExpectedAmount)
 
-      const subscriptionPromises = planDataArray.map(async (planData, index) => {
+      const subscriptionRequests = planDataArray.map((planData, index) => {
         const { planId, planIdStr, quantity, planTotalPrice } = planData
 
         let amountReceivedForPlan = planTotalPrice
@@ -1398,10 +1490,33 @@ const ViewMembers = ({ userId }) => {
           transaction_status: 'confirmed'
         }
 
-        return axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', subscriptionData)
+        return { planId, subscriptionData }
       })
 
-      const subscriptionResponses = await Promise.all(subscriptionPromises)
+      const sortedRequests = [...subscriptionRequests].sort((a, b) => {
+        const weight = (pid) => {
+          if (pid === 5 || pid === 1) return 0
+          if (pid === 2) return 2
+          return 1
+        }
+        const wA = weight(a.planId)
+        const wB = weight(b.planId)
+        if (wA !== wB) return wA - wB
+        return 0
+      })
+
+      const subscriptionResponses = []
+      for (const req of sortedRequests) {
+        try {
+          // Create membership/package first so Premium validation passes
+          // eslint-disable-next-line no-await-in-loop
+          const res = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', req.subscriptionData)
+          subscriptionResponses.push(res)
+        } catch (err) {
+          const backendMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message
+          throw new Error(backendMsg || 'Failed to create subscription.')
+        }
+      }
       const allSuccess = subscriptionResponses.every(response => response.data && response.data.success)
 
       if (allSuccess) {
@@ -1494,15 +1609,17 @@ const ViewMembers = ({ userId }) => {
       password: password,
       bday: data.bday,
       user_type_id: data.user_type_id,
-      account_status: "approved", // Admin-added clients are always approved
-      failed_attempt: 0,
       staff_id: userId,
-      parent_consent_file: parentConsentFile, // Include consent file
-      profile_photo_file: profilePhotoFile, // Include profile photo file
+      parent_consent_file: parentConsentFile,
     })
 
     // Switch to subscription assignment mode
     setShowSubscriptionAssignment(true)
+
+    // Reset legacy membership UI state when entering subscription assignment
+    setLegacyMembershipEnabled(false)
+    setLegacyMembershipEndDate("")
+    setLegacyMembershipEndDateError(false)
 
     // Fetch available subscription plans (for a new user, we'll use user_id=0 or fetch all plans)
     await fetchSubscriptionPlansForUser(0) // Use 0 for new user to get all available plans
@@ -1909,6 +2026,20 @@ const ViewMembers = ({ userId }) => {
       return
     }
 
+    let newMemberId
+
+    const hasMembershipPlanSelected = (subscriptionForm.selected_plan_ids || []).some(id => String(id) === '1' || String(id) === '5')
+    const willCreateExistingMembership = legacyMembershipEnabled
+    if (willCreateExistingMembership && !legacyMembershipEndDate) {
+      setLegacyMembershipEndDateError(true)
+      toast({
+        title: "Missing membership end date",
+        description: "Please set the Gym Membership end date before proceeding.",
+        variant: "destructive",
+      })
+      return
+    }
+
     // Validate payment for cash transactions
     if (subscriptionForm.payment_method === 'cash') {
       const totalAmount = parseFloat(subscriptionForm.amount_paid || 0)
@@ -1945,7 +2076,7 @@ const ViewMembers = ({ userId }) => {
 
     setSubscriptionLoading(true)
     try {
-      let newMemberId
+      let createdNewAccount = false
 
       // Check if this is from approval flow (existing member being approved)
       if (pendingClientData.isApprovalFlow && pendingClientData.memberId) {
@@ -2094,6 +2225,8 @@ const ViewMembers = ({ userId }) => {
         if (!newMemberId) {
           throw new Error("Failed to get client ID after account creation")
         }
+
+        createdNewAccount = true
       }
 
       // Step 2: Add discount tag if selected
@@ -2142,32 +2275,39 @@ const ViewMembers = ({ userId }) => {
         }
       }
 
-      const hasMembershipPlanSelected = (subscriptionForm.selected_plan_ids || []).some(id => String(id) === '1' || String(id) === '5')
-      const willCreateExistingMembership = legacyMembershipEnabled && !hasMembershipPlanSelected
-
       if (willCreateExistingMembership) {
         if (!legacyMembershipEndDate) {
           showClientErrorToast("Please select the Membership End Date for existing members.")
           return
         }
 
-        await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', {
-          user_id: newMemberId,
-          plan_id: 1,
-          start_date: new Date().toISOString().split('T')[0],
-          end_date_override: legacyMembershipEndDate,
-          legacy_membership: true,
-          discount_type: 'none',
-          amount_paid: '0',
-          payment_method: 'legacy',
-          amount_received: '0',
-          change_given: '0',
-          notes: subscriptionForm.notes || '',
-          quantity: 1,
-          created_by: 'Admin',
-          staff_id: userId,
-          transaction_status: 'confirmed'
-        })
+        const legacyEnd = new Date(`${legacyMembershipEndDate}T00:00:00`)
+        const legacyStart = new Date(legacyEnd)
+        legacyStart.setFullYear(legacyStart.getFullYear() - 1)
+        const legacyStartISO = legacyStart.toISOString().split('T')[0]
+
+        try {
+          await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', {
+            user_id: newMemberId,
+            plan_id: 1,
+            start_date: legacyStartISO,
+            end_date_override: legacyMembershipEndDate,
+            legacy_membership: true,
+            discount_type: 'none',
+            amount_paid: '0',
+            payment_method: 'legacy',
+            amount_received: '0',
+            change_given: '0',
+            notes: subscriptionForm.notes || '',
+            quantity: 1,
+            created_by: 'Admin',
+            staff_id: userId,
+            transaction_status: 'confirmed'
+          })
+        } catch (err) {
+          const backendMsg = err?.response?.data?.message || err?.response?.data?.error || err?.message
+          throw new Error(backendMsg || 'Failed to create Existing Gym Membership.')
+        }
       }
 
       // Step 3: Create subscriptions for each selected plan
@@ -2213,7 +2353,7 @@ const ViewMembers = ({ userId }) => {
       // Distribute payment proportionally across subscriptions
       // For cash: distribute amount_received proportionally, apply change to first subscription
       // For GCash: each subscription gets its full amount (no change)
-      const subscriptionPromises = planDataArray.map(async (planData, index) => {
+      const subscriptionRequests = planDataArray.map((planData, index) => {
         const { planId, planIdStr, quantity, planTotalPrice } = planData
 
         // Calculate proportional amount received for this plan
@@ -2247,10 +2387,28 @@ const ViewMembers = ({ userId }) => {
           transaction_status: 'confirmed'
         }
 
-        return axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', subscriptionData)
+        return { planId, subscriptionData }
       })
 
-      const subscriptionResponses = await Promise.all(subscriptionPromises)
+      const sortedRequests = [...subscriptionRequests].sort((a, b) => {
+        const weight = (pid) => {
+          if (pid === 5 || pid === 1) return 0
+          if (pid === 2) return 2
+          return 1
+        }
+        const wA = weight(a.planId)
+        const wB = weight(b.planId)
+        if (wA !== wB) return wA - wB
+        return 0
+      })
+
+      const subscriptionResponses = []
+      for (const req of sortedRequests) {
+        // Create membership/package first so Premium validation passes
+        // eslint-disable-next-line no-await-in-loop
+        const res = await axios.post('https://api.cnergy.site/monitor_subscription.php?action=create_manual', req.subscriptionData)
+        subscriptionResponses.push(res)
+      }
 
       // Check if all subscriptions were created successfully
       const allSuccess = subscriptionResponses.every(response => response.data && response.data.success)
@@ -2305,9 +2463,16 @@ const ViewMembers = ({ userId }) => {
       }
     } catch (error) {
       console.error("Error creating account and subscription:", error)
+      // If account was created but subscriptions failed, rollback by deleting the new user to prevent orphan accounts
+      if (createdNewAccount && newMemberId && !pendingClientData?.isApprovalFlow) {
+        try {
+          const rollbackRes = await fetch(`https://api.cnergy.site/member_management.php?id=${newMemberId}`, { method: 'DELETE' })
+          console.warn('Rollback delete attempted. Status:', rollbackRes?.status)
+        } catch (rollbackErr) {
+          console.warn('Rollback delete failed:', rollbackErr)
+        }
+      }
       showClientErrorToast(
-        error.response?.data?.message ||
-        error.response?.data?.error ||
         error.message ||
         "Failed to create the account and subscriptions. Please try again."
       )
@@ -2590,6 +2755,11 @@ const ViewMembers = ({ userId }) => {
       user_type_id: 4,
     })
     setShowPassword(false)
+
+    // Reset legacy membership UI state when opening Add Client
+    setLegacyMembershipEnabled(false)
+    setLegacyMembershipEndDate("")
+    setLegacyMembershipEndDateError(false)
     setIsAddDialogOpen(true)
   }
 
@@ -3011,6 +3181,20 @@ const ViewMembers = ({ userId }) => {
                           title="Verify Account"
                         >
                           <Shield className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {member.account_status === "approved" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openSubscriptionDetailsModal(member)
+                          }}
+                          className="h-9 w-9 text-gray-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="Subscription Details"
+                        >
+                          <Eye className="h-4 w-4" />
                         </Button>
                       )}
                       {/* Only show Edit button for approved accounts in the Approved tab */}
@@ -4548,6 +4732,7 @@ const ViewMembers = ({ userId }) => {
                               const next = !v
                               if (!next) {
                                 setLegacyMembershipEndDate("")
+                                setLegacyMembershipEndDateError(false)
                               }
                               return next
                             })
@@ -4563,10 +4748,16 @@ const ViewMembers = ({ userId }) => {
                           <Label className="text-xs font-medium text-gray-700">Gym membership ends on</Label>
                           <Input
                             type="date"
-                            className="h-11"
+                            className={`h-11 ${legacyMembershipEndDateError && !legacyMembershipEndDate ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
                             value={legacyMembershipEndDate}
-                            onChange={(e) => setLegacyMembershipEndDate(e.target.value)}
+                            onChange={(e) => {
+                              setLegacyMembershipEndDate(e.target.value)
+                              if (e.target.value) setLegacyMembershipEndDateError(false)
+                            }}
                           />
+                          {legacyMembershipEndDateError && !legacyMembershipEndDate && (
+                            <p className="text-xs text-red-600">End date is required.</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4795,132 +4986,165 @@ const ViewMembers = ({ userId }) => {
                 <h3 className="text-sm font-semibold text-gray-900">Payment Details</h3>
 
                 {/* Detailed Breakdown */}
-                {subscriptionForm.selected_plan_ids && subscriptionForm.selected_plan_ids.length > 0 && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
-                    <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Breakdown</h4>
-                    <div className="space-y-2.5">
-                      {subscriptionForm.selected_plan_ids.map((planIdStr) => {
-                        const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
-                        if (!plan) return null
+                {(() => {
+                  const hasMembershipPlanSelected = (subscriptionForm.selected_plan_ids || []).some(id => String(id) === '1' || String(id) === '5')
+                  const willCreateExistingMembership = legacyMembershipEnabled && !hasMembershipPlanSelected
+                  const breakdownPlanIds = willCreateExistingMembership
+                    ? [...(subscriptionForm.selected_plan_ids || []), '__existing_membership__']
+                    : (subscriptionForm.selected_plan_ids || [])
 
-                        const quantity = planQuantities[planIdStr] || 1
-                        const basePrice = parseFloat(plan.price || 0)
-                        const planId = parseInt(planIdStr)
+                  if (!breakdownPlanIds || breakdownPlanIds.length === 0) return null
 
-                        // Check if discount applies to this plan
-                        const discountApplies = (planId === 2 || planId === 3 || planId === 5) &&
-                          subscriptionForm.discount_type &&
-                          subscriptionForm.discount_type !== 'none' &&
-                          subscriptionForm.discount_type !== 'regular'
-
-                        const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
-                        const pricePerUnit = discountApplies ? calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId) : effectiveBasePrice
-                        const discountAmount = discountApplies ? (effectiveBasePrice - pricePerUnit) : 0
-                        const subtotal = effectiveBasePrice * quantity
-                        const discountTotal = discountAmount * quantity
-                        const finalPrice = pricePerUnit * quantity
-
-                        return (
-                          <div key={planIdStr} className="bg-white border border-gray-200 rounded-md p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-gray-900">{plan.plan_name}</span>
-                              {quantity > 1 && (
-                                <span className="text-xs text-gray-500">× {quantity}</span>
-                              )}
-                            </div>
-                            <div className="space-y-1.5">
-                              {quantity > 1 ? (
-                                <>
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="text-gray-600">Price per unit</span>
-                                    <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="text-gray-600">Subtotal</span>
-                                    <span className="font-medium text-gray-900">₱{subtotal.toFixed(2)}</span>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="flex items-center justify-between text-xs">
-                                  <span className="text-gray-600">Price</span>
-                                  <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
-                                </div>
-                              )}
-                              {discountApplies && (
-                                <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
-                                  <span className="text-green-600">
-                                    {subscriptionForm.discount_type === 'student' ? '🎓 Student' : '👤 Senior'} Discount
-                                  </span>
-                                  <span className="text-green-600 font-medium">-₱{discountTotal.toFixed(2)}</span>
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between pt-1 border-t border-gray-200">
-                                <span className="text-xs font-semibold text-gray-700">Total</span>
-                                <span className="text-sm font-bold text-gray-900">₱{finalPrice.toFixed(2)}</span>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Total Summary */}
-                    <div className="pt-3 border-t-2 border-gray-300 space-y-1.5">
-                      {subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && (
-                        (() => {
-                          const totalDiscount = subscriptionForm.selected_plan_ids.reduce((sum, planIdStr) => {
-                            const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
-                            if (!plan) return sum
-                            const planId = parseInt(planIdStr)
-                            const quantity = planQuantities[planIdStr] || 1
-                            if (planId === 2 || planId === 3 || planId === 5) {
-                              const basePrice = parseFloat(plan.price || 0)
-                              const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
-                              const discountedPrice = calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId)
-                              const discountAmount = effectiveBasePrice - discountedPrice
-                              return sum + (discountAmount * quantity)
-                            }
-                            return sum
-                          }, 0)
-
-                          if (totalDiscount > 0) {
+                  return (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                      <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Breakdown</h4>
+                      <div className="space-y-2.5">
+                        {breakdownPlanIds.map((planIdStr) => {
+                          if (planIdStr === '__existing_membership__') {
                             return (
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Discount</span>
-                                <span className="text-green-600 font-semibold">-₱{totalDiscount.toFixed(2)}</span>
+                              <div key={planIdStr} className="bg-white border border-gray-200 rounded-md p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium text-gray-900">Gym Membership</span>
+                                  <span className="text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                                    Existing membership
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-600">Price</span>
+                                    <span className="font-medium text-gray-900">₱0.00</span>
+                                  </div>
+                                  <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                                    <span className="text-xs font-semibold text-gray-700">Total</span>
+                                    <span className="text-sm font-bold text-gray-900">₱0.00</span>
+                                  </div>
+                                </div>
                               </div>
                             )
                           }
-                          return null
-                        })()
-                      )}
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-base font-semibold text-gray-900">Total</span>
-                        <span className="text-lg font-bold text-gray-900">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
-                      </div>
-                      {/* Payment Summary Section */}
-                      {subscriptionForm.payment_method === "cash" && subscriptionForm.amount_received && parseFloat(subscriptionForm.amount_received) > 0 && (
-                        <>
-                          <div className="flex items-center justify-between pt-2 mt-2 border-t-2 border-gray-400">
-                            <span className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Payment Summary</span>
-                          </div>
-                          <div className="flex items-center justify-between pt-1">
-                            <span className="text-sm font-medium text-gray-700">Amount Received</span>
-                            <span className="text-sm font-semibold text-gray-900">₱{parseFloat(subscriptionForm.amount_received || 0).toFixed(2)}</span>
-                          </div>
-                          {parseFloat(subscriptionForm.amount_received || 0) > parseFloat(subscriptionForm.amount_paid || 0) && (
-                            <div className="flex items-center justify-between pt-1 pb-1 bg-gray-100 -mx-2 px-2 rounded">
-                              <span className="text-sm font-semibold text-gray-900">Change</span>
-                              <span className="text-base font-bold text-gray-900">₱{(
-                                Math.max(0, parseFloat(subscriptionForm.amount_received || 0) - parseFloat(subscriptionForm.amount_paid || 0))
-                              ).toFixed(2)}</span>
+
+                          const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+                          if (!plan) return null
+
+                          const quantity = planQuantities[planIdStr] || 1
+                          const basePrice = parseFloat(plan.price || 0)
+                          const planId = parseInt(planIdStr)
+
+                          // Check if discount applies to this plan
+                          const discountApplies = (planId === 2 || planId === 3 || planId === 5) &&
+                            subscriptionForm.discount_type &&
+                            subscriptionForm.discount_type !== 'none' &&
+                            subscriptionForm.discount_type !== 'regular'
+
+                          const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
+                          const pricePerUnit = discountApplies ? calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId) : effectiveBasePrice
+                          const discountAmount = discountApplies ? (effectiveBasePrice - pricePerUnit) : 0
+                          const subtotal = effectiveBasePrice * quantity
+                          const discountTotal = discountAmount * quantity
+                          const finalPrice = pricePerUnit * quantity
+
+                          return (
+                            <div key={planIdStr} className="bg-white border border-gray-200 rounded-md p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium text-gray-900">{plan.plan_name}</span>
+                                {quantity > 1 && (
+                                  <span className="text-xs text-gray-500">× {quantity}</span>
+                                )}
+                              </div>
+                              <div className="space-y-1.5">
+                                {quantity > 1 ? (
+                                  <>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="text-gray-600">Price per unit</span>
+                                      <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs">
+                                      <span className="text-gray-600">Subtotal</span>
+                                      <span className="font-medium text-gray-900">₱{subtotal.toFixed(2)}</span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-600">Price</span>
+                                    <span className="font-medium text-gray-900">₱{basePrice.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                {discountApplies && (
+                                  <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
+                                    <span className="text-green-600">
+                                      {subscriptionForm.discount_type === 'student' ? '🎓 Student' : '👤 Senior'} Discount
+                                    </span>
+                                    <span className="text-green-600 font-medium">-₱{discountTotal.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between pt-1 border-t border-gray-200">
+                                  <span className="text-xs font-semibold text-gray-700">Total</span>
+                                  <span className="text-sm font-bold text-gray-900">₱{finalPrice.toFixed(2)}</span>
+                                </div>
+                              </div>
                             </div>
-                          )}
-                        </>
-                      )}
+                          )
+                        })}
+                      </div>
+
+                      {/* Total Summary */}
+                      <div className="pt-3 border-t-2 border-gray-300 space-y-1.5">
+                        {subscriptionForm.discount_type && subscriptionForm.discount_type !== 'none' && subscriptionForm.discount_type !== 'regular' && (
+                          (() => {
+                            const totalDiscount = subscriptionForm.selected_plan_ids.reduce((sum, planIdStr) => {
+                              const plan = subscriptionPlans.find(p => p.id.toString() === planIdStr)
+                              if (!plan) return sum
+                              const planId = parseInt(planIdStr)
+                              const quantity = planQuantities[planIdStr] || 1
+                              if (planId === 2 || planId === 3 || planId === 5) {
+                                const basePrice = parseFloat(plan.price || 0)
+                                const effectiveBasePrice = getEffectiveOriginalPrice(basePrice, subscriptionForm.discount_type, planId)
+                                const discountedPrice = calculateDiscountedPrice(effectiveBasePrice, subscriptionForm.discount_type, planId)
+                                const discountAmount = effectiveBasePrice - discountedPrice
+                                return sum + (discountAmount * quantity)
+                              }
+                              return sum
+                            }, 0)
+
+                            if (totalDiscount > 0) {
+                              return (
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-600">Discount</span>
+                                  <span className="text-green-600 font-semibold">-₱{totalDiscount.toFixed(2)}</span>
+                                </div>
+                              )
+                            }
+                            return null
+                          })()
+                        )}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-base font-semibold text-gray-900">Total</span>
+                          <span className="text-lg font-bold text-gray-900">₱{parseFloat(subscriptionForm.amount_paid || 0).toFixed(2)}</span>
+                        </div>
+                        {/* Payment Summary Section */}
+                        {subscriptionForm.payment_method === "cash" && subscriptionForm.amount_received && parseFloat(subscriptionForm.amount_received) > 0 && (
+                          <>
+                            <div className="flex items-center justify-between pt-2 mt-2 border-t-2 border-gray-400">
+                              <span className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Payment Summary</span>
+                            </div>
+                            <div className="flex items-center justify-between pt-1">
+                              <span className="text-sm font-medium text-gray-700">Amount Received</span>
+                              <span className="text-sm font-semibold text-gray-900">₱{parseFloat(subscriptionForm.amount_received || 0).toFixed(2)}</span>
+                            </div>
+                            {parseFloat(subscriptionForm.amount_received || 0) > parseFloat(subscriptionForm.amount_paid || 0) && (
+                              <div className="flex items-center justify-between pt-1 pb-1 bg-gray-100 -mx-2 px-2 rounded">
+                                <span className="text-sm font-semibold text-gray-900">Change</span>
+                                <span className="text-base font-bold text-gray-900">₱{(
+                                  Math.max(0, parseFloat(subscriptionForm.amount_received || 0) - parseFloat(subscriptionForm.amount_paid || 0))
+                                ).toFixed(2)}</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )
+                })()}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">

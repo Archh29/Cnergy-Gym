@@ -198,11 +198,16 @@ function getAllSubscriptions($pdo)
                 FROM subscription s2
                 GROUP BY s2.user_id, s2.plan_id
             )
-            AND s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
-            AND EXISTS (
-                SELECT 1 FROM payment pay 
-                WHERE pay.subscription_id = s.id
-            )  -- CRITICAL: Only show subscriptions with payment records
+            AND (
+                s.plan_id = 1
+                OR (
+                    s.amount_paid > 0  -- CRITICAL: Only show subscriptions with payment
+                    AND EXISTS (
+                        SELECT 1 FROM payment pay 
+                        WHERE pay.subscription_id = s.id
+                    )  -- CRITICAL: Only show subscriptions with payment records
+                )
+            )
             ORDER BY s.id DESC
         ");
 
@@ -470,12 +475,12 @@ function getAllSubscriptions($pdo)
                 gs.valid_until as end_date,
                 gs.created_at as start_date,
                 gs.created_at,
+                gs.session_code,
                 gs.status,
                 gs.paid,
                 gs.receipt_number,
                 gs.payment_method,
                 gs.qr_token,
-                gs.session_code,
                 gs.cashier_id,
                 gs.change_given
             FROM guest_session gs
@@ -1595,21 +1600,27 @@ function createManualSubscription($pdo, $data)
         // Set timezone to Philippines
         date_default_timezone_set('Asia/Manila');
 
+        // Date rules: use ONE if/elseif chain so end_date_override is never overwritten.
+        $planNameLower = strtolower($plan['plan_name']);
+
         // Special handling for legacy Gym Membership carryover (Plan ID 1)
         if ($isLegacyMembership) {
             if (empty($endDateOverride)) {
                 throw new Exception("Membership end date is required for legacy membership");
             }
 
-            $start_date_obj = new DateTime('now', new DateTimeZone('Asia/Manila'));
-            $start_date = $start_date_obj->format('Y-m-d');
             $end_date_obj = new DateTime($endDateOverride, new DateTimeZone('Asia/Manila'));
             $end_date = $end_date_obj->format('Y-m-d');
+
+            // For paper-record memberships, derive start date from the paper period
+            // Default assumption: 1 year membership, so start = end - 1 year (same month/day)
+            $start_date_obj = clone $end_date_obj;
+            $start_date_obj->sub(new DateInterval('P1Y'));
+            $start_date = $start_date_obj->format('Y-m-d');
         }
         // Special handling for Walk In/Day Pass/Gym Session plans (plan_id = 6 or plan_name = 'Walk In' or 'Day Pass' or 'Gym Session')
         // For Day Pass plans, always use current date/time in Philippines timezone
-        $planNameLower = strtolower($plan['plan_name']);
-        if ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
+        elseif ($plan_id == 6 || $planNameLower === 'walk in' || $planNameLower === 'day pass' || $planNameLower === 'gym session') {
             // Use current date/time in Philippines timezone for Day Pass
             $start_date_obj = new DateTime('now', new DateTimeZone('Asia/Manila'));
             $end_date_obj = clone $start_date_obj;
@@ -1917,7 +1928,15 @@ function createManualSubscription($pdo, $data)
 
         // POS fields for subscription (already validated above)
         $changeGiven = max(0, $amountReceived - $payment_amount);
-        $receiptNumber = $data['receipt_number'] ?? generateSubscriptionReceiptNumber($pdo);
+        if ($isLegacyMembership) {
+            // receipt_number has a unique constraint in some deployments.
+            // Use a stable, meaningful, but unique value per user (or accept an override).
+            $receiptNumber = !empty($data['receipt_number'])
+                ? $data['receipt_number']
+                : ('EXISTING-' . strval($user_id));
+        } else {
+            $receiptNumber = $data['receipt_number'] ?? generateSubscriptionReceiptNumber($pdo);
+        }
         $cashierId = $data['cashier_id'] ?? null;
 
         // If renewing an expired subscription, update it here
@@ -2038,7 +2057,7 @@ function createManualSubscription($pdo, $data)
             $payment_id = null;
         }
 
-        // Create sales record - only for confirmed payments
+        // Create sales record
         // Use Philippines timezone for accurate timestamp
         if (!$isLegacyMembership && ($transactionStatus === 'confirmed' || $transactionStatus === 'completed')) {
             $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
@@ -2076,6 +2095,36 @@ function createManualSubscription($pdo, $data)
                     VALUES (?, ?, ?, ?)
                 ");
             $salesDetailStmt->execute([$sale_id, $subscription_id, $quantity, $payment_amount]);
+        } elseif ($isLegacyMembership) {
+            // Legacy/paper membership: create a real ₱0 sales entry so it persists in history
+            $phTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
+            $phTimeString = $phTime->format('Y-m-d H:i:s');
+
+            $checkSalesColumns = $pdo->query("SHOW COLUMNS FROM sales");
+            $salesColumns = $checkSalesColumns->fetchAll(PDO::FETCH_COLUMN);
+            $hasReferenceNumber = in_array('reference_number', $salesColumns);
+
+            if ($hasReferenceNumber) {
+                $salesStmt = $pdo->prepare("
+                        INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given, reference_number) 
+                        VALUES (?, 0, ?, 'Subscription', 'legacy', 'confirmed', ?, ?, 0, NULL)
+                    ");
+                $salesStmt->execute([$user_id, $phTimeString, $receiptNumber, $cashierId]);
+            } else {
+                $salesStmt = $pdo->prepare("
+                        INSERT INTO sales (user_id, total_amount, sale_date, sale_type, payment_method, transaction_status, receipt_number, cashier_id, change_given) 
+                        VALUES (?, 0, ?, 'Subscription', 'legacy', 'confirmed', ?, ?, 0)
+                    ");
+                $salesStmt->execute([$user_id, $phTimeString, $receiptNumber, $cashierId]);
+            }
+
+            $sale_id = $pdo->lastInsertId();
+
+            $salesDetailStmt = $pdo->prepare("
+                    INSERT INTO sales_details (sale_id, subscription_id, quantity, price) 
+                    VALUES (?, ?, 1, 0)
+                ");
+            $salesDetailStmt->execute([$sale_id, $subscription_id]);
         } else {
             $sale_id = null;
         }
