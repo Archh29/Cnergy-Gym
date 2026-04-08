@@ -87,6 +87,8 @@ const generateStandardPassword = (fname, mname, lname) => {
   return `${firstNamePart}${middleNamePart}#2023${lastNamePart}`
 }
 
+const DEFAULT_GYM_GOER_PASSWORD = "Cnergy@123"
+
 const memberSchema = z.object({
   fname: z.string().min(1, "Required").max(50, "Maximum 50 characters"),
   mname: z.string().max(50, "Maximum 50 characters").optional(),
@@ -1309,7 +1311,7 @@ const ViewMembers = ({ userId }) => {
     }
 
     // Store client data and switch to subscription assignment mode (don't create account yet)
-    const password = generateStandardPassword(data.fname, data.mname, data.lname)
+    const password = DEFAULT_GYM_GOER_PASSWORD
 
     setPendingClientData({
       fname: data.fname.trim(),
@@ -2288,14 +2290,8 @@ const ViewMembers = ({ userId }) => {
   useEffect(() => {
     if (isAddDialogOpen) {
       const currentValues = form.getValues()
-      if (currentValues.fname || currentValues.lname) {
-        const generatedPassword = generateStandardPassword(
-          currentValues.fname || "",
-          currentValues.mname || "",
-          currentValues.lname || ""
-        )
-        // Don't trigger validation when auto-updating password - only validate on submit
-        form.setValue("password", generatedPassword, { shouldValidate: false, shouldDirty: false })
+      if ((currentValues.fname || currentValues.lname) && !currentValues.password) {
+        form.setValue("password", DEFAULT_GYM_GOER_PASSWORD, { shouldValidate: false, shouldDirty: false })
       }
     }
   }, [isAddDialogOpen, form.watch("fname"), form.watch("mname"), form.watch("lname")])
@@ -3352,13 +3348,7 @@ const ViewMembers = ({ userId }) => {
                   control={form.control}
                   name="password"
                   render={({ field }) => {
-                    // Generate password from form values
-                    const formValues = form.watch()
-                    const displayValue = field.value || generateStandardPassword(
-                      formValues.fname || "",
-                      formValues.mname || "",
-                      formValues.lname || ""
-                    )
+                    const displayValue = field.value || DEFAULT_GYM_GOER_PASSWORD
 
                     return (
                       <FormItem>
@@ -3376,22 +3366,10 @@ const ViewMembers = ({ userId }) => {
                               onFocus={(e) => e.target.blur()}
                               tabIndex={-1}
                               onChange={(e) => {
-                                // Always reset to generated password if user tries to change it
-                                const generatedPwd = generateStandardPassword(
-                                  formValues.fname || "",
-                                  formValues.mname || "",
-                                  formValues.lname || ""
-                                )
-                                field.onChange(generatedPwd)
+                                field.onChange(DEFAULT_GYM_GOER_PASSWORD)
                               }}
                               onBlur={() => {
-                                // Ensure value is always set on blur
-                                const generatedPwd = generateStandardPassword(
-                                  formValues.fname || "",
-                                  formValues.mname || "",
-                                  formValues.lname || ""
-                                )
-                                field.onChange(generatedPwd)
+                                field.onChange(DEFAULT_GYM_GOER_PASSWORD)
                               }}
                             />
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
@@ -3782,8 +3760,13 @@ const ViewMembers = ({ userId }) => {
                             className={`h-11 ${legacyMembershipEndDateError && !legacyMembershipEndDate ? 'border-red-400 focus-visible:ring-red-400' : ''}`}
                             value={legacyMembershipEndDate}
                             onChange={(e) => {
-                              setLegacyMembershipEndDate(e.target.value)
-                              if (e.target.value) setLegacyMembershipEndDateError(false)
+                              let next = String(e.target.value || "")
+                              if (next.length > 10) next = next.slice(0, 10)
+                              const parts = next.split("-")
+                              if (parts[0] && parts[0].length > 4) parts[0] = parts[0].slice(0, 4)
+                              next = parts.join("-")
+                              setLegacyMembershipEndDate(next)
+                              if (next) setLegacyMembershipEndDateError(false)
                             }}
                           />
                           {legacyMembershipEndDateError && !legacyMembershipEndDate && (
